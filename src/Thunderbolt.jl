@@ -35,12 +35,12 @@ struct HodgkinHuxleyTypeIonChannel <: AbstractIonChannel
     gates::Vector{HodgkinHuxleyTypeGate}
 end;
 
-@inline function g(::HodgkinHuxleyTypeGate, φₘ::T, 𝐬ᵢ::T) where {T}
-    α(::HodgkinHuxleyTypeGate, φₘ)*𝐬 + β(::HodgkinHuxleyTypeGate, φₘ)
+@inline function g(gate_type::HodgkinHuxleyTypeGate, φₘ::T, 𝐬ᵢ::T) where {T}
+    α(gate_type, φₘ)*𝐬 + β(gate_type, φₘ)
 end
 
-@inline function g(::HodgkinHuxleyTypeGate, φₘ::T, 𝐬ᵢ::T, x::AbstractVector{T}) where {T}
-    α(::HodgkinHuxleyTypeGate, φₘ, x)*𝐬 + β(::HodgkinHuxleyTypeGate, φₘ, x)
+@inline function g(gate_type::HodgkinHuxleyTypeGate, φₘ::T, 𝐬ᵢ::T, x::AbstractVector{T}) where {T}
+    α(gate_type, φₘ, x)*𝐬 + β(gate_type, φₘ, x)
 end
 
 abstract type AbstractIonicModel end;
@@ -55,21 +55,21 @@ The model from the seminal paper of Hodgkin and Huxley (1952).
 
 (TODO citation)
 """
-struct HodgkinHuxleyModel end <: HodgkinHuxleyTypeModel;
+struct HodgkinHuxleyModel <: HodgkinHuxleyTypeModel end;
 
 """
 Simplest model with qubic reaction and no state.
 
 (TODO citation)
 """
-struct NagumoModel end <: HodgkinHuxleyTypeModel;
+struct NagumoModel <: HodgkinHuxleyTypeModel end;
 
 """
 Simple model with qubic reaction and linear state.
 
 (TODO citation)
 """
-struct FitzHughNagumoModel end <: HodgkinHuxleyTypeModel;
+struct FitzHughNagumoModel <: HodgkinHuxleyTypeModel end;
 
 
 abstract type AbstractEPModel end;
@@ -95,7 +95,7 @@ struct ParabolicParabolicBidomainModel <: AbstractEPModel
     Cₘ
     κᵢ
     κₑ
-    stim::AbstractStimulationProtocoll
+    stim::AbstractStimulationProtocol
     ion::AbstractIonicModel
 end
 
@@ -115,7 +115,7 @@ struct ParabolicEllipticBidomainModel <: AbstractEPModel
     Cₘ
     κᵢ
     κₑ
-    stim::AbstractStimulationProtocoll
+    stim::AbstractStimulationProtocol
     ion::AbstractIonicModel
 end
 
