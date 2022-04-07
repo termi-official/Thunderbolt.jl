@@ -1,5 +1,7 @@
 module Thunderbolt
 
+using UnPack
+
 abstract type AbstractIonChannel end;
 
 abstract type MarkovTypeIonChannel <: AbstractIonChannel end;
@@ -136,6 +138,32 @@ struct MonodomainModel <: AbstractEPModel
     κ
     stim::TransmembraneStimulationProtocol
     ion::AbstractIonicModel
+end
+
+
+abstract type AbstractMaterialModel end
+
+struct LinYinModel <: AbstractMaterialModel
+	C₁
+	C₂
+	C₃
+	C₄
+end
+
+function ψ(F, Mᶠ, model::LinYinModel)
+	@unpack C₁, C₂, C₃, C₄ = model
+
+	C = tdot(F) # = FᵀF
+
+	# Invariants
+	I₁ = tr(C)
+	I₂ = (I₁^2 - tr(C^2))/2.0
+	I₃ = det(C)
+	I₄ = dot(C,Mᶠ) # = C : (f ⊗ f)
+
+	# Exponential portion
+	Q = C₂*(I₁-3)^2 + C₃*(I₁-3)*(I₄-1) + C₄*(I₄-1)^2
+	C₁*(exp(Q)-1)
 end
 
 end
