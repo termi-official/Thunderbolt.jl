@@ -20,6 +20,7 @@ Physical Surface("Epicardium", 1) = {1};
 Physical Surface("Base", 2) = {2};
 Physical Surface("Endocardium", 3) = {3};
 Physical Volume("Left Ventricle", 1) = {5};
+Physical Point("Apex", 7) = {2};
 
 //Recombine Surface{1,2,3};
 
@@ -29,4 +30,3 @@ Mesh.Algorithm   = 6;
 //Mesh.Algorithm3D = 6;
 Mesh.CharacteristicLengthFromCurvature = 1;
 Mesh.MinimumElementsPerTwoPi = 20;
-
