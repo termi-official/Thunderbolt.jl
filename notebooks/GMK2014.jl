@@ -9,7 +9,7 @@ let
 	using Pkg
 	Pkg.activate(Base.current_project());
 	
-	using Ferrite, FerriteGmsh, Tensors, Thunderbolt, Optim, UnPack, Plots
+	using Ferrite, FerriteGmsh, Tensors, Thunderbolt, Optim, UnPack, Plots, LinearAlgebra
 end
 
 # ╔═╡ 6e43f86d-6341-445f-be8d-146eb0447457
@@ -121,10 +121,163 @@ end
 # ╔═╡ 610c857e-a699-48f6-b18b-df8337287122
 grid = saved_file_to_grid("../data/meshes/EllipsoidalLeftVentricle.msh")
 
+# ╔═╡ 9e599448-f844-40c2-b237-2820138aebe0
+md"""
+## Simple Coordinate System
+"""
+
+# ╔═╡ 2ec1e3de-0a48-431f-b3b9-ee9ec1390504
+struct LVCoordinateSystem
+	dh
+	cellvalues
+	apicobasal
+	transmural
+end
+
+# ╔═╡ fa085581-aea6-4c80-8b21-ac59c9ba8fd0
+function compute_LV_coordinate_system(grid)
+	ip = Lagrange{3, RefTetrahedron, 1}()
+	qr = QuadratureRule{3, RefTetrahedron}(2)
+	cellvalues = CellScalarValues(qr, ip);
+
+	dh = DofHandler(grid)
+	push!(dh, :coordinates, 1)
+	vertex_dict,_,_,_ = Ferrite.__close!(dh);
+
+	# Assemble Laplacian
+	K = create_sparsity_pattern(dh)
+
+    n_basefuncs = getnbasefunctions(cellvalues)
+    Ke = zeros(n_basefuncs, n_basefuncs)
+	
+    assembler = start_assemble(K)
+    @inbounds for cell in CellIterator(dh)
+        fill!(Ke, 0)
+
+        reinit!(cellvalues, cell)
+
+        for q_point in 1:getnquadpoints(cellvalues)
+            dΩ = getdetJdV(cellvalues, q_point)
+
+            for i in 1:n_basefuncs
+                ∇v = shape_gradient(cellvalues, q_point, i)
+                for j in 1:n_basefuncs
+                    ∇u = shape_gradient(cellvalues, q_point, j)
+                    Ke[i, j] += (∇v ⋅ ∇u) * dΩ
+                end
+            end
+        end
+
+        assemble!(assembler, celldofs(cell), Ke)
+    end
+	
+	# Transmural coordinate
+	ch = ConstraintHandler(dh);
+	dbc = Dirichlet(:coordinates, getfaceset(grid, "Endocardium"), (x, t) -> 0)
+	add!(ch, dbc);
+	dbc = Dirichlet(:coordinates, getfaceset(grid, "Epicardium"), (x, t) -> 1)
+	add!(ch, dbc);
+	close!(ch)
+	update!(ch, 0.0);
+
+	K_transmural = copy(K)
+    f = zeros(ndofs(dh))
+	
+	apply!(K_transmural, f, ch)
+	transmural = K_transmural \ f;
+
+	vtk_grid("coordinates_transmural", dh) do vtk
+	    vtk_point_data(vtk, dh, transmural)
+	end
+
+	# Apicobasal coordinate
+	#TODO refactor check for node set existence
+	if !haskey(getnodesets(grid), "Apex") #TODO this is just a hotfix, assuming that z points towards the apex
+		apex_node_index = 1
+		nodes = getnodes(grid)
+		for (i,node) ∈ enumerate(nodes)
+			if nodes[i].x[3] > nodes[apex_node_index].x[3]
+				apex_node_index = i
+			end
+		end
+		addnodeset!(grid, "Apex", Set{Int}((apex_node_index)))
+	end
+	
+	ch = ConstraintHandler(dh);
+	dbc = Dirichlet(:coordinates, getfaceset(grid, "Base"), (x, t) -> 0)
+	add!(ch, dbc);
+	dbc = Dirichlet(:coordinates, getnodeset(grid, "Apex"), (x, t) -> 1)
+	add!(ch, dbc);
+	close!(ch)
+	update!(ch, 0.0);
+
+	K_apicobasal = copy(K)
+	f = zeros(ndofs(dh))
+	
+	apply!(K_apicobasal, f, ch)
+	apicobasal = K_apicobasal \ f;
+
+	vtk_grid("coordinates_apicobasal", dh) do vtk
+	    vtk_point_data(vtk, dh, apicobasal)
+	end
+
+	return LVCoordinateSystem(dh, cellvalues, transmural, apicobasal)
+end
+
+# ╔═╡ 793a52db-3f7b-4c5b-984a-f7ac6e9fc402
+coordinate_system = compute_LV_coordinate_system(grid)
+
 # ╔═╡ 0e5198da-d533-4a64-8dd0-46ba2418f099
 function extract_epicardial_edges(grid)
 	
 end
+
+# ╔═╡ b34e1ab1-8c27-47a2-a2ba-be9956714ffe
+md"""
+## Simple Fiber Model
+"""
+
+# ╔═╡ 9f58b6cf-8b9f-4b48-bc35-180ab9559d3d
+struct PiecewiseConstantFiberModel
+	f₀data
+	s₀data
+	n₀data
+end
+
+# ╔═╡ 3337cac5-2a53-4043-9751-1ffc6ee37889
+function f₀(fiber_model::PiecewiseConstantFiberModel, cell_id, x_ref)
+	return fiber_model.f₀data[cell_id]
+end
+
+# ╔═╡ 0f55501e-694b-40ba-be6c-faab5f6177b5
+# Create a rotating fiber field by deducing the circumferential direction from apicobasal and transmural gradients.
+function create_simple_pw_constant_fiber_model(coordinate_system)
+	dh = coordinate_system.dh
+	f₀data = Vector{Vec{3}}(undef, getncells(dh.grid))
+	ip = dh.field_interpolations[1] #TODO refactor this. Pls.
+	qr = QuadratureRule{3,RefTetrahedron,Float64}([1.0], [Vec{3}((0.1, 0.1, 0.1))]) #TODO is this really we want to do?
+	cv = CellScalarValues(qr, ip)
+	for (cellindex,cell) in enumerate(CellIterator(dh))
+        reinit!(cv, cell)
+		dof_indices = celldofs(cell)
+
+		∇apicobasal = function_gradient(cv, 1, coordinate_system.apicobasal[dof_indices])
+		∇transmural = function_gradient(cv, 1, coordinate_system.transmural[dof_indices])
+
+		f₀data[cellindex] = cross(∇apicobasal, ∇transmural)
+		f₀data[cellindex] /= norm(f₀data[cellindex])
+	end
+	
+	PiecewiseConstantFiberModel(f₀data, [], [])
+end
+
+# ╔═╡ b8a970e3-3d7f-4ed8-a546-c26e9047b443
+fiber_model = create_simple_pw_constant_fiber_model(coordinate_system)
+
+# ╔═╡ 620c34e6-48b0-49cf-8b3f-818107d0bc94
+md"""
+## Driver Code
+"""
 
 # ╔═╡ 2eae0e78-aba6-49f5-84b1-dff9c087b391
 struct NeoHookean
@@ -140,9 +293,6 @@ function Ψ(C, mp::NeoHookean)
     J = sqrt(det(C))
     return μ / 2 * (Ic - 3) - μ * log(J) + λ / 2 * log(J)^2
 end
-
-# ╔═╡ c722f52f-6aae-428f-91ac-ccbd5c52b7ae
-
 
 # ╔═╡ b8c36e6f-862a-4ade-afee-b1cdb40a4ed7
 λᵃₘₐₓ = 0.7
@@ -162,7 +312,7 @@ struct ActiveNeoHookean
 end
 
 # ╔═╡ 03dbf71b-c69a-4049-ad2f-1f78ae754fde
-function Ψ(F, Caᵢ, mp::ActiveNeoHookean)
+function Ψ(F, f₀, Caᵢ, mp::ActiveNeoHookean)
 	C = tdot(F)
     μ = mp.μ
     λ = mp.λ
@@ -171,8 +321,6 @@ function Ψ(F, Caᵢ, mp::ActiveNeoHookean)
     J = det(F)
 
 	Ψᵖ = μ / 2 * (Ic - 3) - μ * log(J) + λ / 2 * log(J)^2 
-
-	f₀ = Vec{3}((0.0, 0.0, 1.0))
 
 	M = f₀ ⊗ f₀
 	Fᵃ = one(F) + (λᵃ(Caᵢ) - 1.0) * M
@@ -196,17 +344,17 @@ function constitutive_driver(C, mp::NeoHookean)
 end;
 
 # ╔═╡ 641ad832-1b22-44d0-84f0-bfe15ecd6246
-function constitutive_driver(F, Caᵢ, mp::ActiveNeoHookean)
+function constitutive_driver(F, f₀, Caᵢ, mp::ActiveNeoHookean)
     # Compute all derivatives in one function call
-    ∂²Ψ∂F², ∂Ψ∂F = Tensors.hessian(y -> Ψ(y, Caᵢ, mp), F, :all)
+    ∂²Ψ∂F², ∂Ψ∂F = Tensors.hessian(y -> Ψ(y, f₀, Caᵢ, mp), F, :all)
     return ∂Ψ∂F, ∂²Ψ∂F²
 end;
 
 # ╔═╡ b2b670d9-2fd7-4031-96bb-167db12475c7
-function assemble_element!(Kₑ, residuumₑ, cell, cv, fv, mp, uₑ, time)
+function assemble_element!(cellid, Kₑ, residuumₑ, cell, cv, fv, mp, uₑ, fiber_model, time)
 	# TODO factor out
 	kₛ = 1.0 # "Spring stiffness"
-	Caᵢ(x,t) = t
+	Caᵢ(cellid,x,t) = t
 	
     # Reinitialize cell values, and reset output arrays
     reinit!(cv, cell)
@@ -224,8 +372,10 @@ function assemble_element!(Kₑ, residuumₑ, cell, cv, fv, mp, uₑ, time)
         F = one(∇u) + ∇u
 		
         # Compute stress and tangent
-		# TODO extract coordinate
-		P, ∂P∂F = constitutive_driver(F, Caᵢ(Vec{3}((0.0,0.0,0.0)), time), mp)
+		#X = spatial_coordinate(cv, qp, getcoordinates(cell))
+		#TODO compute coordinate
+		x_ref = Vec{3}((0.0, 0.0, 0.0))
+		P, ∂P∂F = constitutive_driver(F, f₀(fiber_model, cellid, x_ref), Caᵢ(cellid, x_ref, time), mp)
 
         # Loop over test functions
         for i in 1:ndofs
@@ -276,7 +426,7 @@ function assemble_element!(Kₑ, residuumₑ, cell, cv, fv, mp, uₑ, time)
 end;
 
 # ╔═╡ aa57fc70-16f4-4013-a71e-a4099f0e5bd4
-function assemble_global!(K, f, dh, cv, fv, mp, u, t)
+function assemble_global!(K, f, dh, cv, fv, mp, u, fiber_model, t)
     n = ndofs_per_cell(dh)
     ke = zeros(n, n)
     ge = zeros(n)
@@ -286,17 +436,16 @@ function assemble_global!(K, f, dh, cv, fv, mp, u, t)
 
     # Loop over all cells in the grid
     #@timeit "assemble" for cell in CellIterator(dh)
-	for cell in CellIterator(dh)
+	for (cellid,cell) in enumerate(CellIterator(dh))
         global_dofs = celldofs(cell)
         ue = u[global_dofs] # element dofs
-        #@timeit "element assemble" assemble_element!(ke, ge, cell, cv, fv, mp, ue)
-		assemble_element!(ke, ge, cell, cv, fv, mp, ue, t)
+		assemble_element!(cellid, ke, ge, cell, cv, fv, mp, ue, fiber_model, t)
         assemble!(assembler, global_dofs, ge, ke)
     end
 end;
 
 # ╔═╡ edb7ba53-ba21-4001-935f-ec9e0d7531be
-function solve(grid)
+function solve(grid, fiber_model)
 	pvd = paraview_collection("GMK2014_LV.pvd");
 	
     # Material parameters
@@ -362,7 +511,7 @@ function solve(grid)
 			newton_itr += 1
 			
 	        u .-= Δu # Current guess
-	        assemble_global!(K, g, dh, cv, fv, mp, u, t)
+	        assemble_global!(K, g, dh, cv, fv, mp, u, fiber_model, t)
 	        normg = norm(g[Ferrite.free_dofs(dbcs)])
 	        apply_zero!(K, g, dbcs)
 			#@info "||g|| = " normg
@@ -396,7 +545,7 @@ function solve(grid)
 end
 
 # ╔═╡ 8cfeddaa-c67f-4de8-b81c-4fbb7e052c50
-solve(grid)
+solve(grid, fiber_model)
 
 # ╔═╡ Cell order:
 # ╟─6e43f86d-6341-445f-be8d-146eb0447457
@@ -404,14 +553,23 @@ solve(grid)
 # ╟─f6b5bde0-bcdc-41de-b64e-29b9e60b06c0
 # ╟─94fc407e-d72e-4b44-9d30-d66c433b954a
 # ╟─a81fc16e-c280-4b38-8c6a-18714db7840c
-# ╟─d314acc8-22fc-40f8-bcc6-729b6e208f70
-# ╟─bc3bbb45-c263-4f29-aa6f-647e8dbf3466
+# ╠═d314acc8-22fc-40f8-bcc6-729b6e208f70
+# ╠═bc3bbb45-c263-4f29-aa6f-647e8dbf3466
 # ╟─f4a00f5d-f042-4804-9be1-d24d5046fd0a
 # ╟─610c857e-a699-48f6-b18b-df8337287122
-# ╠═0e5198da-d533-4a64-8dd0-46ba2418f099
-# ╟─2eae0e78-aba6-49f5-84b1-dff9c087b391
+# ╟─9e599448-f844-40c2-b237-2820138aebe0
+# ╠═2ec1e3de-0a48-431f-b3b9-ee9ec1390504
+# ╠═fa085581-aea6-4c80-8b21-ac59c9ba8fd0
+# ╠═793a52db-3f7b-4c5b-984a-f7ac6e9fc402
+# ╟─0e5198da-d533-4a64-8dd0-46ba2418f099
+# ╟─b34e1ab1-8c27-47a2-a2ba-be9956714ffe
+# ╠═9f58b6cf-8b9f-4b48-bc35-180ab9559d3d
+# ╠═3337cac5-2a53-4043-9751-1ffc6ee37889
+# ╠═0f55501e-694b-40ba-be6c-faab5f6177b5
+# ╠═b8a970e3-3d7f-4ed8-a546-c26e9047b443
+# ╟─620c34e6-48b0-49cf-8b3f-818107d0bc94
+# ╠═2eae0e78-aba6-49f5-84b1-dff9c087b391
 # ╟─0658ec98-5883-4859-93dc-f9e9f52f9f63
-# ╠═c722f52f-6aae-428f-91ac-ccbd5c52b7ae
 # ╠═b8c36e6f-862a-4ade-afee-b1cdb40a4ed7
 # ╠═c7f78dd3-f75e-4634-bee9-14e6efe28e68
 # ╠═374329cc-dcd5-407b-a4f2-83f21120577f
