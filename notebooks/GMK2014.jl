@@ -310,7 +310,7 @@ end
 
 # ╔═╡ 374329cc-dcd5-407b-a4f2-83f21120577f
 #λᵃ(Caᵢ) = (cos(pi*x)*(1-λᵃₘₐₓ) + 1.0)/2.0 + λᵃₘₐₓ/2.0
-λᵃ(Caᵢ, β = 3.0, λᵃₘₐₓ = 0.7) = 1.0/(1+(0.5+atan(β*log(max(Caᵢ,1e-10)))/π))*λᵃₘₐₓ
+λᵃ(Caᵢ, β = 3.0, λᵃₘₐₓ = 0.7) = 1.0/(1+(0.5+atan(β*log(max(Caᵢ,1e-10)))/π))#*λᵃₘₐₓ
 
 # ╔═╡ 9d9da356-ac29-4a99-9a1a-e8f61141a8d1
 struct ActiveNeoHookean
@@ -369,13 +369,13 @@ function assemble_element!(cellid, Kₑ, residualₑ, cell, cv, fv, mp, uₑ, fi
     fill!(Kₑ, 0.0)
     fill!(residualₑ, 0.0)
 
-    traction = Vec{3}((0.0, 0.0, 0.0)) # Traction
+    #traction = Vec{3}((0.0, 0.0, 0.0)) # Traction
     ndofs = getnbasefunctions(cv)
 
     for qp in 1:getnquadpoints(cv)
         dΩ = getdetJdV(cv, qp)
 		
-        # Compute deformation gradient F and right Cauchy-Green tensor C
+        # Compute deformation gradient F
         ∇u = function_gradient(cv, qp, uₑ)
         F = one(∇u) + ∇u
 		
@@ -388,7 +388,7 @@ function assemble_element!(cellid, Kₑ, residualₑ, cell, cv, fv, mp, uₑ, fi
         # Loop over test functions
         for i in 1:ndofs
             # Test function + gradient
-            δui = shape_value(cv, qp, i)
+            #δui = shape_value(cv, qp, i)
             ∇δui = shape_gradient(cv, qp, i)
 			
             # Add contribution to the residual from this test function
@@ -416,7 +416,7 @@ function assemble_element!(cellid, Kₑ, residualₑ, cell, cv, fv, mp, uₑ, fi
   #           end
   #       end
 
-		if (cell.current_cellid.x, local_face_index) ∈ getfaceset(cell.grid, "Epicardium") || (cell.current_cellid.x, local_face_index) ∈ getfaceset(cell.grid, "Base")
+		if (cell.current_cellid.x, local_face_index) ∈ getfaceset(cell.grid, "Epicardium")
             reinit!(fv, cell, local_face_index)
             for qp in 1:getnquadpoints(fv)
                 dΓ = getdetJdV(fv, qp)
@@ -432,6 +432,32 @@ function assemble_element!(cellid, Kₑ, residualₑ, cell, cv, fv, mp, uₑ, fi
 				end
             end
         end
+
+		if (cell.current_cellid.x, local_face_index) ∈ getfaceset(cell.grid, "Base")
+			reinit!(fv, cell, local_face_index)
+            for qp in 1:getnquadpoints(fv)
+                dΓ = getdetJdV(fv, qp)
+				N = getnormal(fv, qp)
+				
+				∇u = function_gradient(fv, qp, uₑ)
+        		F = one(∇u) + ∇u
+
+				∂²Ψ∂F², ∂Ψ∂F = Tensors.hessian(F_ -> 0.5*50*(F_⋅N - N)⋅(F_⋅N - N), F, :all)
+
+				# Add contribution to the residual from this test function
+				for i in 1:ndofs
+		            ∇δui = shape_gradient(cv, qp, i)
+					residualₑ[i] += ∇δui ⊡ ∂Ψ∂F * dΓ
+		
+		            ∇δui∂P∂F = ∇δui ⊡ ∂²Ψ∂F² # Hoisted computation
+		            for j in 1:ndofs
+		                ∇δuj = shape_gradient(cv, qp, j)
+		                # Add contribution to the tangent
+		                Kₑ[i, j] += ( ∇δui∂P∂F ⊡ ∇δuj ) * dΓ
+		            end
+				end
+			end
+		end
     end
 end;
 
@@ -480,8 +506,8 @@ function solve(grid, fiber_model)
 
     dbcs = ConstraintHandler(dh)
     # Clamp base for now
-    #dbc = Dirichlet(:u, getfaceset(grid, "Base"), (x,t) -> [0.0, 0.0, 0.0], [1, 2, 3])
-    #add!(dbcs, dbc)
+    # dbc = Dirichlet(:u, getfaceset(grid, "Base"), (x,t) -> [0.0, 0.0, 0.0], [1, 2, 3])
+    # add!(dbcs, dbc)
 	
     close!(dbcs)
 
