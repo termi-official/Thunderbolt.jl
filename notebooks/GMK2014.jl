@@ -533,8 +533,9 @@ function solve(grid, fiber_model)
 	
 	    # Save the solution
 		vtk_grid("GMK2014-LV-$t.vtu", dh) do vtk
-	        vtk_point_data(vtk,dh,u)
-	        vtk_save(vtk)
+            vtk_point_data(vtk,dh,u)
+	        vtk_cell_data(vtk,hcat(fiber_model.f₀data...),"Reference Fiber Data")
+            vtk_save(vtk)
 	        pvd[t] = vtk
 	    end
 	end
