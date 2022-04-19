@@ -130,8 +130,8 @@ md"""
 struct LVCoordinateSystem
 	dh
 	cellvalues
-	apicobasal
 	transmural
+	apicobasal
 end
 
 # ╔═╡ fa085581-aea6-4c80-8b21-ac59c9ba8fd0
@@ -261,11 +261,25 @@ function create_simple_pw_constant_fiber_model(coordinate_system)
         reinit!(cv, cell)
 		dof_indices = celldofs(cell)
 
+		# compute fiber direction
 		∇apicobasal = function_gradient(cv, 1, coordinate_system.apicobasal[dof_indices])
 		∇transmural = function_gradient(cv, 1, coordinate_system.transmural[dof_indices])
+		v = ∇apicobasal × ∇transmural
+		
+		transmural  = function_value(cv, 1, coordinate_system.transmural[dof_indices])
 
-		f₀data[cellindex] = cross(∇apicobasal, ∇transmural)
-		f₀data[cellindex] /= norm(f₀data[cellindex])
+		# linear interpolation of rotation angle
+		endo_angle = 39.5
+		epi_angle  = -53.5
+		θ = (1-transmural) * endo_angle + (transmural) * epi_angle
+
+		# Rodriguez rotation
+		sinθ = sin(deg2rad(θ))
+		cosθ = cos(deg2rad(θ))
+		k = ∇transmural / norm(∇transmural)
+		vᵣ = v * cosθ + (k × v) * sinθ + k * (k ⋅ v) * (1-cosθ)
+		
+		f₀data[cellindex] = vᵣ / norm(vᵣ)
 	end
 	
 	PiecewiseConstantFiberModel(f₀data, [], [])
@@ -294,15 +308,9 @@ function Ψ(C, mp::NeoHookean)
     return μ / 2 * (Ic - 3) - μ * log(J) + λ / 2 * log(J)^2
 end
 
-# ╔═╡ b8c36e6f-862a-4ade-afee-b1cdb40a4ed7
-λᵃₘₐₓ = 0.7
-
-# ╔═╡ c7f78dd3-f75e-4634-bee9-14e6efe28e68
-λᵃβ = 3.0
-
 # ╔═╡ 374329cc-dcd5-407b-a4f2-83f21120577f
 #λᵃ(Caᵢ) = (cos(pi*x)*(1-λᵃₘₐₓ) + 1.0)/2.0 + λᵃₘₐₓ/2.0
-λᵃ(Caᵢ) = 1.0/(1+(0.5+atan(λᵃβ*log(max(Caᵢ,1e-10)))/π))
+λᵃ(Caᵢ, β = 3.0, λᵃₘₐₓ = 0.7) = 1.0/(1+(0.5+atan(β*log(max(Caᵢ,1e-10)))/π))*λᵃₘₐₓ
 
 # ╔═╡ 9d9da356-ac29-4a99-9a1a-e8f61141a8d1
 struct ActiveNeoHookean
@@ -351,15 +359,15 @@ function constitutive_driver(F, f₀, Caᵢ, mp::ActiveNeoHookean)
 end;
 
 # ╔═╡ b2b670d9-2fd7-4031-96bb-167db12475c7
-function assemble_element!(cellid, Kₑ, residuumₑ, cell, cv, fv, mp, uₑ, fiber_model, time)
+function assemble_element!(cellid, Kₑ, residualₑ, cell, cv, fv, mp, uₑ, fiber_model, time)
 	# TODO factor out
-	kₛ = 10.0 # "Spring stiffness"
+	kₛ = 100.0 # "Spring stiffness"
 	Caᵢ(cellid,x,t) = t
 	
     # Reinitialize cell values, and reset output arrays
     reinit!(cv, cell)
     fill!(Kₑ, 0.0)
-    fill!(residuumₑ, 0.0)
+    fill!(residualₑ, 0.0)
 
     traction = Vec{3}((0.0, 0.0, 0.0)) # Traction
     ndofs = getnbasefunctions(cv)
@@ -384,7 +392,7 @@ function assemble_element!(cellid, Kₑ, residuumₑ, cell, cv, fv, mp, uₑ, fi
             ∇δui = shape_gradient(cv, qp, i)
 			
             # Add contribution to the residual from this test function
-            residuumₑ[i] += ∇δui ⊡ P * dΩ
+            residualₑ[i] += ∇δui ⊡ P * dΩ
 
             ∇δui∂P∂F = ∇δui ⊡ ∂P∂F # Hoisted computation
             for j in 1:ndofs
@@ -397,18 +405,18 @@ function assemble_element!(cellid, Kₑ, residuumₑ, cell, cv, fv, mp, uₑ, fi
 
     # Surface integral for the traction
     for local_face_index in 1:nfaces(cell)
-		if (cell.current_cellid.x, local_face_index) ∈ getfaceset(cell.grid, "Endocardium")
-            reinit!(fv, cell, local_face_index)
-            for q_point in 1:getnquadpoints(fv)
-                dΓ = getdetJdV(fv, q_point)
-                for i in 1:ndofs
-                    δui = shape_value(fv, q_point, i)
-                    residuumₑ[i] -= (δui ⋅ traction) * dΓ
-                end
-            end
-        end
+  #       if (cell.current_cellid.x, local_face_index) ∈ getfaceset(cell.grid, "Endocardium")
+  #           reinit!(fv, cell, local_face_index)
+  #           for q_point in 1:getnquadpoints(fv)
+  #               dΓ = getdetJdV(fv, q_point)
+  #               for i in 1:ndofs
+  #                   δui = shape_value(fv, q_point, i)
+  #                   residualₑ[i] -= (δui ⋅ traction) * dΓ
+  #               end
+  #           end
+  #       end
 
-		if (cell.current_cellid.x, local_face_index) ∈ getfaceset(cell.grid, "Epicardium")
+		if (cell.current_cellid.x, local_face_index) ∈ getfaceset(cell.grid, "Epicardium") || (cell.current_cellid.x, local_face_index) ∈ getfaceset(cell.grid, "Base")
             reinit!(fv, cell, local_face_index)
             for qp in 1:getnquadpoints(fv)
                 dΓ = getdetJdV(fv, qp)
@@ -419,6 +427,8 @@ function assemble_element!(cellid, Kₑ, residuumₑ, cell, cv, fv, mp, uₑ, fi
 						δuⱼ = shape_value(fv, qp, j)
 						Kₑ[i,j] += kₛ * (δuᵢ ⋅ N) * (N ⋅ δuⱼ) * dΓ
 					end
+					uᵢ = function_value(fv, qp, uₑ)
+					residualₑ[i] += kₛ * (δuᵢ ⋅ N) * (N ⋅ uᵢ) * dΓ
 				end
             end
         end
@@ -451,7 +461,7 @@ function solve(grid, fiber_model)
     # Material parameters
     E = 10.0
     ν = 0.3
-	η = 10.0
+	η = 7.5
     μ = E / (2(1 + ν))
     λ = (E * ν) / ((1 + ν) * (1 - 2ν))
     mp = ActiveNeoHookean(μ, λ, η)
@@ -467,15 +477,6 @@ function solve(grid, fiber_model)
     dh = DofHandler(grid)
     push!(dh, :u, 3) # Add a displacement field
     close!(dh)
-
-    function rotation(X, t, θ = deg2rad(60.0))
-        x, y, z = X
-        return t * Vec{3}(
-            (0.0,
-            L/2 - y + (y-L/2)*cos(θ) - (z-L/2)*sin(θ),
-            L/2 - z + (y-L/2)*sin(θ) + (z-L/2)*cos(θ)
-            ))
-    end
 
     dbcs = ConstraintHandler(dh)
     # Clamp base for now
@@ -510,7 +511,6 @@ function solve(grid, fiber_model)
 	    while true
 			newton_itr += 1
 			
-	        u .-= Δu # Current guess
 	        assemble_global!(K, g, dh, cv, fv, mp, u, fiber_model, t)
 	        normg = norm(g[Ferrite.free_dofs(dbcs)])
 	        apply_zero!(K, g, dbcs)
@@ -529,6 +529,8 @@ function solve(grid, fiber_model)
 			Δu = K \ g
 	
 	        apply_zero!(Δu, dbcs)
+
+			u .-= Δu # Current guess
 	    end
 	
 	    # Save the solution
@@ -571,8 +573,6 @@ solve(grid, fiber_model)
 # ╟─620c34e6-48b0-49cf-8b3f-818107d0bc94
 # ╠═2eae0e78-aba6-49f5-84b1-dff9c087b391
 # ╟─0658ec98-5883-4859-93dc-f9e9f52f9f63
-# ╠═b8c36e6f-862a-4ade-afee-b1cdb40a4ed7
-# ╠═c7f78dd3-f75e-4634-bee9-14e6efe28e68
 # ╠═374329cc-dcd5-407b-a4f2-83f21120577f
 # ╟─4ff78cdf-1efc-4c00-91a3-4c29f3d27305
 # ╠═9d9da356-ac29-4a99-9a1a-e8f61141a8d1
