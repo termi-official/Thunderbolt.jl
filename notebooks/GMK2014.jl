@@ -353,7 +353,7 @@ end;
 # ╔═╡ b2b670d9-2fd7-4031-96bb-167db12475c7
 function assemble_element!(cellid, Kₑ, residuumₑ, cell, cv, fv, mp, uₑ, fiber_model, time)
 	# TODO factor out
-	kₛ = 1.0 # "Spring stiffness"
+	kₛ = 10.0 # "Spring stiffness"
 	Caᵢ(cellid,x,t) = t
 	
     # Reinitialize cell values, and reset output arrays
@@ -410,16 +410,16 @@ function assemble_element!(cellid, Kₑ, residuumₑ, cell, cv, fv, mp, uₑ, fi
 
 		if (cell.current_cellid.x, local_face_index) ∈ getfaceset(cell.grid, "Epicardium")
             reinit!(fv, cell, local_face_index)
-			facedofs = get_local_face_dofs(:u, [1,2,3], cell.dh, local_face_index)
-			
-            for q_point in 1:getnquadpoints(fv)
-                dΓ = getdetJdV(fv, q_point)
-                for i in 1:ndofs
-                    δui = shape_value(fv, q_point, i)
-					for j in 1:ndofs
+            for qp in 1:getnquadpoints(fv)
+                dΓ = getdetJdV(fv, qp)
+				N = getnormal(fv, qp)
+				for i ∈ 1:ndofs
+					δuᵢ = shape_value(fv, qp, i)
+					for j ∈ 1:ndofs
+						δuⱼ = shape_value(fv, qp, j)
+						Kₑ[i,j] += kₛ * (δuᵢ ⋅ N) * (N ⋅ δuⱼ) * dΓ
 					end
-                    #residuumₑ[i] -= (δui ⋅ ui) * dΓ
-                end
+				end
             end
         end
     end
@@ -479,8 +479,8 @@ function solve(grid, fiber_model)
 
     dbcs = ConstraintHandler(dh)
     # Clamp base for now
-    dbc = Dirichlet(:u, getfaceset(grid, "Base"), (x,t) -> [0.0, 0.0, 0.0], [1, 2, 3])
-    add!(dbcs, dbc)
+    #dbc = Dirichlet(:u, getfaceset(grid, "Base"), (x,t) -> [0.0, 0.0, 0.0], [1, 2, 3])
+    #add!(dbcs, dbc)
 	
     close!(dbcs)
 
@@ -494,8 +494,8 @@ function solve(grid, fiber_model)
     K = create_sparsity_pattern(dh)
     g = zeros(_ndofs)
 
-    NEWTON_TOL = 1e-8
-	MAX_NEWTON_ITER = 30
+    NEWTON_TOL = 1e-6
+	MAX_NEWTON_ITER = 100
 
 	for t ∈ 0.0:0.1:1.0
 		@info "t = " t
@@ -514,7 +514,7 @@ function solve(grid, fiber_model)
 	        assemble_global!(K, g, dh, cv, fv, mp, u, fiber_model, t)
 	        normg = norm(g[Ferrite.free_dofs(dbcs)])
 	        apply_zero!(K, g, dbcs)
-			#@info "||g|| = " normg
+			@info "||g|| = " normg
 	
 	        if normg < NEWTON_TOL
 	            break
@@ -538,8 +538,8 @@ function solve(grid, fiber_model)
 	        pvd[t] = vtk
 	    end
 	end
-
-    vtk_save(pvd);
+	
+	vtk_save(pvd);
 
 	return u
 end
