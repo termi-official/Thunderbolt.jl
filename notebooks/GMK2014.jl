@@ -362,6 +362,7 @@ end;
 function assemble_element!(cellid, Kₑ, residualₑ, cell, cv, fv, mp, uₑ, fiber_model, time)
 	# TODO factor out
 	kₛ = 100.0 # "Spring stiffness"
+	kᵇ = 100.0 # Basal bending penalty
 	Caᵢ(cellid,x,t) = t
 	
     # Reinitialize cell values, and reset output arrays
@@ -372,7 +373,7 @@ function assemble_element!(cellid, Kₑ, residualₑ, cell, cv, fv, mp, uₑ, fi
     #traction = Vec{3}((0.0, 0.0, 0.0)) # Traction
     ndofs = getnbasefunctions(cv)
 
-    for qp in 1:getnquadpoints(cv)
+    @inbounds for qp in 1:getnquadpoints(cv)
         dΩ = getdetJdV(cv, qp)
 		
         # Compute deformation gradient F
@@ -403,19 +404,9 @@ function assemble_element!(cellid, Kₑ, residualₑ, cell, cv, fv, mp, uₑ, fi
         end
     end
 
-    # Surface integral for the traction
+    # Surface integrals
     for local_face_index in 1:nfaces(cell)
-  #       if (cell.current_cellid.x, local_face_index) ∈ getfaceset(cell.grid, "Endocardium")
-  #           reinit!(fv, cell, local_face_index)
-  #           for q_point in 1:getnquadpoints(fv)
-  #               dΓ = getdetJdV(fv, q_point)
-  #               for i in 1:ndofs
-  #                   δui = shape_value(fv, q_point, i)
-  #                   residualₑ[i] -= (δui ⋅ traction) * dΓ
-  #               end
-  #           end
-  #       end
-
+		# How does this interact with the stress?
 		if (cell.current_cellid.x, local_face_index) ∈ getfaceset(cell.grid, "Epicardium")
             reinit!(fv, cell, local_face_index)
             for qp in 1:getnquadpoints(fv)
@@ -442,7 +433,8 @@ function assemble_element!(cellid, Kₑ, residualₑ, cell, cv, fv, mp, uₑ, fi
 				∇u = function_gradient(fv, qp, uₑ)
         		F = one(∇u) + ∇u
 
-				∂²Ψ∂F², ∂Ψ∂F = Tensors.hessian(F_ -> 0.5*50*(F_⋅N - N)⋅(F_⋅N - N), F, :all)
+				#∂²Ψ∂F², ∂Ψ∂F = Tensors.hessian(F_ -> 0.5*100.0*(F_⋅N - N)⋅(F_⋅N - N), F, :all) # This is wrong :)
+				∂²Ψ∂F², ∂Ψ∂F = Tensors.hessian(F_ -> 0.5*kᵇ*(transpose(inv(F_))⋅N - N)⋅(transpose(inv(F_))⋅N - N), F, :all)
 
 				# Add contribution to the residual from this test function
 				for i in 1:ndofs
@@ -474,30 +466,59 @@ function assemble_global!(K, f, dh, cv, fv, mp, u, fiber_model, t)
     #@timeit "assemble" for cell in CellIterator(dh)
 	for (cellid,cell) in enumerate(CellIterator(dh))
         global_dofs = celldofs(cell)
-        ue = u[global_dofs] # element dofs
-		assemble_element!(cellid, ke, ge, cell, cv, fv, mp, ue, fiber_model, t)
+        uₑ = u[global_dofs] # element dofs
+		assemble_element!(cellid, ke, ge, cell, cv, fv, mp, uₑ, fiber_model, t)
         assemble!(assembler, global_dofs, ge, ke)
     end
+end;
+
+# ╔═╡ c24c7c84-9953-4886-9b34-70bdf942fe1b
+function calculate_element_volume(cell, cellvalues_u, ue)
+    reinit!(cellvalues_u, cell)
+    evol::Float64=0.0;
+    @inbounds for qp in 1:getnquadpoints(cellvalues_u)
+        dΩ = getdetJdV(cellvalues_u, qp)
+        ∇u = function_gradient(cellvalues_u, qp, ue)
+        F = one(∇u) + ∇u
+        J = det(F)
+        evol += J * dΩ
+    end
+    return evol
+end;
+
+# ╔═╡ bb150ecb-f844-48d1-9a09-47abfe6db89c
+function calculate_volume_deformed_mesh(w, dh::DofHandler, cellvalues_u)
+    evol::Float64 = 0.0;
+    @inbounds for cell in CellIterator(dh)
+        global_dofs = celldofs(cell)
+        nu = getnbasefunctions(cellvalues_u)
+        global_dofs_u = global_dofs[1:nu]
+        ue = w[global_dofs_u]
+        δevol = calculate_element_volume(cell, cellvalues_u, ue)
+        evol += δevol;
+    end
+    return evol
 end;
 
 # ╔═╡ edb7ba53-ba21-4001-935f-ec9e0d7531be
 function solve(grid, fiber_model)
 	pvd = paraview_collection("GMK2014_LV.pvd");
-	
+
     # Material parameters
-    E = 10.0
-    ν = 0.3
-	η = 7.5
+    E = 4.0
+    ν = 0.45
+	η = 10.0
     μ = E / (2(1 + ν))
     λ = (E * ν) / ((1 + ν) * (1 - 2ν))
     mp = ActiveNeoHookean(μ, λ, η)
 
     # Finite element base
     ip = Lagrange{3, RefTetrahedron, 1}()
+    ip_geo = Lagrange{3, RefTetrahedron, 1}()
     qr = QuadratureRule{3, RefTetrahedron}(1)
     qr_face = QuadratureRule{2, RefTetrahedron}(1)
-    cv = CellVectorValues(qr, ip)
-    fv = FaceVectorValues(qr_face, ip)
+    cv = CellVectorValues(qr, ip, ip_geo)
+    fv = FaceVectorValues(qr_face, ip, ip_geo)
 
     # DofHandler
     dh = DofHandler(grid)
@@ -515,7 +536,8 @@ function solve(grid, fiber_model)
     _ndofs = ndofs(dh)
     u  = zeros(_ndofs)
     Δu = zeros(_ndofs)
-    apply!(u, dbcs)
+	
+	ref_vol = calculate_volume_deformed_mesh(u,dh,cv);
 
     # Create sparse matrix and residual vector
     K = create_sparsity_pattern(dh)
@@ -558,15 +580,48 @@ function solve(grid, fiber_model)
 
 			u .-= Δu # Current guess
 	    end
+
+		# Compute some elementwise measures
+		E_ff = zeros(getncells(grid))
+		fdata = copy(fiber_model.f₀data)
+		for (cellid,cell) in enumerate(CellIterator(dh))
+			reinit!(cv, cell)
+			global_dofs = celldofs(cell)
+        	uₑ = u[global_dofs] # element dofs
+			for qp in 1:getnquadpoints(cv)
+		        dΩ = getdetJdV(cv, qp)
+				
+		        # Compute deformation gradient F
+		        ∇u = function_gradient(cv, qp, uₑ)
+		        F = one(∇u) + ∇u
+				
+				C = tdot(F)
+				E = (C-one(C))/2.0
+				x_ref = Vec{3}((0.1, 0.1, 0.1))
+				fiber_direction = F ⋅ f₀(fiber_model, cellid, x_ref)
+				fiber_direction /= norm(fiber_direction)
+				
+				#E_ff[cellid] += fiber_direction ⋅ E ⋅ fiber_direction * dΩ
+				E_ff[cellid] = max(E_ff[cellid], fiber_direction ⋅ E ⋅ fiber_direction)
+
+				fdata[cellid] = F⋅fiber_model.f₀data[cellid]
+			end
+		end
 	
 	    # Save the solution
 		vtk_grid("GMK2014-LV-$t.vtu", dh) do vtk
             vtk_point_data(vtk,dh,u)
 	        vtk_cell_data(vtk,hcat(fiber_model.f₀data...),"Reference Fiber Data")
+			vtk_cell_data(vtk,hcat(fdata...),"Current Fiber Data")
+	        vtk_cell_data(vtk,E_ff,"E_ff")
             vtk_save(vtk)
 	        pvd[t] = vtk
 	    end
 	end
+
+	cur_vol = calculate_volume_deformed_mesh(u,dh,cv);
+
+	println("Compression: ", (ref_vol/cur_vol - 1.0)*100, "%")
 	
 	vtk_save(pvd);
 
@@ -607,4 +662,6 @@ solve(grid, fiber_model)
 # ╠═b2b670d9-2fd7-4031-96bb-167db12475c7
 # ╠═aa57fc70-16f4-4013-a71e-a4099f0e5bd4
 # ╠═edb7ba53-ba21-4001-935f-ec9e0d7531be
+# ╠═c24c7c84-9953-4886-9b34-70bdf942fe1b
+# ╠═bb150ecb-f844-48d1-9a09-47abfe6db89c
 # ╠═8cfeddaa-c67f-4de8-b81c-4fbb7e052c50
