@@ -321,22 +321,23 @@ end
 
 # ╔═╡ 03dbf71b-c69a-4049-ad2f-1f78ae754fde
 function Ψ(F, f₀, Caᵢ, mp::ActiveNeoHookean)
-	C = tdot(F)
     μ = mp.μ
     λ = mp.λ
 	η = mp.η
-    Ic = tr(C)
     J = det(F)
+	C = tdot(F)
+    I₁ = tr(C)
 
-	Ψᵖ = μ / 2 * (Ic - 3) - μ * log(J) + λ / 2 * log(J)^2 
+	Ψᵖ = μ / 2 * (I₁ - 3) - μ * log(J) + λ / 2 * log(J)^2
 
-	M = f₀ ⊗ f₀
-	Fᵃ = one(F) + (λᵃ(Caᵢ) - 1.0) * M
+	M = Tensors.unsafe_symmetric(f₀ ⊗ f₀)
+	Fᵃ = Tensors.unsafe_symmetric(one(F) + (λᵃ(Caᵢ) - 1.0) * M)
 	f̃ = Fᵃ ⋅ f₀ / norm(Fᵃ ⋅ f₀)
 	M̃ = f̃ ⊗ f̃
 
 	Fᵉ = F - (1 - 1.0/λᵃ(Caᵢ)) * ((F ⋅ f₀) ⊗ f₀)
-	Iᵉ₄ = tr(Fᵉ ⋅ M̃ ⋅ transpose(Fᵉ))
+	FMF = Tensors.unsafe_symmetric(Fᵉ ⋅ M̃ ⋅ transpose(Fᵉ))
+	Iᵉ₄ = tr(FMF)
 	Ψᵃ = η / 2 * (Iᵉ₄ - 1)^2
 	
     return Ψᵖ + Ψᵃ
@@ -355,11 +356,26 @@ end;
 function constitutive_driver(F, f₀, Caᵢ, mp::ActiveNeoHookean)
     # Compute all derivatives in one function call
     ∂²Ψ∂F², ∂Ψ∂F = Tensors.hessian(y -> Ψ(y, f₀, Caᵢ, mp), F, :all)
+
+	# η = mp.η
+	# M = f₀ ⊗ f₀
+	# Fᵃ = one(F) + (λᵃ(Caᵢ) - 1.0) * M
+	# f̃ = Fᵃ ⋅ f₀ / norm(Fᵃ ⋅ f₀)
+	# M̃ = f̃ ⊗ f̃
+
+	# Fᵉ = F - (1 - 1.0/λᵃ(Caᵢ)) * ((F ⋅ f₀) ⊗ f₀)
+	# Iᵉ₄ = tr(Fᵉ ⋅ M̃ ⋅ transpose(Fᵉ))
+	
+	# ∂Ψ∂F += η * (Iᵉ₄ - 1.0) * Fᵉ ⋅ (M̃ + transpose(M̃)) ⋅ ((I - (1 - 1.0/λᵃ(Caᵢ))) * (f₀ ⊗ f₀))
+	
+	# ∂²Ψ∂F² += η * (Iᵉ₄ - 1.0) * Fᵉ ⋅ one(Tensor{4,3}) ⋅ (M̃ + transpose(M̃)) ⋅ ((I - (1 - 1.0/λᵃ(Caᵢ))) * (f₀ ⊗ f₀))
+	# ∂²Ψ∂F² += η * (M̃ + transpose(M̃)) ⋅ ((I - (1 - 1.0/λᵃ(Caᵢ))) * (f₀ ⊗ f₀)) ⊗ Fᵉ ⋅ (M̃ + transpose(M̃)) ⋅ ((I - (1 - 1.0/λᵃ(Caᵢ))) * (f₀ ⊗ f₀))
+	
     return ∂Ψ∂F, ∂²Ψ∂F²
 end;
 
 # ╔═╡ b2b670d9-2fd7-4031-96bb-167db12475c7
-function assemble_element!(cellid, Kₑ, residualₑ, cell, cv, fv, mp, uₑ, fiber_model, time)
+function assemble_element!(cellid, Kₑ, residualₑ, cell, cv, fv, mp, uₑ, uₑ_prev, fiber_model, time)
 	# TODO factor out
 	kₛ = 100.0 # "Spring stiffness"
 	kᵇ = 100.0 # Basal bending penalty
@@ -411,15 +427,19 @@ function assemble_element!(cellid, Kₑ, residualₑ, cell, cv, fv, mp, uₑ, fi
             reinit!(fv, cell, local_face_index)
             for qp in 1:getnquadpoints(fv)
                 dΓ = getdetJdV(fv, qp)
-				N = getnormal(fv, qp)
+				
+				∇u_prev = function_gradient(cv, qp, uₑ_prev)
+        		F_prev = one(∇u_prev) + ∇u_prev 
+				N = F_prev ⋅ getnormal(fv, qp)
+				
+				u_q = function_value(fv, qp, uₑ)
 				for i ∈ 1:ndofs
 					δuᵢ = shape_value(fv, qp, i)
 					for j ∈ 1:ndofs
 						δuⱼ = shape_value(fv, qp, j)
 						Kₑ[i,j] += kₛ * (δuᵢ ⋅ N) * (N ⋅ δuⱼ) * dΓ
 					end
-					uᵢ = function_value(fv, qp, uₑ)
-					residualₑ[i] += kₛ * (δuᵢ ⋅ N) * (N ⋅ uᵢ) * dΓ
+					residualₑ[i] += kₛ * (δuᵢ ⋅ N) * (N ⋅ u_q) * dΓ
 				end
             end
         end
@@ -454,7 +474,7 @@ function assemble_element!(cellid, Kₑ, residualₑ, cell, cv, fv, mp, uₑ, fi
 end;
 
 # ╔═╡ aa57fc70-16f4-4013-a71e-a4099f0e5bd4
-function assemble_global!(K, f, dh, cv, fv, mp, u, fiber_model, t)
+function assemble_global!(K, f, dh, cv, fv, mp, uₜ, uₜ₋₁, fiber_model, t)
     n = ndofs_per_cell(dh)
     ke = zeros(n, n)
     ge = zeros(n)
@@ -466,19 +486,20 @@ function assemble_global!(K, f, dh, cv, fv, mp, u, fiber_model, t)
     #@timeit "assemble" for cell in CellIterator(dh)
 	for (cellid,cell) in enumerate(CellIterator(dh))
         global_dofs = celldofs(cell)
-        uₑ = u[global_dofs] # element dofs
-		assemble_element!(cellid, ke, ge, cell, cv, fv, mp, uₑ, fiber_model, t)
+        uₑ = uₜ[global_dofs] # element dofs
+        uₑ_prev = uₜ₋₁[global_dofs] # element dofs
+		assemble_element!(cellid, ke, ge, cell, cv, fv, mp, uₑ, uₑ_prev, fiber_model, t)
         assemble!(assembler, global_dofs, ge, ke)
     end
 end;
 
 # ╔═╡ c24c7c84-9953-4886-9b34-70bdf942fe1b
-function calculate_element_volume(cell, cellvalues_u, ue)
+function calculate_element_volume(cell, cellvalues_u, uₑ)
     reinit!(cellvalues_u, cell)
     evol::Float64=0.0;
     @inbounds for qp in 1:getnquadpoints(cellvalues_u)
         dΩ = getdetJdV(cellvalues_u, qp)
-        ∇u = function_gradient(cellvalues_u, qp, ue)
+        ∇u = function_gradient(cellvalues_u, qp, uₑ)
         F = one(∇u) + ∇u
         J = det(F)
         evol += J * dΩ
@@ -493,8 +514,8 @@ function calculate_volume_deformed_mesh(w, dh::DofHandler, cellvalues_u)
         global_dofs = celldofs(cell)
         nu = getnbasefunctions(cellvalues_u)
         global_dofs_u = global_dofs[1:nu]
-        ue = w[global_dofs_u]
-        δevol = calculate_element_volume(cell, cellvalues_u, ue)
+        uₑ = w[global_dofs_u]
+        δevol = calculate_element_volume(cell, cellvalues_u, uₑ)
         evol += δevol;
     end
     return evol
@@ -534,32 +555,37 @@ function solve(grid, fiber_model)
 
     # Pre-allocation of vectors for the solution and Newton increments
     _ndofs = ndofs(dh)
-    u  = zeros(_ndofs)
-    Δu = zeros(_ndofs)
+    
+	uₜ   = zeros(_ndofs)
+	uₜ₋₁ = zeros(_ndofs)
+    Δu   = zeros(_ndofs)
 	
-	ref_vol = calculate_volume_deformed_mesh(u,dh,cv);
+	ref_vol = calculate_volume_deformed_mesh(uₜ,dh,cv);
 
     # Create sparse matrix and residual vector
     K = create_sparsity_pattern(dh)
     g = zeros(_ndofs)
 
-    NEWTON_TOL = 1e-6
+    NEWTON_TOL = 1e-8
 	MAX_NEWTON_ITER = 100
 
 	for t ∈ 0.0:0.1:1.0
 		@info "t = " t
 
+		# Store last solution
+		uₜ₋₁ .= uₜ
+	
 	    Ferrite.update!(dbcs, t)
 		# Reset initial guess...
-		u .= 0.0
-	    apply!(u, dbcs)
+		uₜ .= 0.0
+	    apply!(uₜ, dbcs)
 
 		# Perform Newton iterations
 		newton_itr = -1
 	    while true
 			newton_itr += 1
-			
-	        assemble_global!(K, g, dh, cv, fv, mp, u, fiber_model, t)
+
+	        assemble_global!(K, g, dh, cv, fv, mp, uₜ, uₜ₋₁, fiber_model, t)
 	        normg = norm(g[Ferrite.free_dofs(dbcs)])
 	        apply_zero!(K, g, dbcs)
 			@info "||g|| = " normg
@@ -578,58 +604,94 @@ function solve(grid, fiber_model)
 	
 	        apply_zero!(Δu, dbcs)
 
-			u .-= Δu # Current guess
+			uₜ .-= Δu # Current guess
 	    end
 
 		# Compute some elementwise measures
 		E_ff = zeros(getncells(grid))
+		E_cc = zeros(getncells(grid))
+		E_ll = zeros(getncells(grid))
+		E_rr = zeros(getncells(grid))
+		Jdata = zeros(getncells(grid))
 		fdata = copy(fiber_model.f₀data)
 		for (cellid,cell) in enumerate(CellIterator(dh))
 			reinit!(cv, cell)
 			global_dofs = celldofs(cell)
-        	uₑ = u[global_dofs] # element dofs
-			for qp in 1:getnquadpoints(cv)
+        	uₑ = uₜ[global_dofs] # element dofs
+			
+			E_ff_cell = 0.0
+			E_cc_cell = 0.0
+			E_rr_cell = 0.0
+			E_ll_cell = 0.0
+
+			nqp = getnquadpoints(cv)
+			for qp in 1:nqp
 		        dΩ = getdetJdV(cv, qp)
-				
+
 		        # Compute deformation gradient F
 		        ∇u = function_gradient(cv, qp, uₑ)
 		        F = one(∇u) + ∇u
-				
+
 				C = tdot(F)
 				E = (C-one(C))/2.0
 				x_ref = Vec{3}((0.1, 0.1, 0.1))
-				fiber_direction = F ⋅ f₀(fiber_model, cellid, x_ref)
+				#fiber_direction = F ⋅ f₀(fiber_model, cellid, x_ref)
+				fiber_direction = f₀(fiber_model, cellid, x_ref)
 				fiber_direction /= norm(fiber_direction)
 				
-				#E_ff[cellid] += fiber_direction ⋅ E ⋅ fiber_direction * dΩ
-				E_ff[cellid] = max(E_ff[cellid], fiber_direction ⋅ E ⋅ fiber_direction)
+				E_ff_cell += fiber_direction ⋅ E ⋅ fiber_direction
+
+				coords = getcoordinates(cell)
+				x_global = spatial_coordinate(cv, qp, coords)
+				# @TODO compute properly
+				v_longitudinal = Vec{3}((0.0, 0.0, 1.0))
+				v_radial = Vec{3}((x_global[1],x_global[2],0.0))/norm(Vec{3}((x_global[1],x_global[2],0.0)))
+				v_circimferential = Vec{3}((x_global[2],-x_global[1],0.0))/norm(Vec{3}((x_global[2],-x_global[1],0.0)))
+				#
+				E_ll_cell += v_longitudinal ⋅ E ⋅ v_longitudinal
+				E_rr_cell += v_radial ⋅ E ⋅ v_radial
+				E_cc_cell += v_circimferential ⋅ E ⋅ v_circimferential
+		
+				Jdata[cellid] = det(F)
 
 				fdata[cellid] = F⋅fiber_model.f₀data[cellid]
 			end
+
+			E_ff[cellid] = E_ff_cell / nqp
+			E_cc[cellid] = E_cc_cell / nqp
+			E_rr[cellid] = E_rr_cell / nqp
+			E_ll[cellid] = E_ll_cell / nqp
 		end
 	
 	    # Save the solution
 		vtk_grid("GMK2014-LV-$t.vtu", dh) do vtk
-            vtk_point_data(vtk,dh,u)
+            vtk_point_data(vtk,dh,uₜ)
 	        vtk_cell_data(vtk,hcat(fiber_model.f₀data...),"Reference Fiber Data")
 			vtk_cell_data(vtk,hcat(fdata...),"Current Fiber Data")
 	        vtk_cell_data(vtk,E_ff,"E_ff")
+	        vtk_cell_data(vtk,E_cc,"E_cc")
+	        vtk_cell_data(vtk,E_rr,"E_rr")
+	        vtk_cell_data(vtk,E_ll,"E_ll")
+	        vtk_cell_data(vtk,Jdata,"J")
             vtk_save(vtk)
 	        pvd[t] = vtk
 	    end
 	end
 
-	cur_vol = calculate_volume_deformed_mesh(u,dh,cv);
+	cur_vol = calculate_volume_deformed_mesh(uₜ,dh,cv);
 
 	println("Compression: ", (ref_vol/cur_vol - 1.0)*100, "%")
 	
 	vtk_save(pvd);
 
-	return u
+	return uₜ
 end
 
 # ╔═╡ 8cfeddaa-c67f-4de8-b81c-4fbb7e052c50
 solve(grid, fiber_model)
+
+# ╔═╡ 71f058d7-5faf-4457-846a-8c8c78e5c9b1
+ones(Tensor{4,3})
 
 # ╔═╡ Cell order:
 # ╟─6e43f86d-6341-445f-be8d-146eb0447457
@@ -665,3 +727,4 @@ solve(grid, fiber_model)
 # ╠═c24c7c84-9953-4886-9b34-70bdf942fe1b
 # ╠═bb150ecb-f844-48d1-9a09-47abfe6db89c
 # ╠═8cfeddaa-c67f-4de8-b81c-4fbb7e052c50
+# ╠═71f058d7-5faf-4457-846a-8c8c78e5c9b1
