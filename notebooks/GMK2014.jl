@@ -265,7 +265,7 @@ function create_simple_pw_constant_fiber_model(coordinate_system)
 		∇apicobasal = function_gradient(cv, 1, coordinate_system.apicobasal[dof_indices])
 		∇transmural = function_gradient(cv, 1, coordinate_system.transmural[dof_indices])
 		v = ∇apicobasal × ∇transmural
-		
+	
 		transmural  = function_value(cv, 1, coordinate_system.transmural[dof_indices])
 
 		# linear interpolation of rotation angle
@@ -278,10 +278,10 @@ function create_simple_pw_constant_fiber_model(coordinate_system)
 		cosθ = cos(deg2rad(θ))
 		k = ∇transmural / norm(∇transmural)
 		vᵣ = v * cosθ + (k × v) * sinθ + k * (k ⋅ v) * (1-cosθ)
-		
+
 		f₀data[cellindex] = vᵣ / norm(vᵣ)
 	end
-	
+
 	PiecewiseConstantFiberModel(f₀data, [], [])
 end
 
@@ -311,6 +311,79 @@ end
 # ╔═╡ 374329cc-dcd5-407b-a4f2-83f21120577f
 #λᵃ(Caᵢ) = (cos(pi*x)*(1-λᵃₘₐₓ) + 1.0)/2.0 + λᵃₘₐₓ/2.0
 λᵃ(Caᵢ, β = 3.0, λᵃₘₐₓ = 0.7) = 1.0/(1+(0.5+atan(β*log(max(Caᵢ,1e-10)))/π))#*λᵃₘₐₓ
+
+# ╔═╡ 53e2e8ac-2110-4dfb-9cc4-824427a9ebf0
+struct Passive2017Energy
+	a
+	a₁
+	a₂
+	b
+	α₁
+	α₂
+	β
+	η
+end
+
+# ╔═╡ f3289e09-4ca7-4e71-b798-32908ae23ce0
+function Ψ(F, f₀, Caᵢ, mp::Passive2017Energy)
+	# Modified version of https://onlinelibrary.wiley.com/doi/epdf/10.1002/cnm.2866
+    @unpack a, a₁, a₂, b, α₁, α₂, β, η = mp
+	C = tdot(F)
+    I₁ = tr(C)
+	I₃ = det(C)
+	I₄ = tr(C ⋅ f₀ ⊗ f₀)
+
+	I₃ᵇ = I₃^b
+	U = β * (I₃ᵇ + 1/I₃ᵇ - 2)^a
+	Ψᵖ = α₁*(I₁/cbrt(I₃) - 3)^a₁ + α₂*max(I₄ - 1, 0.0)^a₂ + U
+
+	M = Tensors.unsafe_symmetric(f₀ ⊗ f₀)
+	Fᵃ = Tensors.unsafe_symmetric(one(F) + (λᵃ(Caᵢ) - 1.0) * M)
+	f̃ = Fᵃ ⋅ f₀ / norm(Fᵃ ⋅ f₀)
+	M̃ = f̃ ⊗ f̃
+
+	Fᵉ = F - (1 - 1.0/λᵃ(Caᵢ)) * ((F ⋅ f₀) ⊗ f₀)
+	FMF = Tensors.unsafe_symmetric(Fᵉ ⋅ M̃ ⋅ transpose(Fᵉ))
+	Iᵉ₄ = tr(FMF)
+	Ψᵃ = η / 2 * (Iᵉ₄ - 1)^2
+
+    return Ψᵖ + Ψᵃ
+end
+
+# ╔═╡ 2f59a097-e566-46c3-98a2-bedd35663073
+struct BioNeoHooekan
+	α
+	β
+	a
+	b
+	η
+end
+
+# ╔═╡ e7378847-977a-4282-841a-d568399d04cc
+function Ψ(F, f₀, Caᵢ, mp::BioNeoHooekan)
+	# Modified version of https://onlinelibrary.wiley.com/doi/epdf/10.1002/cnm.2866
+    @unpack a, b, α, β, η = mp
+	C = tdot(F)
+    I₁ = tr(C)
+	I₃ = det(C)
+	#I₄ = tr(C ⋅ f₀ ⊗ f₀)
+
+	I₃ᵇ = I₃^b
+	U = β * (I₃ᵇ + 1/I₃ᵇ - 2)^a
+	Ψᵖ = α*(I₁/cbrt(I₃) - 3) + U
+
+	M = Tensors.unsafe_symmetric(f₀ ⊗ f₀)
+	Fᵃ = Tensors.unsafe_symmetric(one(F) + (λᵃ(Caᵢ) - 1.0) * M)
+	f̃ = Fᵃ ⋅ f₀ / norm(Fᵃ ⋅ f₀)
+	M̃ = f̃ ⊗ f̃
+
+	Fᵉ = F - (1 - 1.0/λᵃ(Caᵢ)) * ((F ⋅ f₀) ⊗ f₀)
+	FMF = Tensors.unsafe_symmetric(Fᵉ ⋅ M̃ ⋅ transpose(Fᵉ))
+	Iᵉ₄ = tr(FMF)
+	Ψᵃ = η / 2 * (Iᵉ₄ - 1)^2
+
+    return Ψᵖ + Ψᵃ
+end
 
 # ╔═╡ 9d9da356-ac29-4a99-9a1a-e8f61141a8d1
 struct ActiveNeoHookean
@@ -353,7 +426,7 @@ function constitutive_driver(C, mp::NeoHookean)
 end;
 
 # ╔═╡ 641ad832-1b22-44d0-84f0-bfe15ecd6246
-function constitutive_driver(F, f₀, Caᵢ, mp::ActiveNeoHookean)
+function constitutive_driver(F, f₀, Caᵢ, mp)
     # Compute all derivatives in one function call
     ∂²Ψ∂F², ∂Ψ∂F = Tensors.hessian(y -> Ψ(y, f₀, Caᵢ, mp), F, :all)
 
@@ -365,28 +438,31 @@ function constitutive_driver(F, f₀, Caᵢ, mp::ActiveNeoHookean)
 
 	# Fᵉ = F - (1 - 1.0/λᵃ(Caᵢ)) * ((F ⋅ f₀) ⊗ f₀)
 	# Iᵉ₄ = tr(Fᵉ ⋅ M̃ ⋅ transpose(Fᵉ))
-	
+
 	# ∂Ψ∂F += η * (Iᵉ₄ - 1.0) * Fᵉ ⋅ (M̃ + transpose(M̃)) ⋅ ((I - (1 - 1.0/λᵃ(Caᵢ))) * (f₀ ⊗ f₀))
-	
+
 	# ∂²Ψ∂F² += η * (Iᵉ₄ - 1.0) * Fᵉ ⋅ one(Tensor{4,3}) ⋅ (M̃ + transpose(M̃)) ⋅ ((I - (1 - 1.0/λᵃ(Caᵢ))) * (f₀ ⊗ f₀))
-	# ∂²Ψ∂F² += η * (M̃ + transpose(M̃)) ⋅ ((I - (1 - 1.0/λᵃ(Caᵢ))) * (f₀ ⊗ f₀)) ⊗ Fᵉ ⋅ (M̃ + transpose(M̃)) ⋅ ((I - (1 - 1.0/λᵃ(Caᵢ))) * (f₀ ⊗ f₀))
-	
+	# ∂²Ψ∂F² += η * Fᵉ ⋅ (M̃ + transpose(M̃)) ⋅ ((I - (1 - 1.0/λᵃ(Caᵢ))) * (f₀ ⊗ f₀)) ⊗ Fᵉ ⋅ (M̃ + transpose(M̃)) ⋅ ((I - (1 - 1.0/λᵃ(Caᵢ))) * (f₀ ⊗ f₀))
+
     return ∂Ψ∂F, ∂²Ψ∂F²
 end;
 
 # ╔═╡ b2b670d9-2fd7-4031-96bb-167db12475c7
 function assemble_element!(cellid, Kₑ, residualₑ, cell, cv, fv, mp, uₑ, uₑ_prev, fiber_model, time)
 	# TODO factor out
-	kₛ = 100.0 # "Spring stiffness"
-	kᵇ = 100.0 # Basal bending penalty
-	Caᵢ(cellid,x,t) = t
-	
+	# kₛ = 100.0 # "Spring stiffness"
+	# kᵇ = 100.0 # Basal bending penalty	
+
+	kₛ = 100000.0 # "Spring stiffness"
+	kᵇ = 2500.0 # Basal bending penalty
+
+	Caᵢ(cellid,x,t) = t < 1.0 ? t : 2.0-t
+
     # Reinitialize cell values, and reset output arrays
     reinit!(cv, cell)
     fill!(Kₑ, 0.0)
     fill!(residualₑ, 0.0)
 
-    #traction = Vec{3}((0.0, 0.0, 0.0)) # Traction
     ndofs = getnbasefunctions(cv)
 
     @inbounds for qp in 1:getnquadpoints(cv)
@@ -404,8 +480,6 @@ function assemble_element!(cellid, Kₑ, residualₑ, cell, cv, fv, mp, uₑ, u�
 
         # Loop over test functions
         for i in 1:ndofs
-            # Test function + gradient
-            #δui = shape_value(cv, qp, i)
             ∇δui = shape_gradient(cv, qp, i)
 			
             # Add contribution to the residual from this test function
@@ -428,18 +502,20 @@ function assemble_element!(cellid, Kₑ, residualₑ, cell, cv, fv, mp, uₑ, u�
             for qp in 1:getnquadpoints(fv)
                 dΓ = getdetJdV(fv, qp)
 				
-				∇u_prev = function_gradient(cv, qp, uₑ_prev)
-        		F_prev = one(∇u_prev) + ∇u_prev 
-				N = F_prev ⋅ getnormal(fv, qp)
-				
+				#∇u_prev = function_gradient(cv, qp, uₑ_prev)
+        		#F_prev = one(∇u_prev) + ∇u_prev 
+				#N = transpose(inv(F_prev)) ⋅ getnormal(fv, qp) # TODO this may mess up reversibility
+
+				N = getnormal(fv, qp)
+
 				u_q = function_value(fv, qp, uₑ)
 				for i ∈ 1:ndofs
 					δuᵢ = shape_value(fv, qp, i)
+					residualₑ[i] += 0.5 * kₛ * (δuᵢ ⋅ N) * (N ⋅ u_q) * dΓ
 					for j ∈ 1:ndofs
 						δuⱼ = shape_value(fv, qp, j)
-						Kₑ[i,j] += kₛ * (δuᵢ ⋅ N) * (N ⋅ δuⱼ) * dΓ
+						Kₑ[i,j] += 0.5 * kₛ * (δuᵢ ⋅ N) * (N ⋅ δuⱼ) * dΓ
 					end
-					residualₑ[i] += kₛ * (δuᵢ ⋅ N) * (N ⋅ u_q) * dΓ
 				end
             end
         end
@@ -453,14 +529,13 @@ function assemble_element!(cellid, Kₑ, residualₑ, cell, cv, fv, mp, uₑ, u�
 				∇u = function_gradient(fv, qp, uₑ)
         		F = one(∇u) + ∇u
 
-				#∂²Ψ∂F², ∂Ψ∂F = Tensors.hessian(F_ -> 0.5*100.0*(F_⋅N - N)⋅(F_⋅N - N), F, :all) # This is wrong :)
 				∂²Ψ∂F², ∂Ψ∂F = Tensors.hessian(F_ -> 0.5*kᵇ*(transpose(inv(F_))⋅N - N)⋅(transpose(inv(F_))⋅N - N), F, :all)
 
 				# Add contribution to the residual from this test function
 				for i in 1:ndofs
 		            ∇δui = shape_gradient(cv, qp, i)
 					residualₑ[i] += ∇δui ⊡ ∂Ψ∂F * dΓ
-		
+
 		            ∇δui∂P∂F = ∇δui ⊡ ∂²Ψ∂F² # Hoisted computation
 		            for j in 1:ndofs
 		                ∇δuj = shape_gradient(cv, qp, j)
@@ -525,13 +600,18 @@ end;
 function solve(grid, fiber_model)
 	pvd = paraview_collection("GMK2014_LV.pvd");
 
+	T = 2.0
+	Δt = 0.1
+
     # Material parameters
-    E = 4.0
-    ν = 0.45
-	η = 10.0
-    μ = E / (2(1 + ν))
-    λ = (E * ν) / ((1 + ν) * (1 - 2ν))
-    mp = ActiveNeoHookean(μ, λ, η)
+    # E = 4.0
+    # ν = 0.45
+	# η = 10.0
+    # μ = E / (2(1 + ν))
+    # λ = (E * ν) / ((1 + ν) * (1 - 2ν))
+    # mp = ActiveNeoHookean(μ, λ, η)
+	# mp = Passive2017Energy(1.0, 2.6, 2.82, 2.0, 30.48, 7.25, 100.0, 100.0)
+	mp = BioNeoHooekan(4.0, 1.25, 1, 2, 20.0)
 
     # Finite element base
     ip = Lagrange{3, RefTetrahedron, 1}()
@@ -555,12 +635,14 @@ function solve(grid, fiber_model)
 
     # Pre-allocation of vectors for the solution and Newton increments
     _ndofs = ndofs(dh)
-    
+
 	uₜ   = zeros(_ndofs)
 	uₜ₋₁ = zeros(_ndofs)
     Δu   = zeros(_ndofs)
-	
+
 	ref_vol = calculate_volume_deformed_mesh(uₜ,dh,cv);
+	min_vol = ref_vol
+	max_vol = ref_vol
 
     # Create sparse matrix and residual vector
     K = create_sparsity_pattern(dh)
@@ -569,15 +651,14 @@ function solve(grid, fiber_model)
     NEWTON_TOL = 1e-8
 	MAX_NEWTON_ITER = 100
 
-	for t ∈ 0.0:0.1:1.0
+	for t ∈ 0.0:Δt:T
 		@info "t = " t
 
 		# Store last solution
 		uₜ₋₁ .= uₜ
-	
+
+		# Update with new boundary conditions (if available)
 	    Ferrite.update!(dbcs, t)
-		# Reset initial guess...
-		uₜ .= 0.0
 	    apply!(uₜ, dbcs)
 
 		# Perform Newton iterations
@@ -596,10 +677,6 @@ function solve(grid, fiber_model)
 	            error("Reached maximum Newton iterations. Aborting.")
 	        end
 	
-	        # Compute increment using cg! from IterativeSolvers.jl
-			# Δu, flag, relres, iter, resvec = KrylovMethods.cg(K, g; maxIter = 1000)
-	
-			# Nope. Opt for direct solver ..for now. :)
 			Δu = K \ g
 	
 	        apply_zero!(Δu, dbcs)
@@ -676,11 +753,13 @@ function solve(grid, fiber_model)
             vtk_save(vtk)
 	        pvd[t] = vtk
 	    end
+
+		min_vol = min(min_vol, calculate_volume_deformed_mesh(uₜ,dh,cv));
+		max_vol = max(max_vol, calculate_volume_deformed_mesh(uₜ,dh,cv));
 	end
 
-	cur_vol = calculate_volume_deformed_mesh(uₜ,dh,cv);
-
-	println("Compression: ", (ref_vol/cur_vol - 1.0)*100, "%")
+	println("Compression: ", (ref_vol/min_vol - 1.0)*100, "%")
+	println("Expansion: ", (ref_vol/max_vol - 1.0)*100, "%")
 	
 	vtk_save(pvd);
 
@@ -689,9 +768,6 @@ end
 
 # ╔═╡ 8cfeddaa-c67f-4de8-b81c-4fbb7e052c50
 solve(grid, fiber_model)
-
-# ╔═╡ 71f058d7-5faf-4457-846a-8c8c78e5c9b1
-ones(Tensor{4,3})
 
 # ╔═╡ Cell order:
 # ╟─6e43f86d-6341-445f-be8d-146eb0447457
@@ -702,7 +778,7 @@ ones(Tensor{4,3})
 # ╠═d314acc8-22fc-40f8-bcc6-729b6e208f70
 # ╠═bc3bbb45-c263-4f29-aa6f-647e8dbf3466
 # ╟─f4a00f5d-f042-4804-9be1-d24d5046fd0a
-# ╟─610c857e-a699-48f6-b18b-df8337287122
+# ╠═610c857e-a699-48f6-b18b-df8337287122
 # ╟─9e599448-f844-40c2-b237-2820138aebe0
 # ╠═2ec1e3de-0a48-431f-b3b9-ee9ec1390504
 # ╠═fa085581-aea6-4c80-8b21-ac59c9ba8fd0
@@ -718,6 +794,10 @@ ones(Tensor{4,3})
 # ╟─0658ec98-5883-4859-93dc-f9e9f52f9f63
 # ╠═374329cc-dcd5-407b-a4f2-83f21120577f
 # ╟─4ff78cdf-1efc-4c00-91a3-4c29f3d27305
+# ╠═53e2e8ac-2110-4dfb-9cc4-824427a9ebf0
+# ╠═f3289e09-4ca7-4e71-b798-32908ae23ce0
+# ╠═2f59a097-e566-46c3-98a2-bedd35663073
+# ╠═e7378847-977a-4282-841a-d568399d04cc
 # ╠═9d9da356-ac29-4a99-9a1a-e8f61141a8d1
 # ╠═03dbf71b-c69a-4049-ad2f-1f78ae754fde
 # ╠═641ad832-1b22-44d0-84f0-bfe15ecd6246
@@ -727,4 +807,3 @@ ones(Tensor{4,3})
 # ╠═c24c7c84-9953-4886-9b34-70bdf942fe1b
 # ╠═bb150ecb-f844-48d1-9a09-47abfe6db89c
 # ╠═8cfeddaa-c67f-4de8-b81c-4fbb7e052c50
-# ╠═71f058d7-5faf-4457-846a-8c8c78e5c9b1
