@@ -202,7 +202,7 @@ function compute_LV_coordinate_system(grid)
 		end
 		addnodeset!(grid, "Apex", Set{Int}((apex_node_index)))
 	end
-	
+
 	ch = ConstraintHandler(dh);
 	dbc = Dirichlet(:coordinates, getfaceset(grid, "Base"), (x, t) -> 0)
 	add!(ch, dbc);
@@ -269,8 +269,8 @@ function create_simple_pw_constant_fiber_model(coordinate_system)
 		transmural  = function_value(cv, 1, coordinate_system.transmural[dof_indices])
 
 		# linear interpolation of rotation angle
-		endo_angle = 39.5
-		epi_angle  = -53.5
+		endo_angle = 60.0
+		epi_angle  = -80.0
 		θ = (1-transmural) * endo_angle + (transmural) * epi_angle
 
 		# Rodriguez rotation
@@ -375,7 +375,8 @@ function Ψ(F, f₀, Caᵢ, mp::BioNeoHooekan)
 	M = Tensors.unsafe_symmetric(f₀ ⊗ f₀)
 	Fᵃ = Tensors.unsafe_symmetric(one(F) + (λᵃ(Caᵢ) - 1.0) * M)
 	f̃ = Fᵃ ⋅ f₀ / norm(Fᵃ ⋅ f₀)
-	M̃ = f̃ ⊗ f̃
+	#M̃ = f̃ ⊗ f̃
+	M̃ = f₀ ⊗ f₀
 
 	Fᵉ = F - (1 - 1.0/λᵃ(Caᵢ)) * ((F ⋅ f₀) ⊗ f₀)
 	FMF = Tensors.unsafe_symmetric(Fᵉ ⋅ M̃ ⋅ transpose(Fᵉ))
@@ -407,9 +408,10 @@ function Ψ(F, f₀, Caᵢ, mp::ActiveNeoHookean)
 	Fᵃ = Tensors.unsafe_symmetric(one(F) + (λᵃ(Caᵢ) - 1.0) * M)
 	f̃ = Fᵃ ⋅ f₀ / norm(Fᵃ ⋅ f₀)
 	M̃ = f̃ ⊗ f̃
-
+	
 	Fᵉ = F - (1 - 1.0/λᵃ(Caᵢ)) * ((F ⋅ f₀) ⊗ f₀)
 	FMF = Tensors.unsafe_symmetric(Fᵉ ⋅ M̃ ⋅ transpose(Fᵉ))
+	#FMF = Tensors.unsafe_symmetric(transpose(Fᵉ) ⋅ M̃ ⋅ Fᵉ)
 	Iᵉ₄ = tr(FMF)
 	Ψᵃ = η / 2 * (Iᵉ₄ - 1)^2
 	
@@ -450,11 +452,11 @@ end;
 # ╔═╡ b2b670d9-2fd7-4031-96bb-167db12475c7
 function assemble_element!(cellid, Kₑ, residualₑ, cell, cv, fv, mp, uₑ, uₑ_prev, fiber_model, time)
 	# TODO factor out
-	# kₛ = 100.0 # "Spring stiffness"
-	# kᵇ = 100.0 # Basal bending penalty	
+	kₛ = 25.0 # "Spring stiffness"
+	kᵇ = 10.0 # Basal bending penalty
 
-	kₛ = 100000.0 # "Spring stiffness"
-	kᵇ = 2500.0 # Basal bending penalty
+	# kₛ = 100000.0 # "Spring stiffness"
+	# kᵇ = 2500.0 # Basal bending penalty
 
 	Caᵢ(cellid,x,t) = t < 1.0 ? t : 2.0-t
 
@@ -502,11 +504,11 @@ function assemble_element!(cellid, Kₑ, residualₑ, cell, cv, fv, mp, uₑ, u�
             for qp in 1:getnquadpoints(fv)
                 dΓ = getdetJdV(fv, qp)
 				
-				#∇u_prev = function_gradient(cv, qp, uₑ_prev)
-        		#F_prev = one(∇u_prev) + ∇u_prev 
-				#N = transpose(inv(F_prev)) ⋅ getnormal(fv, qp) # TODO this may mess up reversibility
+				∇u_prev = function_gradient(cv, qp, uₑ_prev)
+        		F_prev = one(∇u_prev) + ∇u_prev 
+				N = transpose(inv(F_prev)) ⋅ getnormal(fv, qp) # TODO this may mess up reversibility
 
-				N = getnormal(fv, qp)
+				#N = getnormal(fv, qp)
 
 				u_q = function_value(fv, qp, uₑ)
 				for i ∈ 1:ndofs
@@ -601,7 +603,7 @@ function solve(grid, fiber_model)
 	pvd = paraview_collection("GMK2014_LV.pvd");
 
 	T = 2.0
-	Δt = 0.1
+	Δt = 0.02
 
     # Material parameters
     # E = 4.0
@@ -611,7 +613,7 @@ function solve(grid, fiber_model)
     # λ = (E * ν) / ((1 + ν) * (1 - 2ν))
     # mp = ActiveNeoHookean(μ, λ, η)
 	# mp = Passive2017Energy(1.0, 2.6, 2.82, 2.0, 30.48, 7.25, 100.0, 100.0)
-	mp = BioNeoHooekan(4.0, 1.25, 1, 2, 20.0)
+	mp = BioNeoHooekan(4.0/4.0, 10.25, 1, 2, 20.0*10.0)
 
     # Finite element base
     ip = Lagrange{3, RefTetrahedron, 1}()
