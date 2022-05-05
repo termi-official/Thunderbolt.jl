@@ -129,6 +129,7 @@ md"""
 # ╔═╡ 2ec1e3de-0a48-431f-b3b9-ee9ec1390504
 struct LVCoordinateSystem
 	dh
+	qr
 	cellvalues
 	transmural
 	apicobasal
@@ -149,7 +150,7 @@ function compute_LV_coordinate_system(grid)
 
     n_basefuncs = getnbasefunctions(cellvalues)
     Ke = zeros(n_basefuncs, n_basefuncs)
-	
+
     assembler = start_assemble(K)
     @inbounds for cell in CellIterator(dh)
         fill!(Ke, 0)
@@ -170,7 +171,7 @@ function compute_LV_coordinate_system(grid)
 
         assemble!(assembler, celldofs(cell), Ke)
     end
-	
+
 	# Transmural coordinate
 	ch = ConstraintHandler(dh);
 	dbc = Dirichlet(:coordinates, getfaceset(grid, "Endocardium"), (x, t) -> 0)
@@ -182,7 +183,7 @@ function compute_LV_coordinate_system(grid)
 
 	K_transmural = copy(K)
     f = zeros(ndofs(dh))
-	
+
 	apply!(K_transmural, f, ch)
 	transmural = K_transmural \ f;
 
@@ -221,7 +222,7 @@ function compute_LV_coordinate_system(grid)
 	    vtk_point_data(vtk, dh, apicobasal)
 	end
 
-	return LVCoordinateSystem(dh, cellvalues, transmural, apicobasal)
+	return LVCoordinateSystem(dh, qr, cellvalues, transmural, apicobasal)
 end
 
 # ╔═╡ 793a52db-3f7b-4c5b-984a-f7ac6e9fc402
@@ -255,7 +256,7 @@ function create_simple_pw_constant_fiber_model(coordinate_system)
 	dh = coordinate_system.dh
 	f₀data = Vector{Vec{3}}(undef, getncells(dh.grid))
 	ip = dh.field_interpolations[1] #TODO refactor this. Pls.
-	qr = QuadratureRule{3,RefTetrahedron,Float64}([1.0], [Vec{3}((0.1, 0.1, 0.1))]) #TODO is this really we want to do?
+	qr = QuadratureRule{3,RefTetrahedron,Float64}([1.0], [Vec{3}((0.25, 0.25, 0.25))]) #TODO is this really we want to do?
 	cv = CellScalarValues(qr, ip)
 	for (cellindex,cell) in enumerate(CellIterator(dh))
         reinit!(cv, cell)
@@ -265,12 +266,12 @@ function create_simple_pw_constant_fiber_model(coordinate_system)
 		∇apicobasal = function_gradient(cv, 1, coordinate_system.apicobasal[dof_indices])
 		∇transmural = function_gradient(cv, 1, coordinate_system.transmural[dof_indices])
 		v = ∇apicobasal × ∇transmural
-	
+
 		transmural  = function_value(cv, 1, coordinate_system.transmural[dof_indices])
 
 		# linear interpolation of rotation angle
-		endo_angle = 60.0
-		epi_angle  = -80.0
+		endo_angle = 80.0
+		epi_angle  = -50.0
 		θ = (1-transmural) * endo_angle + (transmural) * epi_angle
 
 		# Rodriguez rotation
@@ -288,10 +289,105 @@ end
 # ╔═╡ b8a970e3-3d7f-4ed8-a546-c26e9047b443
 fiber_model = create_simple_pw_constant_fiber_model(coordinate_system)
 
+# ╔═╡ aaf500d1-c0ef-4839-962a-139503e6fcc0
+struct FieldCoefficient
+	elementwise_data #3d array (element_idx, base_fun_idx, dim)
+	ip
+end
+
+# ╔═╡ dedc939c-b789-4a8e-bc5e-e70e40bb6b8d
+function f₀(coeff::FieldCoefficient, cell_id, ξ)
+	@unpack ip, elementwise_data = coeff
+	dim = 3 #@FIXME PLS
+
+    n_base_funcs = Ferrite.getnbasefunctions(ip)
+    val = zero(Vec{dim, Float64})
+
+    @inbounds for i in 1:n_base_funcs
+        val += Ferrite.value(ip, i, ξ) * elementwise_data[cell_id, i]
+    end
+    return val / norm(val)
+end
+
+# ╔═╡ 0c863dcc-c5aa-47a7-9941-97b7a392febd
+function generate_nodal_quadrature_rule(ip::Interpolation{dim, ref_shape, order}) where {dim, ref_shape, order}
+	n_base = Ferrite.getnbasefunctions(ip)
+	positions = Ferrite.reference_coordinates(ip)
+	return QuadratureRule{dim, ref_shape, Float64}(ones(length(positions)), positions)
+end
+
+# ╔═╡ cb09e0f9-fd04-4cb9-bed3-a1e97cb6d478
+# Create a rotating fiber field by deducing the circumferential direction from apicobasal and transmural gradients.
+function create_simple_fiber_model(coordinate_system, ip_fiber, endo_angle = 80.0, epi_angle = -65.0, endo_transversal_angle = 20.0, epi_transversal_angle = 0.0)
+	@unpack dh = coordinate_system
+	
+	ip = dh.field_interpolations[1] #TODO refactor this. Pls.
+
+	n_basefuns = getnbasefunctions(ip_fiber)
+	dim = 3
+
+	elementwise_data = zero(Array{Vec{dim}, 2}(undef, getncells(dh.grid), n_basefuns))
+
+	qr_fiber = generate_nodal_quadrature_rule(ip_fiber)
+	cv = CellScalarValues(qr_fiber, ip)
+
+	for (cellindex,cell) in enumerate(CellIterator(dh))
+        reinit!(cv, cell)
+		dof_indices = celldofs(cell)
+
+		for qp in 1:getnquadpoints(cv)
+			# compute fiber direction
+			∇apicobasal = function_gradient(cv, qp, coordinate_system.apicobasal[dof_indices])
+			∇transmural = function_gradient(cv, qp, coordinate_system.transmural[dof_indices])
+			∇radial = ∇apicobasal × ∇transmural
+	
+			transmural  = function_value(cv, qp, coordinate_system.transmural[dof_indices])
+	
+			# linear interpolation of rotation angle
+			θ = (1-transmural) * endo_angle + (transmural) * epi_angle
+			ϕ = (1-transmural) * endo_transversal_angle + (transmural) * epi_transversal_angle
+	
+			# Rodriguez rotation of ∇radial around ∇transmural with angle θ
+			v = ∇radial / norm(∇radial)
+			sinθ = sin(deg2rad(θ))
+			cosθ = cos(deg2rad(θ))
+			k = ∇transmural / norm(∇transmural)
+			vᵣ = v * cosθ + (k × v) * sinθ + k * (k ⋅ v) * (1-cosθ)
+			vᵣ = vᵣ / norm(vᵣ)
+
+			# Rodriguez rotation of vᵣ around ∇radial with angle ϕ
+			v = vᵣ / norm(vᵣ)
+			sinϕ = sin(deg2rad(ϕ))
+			cosϕ = cos(deg2rad(ϕ))
+			k = ∇radial / norm(∇radial)
+			vᵣ = v * cosϕ + (k × v) * sinϕ + k * (k ⋅ v) * (1-cosϕ)
+			vᵣ = vᵣ / norm(vᵣ)
+
+			elementwise_data[cellindex, qp] = vᵣ / norm(vᵣ)
+		end
+	end
+			
+	FieldCoefficient(elementwise_data, ip_fiber)
+end
+
+# ╔═╡ 97bc4a8f-1377-48cd-9d98-a28b1d464e8c
+fiber_model_new = create_simple_fiber_model(coordinate_system, Lagrange{3, RefTetrahedron, 1}())
+
 # ╔═╡ 620c34e6-48b0-49cf-8b3f-818107d0bc94
 md"""
 ## Driver Code
 """
+
+# ╔═╡ 9daf7714-d24a-4805-8c6a-62ceed0a4c9f
+struct GMK2014
+	passive_spring
+	active_spring
+end
+
+# ╔═╡ c139e52f-05b6-4cfe-94fc-346535cba204
+struct ContractileLinearSpring
+	η
+end
 
 # ╔═╡ 2eae0e78-aba6-49f5-84b1-dff9c087b391
 struct NeoHookean
@@ -311,6 +407,23 @@ end
 # ╔═╡ 374329cc-dcd5-407b-a4f2-83f21120577f
 #λᵃ(Caᵢ) = (cos(pi*x)*(1-λᵃₘₐₓ) + 1.0)/2.0 + λᵃₘₐₓ/2.0
 λᵃ(Caᵢ, β = 3.0, λᵃₘₐₓ = 0.7) = 1.0/(1+(0.5+atan(β*log(max(Caᵢ,1e-10)))/π))#*λᵃₘₐₓ
+
+# ╔═╡ e4bf0f50-5028-4d09-8358-3615c7b2825c
+function Ψᵃ(F, f₀, Caᵢ, mp::ContractileLinearSpring)
+	@unpack η = mp
+	
+	M = Tensors.unsafe_symmetric(f₀ ⊗ f₀)
+	Fᵃ = Tensors.unsafe_symmetric(one(F) + (λᵃ(Caᵢ) - 1.0) * M)
+	f̃ = Fᵃ ⋅ f₀ / norm(Fᵃ ⋅ f₀)
+	M̃ = f̃ ⊗ f̃
+
+	FMF = Tensors.unsafe_symmetric(Fᵉ ⋅ M̃ ⋅ transpose(Fᵉ))
+	Iᵉ₄ = tr(FMF)
+	return η / 2 * (Iᵉ₄ - 1)^2
+end
+
+# ╔═╡ bf061b21-1c0c-4673-8277-5faafff90851
+plot(λᵃ, 0.0, 1.0)
 
 # ╔═╡ 53e2e8ac-2110-4dfb-9cc4-824427a9ebf0
 struct Passive2017Energy
@@ -366,22 +479,30 @@ function Ψ(F, f₀, Caᵢ, mp::BioNeoHooekan)
 	C = tdot(F)
     I₁ = tr(C)
 	I₃ = det(C)
-	#I₄ = tr(C ⋅ f₀ ⊗ f₀)
+	#I₄ = f₀ ⋅ C ⋅ f₀
 
 	I₃ᵇ = I₃^b
 	U = β * (I₃ᵇ + 1/I₃ᵇ - 2)^a
-	Ψᵖ = α*(I₁/cbrt(I₃) - 3) + U
+	Ψᵖ = α*(I₁/cbrt(I₃) - 3) + U #+ 10.0*(I₄-1.0)^2
 
 	M = Tensors.unsafe_symmetric(f₀ ⊗ f₀)
 	Fᵃ = Tensors.unsafe_symmetric(one(F) + (λᵃ(Caᵢ) - 1.0) * M)
-	f̃ = Fᵃ ⋅ f₀ / norm(Fᵃ ⋅ f₀)
+	#f̃ = Fᵃ ⋅ f₀ / norm(Fᵃ ⋅ f₀)
 	#M̃ = f̃ ⊗ f̃
-	M̃ = f₀ ⊗ f₀
+	#M̃ = f₀ ⊗ f₀
 
-	Fᵉ = F - (1 - 1.0/λᵃ(Caᵢ)) * ((F ⋅ f₀) ⊗ f₀)
-	FMF = Tensors.unsafe_symmetric(Fᵉ ⋅ M̃ ⋅ transpose(Fᵉ))
-	Iᵉ₄ = tr(FMF)
-	Ψᵃ = η / 2 * (Iᵉ₄ - 1)^2
+	#Fᵉ = F - (1 - 1.0/λᵃ(Caᵢ)) * ((F ⋅ f₀) ⊗ f₀
+	Fᵉ = F⋅inv(Fᵃ)
+	# I₃ᵉ = det(tdot(Fᵉ))
+	# I₃ᵉᵇ = I₃ᵉ^b
+	# Uᵃ = β * (I₃ᵇ + 1/I₃ᵇ - 2)^a
+	
+	#FMF = Tensors.unsafe_symmetric(Fᵉ ⋅ M̃ ⋅ transpose(Fᵉ))
+	#Iᵉ₄ = tr(FMF)
+	Cᵉ = tdot(Fᵉ)
+	#Iᵉ₁ = tr(Cᵉ)
+	Iᵉ₄ = f₀ ⋅ Cᵉ ⋅ f₀
+	Ψᵃ = η / 2 * (Iᵉ₄ - 1)^2 #+ (Iᵉ₁-3) #+ Uᵃ 
 
     return Ψᵖ + Ψᵃ
 end
@@ -395,9 +516,7 @@ end
 
 # ╔═╡ 03dbf71b-c69a-4049-ad2f-1f78ae754fde
 function Ψ(F, f₀, Caᵢ, mp::ActiveNeoHookean)
-    μ = mp.μ
-    λ = mp.λ
-	η = mp.η
+	@unpack μ, λ, η = mp
     J = det(F)
 	C = tdot(F)
     I₁ = tr(C)
@@ -406,15 +525,18 @@ function Ψ(F, f₀, Caᵢ, mp::ActiveNeoHookean)
 
 	M = Tensors.unsafe_symmetric(f₀ ⊗ f₀)
 	Fᵃ = Tensors.unsafe_symmetric(one(F) + (λᵃ(Caᵢ) - 1.0) * M)
-	f̃ = Fᵃ ⋅ f₀ / norm(Fᵃ ⋅ f₀)
-	M̃ = f̃ ⊗ f̃
-	
+	#f̃ = Fᵃ ⋅ f₀ / norm(Fᵃ ⋅ f₀)
+	#M̃ = f̃ ⊗ f̃
+
 	Fᵉ = F - (1 - 1.0/λᵃ(Caᵢ)) * ((F ⋅ f₀) ⊗ f₀)
-	FMF = Tensors.unsafe_symmetric(Fᵉ ⋅ M̃ ⋅ transpose(Fᵉ))
+	#Fᵉ = F⋅inv(Fᵃ)
+	#FMF = Tensors.unsafe_symmetric(Fᵉ ⋅ M̃ ⋅ transpose(Fᵉ))
 	#FMF = Tensors.unsafe_symmetric(transpose(Fᵉ) ⋅ M̃ ⋅ Fᵉ)
-	Iᵉ₄ = tr(FMF)
+	#Iᵉ₄ = tr(FMF)
+	Iᵉ₄ = f₀ ⋅ tdot(Fᵉ) ⋅ f₀
+	#Iᵉ₄ = f̃ ⋅ tdot(Fᵉ) ⋅ f̃
 	Ψᵃ = η / 2 * (Iᵉ₄ - 1)^2
-	
+
     return Ψᵖ + Ψᵃ
 end
 
@@ -452,8 +574,8 @@ end;
 # ╔═╡ b2b670d9-2fd7-4031-96bb-167db12475c7
 function assemble_element!(cellid, Kₑ, residualₑ, cell, cv, fv, mp, uₑ, uₑ_prev, fiber_model, time)
 	# TODO factor out
-	kₛ = 25.0 # "Spring stiffness"
-	kᵇ = 10.0 # Basal bending penalty
+	kₛ = 100.001 # "Spring stiffness"
+	kᵇ = 1.000 # Basal bending penalty
 
 	# kₛ = 100000.0 # "Spring stiffness"
 	# kᵇ = 2500.0 # Basal bending penalty
@@ -475,9 +597,7 @@ function assemble_element!(cellid, Kₑ, residualₑ, cell, cv, fv, mp, uₑ, u�
         F = one(∇u) + ∇u
 		
         # Compute stress and tangent
-		#X = spatial_coordinate(cv, qp, getcoordinates(cell))
-		#TODO compute coordinate
-		x_ref = Vec{3}((0.0, 0.0, 0.0))
+		x_ref = cv.qr.points[qp]
 		P, ∂P∂F = constitutive_driver(F, f₀(fiber_model, cellid, x_ref), Caᵢ(cellid, x_ref, time), mp)
 
         # Loop over test functions
@@ -501,46 +621,66 @@ function assemble_element!(cellid, Kₑ, residualₑ, cell, cv, fv, mp, uₑ, u�
 		# How does this interact with the stress?
 		if (cell.current_cellid.x, local_face_index) ∈ getfaceset(cell.grid, "Epicardium")
             reinit!(fv, cell, local_face_index)
+			ndofs_face = getnbasefunctions(fv)
             for qp in 1:getnquadpoints(fv)
                 dΓ = getdetJdV(fv, qp)
-				
-				∇u_prev = function_gradient(cv, qp, uₑ_prev)
-        		F_prev = one(∇u_prev) + ∇u_prev 
+
+				∇u_prev = function_gradient(fv, qp, uₑ_prev)
+                F_prev = one(∇u_prev) + ∇u_prev 
 				N = transpose(inv(F_prev)) ⋅ getnormal(fv, qp) # TODO this may mess up reversibility
 
-				#N = getnormal(fv, qp)
-
+				# N = getnormal(fv, qp)
+				
 				u_q = function_value(fv, qp, uₑ)
-				for i ∈ 1:ndofs
-					δuᵢ = shape_value(fv, qp, i)
-					residualₑ[i] += 0.5 * kₛ * (δuᵢ ⋅ N) * (N ⋅ u_q) * dΓ
-					for j ∈ 1:ndofs
-						δuⱼ = shape_value(fv, qp, j)
-						Kₑ[i,j] += 0.5 * kₛ * (δuᵢ ⋅ N) * (N ⋅ δuⱼ) * dΓ
-					end
+				#∂²Ψ∂u², ∂Ψ∂u = Tensors.hessian(u -> 0.0, u_q, :all)
+				∂²Ψ∂u², ∂Ψ∂u = Tensors.hessian(u -> 0.5*kₛ*(u⋅N)^2, u_q, :all)
+
+				# Add contribution to the residual from this test function
+				for i in 1:ndofs_face
+		            δuᵢ = shape_value(fv, qp, i)
+					residualₑ[i] += δuᵢ ⋅ ∂Ψ∂u * dΓ
+
+		            for j in 1:ndofs_face
+		                δuⱼ = shape_value(fv, qp, j)
+		                # Add contribution to the tangent
+		                Kₑ[i, j] += ( δuᵢ ⋅ ∂²Ψ∂u² ⋅ δuⱼ ) * dΓ
+		            end
 				end
+
+				# N = getnormal(fv, qp)
+				# u_q = function_value(fv, qp, uₑ)
+				# for i ∈ 1:ndofs
+				# 	δuᵢ = shape_value(fv, qp, i)
+				# 	residualₑ[i] += 0.5 * kₛ * (δuᵢ ⋅ N) * (N ⋅ u_q) * dΓ
+				# 	for j ∈ 1:ndofs
+				# 		δuⱼ = shape_value(fv, qp, j)
+				# 		Kₑ[i,j] += 0.5 * kₛ * (δuᵢ ⋅ N) * (N ⋅ δuⱼ) * dΓ
+				# 	end
+				# end
             end
         end
 
 		if (cell.current_cellid.x, local_face_index) ∈ getfaceset(cell.grid, "Base")
 			reinit!(fv, cell, local_face_index)
+			ndofs_face = getnbasefunctions(fv)
             for qp in 1:getnquadpoints(fv)
                 dΓ = getdetJdV(fv, qp)
 				N = getnormal(fv, qp)
-				
+
 				∇u = function_gradient(fv, qp, uₑ)
         		F = one(∇u) + ∇u
 
+				#∂²Ψ∂u², ∂Ψ∂u = Tensors.hessian(F_ -> 0.0, F, :all)
 				∂²Ψ∂F², ∂Ψ∂F = Tensors.hessian(F_ -> 0.5*kᵇ*(transpose(inv(F_))⋅N - N)⋅(transpose(inv(F_))⋅N - N), F, :all)
 
 				# Add contribution to the residual from this test function
-				for i in 1:ndofs
-		            ∇δui = shape_gradient(cv, qp, i)
+				for i in 1:ndofs_face
+		            ∇δui = shape_gradient(fv, qp, i)
 					residualₑ[i] += ∇δui ⊡ ∂Ψ∂F * dΓ
 
 		            ∇δui∂P∂F = ∇δui ⊡ ∂²Ψ∂F² # Hoisted computation
-		            for j in 1:ndofs
-		                ∇δuj = shape_gradient(cv, qp, j)
+		            for j in 1:ndofs_face
+		                ∇δuj = shape_gradient(fv, qp, j)
 		                # Add contribution to the tangent
 		                Kₑ[i, j] += ( ∇δui∂P∂F ⊡ ∇δuj ) * dΓ
 		            end
@@ -570,6 +710,200 @@ function assemble_global!(K, f, dh, cv, fv, mp, uₜ, uₜ₋₁, fiber_model, t
     end
 end;
 
+# ╔═╡ edb7ba53-ba21-4001-935f-ec9e0d7531be
+function solve(grid, fiber_model)
+	pvd = paraview_collection("GMK2014_LV.pvd");
+
+	T = 2.0
+	Δt = 0.1
+
+    # Material parameters
+    E = 4.0
+    ν = 0.48
+    μ = E / (2(1 + ν))
+    λ = (E * ν) / ((1 + ν) * (1 - 2ν))
+	# μ = 1.001
+	# λ = 1.001
+	η = 10.001
+    # mp = ActiveNeoHookean(μ, λ, η)
+	# mp = Passive2017Energy(1.0, 2.6, 2.82, 2.0, 30.48, 7.25, 1.0, 10.0)
+	mp = BioNeoHooekan(1.0, 1.0, 1, 2, 10.0)
+
+    # Finite element base
+    ip = Lagrange{3, RefTetrahedron, 1}()
+    ip_geo = Lagrange{3, RefTetrahedron, 1}()
+    qr = QuadratureRule{3, RefTetrahedron}(2)
+    qr_face = QuadratureRule{2, RefTetrahedron}(2)
+    cv = CellVectorValues(qr, ip, ip_geo)
+    fv = FaceVectorValues(qr_face, ip, ip_geo)
+
+    # DofHandler
+    dh = DofHandler(grid)
+    push!(dh, :u, 3) # Add a displacement field
+    close!(dh)
+
+    dbcs = ConstraintHandler(dh)
+    # Clamp base for now
+    #dbc = Dirichlet(:u, getfaceset(grid, "Base"), (x,t) -> [0.0, 0.0, 0.0], [1, 2, 3])
+    dbc = Dirichlet(:u, getnodeset(grid, "Apex"), (x,t) -> [0.0, 0.0, 0.0], [1, 2, 3])
+    add!(dbcs, dbc)
+	
+    close!(dbcs)
+
+    # Pre-allocation of vectors for the solution and Newton increments
+    _ndofs = ndofs(dh)
+
+	uₜ   = zeros(_ndofs)
+	uₜ₋₁ = zeros(_ndofs)
+    Δu   = zeros(_ndofs)
+
+	#ref_vol = calculate_volume_deformed_mesh(uₜ,dh,cv);
+	#min_vol = ref_vol
+	#max_vol = ref_vol
+
+    # Create sparse matrix and residual vector
+    K = create_sparsity_pattern(dh)
+    g = zeros(_ndofs)
+
+    NEWTON_TOL = 1e-8
+	MAX_NEWTON_ITER = 100
+
+	for t ∈ 0.0:Δt:T
+		@info "t = " t
+
+		# Store last solution
+		uₜ₋₁ .= uₜ
+
+		# Update with new boundary conditions (if available)
+	    Ferrite.update!(dbcs, t)
+	    apply!(uₜ, dbcs)
+
+		# Perform Newton iterations
+		newton_itr = -1
+	    while true
+			newton_itr += 1
+
+	        assemble_global!(K, g, dh, cv, fv, mp, uₜ, uₜ₋₁, fiber_model, t)
+	        normg = norm(g[Ferrite.free_dofs(dbcs)])
+	        apply_zero!(K, g, dbcs)
+			@info "||g|| = " normg
+	
+	        if normg < NEWTON_TOL
+	            break
+	        elseif newton_itr > MAX_NEWTON_ITER
+	            error("Reached maximum Newton iterations. Aborting.")
+	        end
+	
+			Δu = K \ g
+	
+	        apply_zero!(Δu, dbcs)
+
+			uₜ .-= Δu # Current guess
+	    end
+
+		# Compute some elementwise measures
+		E_ff = zeros(getncells(grid))
+		E_ff2 = zeros(getncells(grid))
+		E_cc = zeros(getncells(grid))
+		E_ll = zeros(getncells(grid))
+		E_rr = zeros(getncells(grid))
+
+		Jdata = zeros(getncells(grid))
+
+		frefdata = zero(Vector{Vec{3}}(undef, getncells(grid)))
+		fdata = zero(Vector{Vec{3}}(undef, getncells(grid)))
+
+		for (cellid,cell) in enumerate(CellIterator(dh))
+			reinit!(cv, cell)
+			global_dofs = celldofs(cell)
+        	uₑ = uₜ[global_dofs] # element dofs
+			
+			E_ff_cell = 0.0
+			E_ff_cell2 = 0.0
+			E_cc_cell = 0.0
+			E_rr_cell = 0.0
+			E_ll_cell = 0.0
+
+			Jdata_cell = 0.0
+			frefdata_cell = Vec{3}((0.0, 0.0, 0.0))
+			fdata_cell = Vec{3}((0.0, 0.0, 0.0))
+
+			nqp = getnquadpoints(cv)
+			for qp in 1:nqp
+		        dΩ = getdetJdV(cv, qp)
+
+		        # Compute deformation gradient F
+		        ∇u = function_gradient(cv, qp, uₑ)
+		        F = one(∇u) + ∇u
+
+				C = tdot(F)
+				E = (C-one(C))/2.0
+				x_ref = cv.qr.points[qp]
+				fiber_direction = f₀(fiber_model, cellid, x_ref)
+				fiber_direction /= norm(fiber_direction)
+
+				E_ff_cell += fiber_direction ⋅ E ⋅ fiber_direction
+				
+				fiber_direction_current = F⋅fiber_direction
+				fiber_direction_current /= norm(fiber_direction_current)
+
+				E_ff_cell2 += fiber_direction_current ⋅ E ⋅ fiber_direction_current
+
+				coords = getcoordinates(cell)
+				x_global = spatial_coordinate(cv, qp, coords)
+				# @TODO compute properly
+				v_longitudinal = Vec{3}((0.0, 0.0, 1.0))
+				v_radial = Vec{3}((x_global[1],x_global[2],0.0))/norm(Vec{3}((x_global[1],x_global[2],0.0)))
+				v_circimferential = Vec{3}((x_global[2],-x_global[1],0.0))/norm(Vec{3}((x_global[2],-x_global[1],0.0)))
+				#
+				E_ll_cell += v_longitudinal ⋅ E ⋅ v_longitudinal
+				E_rr_cell += v_radial ⋅ E ⋅ v_radial
+				E_cc_cell += v_circimferential ⋅ E ⋅ v_circimferential
+		
+				Jdata_cell += det(F)
+
+				frefdata_cell += fiber_direction
+
+				fdata_cell += fiber_direction_current
+			end
+
+			E_ff[cellid] = E_ff_cell / nqp
+			E_ff2[cellid] = E_ff_cell2 / nqp
+			E_cc[cellid] = E_cc_cell / nqp
+			E_rr[cellid] = E_rr_cell / nqp
+			E_ll[cellid] = E_ll_cell / nqp
+			Jdata[cellid] = Jdata_cell / nqp
+			frefdata[cellid] = frefdata_cell / nqp
+			fdata[cellid] = fdata_cell / nqp
+		end
+
+	    # Save the solution
+		vtk_grid("GMK2014-LV-$t.vtu", dh) do vtk
+            vtk_point_data(vtk,dh,uₜ)
+	        vtk_cell_data(vtk,hcat(frefdata...),"Reference Fiber Data")
+			vtk_cell_data(vtk,hcat(fdata...),"Current Fiber Data")
+	        vtk_cell_data(vtk,E_ff,"E_ff")
+	        vtk_cell_data(vtk,E_ff2,"E_ff2")
+	        vtk_cell_data(vtk,E_cc,"E_cc")
+	        vtk_cell_data(vtk,E_rr,"E_rr")
+	        vtk_cell_data(vtk,E_ll,"E_ll")
+	        vtk_cell_data(vtk,Jdata,"J")
+            vtk_save(vtk)
+	        pvd[t] = vtk
+	    end
+
+		#min_vol = min(min_vol, calculate_volume_deformed_mesh(uₜ,dh,cv));
+		#max_vol = max(max_vol, calculate_volume_deformed_mesh(uₜ,dh,cv));
+	end
+
+	#println("Compression: ", (ref_vol/min_vol - 1.0)*100, "%")
+	#println("Expansion: ", (ref_vol/max_vol - 1.0)*100, "%")
+	
+	vtk_save(pvd);
+
+	return uₜ
+end
+
 # ╔═╡ c24c7c84-9953-4886-9b34-70bdf942fe1b
 function calculate_element_volume(cell, cellvalues_u, uₑ)
     reinit!(cellvalues_u, cell)
@@ -598,28 +932,56 @@ function calculate_volume_deformed_mesh(w, dh::DofHandler, cellvalues_u)
     return evol
 end;
 
-# ╔═╡ edb7ba53-ba21-4001-935f-ec9e0d7531be
-function solve(grid, fiber_model)
-	pvd = paraview_collection("GMK2014_LV.pvd");
+# ╔═╡ 8cfeddaa-c67f-4de8-b81c-4fbb7e052c50
+solve(grid, fiber_model_new)
+
+# ╔═╡ 7b9a3e74-dd0f-497b-aec2-73b5b9242b12
+function solve_test()
+	# geo = Tetrahedron
+	# refgeo = RefTetrahedron
+	# intorder = 1
+
+	geo = Hexahedron
+	refgeo = RefCube
+	intorder = 2
+
+	N = 3
+    L = 1.0
+    left = zero(Vec{3})
+    right = L * ones(Vec{3})
+    grid = generate_grid(geo, (N, N, N), left, right)
+	addfaceset!(grid, "Endocardium", Set{Ferrite.FaceIndex}([]))
+	addfaceset!(grid, "Base", Set{Ferrite.FaceIndex}([]))
+	addfaceset!(grid, "Epicardium", Set{Ferrite.FaceIndex}([]))
+
+	f₀data = Vector{Vec{3}}(undef, getncells(grid))
+	for cellindex ∈ 1:getncells(grid)
+		f₀data[cellindex] = Vec{3}((1.0, 0.0, 0.0))
+	end
+	fiber_model = PiecewiseConstantFiberModel(f₀data, [], [])
+
+	pvd = paraview_collection("GMK2014_cube.pvd");
 
 	T = 2.0
-	Δt = 0.02
+	Δt = 0.1
 
     # Material parameters
     # E = 4.0
     # ν = 0.45
-	# η = 10.0
     # μ = E / (2(1 + ν))
     # λ = (E * ν) / ((1 + ν) * (1 - 2ν))
+	# μ = 0.001
+	# λ = 0.001
+	# η = 1.001
     # mp = ActiveNeoHookean(μ, λ, η)
-	# mp = Passive2017Energy(1.0, 2.6, 2.82, 2.0, 30.48, 7.25, 100.0, 100.0)
-	mp = BioNeoHooekan(4.0/4.0, 10.25, 1, 2, 20.0*10.0)
+	mp = Passive2017Energy(1.0, 2.6, 2.82, 2.0, 30.48, 7.25, 1.0, 100.0)
+	#mp = BioNeoHooekan(4.0, 10.25, 1, 2, 10.0)
 
     # Finite element base
-    ip = Lagrange{3, RefTetrahedron, 1}()
-    ip_geo = Lagrange{3, RefTetrahedron, 1}()
-    qr = QuadratureRule{3, RefTetrahedron}(1)
-    qr_face = QuadratureRule{2, RefTetrahedron}(1)
+    ip = Lagrange{3, refgeo, 1}()
+    ip_geo = Lagrange{3, refgeo, 1}()
+    qr = QuadratureRule{3, refgeo}(intorder)
+    qr_face = QuadratureRule{2, refgeo}(intorder)
     cv = CellVectorValues(qr, ip, ip_geo)
     fv = FaceVectorValues(qr_face, ip, ip_geo)
 
@@ -629,9 +991,15 @@ function solve(grid, fiber_model)
     close!(dh)
 
     dbcs = ConstraintHandler(dh)
-    # Clamp base for now
-    # dbc = Dirichlet(:u, getfaceset(grid, "Base"), (x,t) -> [0.0, 0.0, 0.0], [1, 2, 3])
-    # add!(dbcs, dbc)
+    # Clamp three sides
+    dbc = Dirichlet(:u, getfaceset(grid, "left"), (x,t) -> [0.0], [1])
+    add!(dbcs, dbc)
+    dbc = Dirichlet(:u, getfaceset(grid, "front"), (x,t) -> [0.0], [2])
+    add!(dbcs, dbc)
+    dbc = Dirichlet(:u, getfaceset(grid, "bottom"), (x,t) -> [0.0], [3])
+    add!(dbcs, dbc)
+    dbc = Dirichlet(:u, Set([1]), (x,t) -> [0.0, 0.0, 0.0], [1, 2, 3])
+    add!(dbcs, dbc)
 	
     close!(dbcs)
 
@@ -678,7 +1046,8 @@ function solve(grid, fiber_model)
 	        elseif newton_itr > MAX_NEWTON_ITER
 	            error("Reached maximum Newton iterations. Aborting.")
 	        end
-	
+
+			@info det(K)
 			Δu = K \ g
 	
 	        apply_zero!(Δu, dbcs)
@@ -719,6 +1088,7 @@ function solve(grid, fiber_model)
 				fiber_direction /= norm(fiber_direction)
 				
 				E_ff_cell += fiber_direction ⋅ E ⋅ fiber_direction
+				E_ff_cell += fiber_direction ⋅ E ⋅ fiber_direction
 
 				coords = getcoordinates(cell)
 				x_global = spatial_coordinate(cv, qp, coords)
@@ -743,7 +1113,7 @@ function solve(grid, fiber_model)
 		end
 	
 	    # Save the solution
-		vtk_grid("GMK2014-LV-$t.vtu", dh) do vtk
+		vtk_grid("GMK2014-cube-$t.vtu", dh) do vtk
             vtk_point_data(vtk,dh,uₜ)
 	        vtk_cell_data(vtk,hcat(fiber_model.f₀data...),"Reference Fiber Data")
 			vtk_cell_data(vtk,hcat(fdata...),"Current Fiber Data")
@@ -768,12 +1138,30 @@ function solve(grid, fiber_model)
 	return uₜ
 end
 
-# ╔═╡ 8cfeddaa-c67f-4de8-b81c-4fbb7e052c50
-solve(grid, fiber_model)
+# ╔═╡ 76b6b377-287a-45a0-b02b-92e205dde287
+solve_test();
+
+# ╔═╡ 4b76b944-2054-47ed-bbcb-b1412643fed0
+md"""
+What goes wrong: The ventricle elongates in longitudinal direction.
+
+Hotfix: Playing around with fiber and sheet angle.
+
+What it seems to be not
+1. Sheetlet angle
+2. $I_4$ in passive portion
+3. incompressibility
+4. choice of boundary conditions (we can partially force a contraction in longitudinal direction, but the cavity surface is wrong then)
+
+I think we are missing some energy pirtion, either $I_{4s}$ or $I_{8fs}$.
+"""
+
+# ╔═╡ bc24ea0d-d3f4-44d4-9207-d7017bdf42ab
+
 
 # ╔═╡ Cell order:
 # ╟─6e43f86d-6341-445f-be8d-146eb0447457
-# ╟─48685583-8831-4797-bde9-f2032ef42837
+# ╠═48685583-8831-4797-bde9-f2032ef42837
 # ╟─f6b5bde0-bcdc-41de-b64e-29b9e60b06c0
 # ╟─94fc407e-d72e-4b44-9d30-d66c433b954a
 # ╟─a81fc16e-c280-4b38-8c6a-18714db7840c
@@ -791,10 +1179,19 @@ solve(grid, fiber_model)
 # ╠═3337cac5-2a53-4043-9751-1ffc6ee37889
 # ╠═0f55501e-694b-40ba-be6c-faab5f6177b5
 # ╠═b8a970e3-3d7f-4ed8-a546-c26e9047b443
+# ╠═aaf500d1-c0ef-4839-962a-139503e6fcc0
+# ╠═dedc939c-b789-4a8e-bc5e-e70e40bb6b8d
+# ╠═0c863dcc-c5aa-47a7-9941-97b7a392febd
+# ╠═cb09e0f9-fd04-4cb9-bed3-a1e97cb6d478
+# ╠═97bc4a8f-1377-48cd-9d98-a28b1d464e8c
 # ╟─620c34e6-48b0-49cf-8b3f-818107d0bc94
+# ╠═9daf7714-d24a-4805-8c6a-62ceed0a4c9f
+# ╠═c139e52f-05b6-4cfe-94fc-346535cba204
+# ╠═e4bf0f50-5028-4d09-8358-3615c7b2825c
 # ╠═2eae0e78-aba6-49f5-84b1-dff9c087b391
-# ╟─0658ec98-5883-4859-93dc-f9e9f52f9f63
+# ╠═0658ec98-5883-4859-93dc-f9e9f52f9f63
 # ╠═374329cc-dcd5-407b-a4f2-83f21120577f
+# ╠═bf061b21-1c0c-4673-8277-5faafff90851
 # ╟─4ff78cdf-1efc-4c00-91a3-4c29f3d27305
 # ╠═53e2e8ac-2110-4dfb-9cc4-824427a9ebf0
 # ╠═f3289e09-4ca7-4e71-b798-32908ae23ce0
@@ -809,3 +1206,7 @@ solve(grid, fiber_model)
 # ╠═c24c7c84-9953-4886-9b34-70bdf942fe1b
 # ╠═bb150ecb-f844-48d1-9a09-47abfe6db89c
 # ╠═8cfeddaa-c67f-4de8-b81c-4fbb7e052c50
+# ╠═7b9a3e74-dd0f-497b-aec2-73b5b9242b12
+# ╠═76b6b377-287a-45a0-b02b-92e205dde287
+# ╠═4b76b944-2054-47ed-bbcb-b1412643fed0
+# ╠═bc24ea0d-d3f4-44d4-9207-d7017bdf42ab
