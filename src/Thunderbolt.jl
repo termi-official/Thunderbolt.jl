@@ -1,6 +1,13 @@
 module Thunderbolt
 
+using Reexport
 using UnPack
+@reexport using Ferrite
+
+export
+    generate_ring_mesh
+
+include("meshtools.jl")
 
 abstract type AbstractIonChannel end;
 

@@ -933,7 +933,7 @@ function calculate_volume_deformed_mesh(w, dh::DofHandler, cellvalues_u)
 end;
 
 # ╔═╡ 8cfeddaa-c67f-4de8-b81c-4fbb7e052c50
-solve(grid, fiber_model_new)
+#solve(grid, fiber_model_new)
 
 # ╔═╡ 7b9a3e74-dd0f-497b-aec2-73b5b9242b12
 function solve_test()
@@ -1082,7 +1082,7 @@ function solve_test()
 
 				C = tdot(F)
 				E = (C-one(C))/2.0
-				x_ref = Vec{3}((0.1, 0.1, 0.1))
+				x_ref = qr.points[qp]
 				#fiber_direction = F ⋅ f₀(fiber_model, cellid, x_ref)
 				fiber_direction = f₀(fiber_model, cellid, x_ref)
 				fiber_direction /= norm(fiber_direction)
@@ -1139,7 +1139,7 @@ function solve_test()
 end
 
 # ╔═╡ 76b6b377-287a-45a0-b02b-92e205dde287
-solve_test();
+#solve_test();
 
 # ╔═╡ 4b76b944-2054-47ed-bbcb-b1412643fed0
 md"""
@@ -1156,8 +1156,347 @@ What it seems to be not
 I think we are missing some energy pirtion, either $I_{4s}$ or $I_{8fs}$.
 """
 
-# ╔═╡ bc24ea0d-d3f4-44d4-9207-d7017bdf42ab
+# ╔═╡ df771870-34a6-45c4-a5c9-0c4fccf78941
+function compute_midmyocardial_section_coordinate_system(grid)
+	ip = Lagrange{3, RefCube, 1}()
+	qr = QuadratureRule{3, RefCube}(2)
+	cellvalues = CellScalarValues(qr, ip);
 
+	dh = DofHandler(grid)
+	push!(dh, :coordinates, 1)
+	vertex_dict,_,_,_ = Ferrite.__close!(dh);
+
+	# Assemble Laplacian
+	K = create_sparsity_pattern(dh)
+
+    n_basefuncs = getnbasefunctions(cellvalues)
+    Ke = zeros(n_basefuncs, n_basefuncs)
+
+    assembler = start_assemble(K)
+    @inbounds for cell in CellIterator(dh)
+        fill!(Ke, 0)
+
+        reinit!(cellvalues, cell)
+
+        for q_point in 1:getnquadpoints(cellvalues)
+            dΩ = getdetJdV(cellvalues, q_point)
+
+            for i in 1:n_basefuncs
+                ∇v = shape_gradient(cellvalues, q_point, i)
+                for j in 1:n_basefuncs
+                    ∇u = shape_gradient(cellvalues, q_point, j)
+                    Ke[i, j] += (∇v ⋅ ∇u) * dΩ
+                end
+            end
+        end
+
+        assemble!(assembler, celldofs(cell), Ke)
+    end
+
+	# Transmural coordinate
+	ch = ConstraintHandler(dh);
+	dbc = Dirichlet(:coordinates, getfaceset(grid, "Endocardium"), (x, t) -> 0)
+	add!(ch, dbc);
+	dbc = Dirichlet(:coordinates, getfaceset(grid, "Epicardium"), (x, t) -> 1)
+	add!(ch, dbc);
+	close!(ch)
+	update!(ch, 0.0);
+
+	K_transmural = copy(K)
+    f = zeros(ndofs(dh))
+
+	apply!(K_transmural, f, ch)
+	transmural = K_transmural \ f;
+
+	vtk_grid("coordinates_transmural", dh) do vtk
+	    vtk_point_data(vtk, dh, transmural)
+	end
+
+	ch = ConstraintHandler(dh);
+	dbc = Dirichlet(:coordinates, getfaceset(grid, "Base"), (x, t) -> 0)
+	add!(ch, dbc);
+	dbc = Dirichlet(:coordinates, getfaceset(grid, "Myocardium"), (x, t) -> 0.15)
+	add!(ch, dbc);
+	close!(ch)
+	update!(ch, 0.0);
+
+	K_apicobasal = copy(K)
+	f = zeros(ndofs(dh))
+	
+	apply!(K_apicobasal, f, ch)
+	apicobasal = K_apicobasal \ f;
+
+	vtk_grid("coordinates_apicobasal", dh) do vtk
+	    vtk_point_data(vtk, dh, apicobasal)
+	end
+
+	return LVCoordinateSystem(dh, qr, cellvalues, transmural, apicobasal)
+end
+
+# ╔═╡ 3aa86aa9-308a-494f-bb8c-0983f22dfa07
+function generate_ring_mesh(ne_c, ne_r, ne_l; radial_inner::T = Float64(0.75), radial_outer::T = Float64(1.0), longitudinal_lower::T = Float64(-0.2), longitudinal_upper::T = Float64(0.2)) where {T}
+    # Generate a rectangle in cylindrical coordinates and transform coordinates back to carthesian.
+    ne_tot = ne_c*ne_r*ne_l;
+    n_nodes_c = ne_c; n_nodes_r = ne_r+1; n_nodes_l = ne_l+1;
+    n_nodes = n_nodes_c * n_nodes_r * n_nodes_l;
+
+    # Generate nodes
+    coords_c = range(0.0, stop=2*π, length=n_nodes_c+1)
+    coords_r = range(radial_inner, stop=radial_outer, length=n_nodes_r)
+    coords_l = range(longitudinal_upper, stop=longitudinal_lower, length=n_nodes_l)
+    nodes = Node{3,T}[]
+    for k in 1:n_nodes_l, j in 1:n_nodes_r, i in 1:n_nodes_c
+        # cylindrical -> carthesian
+        radius = coords_r[j]-0.03*coords_l[k]/maximum(abs.(coords_l))
+        push!(nodes, Node((radius*cos(coords_c[i]), radius*sin(coords_c[i]), coords_l[k])))
+    end
+
+    # Generate cells
+    node_array = reshape(collect(1:n_nodes), (n_nodes_c, n_nodes_r, n_nodes_l))
+    cells = Hexahedron[]
+    for k in 1:ne_l, j in 1:ne_r, i in 1:ne_c
+        i_next = (i == ne_c) ? 1 : i + 1
+        push!(cells, Hexahedron((node_array[i,j,k], node_array[i_next,j,k], node_array[i_next,j+1,k], node_array[i,j+1,k],
+                                 node_array[i,j,k+1], node_array[i_next,j,k+1], node_array[i_next,j+1,k+1], node_array[i,j+1,k+1])))
+    end
+
+    # Cell faces
+    cell_array = reshape(collect(1:ne_tot),(ne_c, ne_r, ne_l))
+    boundary = FaceIndex[[FaceIndex(cl, 1) for cl in cell_array[:,:,1][:]];
+                            [FaceIndex(cl, 2) for cl in cell_array[:,1,:][:]];
+                            #[FaceIndex(cl, 3) for cl in cell_array[end,:,:][:]];
+                            [FaceIndex(cl, 4) for cl in cell_array[:,end,:][:]];
+                            #[FaceIndex(cl, 5) for cl in cell_array[1,:,:][:]];
+                            [FaceIndex(cl, 6) for cl in cell_array[:,:,end][:]]]
+
+    # boundary_matrix = boundaries_to_sparse(boundary)
+
+    # Cell face sets
+    offset = 0
+    facesets = Dict{String,Set{FaceIndex}}()
+    facesets["Myocardium"] = Set{FaceIndex}(boundary[(1:length(cell_array[:,:,1][:]))   .+ offset]); offset += length(cell_array[:,:,1][:])
+    facesets["Endocardium"]  = Set{FaceIndex}(boundary[(1:length(cell_array[:,1,:][:]))   .+ offset]); offset += length(cell_array[:,1,:][:])
+    facesets["Epicardium"]   = Set{FaceIndex}(boundary[(1:length(cell_array[:,end,:][:])) .+ offset]); offset += length(cell_array[:,end,:][:])
+    facesets["Base"]    = Set{FaceIndex}(boundary[(1:length(cell_array[:,:,end][:])) .+ offset]); offset += length(cell_array[:,:,end][:])
+
+    return Grid(cells, nodes, facesets=facesets)
+end
+
+# ╔═╡ d387f754-15cc-4875-8130-ca7482faac94
+function solve_test_ring()
+	# geo = Tetrahedron
+	# refgeo = RefTetrahedron
+	# intorder = 1
+
+	geo = Hexahedron
+	refgeo = RefCube
+	order = 1
+	intorder = 2
+
+    grid = generate_ring_mesh(50,4,4)
+	coordinate_system = compute_midmyocardial_section_coordinate_system(grid)
+	fiber_model = create_simple_fiber_model(coordinate_system, Lagrange{3, refgeo, 1}())
+
+	pvd = paraview_collection("GMK2014_ring.pvd");
+
+	T = 2.0
+	Δt = 0.1
+
+    # Material parameters
+    # E = 4.0
+    # ν = 0.45
+    # μ = E / (2(1 + ν))
+    # λ = (E * ν) / ((1 + ν) * (1 - 2ν))
+	# μ = 0.001
+	# λ = 0.001
+	# η = 1.001
+    # mp = ActiveNeoHookean(μ, λ, η)
+	#mp = Passive2017Energy(1.0, 2.6, 2.82, 2.0, 30.48, 7.25, 1.0, 100.0)
+	mp = BioNeoHooekan(4.0, 10.25, 1, 2, 10.0)
+
+    # Finite element base
+    ip = Lagrange{3, refgeo, order}()
+    ip_geo = Lagrange{3, refgeo, order}()
+    qr = QuadratureRule{3, refgeo}(intorder)
+    qr_face = QuadratureRule{2, refgeo}(intorder)
+    cv = CellVectorValues(qr, ip, ip_geo)
+    fv = FaceVectorValues(qr_face, ip, ip_geo)
+
+    # DofHandler
+    dh = DofHandler(grid)
+    push!(dh, :u, 3) # Add a displacement field
+    close!(dh)
+
+	vtk_save(vtk_grid("GMK2014-ring.vtu", dh))
+
+    dbcs = ConstraintHandler(dh)
+    # # Clamp three sides
+    # dbc = Dirichlet(:u, getfaceset(grid, "left"), (x,t) -> [0.0], [1])
+    # add!(dbcs, dbc)
+    # dbc = Dirichlet(:u, getfaceset(grid, "front"), (x,t) -> [0.0], [2])
+    # add!(dbcs, dbc)
+    # dbc = Dirichlet(:u, getfaceset(grid, "bottom"), (x,t) -> [0.0], [3])
+    # add!(dbcs, dbc)
+    # dbc = Dirichlet(:u, Set([1]), (x,t) -> [0.0, 0.0, 0.0], [1, 2, 3])
+    # add!(dbcs, dbc)
+	
+    close!(dbcs)
+
+    # Pre-allocation of vectors for the solution and Newton increments
+    _ndofs = ndofs(dh)
+
+	uₜ   = zeros(_ndofs)
+	uₜ₋₁ = zeros(_ndofs)
+    Δu   = zeros(_ndofs)
+
+	ref_vol = calculate_volume_deformed_mesh(uₜ,dh,cv);
+	min_vol = ref_vol
+	max_vol = ref_vol
+
+    # Create sparse matrix and residual vector
+    K = create_sparsity_pattern(dh)
+    g = zeros(_ndofs)
+
+    NEWTON_TOL = 1e-8
+	MAX_NEWTON_ITER = 100
+
+	for t ∈ 0.0:Δt:T
+		# Store last solution
+		uₜ₋₁ .= uₜ
+
+		# Update with new boundary conditions (if available)
+	    Ferrite.update!(dbcs, t)
+	    apply!(uₜ, dbcs)
+
+		# Perform Newton iterations
+		newton_itr = -1
+	    while true
+			newton_itr += 1
+
+	        assemble_global!(K, g, dh, cv, fv, mp, uₜ, uₜ₋₁, fiber_model, t)
+	        normg = norm(g[Ferrite.free_dofs(dbcs)])
+	        apply_zero!(K, g, dbcs)
+			@info "t = " t ": ||g|| = " normg
+	
+	        if normg < NEWTON_TOL
+	            break
+	        elseif newton_itr > MAX_NEWTON_ITER
+	            error("Reached maximum Newton iterations. Aborting.")
+	        end
+
+			#@info det(K)
+			Δu = K \ g
+	
+	        apply_zero!(Δu, dbcs)
+
+			uₜ .-= Δu # Current guess
+	    end
+
+		# Compute some elementwise measures
+		E_ff = zeros(getncells(grid))
+		E_ff2 = zeros(getncells(grid))
+		E_cc = zeros(getncells(grid))
+		E_ll = zeros(getncells(grid))
+		E_rr = zeros(getncells(grid))
+
+		Jdata = zeros(getncells(grid))
+
+		frefdata = zero(Vector{Vec{3}}(undef, getncells(grid)))
+		fdata = zero(Vector{Vec{3}}(undef, getncells(grid)))
+
+		for (cellid,cell) in enumerate(CellIterator(dh))
+			reinit!(cv, cell)
+			global_dofs = celldofs(cell)
+        	uₑ = uₜ[global_dofs] # element dofs
+			
+			E_ff_cell = 0.0
+			E_ff_cell2 = 0.0
+			E_cc_cell = 0.0
+			E_rr_cell = 0.0
+			E_ll_cell = 0.0
+
+			Jdata_cell = 0.0
+			frefdata_cell = Vec{3}((0.0, 0.0, 0.0))
+			fdata_cell = Vec{3}((0.0, 0.0, 0.0))
+
+			nqp = getnquadpoints(cv)
+			for qp in 1:nqp
+		        dΩ = getdetJdV(cv, qp)
+
+		        # Compute deformation gradient F
+		        ∇u = function_gradient(cv, qp, uₑ)
+		        F = one(∇u) + ∇u
+
+				C = tdot(F)
+				E = (C-one(C))/2.0
+				x_ref = cv.qr.points[qp]
+				fiber_direction = f₀(fiber_model, cellid, x_ref)
+				fiber_direction /= norm(fiber_direction)
+
+				E_ff_cell += fiber_direction ⋅ E ⋅ fiber_direction
+				
+				fiber_direction_current = F⋅fiber_direction
+				fiber_direction_current /= norm(fiber_direction_current)
+
+				E_ff_cell2 += fiber_direction_current ⋅ E ⋅ fiber_direction_current
+
+				coords = getcoordinates(cell)
+				x_global = spatial_coordinate(cv, qp, coords)
+				# @TODO compute properly
+				v_longitudinal = Vec{3}((0.0, 0.0, 1.0))
+				v_radial = Vec{3}((x_global[1],x_global[2],0.0))/norm(Vec{3}((x_global[1],x_global[2],0.0)))
+				v_circimferential = Vec{3}((x_global[2],-x_global[1],0.0))/norm(Vec{3}((x_global[2],-x_global[1],0.0)))
+				#
+				E_ll_cell += v_longitudinal ⋅ E ⋅ v_longitudinal
+				E_rr_cell += v_radial ⋅ E ⋅ v_radial
+				E_cc_cell += v_circimferential ⋅ E ⋅ v_circimferential
+		
+				Jdata_cell += det(F)
+
+				frefdata_cell += fiber_direction
+
+				fdata_cell += fiber_direction_current
+			end
+
+			E_ff[cellid] = E_ff_cell / nqp
+			E_ff2[cellid] = E_ff_cell2 / nqp
+			E_cc[cellid] = E_cc_cell / nqp
+			E_rr[cellid] = E_rr_cell / nqp
+			E_ll[cellid] = E_ll_cell / nqp
+			Jdata[cellid] = Jdata_cell / nqp
+			frefdata[cellid] = frefdata_cell / nqp
+			fdata[cellid] = fdata_cell / nqp
+		end
+
+	    # Save the solution
+		vtk_grid("GMK2014-ring-$t.vtu", dh) do vtk
+            vtk_point_data(vtk,dh,uₜ)
+	        vtk_cell_data(vtk,hcat(frefdata...),"Reference Fiber Data")
+			vtk_cell_data(vtk,hcat(fdata...),"Current Fiber Data")
+	        vtk_cell_data(vtk,E_ff,"E_ff")
+	        vtk_cell_data(vtk,E_ff2,"E_ff2")
+	        vtk_cell_data(vtk,E_cc,"E_cc")
+	        vtk_cell_data(vtk,E_rr,"E_rr")
+	        vtk_cell_data(vtk,E_ll,"E_ll")
+	        vtk_cell_data(vtk,Jdata,"J")
+            vtk_save(vtk)
+	        pvd[t] = vtk
+	    end
+
+		min_vol = min(min_vol, calculate_volume_deformed_mesh(uₜ,dh,cv));
+		max_vol = max(max_vol, calculate_volume_deformed_mesh(uₜ,dh,cv));
+	end
+
+	println("Compression: ", (ref_vol/min_vol - 1.0)*100, "%")
+	println("Expansion: ", (ref_vol/max_vol - 1.0)*100, "%")
+	
+	vtk_save(pvd);
+
+	return uₜ
+end
+
+# ╔═╡ 7fdacae4-747a-46fc-a0ca-cb6ea5c47bc8
+solve_test_ring()
 
 # ╔═╡ Cell order:
 # ╟─6e43f86d-6341-445f-be8d-146eb0447457
@@ -1208,5 +1547,8 @@ I think we are missing some energy pirtion, either $I_{4s}$ or $I_{8fs}$.
 # ╠═8cfeddaa-c67f-4de8-b81c-4fbb7e052c50
 # ╠═7b9a3e74-dd0f-497b-aec2-73b5b9242b12
 # ╠═76b6b377-287a-45a0-b02b-92e205dde287
-# ╠═4b76b944-2054-47ed-bbcb-b1412643fed0
-# ╠═bc24ea0d-d3f4-44d4-9207-d7017bdf42ab
+# ╟─4b76b944-2054-47ed-bbcb-b1412643fed0
+# ╠═d387f754-15cc-4875-8130-ca7482faac94
+# ╠═7fdacae4-747a-46fc-a0ca-cb6ea5c47bc8
+# ╠═df771870-34a6-45c4-a5c9-0c4fccf78941
+# ╠═3aa86aa9-308a-494f-bb8c-0983f22dfa07
