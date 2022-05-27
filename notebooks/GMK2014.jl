@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.19.0
+# v0.19.5
 
 using Markdown
 using InteractiveUtils
@@ -318,7 +318,7 @@ end
 
 # ╔═╡ cb09e0f9-fd04-4cb9-bed3-a1e97cb6d478
 # Create a rotating fiber field by deducing the circumferential direction from apicobasal and transmural gradients.
-function create_simple_fiber_model(coordinate_system, ip_fiber, endo_angle = 80.0, epi_angle = -65.0, endo_transversal_angle = 20.0, epi_transversal_angle = 0.0)
+function create_simple_fiber_model(coordinate_system, ip_fiber; endo_angle = 80.0, epi_angle = -65.0, endo_transversal_angle = 0.0, epi_transversal_angle = 0.0)
 	@unpack dh = coordinate_system
 	
 	ip = dh.field_interpolations[1] #TODO refactor this. Pls.
@@ -479,30 +479,29 @@ function Ψ(F, f₀, Caᵢ, mp::BioNeoHooekan)
 	C = tdot(F)
     I₁ = tr(C)
 	I₃ = det(C)
-	#I₄ = f₀ ⋅ C ⋅ f₀
+	I₄ = f₀ ⋅ C ⋅ f₀
 
 	I₃ᵇ = I₃^b
 	U = β * (I₃ᵇ + 1/I₃ᵇ - 2)^a
-	Ψᵖ = α*(I₁/cbrt(I₃) - 3) + U #+ 10.0*(I₄-1.0)^2
+	Ψᵖ = α*(I₁/cbrt(I₃) - 3) + U
 
 	M = Tensors.unsafe_symmetric(f₀ ⊗ f₀)
-	Fᵃ = Tensors.unsafe_symmetric(one(F) + (λᵃ(Caᵢ) - 1.0) * M)
-	#f̃ = Fᵃ ⋅ f₀ / norm(Fᵃ ⋅ f₀)
-	#M̃ = f̃ ⊗ f̃
-	#M̃ = f₀ ⊗ f₀
+	#Fᵃ = Tensors.unsafe_symmetric(one(F) + (λᵃ(Caᵢ) - 1.0) * M)
+	Fᵃ = Tensors.unsafe_symmetric(λᵃ(Caᵢ) * M + (1.0/sqrt(λᵃ(Caᵢ)))*(one(F) - M))
 
 	#Fᵉ = F - (1 - 1.0/λᵃ(Caᵢ)) * ((F ⋅ f₀) ⊗ f₀
 	Fᵉ = F⋅inv(Fᵃ)
-	# I₃ᵉ = det(tdot(Fᵉ))
-	# I₃ᵉᵇ = I₃ᵉ^b
-	# Uᵃ = β * (I₃ᵇ + 1/I₃ᵇ - 2)^a
-	
-	#FMF = Tensors.unsafe_symmetric(Fᵉ ⋅ M̃ ⋅ transpose(Fᵉ))
-	#Iᵉ₄ = tr(FMF)
 	Cᵉ = tdot(Fᵉ)
-	#Iᵉ₁ = tr(Cᵉ)
+	I₃ᵉ = det(Cᵉ)
+	I₃ᵉᵇ = I₃ᵉ^b
+	Uᵃ = 1.0 * (I₃ᵉᵇ + 1/I₃ᵉᵇ - 2)^a
+
+	Iᵉ₁ = tr(Cᵉ)
 	Iᵉ₄ = f₀ ⋅ Cᵉ ⋅ f₀
-	Ψᵃ = η / 2 * (Iᵉ₄ - 1)^2 #+ (Iᵉ₁-3) #+ Uᵃ 
+	#Ψᵃ = η / 2 * (Iᵉ₄/cbrt(I₃ᵉ) - 1)^2 + 1.0*(Iᵉ₁/cbrt(I₃ᵉ)-3) + Uᵃ 
+	#Ψᵃ = 1.00*(Iᵉ₁/cbrt(I₃ᵉ)-3) #+ Uᵃ 
+	#Ψᵃ = η / 2 * (Iᵉ₄/cbrt(I₃ᵉ) - 1)^2 + Uᵃ
+	Ψᵃ = η / 2 * (Iᵉ₄ - 1)^2 
 
     return Ψᵖ + Ψᵃ
 end
@@ -523,8 +522,8 @@ function Ψ(F, f₀, Caᵢ, mp::ActiveNeoHookean)
 
 	Ψᵖ = μ / 2 * (I₁ - 3) - μ * log(J) + λ / 2 * log(J)^2
 
-	M = Tensors.unsafe_symmetric(f₀ ⊗ f₀)
-	Fᵃ = Tensors.unsafe_symmetric(one(F) + (λᵃ(Caᵢ) - 1.0) * M)
+	M = f₀ ⊗ f₀
+	Fᵃ = one(F) + (λᵃ(Caᵢ) - 1.0) * M
 	#f̃ = Fᵃ ⋅ f₀ / norm(Fᵃ ⋅ f₀)
 	#M̃ = f̃ ⊗ f̃
 
@@ -533,9 +532,11 @@ function Ψ(F, f₀, Caᵢ, mp::ActiveNeoHookean)
 	#FMF = Tensors.unsafe_symmetric(Fᵉ ⋅ M̃ ⋅ transpose(Fᵉ))
 	#FMF = Tensors.unsafe_symmetric(transpose(Fᵉ) ⋅ M̃ ⋅ Fᵉ)
 	#Iᵉ₄ = tr(FMF)
-	Iᵉ₄ = f₀ ⋅ tdot(Fᵉ) ⋅ f₀
+	Cᵉ = tdot(Fᵉ)
+	Iᵉ₁ = tr(Cᵉ)
+	Iᵉ₄ = f₀ ⋅ Cᵉ ⋅ f₀
 	#Iᵉ₄ = f̃ ⋅ tdot(Fᵉ) ⋅ f̃
-	Ψᵃ = η / 2 * (Iᵉ₄ - 1)^2
+	Ψᵃ = η / 2 * (Iᵉ₄ - 1)^2 #+ 1.0*(Iᵉ₁ - 3)
 
     return Ψᵖ + Ψᵃ
 end
@@ -574,14 +575,12 @@ end;
 # ╔═╡ b2b670d9-2fd7-4031-96bb-167db12475c7
 function assemble_element!(cellid, Kₑ, residualₑ, cell, cv, fv, mp, uₑ, uₑ_prev, fiber_model, time)
 	# TODO factor out
-	kₛ = 100.001 # "Spring stiffness"
-	kᵇ = 1.000 # Basal bending penalty
-
-	# kₛ = 100000.0 # "Spring stiffness"
-	# kᵇ = 2500.0 # Basal bending penalty
+	kₛ = 0.001 # "Spring stiffness"
+	kᵇ = 5.0 # Basal bending penalty
 
 	Caᵢ(cellid,x,t) = t < 1.0 ? t : 2.0-t
-
+	p = 7.5*(1.0/λᵃ(Caᵢ(0,0,time)) - 1.0/λᵃ(Caᵢ(0,0,0)))
+	
     # Reinitialize cell values, and reset output arrays
     reinit!(cv, cell)
     fill!(Kₑ, 0.0)
@@ -687,6 +686,37 @@ function assemble_element!(cellid, Kₑ, residualₑ, cell, cv, fv, mp, uₑ, u�
 				end
 			end
 		end
+
+		# Pressure boundary
+		if (cell.current_cellid.x, local_face_index) ∈ getfaceset(cell.grid, "Endocardium")
+			reinit!(fv, cell, local_face_index)
+			ndofs_face = getnbasefunctions(fv)
+            for qp in 1:getnquadpoints(fv)
+                dΓ = getdetJdV(fv, qp)
+
+				∇u_prev = function_gradient(fv, qp, uₑ_prev)
+                F_prev = one(∇u_prev) + ∇u_prev 
+				N = transpose(inv(F_prev)) ⋅ getnormal(fv, qp) # TODO this may mess up reversibility
+
+				# N = getnormal(fv, qp)
+				
+				# u_q = function_value(fv, qp, uₑ)
+				#∂²Ψ∂u², ∂Ψ∂u = Tensors.hessian(u -> 0.0, u_q, :all)
+				# ∂²Ψ∂u², ∂Ψ∂u = Tensors.hessian(u -> 0.5*kₛ*(u⋅N)^2, u_q, :all)
+
+				# Add contribution to the residual from this test function
+				for i in 1:ndofs_face
+		            δuᵢ = shape_value(fv, qp, i)
+					residualₑ[i] += p * δuᵢ ⋅ N * dΓ
+
+		            for j in 1:ndofs_face
+		                δuⱼ = shape_value(fv, qp, j)
+		                # Add contribution to the tangent
+		                #Kₑ[i, j] += ( 0.0 ) * dΓ
+		            end
+				end
+            end
+		end
     end
 end;
 
@@ -718,16 +748,16 @@ function solve(grid, fiber_model)
 	Δt = 0.1
 
     # Material parameters
-    E = 4.0
-    ν = 0.48
+    E = 2.0
+    ν = 0.45
     μ = E / (2(1 + ν))
     λ = (E * ν) / ((1 + ν) * (1 - 2ν))
 	# μ = 1.001
 	# λ = 1.001
-	η = 10.001
-    # mp = ActiveNeoHookean(μ, λ, η)
+	η = 10.00
+    mp = ActiveNeoHookean(μ, λ, η)
 	# mp = Passive2017Energy(1.0, 2.6, 2.82, 2.0, 30.48, 7.25, 1.0, 10.0)
-	mp = BioNeoHooekan(1.0, 1.0, 1, 2, 10.0)
+	# mp = BioNeoHooekan(1.0, 1.0, 1, 2, 10.0)
 
     # Finite element base
     ip = Lagrange{3, RefTetrahedron, 1}()
@@ -744,10 +774,10 @@ function solve(grid, fiber_model)
 
     dbcs = ConstraintHandler(dh)
     # Clamp base for now
-    #dbc = Dirichlet(:u, getfaceset(grid, "Base"), (x,t) -> [0.0, 0.0, 0.0], [1, 2, 3])
-    dbc = Dirichlet(:u, getnodeset(grid, "Apex"), (x,t) -> [0.0, 0.0, 0.0], [1, 2, 3])
-    add!(dbcs, dbc)
-	
+    # dbc = Dirichlet(:u, getfaceset(grid, "Base"), (x,t) -> [0.0, 0.0, 0.0], [1, 2, 3])
+	# add!(dbcs, dbc)
+    # dbc = Dirichlet(:u, getnodeset(grid, "Apex"), (x,t) -> [0.0, 0.0, 0.0], [1, 2, 3])
+    # add!(dbcs, dbc)
     close!(dbcs)
 
     # Pre-allocation of vectors for the solution and Newton increments
@@ -1293,13 +1323,16 @@ function solve_test_ring()
 	order = 1
 	intorder = 2
 
-    grid = generate_ring_mesh(50,4,4)
+    grid = generate_ring_mesh(40,6,4)
 	coordinate_system = compute_midmyocardial_section_coordinate_system(grid)
-	fiber_model = create_simple_fiber_model(coordinate_system, Lagrange{3, refgeo, 1}())
+	#fiber_model = create_simple_fiber_model(coordinate_system, Lagrange{3, refgeo, 1}(), endo_angle = 50.0, epi_angle = -70.0)
+	# α from "Transmural left ventricular mechanics underlying torsional recoil during relaxation."
+	fiber_model = create_simple_fiber_model(coordinate_system, Lagrange{3, refgeo, 1}(), endo_angle = 80.0, epi_angle = -55.0)
+	#fiber_model = create_simple_fiber_model(coordinate_system, Lagrange{3, refgeo, 1}(), endo_angle = 40.0, epi_angle = -60.0, endo_transversal_angle = 5.0, epi_transversal_angle = 1.0)
 
 	pvd = paraview_collection("GMK2014_ring.pvd");
 
-	T = 2.0
+	T = 1.0
 	Δt = 0.1
 
     # Material parameters
@@ -1312,7 +1345,9 @@ function solve_test_ring()
 	# η = 1.001
     # mp = ActiveNeoHookean(μ, λ, η)
 	#mp = Passive2017Energy(1.0, 2.6, 2.82, 2.0, 30.48, 7.25, 1.0, 100.0)
-	mp = BioNeoHooekan(4.0, 10.25, 1, 2, 10.0)
+	#mp = BioNeoHooekan(4.0, 10.25, 1, 2, 10.0)
+	#mp = BioNeoHooekan(1.01, 1.01, 1, 2, 10.0)
+	mp = BioNeoHooekan(0.25, 4.00, 1, 2, 15.0)
 
     # Finite element base
     ip = Lagrange{3, refgeo, order}()
@@ -1331,11 +1366,9 @@ function solve_test_ring()
 
     dbcs = ConstraintHandler(dh)
     # # Clamp three sides
-    # dbc = Dirichlet(:u, getfaceset(grid, "left"), (x,t) -> [0.0], [1])
-    # add!(dbcs, dbc)
-    # dbc = Dirichlet(:u, getfaceset(grid, "front"), (x,t) -> [0.0], [2])
-    # add!(dbcs, dbc)
-    # dbc = Dirichlet(:u, getfaceset(grid, "bottom"), (x,t) -> [0.0], [3])
+    dbc = Dirichlet(:u, getfaceset(grid, "Myocardium"), (x,t) -> [0.0], [3])
+    add!(dbcs, dbc)
+    # dbc = Dirichlet(:u, Set([first(getfaceset(grid, "Base"))]), (x,t) -> [0.0], [3])
     # add!(dbcs, dbc)
     # dbc = Dirichlet(:u, Set([1]), (x,t) -> [0.0, 0.0, 0.0], [1, 2, 3])
     # add!(dbcs, dbc)
