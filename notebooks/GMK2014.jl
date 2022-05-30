@@ -296,7 +296,7 @@ struct FieldCoefficient
 end
 
 # ╔═╡ dedc939c-b789-4a8e-bc5e-e70e40bb6b8d
-function f₀(coeff::FieldCoefficient, cell_id, ξ)
+function value(coeff::FieldCoefficient, cell_id, ξ)
 	@unpack ip, elementwise_data = coeff
 	dim = 3 #@FIXME PLS
 
@@ -326,7 +326,8 @@ function create_simple_fiber_model(coordinate_system, ip_fiber; endo_angle = 80.
 	n_basefuns = getnbasefunctions(ip_fiber)
 	dim = 3
 
-	elementwise_data = zero(Array{Vec{dim}, 2}(undef, getncells(dh.grid), n_basefuns))
+	elementwise_data_f = zero(Array{Vec{dim}, 2}(undef, getncells(dh.grid), n_basefuns))
+	elementwise_data_s = zero(Array{Vec{dim}, 2}(undef, getncells(dh.grid), n_basefuns))
 
 	qr_fiber = generate_nodal_quadrature_rule(ip_fiber)
 	cv = CellScalarValues(qr_fiber, ip)
@@ -363,11 +364,22 @@ function create_simple_fiber_model(coordinate_system, ip_fiber; endo_angle = 80.
 			vᵣ = v * cosϕ + (k × v) * sinϕ + k * (k ⋅ v) * (1-cosϕ)
 			vᵣ = vᵣ / norm(vᵣ)
 
-			elementwise_data[cellindex, qp] = vᵣ / norm(vᵣ)
+			elementwise_data_f[cellindex, qp] = vᵣ / norm(vᵣ)
+
+			v = -∇apicobasal / norm(∇apicobasal)
+			sinϕ = sin(deg2rad(ϕ))
+			cosϕ = cos(deg2rad(ϕ))
+			k = ∇radial / norm(∇radial)
+			vᵣ = v * cosϕ + (k × v) * sinϕ + k * (k ⋅ v) * (1-cosϕ)
+			vᵣ = vᵣ / norm(vᵣ)
+
+
+			vᵣ = vᵣ - (elementwise_data_f[cellindex, qp]⋅vᵣ)*elementwise_data_f[cellindex, qp]
+			elementwise_data_s[cellindex, qp] = vᵣ / norm(vᵣ)
 		end
 	end
 			
-	FieldCoefficient(elementwise_data, ip_fiber)
+	FieldCoefficient(elementwise_data_f, ip_fiber), FieldCoefficient(elementwise_data_s, ip_fiber)
 end
 
 # ╔═╡ 97bc4a8f-1377-48cd-9d98-a28b1d464e8c
@@ -425,6 +437,63 @@ end
 # ╔═╡ bf061b21-1c0c-4673-8277-5faafff90851
 plot(λᵃ, 0.0, 1.0)
 
+# ╔═╡ 35f192f3-940f-4524-a78d-f589622ab666
+Base.@kwdef struct HolzapfelOgden2009
+	a   =  0.059
+	b   =  8.023
+	aᶠ  = 18.472
+	bᶠ  = 16.026
+	aˢ  =  2.581
+	bˢ  = 11.120
+	aᶠˢ =  0.216
+	bᶠˢ = 11.436
+	β   = 10.000
+	η   = 10.000
+end
+
+# ╔═╡ bcfbbc2c-e79f-471b-8af5-82dc3013cd0b
+function Ψ(F, f₀, s₀, Caᵢ, mp::HolzapfelOgden2009)
+	# Modified version of https://onlinelibrary.wiley.com/doi/epdf/10.1002/cnm.2866
+    @unpack a, b, aᶠ, bᶠ, aˢ, bˢ, aᶠˢ, bᶠˢ, β, η = mp
+	C = tdot(F)
+    I₁ = tr(C)
+	I₃ = det(C)
+	I₄ᶠ = f₀ ⋅ C ⋅ f₀
+	I₄ˢ = s₀ ⋅ C ⋅ s₀
+	I₈ᶠˢ = f₀ ⋅ C ⋅ s₀
+
+	I₃ᵇ = I₃^b
+	#U = β * (I₃ᵇ + 1.0/I₃ᵇ - 2.0)^a # does not work...?
+	U = β * (I₃ - 1)^2
+	Ψᵖ = a/(2.0*b)*exp(b*(I₁-3.0)) + aᶠˢ/(2.0*bᶠˢ)*(exp(bᶠˢ*I₈ᶠˢ^2)-1.0) + U
+	if I₄ᶠ > 1.0
+		Ψᵖ += aᶠ/(2.0*bᶠ)*(exp(bᶠ*(I₄ᶠ - 1)^2)-1.0)
+	end
+	if I₄ˢ > 1.0 
+		Ψᵖ += aˢ/(2.0*bˢ)*(exp(bˢ*(I₄ˢ - 1)^2)-1.0)
+	end
+	
+	M = Tensors.unsafe_symmetric(f₀ ⊗ f₀)
+	#Fᵃ = Tensors.unsafe_symmetric(one(F) + (λᵃ(Caᵢ) - 1.0) * M)
+	Fᵃ = Tensors.unsafe_symmetric(λᵃ(Caᵢ) * M + (1.0/sqrt(λᵃ(Caᵢ)))*(one(F) - M))
+
+	#Fᵉ = F - (1 - 1.0/λᵃ(Caᵢ)) * ((F ⋅ f₀) ⊗ f₀
+	Fᵉ = F⋅inv(Fᵃ)
+	Cᵉ = tdot(Fᵉ)
+	I₃ᵉ = det(Cᵉ)
+	I₃ᵉᵇ = I₃ᵉ^b
+	Uᵃ = 1.0 * (I₃ᵉᵇ + 1/I₃ᵉᵇ - 2)^a
+
+	Iᵉ₁ = tr(Cᵉ)
+	Iᵉ₄ᶠ = f₀ ⋅ Cᵉ ⋅ f₀
+	#Ψᵃ = η / 2 * (Iᵉ₄/cbrt(I₃ᵉ) - 1)^2 + 1.0*(Iᵉ₁/cbrt(I₃ᵉ)-3) + Uᵃ 
+	#Ψᵃ = 1.00*(Iᵉ₁/cbrt(I₃ᵉ)-3) #+ Uᵃ 
+	#Ψᵃ = η / 2 * (Iᵉ₄/cbrt(I₃ᵉ) - 1)^2 + Uᵃ
+	Ψᵃ = η / 2 * (Iᵉ₄ᶠ - 1)^2 
+
+    return Ψᵖ + Ψᵃ
+end
+
 # ╔═╡ 53e2e8ac-2110-4dfb-9cc4-824427a9ebf0
 struct Passive2017Energy
 	a
@@ -438,7 +507,7 @@ struct Passive2017Energy
 end
 
 # ╔═╡ f3289e09-4ca7-4e71-b798-32908ae23ce0
-function Ψ(F, f₀, Caᵢ, mp::Passive2017Energy)
+function Ψ(F, f₀, s₀, Caᵢ, mp::Passive2017Energy)
 	# Modified version of https://onlinelibrary.wiley.com/doi/epdf/10.1002/cnm.2866
     @unpack a, a₁, a₂, b, α₁, α₂, β, η = mp
 	C = tdot(F)
@@ -473,7 +542,7 @@ struct BioNeoHooekan
 end
 
 # ╔═╡ e7378847-977a-4282-841a-d568399d04cc
-function Ψ(F, f₀, Caᵢ, mp::BioNeoHooekan)
+function Ψ(F, f₀, s₀, Caᵢ, mp::BioNeoHooekan)
 	# Modified version of https://onlinelibrary.wiley.com/doi/epdf/10.1002/cnm.2866
     @unpack a, b, α, β, η = mp
 	C = tdot(F)
@@ -514,7 +583,7 @@ struct ActiveNeoHookean
 end
 
 # ╔═╡ 03dbf71b-c69a-4049-ad2f-1f78ae754fde
-function Ψ(F, f₀, Caᵢ, mp::ActiveNeoHookean)
+function Ψ(F, f₀, s₀, Caᵢ, mp::ActiveNeoHookean)
 	@unpack μ, λ, η = mp
     J = det(F)
 	C = tdot(F)
@@ -551,9 +620,9 @@ function constitutive_driver(C, mp::NeoHookean)
 end;
 
 # ╔═╡ 641ad832-1b22-44d0-84f0-bfe15ecd6246
-function constitutive_driver(F, f₀, Caᵢ, mp)
+function constitutive_driver(F, f₀, s₀, Caᵢ, mp)
     # Compute all derivatives in one function call
-    ∂²Ψ∂F², ∂Ψ∂F = Tensors.hessian(y -> Ψ(y, f₀, Caᵢ, mp), F, :all)
+    ∂²Ψ∂F², ∂Ψ∂F = Tensors.hessian(y -> Ψ(y, f₀, s₀, Caᵢ, mp), F, :all)
 
 	# η = mp.η
 	# M = f₀ ⊗ f₀
@@ -579,7 +648,8 @@ function assemble_element!(cellid, Kₑ, residualₑ, cell, cv, fv, mp, uₑ, u�
 	kᵇ = 5.0 # Basal bending penalty
 
 	Caᵢ(cellid,x,t) = t < 1.0 ? t : 2.0-t
-	p = 7.5*(1.0/λᵃ(Caᵢ(0,0,time)) - 1.0/λᵃ(Caᵢ(0,0,0)))
+	#p = 7.5*(1.0/λᵃ(Caᵢ(0,0,time)) - 1.0/λᵃ(Caᵢ(0,0,0)))
+	p = 5.0*(1.0/λᵃ(Caᵢ(0,0,time)) - 1.0/λᵃ(Caᵢ(0,0,0)))
 	
     # Reinitialize cell values, and reset output arrays
     reinit!(cv, cell)
@@ -597,7 +667,9 @@ function assemble_element!(cellid, Kₑ, residualₑ, cell, cv, fv, mp, uₑ, u�
 		
         # Compute stress and tangent
 		x_ref = cv.qr.points[qp]
-		P, ∂P∂F = constitutive_driver(F, f₀(fiber_model, cellid, x_ref), Caᵢ(cellid, x_ref, time), mp)
+		f₀ = value(fiber_model[1], cellid, x_ref)
+		s₀ = value(fiber_model[2], cellid, x_ref)
+		P, ∂P∂F = constitutive_driver(F, f₀, s₀, Caᵢ(cellid, x_ref, time), mp)
 
         # Loop over test functions
         for i in 1:ndofs
@@ -869,7 +941,7 @@ function solve(grid, fiber_model)
 				C = tdot(F)
 				E = (C-one(C))/2.0
 				x_ref = cv.qr.points[qp]
-				fiber_direction = f₀(fiber_model, cellid, x_ref)
+				fiber_direction = value(fiber_model[1], cellid, x_ref)
 				fiber_direction /= norm(fiber_direction)
 
 				E_ff_cell += fiber_direction ⋅ E ⋅ fiber_direction
@@ -1114,7 +1186,7 @@ function solve_test()
 				E = (C-one(C))/2.0
 				x_ref = qr.points[qp]
 				#fiber_direction = F ⋅ f₀(fiber_model, cellid, x_ref)
-				fiber_direction = f₀(fiber_model, cellid, x_ref)
+				fiber_direction = value(fiber_model[1], cellid, x_ref)
 				fiber_direction /= norm(fiber_direction)
 				
 				E_ff_cell += fiber_direction ⋅ E ⋅ fiber_direction
@@ -1347,7 +1419,8 @@ function solve_test_ring()
 	#mp = Passive2017Energy(1.0, 2.6, 2.82, 2.0, 30.48, 7.25, 1.0, 100.0)
 	#mp = BioNeoHooekan(4.0, 10.25, 1, 2, 10.0)
 	#mp = BioNeoHooekan(1.01, 1.01, 1, 2, 10.0)
-	mp = BioNeoHooekan(0.25, 4.00, 1, 2, 15.0)
+	#mp = BioNeoHooekan(0.25, 4.00, 1, 2, 15.0)
+	mp = HolzapfelOgden2009()
 
     # Finite element base
     ip = Lagrange{3, refgeo, order}()
@@ -1435,6 +1508,7 @@ function solve_test_ring()
 		Jdata = zeros(getncells(grid))
 
 		frefdata = zero(Vector{Vec{3}}(undef, getncells(grid)))
+		srefdata = zero(Vector{Vec{3}}(undef, getncells(grid)))
 		fdata = zero(Vector{Vec{3}}(undef, getncells(grid)))
 
 		for (cellid,cell) in enumerate(CellIterator(dh))
@@ -1450,6 +1524,7 @@ function solve_test_ring()
 
 			Jdata_cell = 0.0
 			frefdata_cell = Vec{3}((0.0, 0.0, 0.0))
+			srefdata_cell = Vec{3}((0.0, 0.0, 0.0))
 			fdata_cell = Vec{3}((0.0, 0.0, 0.0))
 
 			nqp = getnquadpoints(cv)
@@ -1463,8 +1538,8 @@ function solve_test_ring()
 				C = tdot(F)
 				E = (C-one(C))/2.0
 				x_ref = cv.qr.points[qp]
-				fiber_direction = f₀(fiber_model, cellid, x_ref)
-				fiber_direction /= norm(fiber_direction)
+				fiber_direction = value(fiber_model[1], cellid, x_ref)
+				sheet_direction = value(fiber_model[2], cellid, x_ref)
 
 				E_ff_cell += fiber_direction ⋅ E ⋅ fiber_direction
 				
@@ -1487,6 +1562,7 @@ function solve_test_ring()
 				Jdata_cell += det(F)
 
 				frefdata_cell += fiber_direction
+				srefdata_cell += sheet_direction
 
 				fdata_cell += fiber_direction_current
 			end
@@ -1498,6 +1574,7 @@ function solve_test_ring()
 			E_ll[cellid] = E_ll_cell / nqp
 			Jdata[cellid] = Jdata_cell / nqp
 			frefdata[cellid] = frefdata_cell / nqp
+			srefdata[cellid] = srefdata_cell / nqp
 			fdata[cellid] = fdata_cell / nqp
 		end
 
@@ -1505,6 +1582,7 @@ function solve_test_ring()
 		vtk_grid("GMK2014-ring-$t.vtu", dh) do vtk
             vtk_point_data(vtk,dh,uₜ)
 	        vtk_cell_data(vtk,hcat(frefdata...),"Reference Fiber Data")
+	        vtk_cell_data(vtk,hcat(srefdata...),"Reference Sheet Data")
 			vtk_cell_data(vtk,hcat(fdata...),"Current Fiber Data")
 	        vtk_cell_data(vtk,E_ff,"E_ff")
 	        vtk_cell_data(vtk,E_ff2,"E_ff2")
@@ -1565,6 +1643,8 @@ solve_test_ring()
 # ╠═374329cc-dcd5-407b-a4f2-83f21120577f
 # ╠═bf061b21-1c0c-4673-8277-5faafff90851
 # ╟─4ff78cdf-1efc-4c00-91a3-4c29f3d27305
+# ╠═35f192f3-940f-4524-a78d-f589622ab666
+# ╠═bcfbbc2c-e79f-471b-8af5-82dc3013cd0b
 # ╠═53e2e8ac-2110-4dfb-9cc4-824427a9ebf0
 # ╠═f3289e09-4ca7-4e71-b798-32908ae23ce0
 # ╠═2f59a097-e566-46c3-98a2-bedd35663073
