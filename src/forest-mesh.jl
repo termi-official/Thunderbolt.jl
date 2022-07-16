@@ -6,6 +6,11 @@ struct ForestElementIndex
     path::Vector{Int}
 end
 
+import Base.==
+function ==(A::ForestElementIndex, B::ForestElementIndex)
+    return A.root_idx == B.root_idx && A.path == B.path
+end
+
 # Elements whose refinement can be tracked to allow derefinement.
 # `sdim` is the spatial dimension of the ambient space
 # `N` is the number of nodes in the element
@@ -187,6 +192,7 @@ function Base.iterate(fi::ForestIterator, state)
                     return nothing
                 end
                 fi.element_stack = [fi.grid.cells[fi.current_element_idx.root_idx].element]
+                break
             else
                 next_child_idx = fi.current_element_idx.path[end]+1
                 fi.element_stack = fi.element_stack[1:(end-1)]
