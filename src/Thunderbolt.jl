@@ -5,9 +5,16 @@ using UnPack
 @reexport using Ferrite
 
 export
-    generate_ring_mesh
+    generate_ring_mesh,
+    ForestElementIndex,
+    ForestMesh,
+    ForestTopology,
+    ForestIterator,
+    refine_isotropic!,
+    derefine!
 
 include("meshtools.jl")
+include("forest-mesh.jl")
 
 abstract type AbstractIonChannel end;
 
