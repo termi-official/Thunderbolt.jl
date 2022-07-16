@@ -75,7 +75,7 @@ isrefined(::LeafLineElement) = false
 refine_isotropic(::LeafLineElement) = RefinedLineElement()
 
 function derefine!(element::RefinedLineElement, which_child::Int)
-    element.children = setindex(element.children, LeafLineElement(), which_child)
+    element.children[which_child] = LeafLineElement()
 end
 
 ###########################
@@ -145,7 +145,7 @@ end
 
 function derefine!(mesh::ForestMesh, tree_idx::ForestElementIndex)
     element = get_element_parent(mesh, tree_idx)
-    derefine(element, tree_idx.path[end])
+    derefine!(element, tree_idx.path[end])
 end
 
 ############################
@@ -202,4 +202,17 @@ function Base.iterate(fi::ForestIterator, state)
     end
 
     return (fi, state+1)
+end
+
+############################
+
+function WriteVTK.vtk_grid(filename::AbstractString, mesh::ForestMesh{sdim,C,T}; compress::Bool=true) where {sdim,C,T}
+    cells = MeshCell[]
+    coords = T[]
+    for it in ForestIterator(mesh)
+        if isleaf(it.element_stack[end])
+
+        end
+    end
+    return vtk_grid(filename, coords, cells; compress=compress)
 end
