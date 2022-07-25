@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.19.5
+# v0.19.9
 
 using Markdown
 using InteractiveUtils
@@ -368,13 +368,14 @@ function create_simple_fiber_model(coordinate_system, ip_fiber; endo_angle = 80.
 
 			elementwise_data_f[cellindex, qp] = vᵣ / norm(vᵣ)
 
-			v = -∇apicobasal / norm(∇apicobasal)
+			#v = -∇apicobasal / norm(∇apicobasal)
+			v = -∇transmural / norm(∇transmural)
 			sinϕ = sin(deg2rad(ϕ))
 			cosϕ = cos(deg2rad(ϕ))
-			k = ∇radial / norm(∇radial)
+			#k = ∇radial / norm(∇radial)
+			k = ∇apicobasal / norm(∇apicobasal)
 			vᵣ = v * cosϕ + (k × v) * sinϕ + k * (k ⋅ v) * (1-cosϕ)
 			vᵣ = vᵣ / norm(vᵣ)
-
 
 			vᵣ = vᵣ - (elementwise_data_f[cellindex, qp]⋅vᵣ)*elementwise_data_f[cellindex, qp]
 			elementwise_data_s[cellindex, qp] = vᵣ / norm(vᵣ)
@@ -457,16 +458,22 @@ end
 function Ψ(F, f₀, s₀, Caᵢ, mp::HolzapfelOgden2009)
 	# Modified version of https://onlinelibrary.wiley.com/doi/epdf/10.1002/cnm.2866
     @unpack a, b, aᶠ, bᶠ, aˢ, bˢ, aᶠˢ, bᶠˢ, β, η = mp
+
+	n₀ = cross(f₀, s₀)
+	n₀ /= norm(n₀)
+	
 	C = tdot(F)
-    I₁ = tr(C)
-	I₃ = det(C)
+	#I₃ = det(C)
+	J = det(F)
+    I₁ = tr(C/cbrt(J^2))
 	I₄ᶠ = f₀ ⋅ C ⋅ f₀
 	I₄ˢ = s₀ ⋅ C ⋅ s₀
-	I₈ᶠˢ = f₀ ⋅ C ⋅ s₀
+	I₈ᶠˢ = (f₀ ⋅ C ⋅ s₀ + s₀ ⋅ C ⋅ f₀)/2
 
-	I₃ᵇ = I₃^b
+	#I₃ᵇ = I₃^b
 	#U = β * (I₃ᵇ + 1.0/I₃ᵇ - 2.0)^a # does not work...?
-	U = β * (I₃ - 1)^2
+	#U = β * (I₃ - 1)^2
+	U = β * (J^2 - 1 - 2*log(J))
 	Ψᵖ = a/(2.0*b)*exp(b*(I₁-3.0)) + aᶠˢ/(2.0*bᶠˢ)*(exp(bᶠˢ*I₈ᶠˢ^2)-1.0) + U
 	if I₄ᶠ > 1.0
 		Ψᵖ += aᶠ/(2.0*bᶠ)*(exp(bᶠ*(I₄ᶠ - 1)^2)-1.0)
@@ -474,9 +481,19 @@ function Ψ(F, f₀, s₀, Caᵢ, mp::HolzapfelOgden2009)
 	if I₄ˢ > 1.0
 		Ψᵖ += aˢ/(2.0*bˢ)*(exp(bˢ*(I₄ˢ - 1)^2)-1.0)
 	end
+
+	# Transversely isotropic active contraction (incompressible)
+	λ = λᵃ(Caᵢ)
+	Fᵃ = λ*f₀⊗f₀ + (one(F) - f₀⊗f₀)/sqrt(λ)
 	
-	M = Tensors.unsafe_symmetric(f₀ ⊗ f₀)
-	Fᵃ = Tensors.unsafe_symmetric(one(F) + (λᵃ(Caᵢ) - 1.0) * M)
+	# Orthotropic active contraction (incompressible) - Rossi
+	# ξᶠ = (λᵃ(Caᵢ)-1.0) # microscopic shortening
+	# γf = ξᶠ
+	# γn = 4.0*ξᶠ
+	# γs = 1.0/((1.0+γf)*(1.0+γn)) - 1.0
+	# Fᵃ = one(F) + γf * f₀⊗f₀ + γs * s₀⊗s₀ + γn * n₀⊗n₀
+	
+	# Fᵃ = Tensors.unsafe_symmetric(one(F) + (λᵃ(Caᵢ) - 1.0) * M)
 	# Fᵃ = Tensors.unsafe_symmetric(λᵃ(Caᵢ) * M + (1.0/sqrt(λᵃ(Caᵢ)))*(one(F) - M))
 
 	#Fᵉ = F - (1 - 1.0/λᵃ(Caᵢ)) * ((F ⋅ f₀) ⊗ f₀
@@ -494,6 +511,66 @@ function Ψ(F, f₀, s₀, Caᵢ, mp::HolzapfelOgden2009)
 	Ψᵃ += η / 2 * (Iᵉ₄ᶠ - 1)^2 
 
     return Ψᵖ + Ψᵃ
+end
+
+# ╔═╡ 2236108c-a326-4015-84e7-1726bad61a76
+Base.@kwdef struct BarbarottaRossiDedeQuarteroni2018
+	a   =  0.2
+	b   =  4.614
+	aᶠ  =  4.1907
+	bᶠ  =  7.8565
+	aˢ  =  2.564
+	bˢ  = 10.446
+	aᶠˢ =  0.1304
+	bᶠˢ = 15.255
+	K   = 1.000 # Value not stated in paper
+	k   = 4.0
+end
+
+# ╔═╡ adc9d639-d7eb-490c-a4c1-9e5b03a9338d
+function Ψ(F, f₀, s₀, Caᵢ, mp::BarbarottaRossiDedeQuarteroni2018)
+	# Reproduction of https://onlinelibrary.wiley.com/doi/10.1002/cnm.3137
+    @unpack a, b, aᶠ, bᶠ, aˢ, bˢ, aᶠˢ, bᶠˢ, K, k = mp
+
+	# Gram-Schmidt step to enforce strict orthogonality
+	s₀ = s₀ - (f₀⋅s₀)*f₀
+	# Reconstruct normal
+	n₀ = cross(f₀, s₀)
+	n₀ /= norm(n₀)
+	
+	# Transverse isotropic active contraction (incompressible) - Also Rossi?
+	# λ = λᵃ(Caᵢ)
+	# Fᵃ = λ*f₀⊗f₀ + (one(F) - f₀⊗f₀)/sqrt(λ)
+
+	# Orthotropic active contraction (incompressible) - Rossi
+	ξᶠ = (λᵃ(Caᵢ)-1.0) # microscopic shortening
+	γf = ξᶠ
+	γn = ξᶠ
+	γs = 1.0/((1.0+γf)*(1.0+γn)) - 1.0
+	Fᵃ = one(F) + γf * f₀⊗f₀ + γs * s₀⊗s₀ + γn * n₀⊗n₀
+
+	# Everything is computed in Fᵉ
+	Fᵉ = F⋅inv(Fᵃ)
+	C = tdot(Fᵉ)
+	I₃ = det(C)
+	J = sqrt(I₃)
+	#J = det(Fᵉ)
+    I₁ = tr(C/cbrt(J^2))
+	I₄ᶠ = f₀ ⋅ C ⋅ f₀
+	I₄ˢ = s₀ ⋅ C ⋅ s₀
+	I₈ᶠˢ = (f₀ ⋅ C ⋅ s₀ + s₀ ⋅ C ⋅ f₀)/2
+
+	U = K/4.0 * (J^2 - 1 - 2*log(J))
+
+	Ψ = a/(2.0*b)*exp(b*(I₁-3.0)) + aᶠˢ/(2.0*bᶠˢ)*(exp(bᶠˢ*I₈ᶠˢ^2)-1.0) + U
+	if I₄ᶠ > 1.0
+		Ψ += aᶠ/(2.0*bᶠ)*(exp(bᶠ*(I₄ᶠ - 1)^2)-1.0)
+	end
+	if I₄ˢ > 1.0
+		Ψ += aˢ/(2.0*bˢ)*(exp(bˢ*(I₄ˢ - 1)^2)-1.0)
+	end
+
+    return Ψ
 end
 
 # ╔═╡ 53e2e8ac-2110-4dfb-9cc4-824427a9ebf0
@@ -1353,134 +1430,8 @@ What it seems to be not
 I think we are missing some energy pirtion, either $I_{4s}$ or $I_{8fs}$.
 """
 
-# ╔═╡ df771870-34a6-45c4-a5c9-0c4fccf78941
-function compute_midmyocardial_section_coordinate_system(grid)
-	ip = Lagrange{3, RefCube, 1}()
-	qr = QuadratureRule{3, RefCube}(2)
-	cellvalues = CellScalarValues(qr, ip);
-
-	dh = DofHandler(grid)
-	push!(dh, :coordinates, 1)
-	vertex_dict,_,_,_ = Ferrite.__close!(dh);
-
-	# Assemble Laplacian
-	K = create_sparsity_pattern(dh)
-
-    n_basefuncs = getnbasefunctions(cellvalues)
-    Ke = zeros(n_basefuncs, n_basefuncs)
-
-    assembler = start_assemble(K)
-    @inbounds for cell in CellIterator(dh)
-        fill!(Ke, 0)
-
-        reinit!(cellvalues, cell)
-
-        for q_point in 1:getnquadpoints(cellvalues)
-            dΩ = getdetJdV(cellvalues, q_point)
-
-            for i in 1:n_basefuncs
-                ∇v = shape_gradient(cellvalues, q_point, i)
-                for j in 1:n_basefuncs
-                    ∇u = shape_gradient(cellvalues, q_point, j)
-                    Ke[i, j] += (∇v ⋅ ∇u) * dΩ
-                end
-            end
-        end
-
-        assemble!(assembler, celldofs(cell), Ke)
-    end
-
-	# Transmural coordinate
-	ch = ConstraintHandler(dh);
-	dbc = Dirichlet(:coordinates, getfaceset(grid, "Endocardium"), (x, t) -> 0)
-	add!(ch, dbc);
-	dbc = Dirichlet(:coordinates, getfaceset(grid, "Epicardium"), (x, t) -> 1)
-	add!(ch, dbc);
-	close!(ch)
-	update!(ch, 0.0);
-
-	K_transmural = copy(K)
-    f = zeros(ndofs(dh))
-
-	apply!(K_transmural, f, ch)
-	transmural = K_transmural \ f;
-
-	vtk_grid("coordinates_transmural", dh) do vtk
-	    vtk_point_data(vtk, dh, transmural)
-	end
-
-	ch = ConstraintHandler(dh);
-	dbc = Dirichlet(:coordinates, getfaceset(grid, "Base"), (x, t) -> 0)
-	add!(ch, dbc);
-	dbc = Dirichlet(:coordinates, getfaceset(grid, "Myocardium"), (x, t) -> 0.15)
-	add!(ch, dbc);
-	close!(ch)
-	update!(ch, 0.0);
-
-	K_apicobasal = copy(K)
-	f = zeros(ndofs(dh))
-	
-	apply!(K_apicobasal, f, ch)
-	apicobasal = K_apicobasal \ f;
-
-	vtk_grid("coordinates_apicobasal", dh) do vtk
-	    vtk_point_data(vtk, dh, apicobasal)
-	end
-
-	return LVCoordinateSystem(dh, qr, cellvalues, transmural, apicobasal)
-end
-
-# ╔═╡ 3aa86aa9-308a-494f-bb8c-0983f22dfa07
-function generate_ring_mesh(ne_c, ne_r, ne_l; radial_inner::T = Float64(0.75), radial_outer::T = Float64(1.0), longitudinal_lower::T = Float64(-0.2), longitudinal_upper::T = Float64(0.2)) where {T}
-    # Generate a rectangle in cylindrical coordinates and transform coordinates back to carthesian.
-    ne_tot = ne_c*ne_r*ne_l;
-    n_nodes_c = ne_c; n_nodes_r = ne_r+1; n_nodes_l = ne_l+1;
-    n_nodes = n_nodes_c * n_nodes_r * n_nodes_l;
-
-    # Generate nodes
-    coords_c = range(0.0, stop=2*π, length=n_nodes_c+1)
-    coords_r = range(radial_inner, stop=radial_outer, length=n_nodes_r)
-    coords_l = range(longitudinal_upper, stop=longitudinal_lower, length=n_nodes_l)
-    nodes = Node{3,T}[]
-    for k in 1:n_nodes_l, j in 1:n_nodes_r, i in 1:n_nodes_c
-        # cylindrical -> carthesian
-        radius = coords_r[j]#-0.03*coords_l[k]/maximum(abs.(coords_l))
-        push!(nodes, Node((radius*cos(coords_c[i]), radius*sin(coords_c[i]), coords_l[k])))
-    end
-
-    # Generate cells
-    node_array = reshape(collect(1:n_nodes), (n_nodes_c, n_nodes_r, n_nodes_l))
-    cells = Hexahedron[]
-    for k in 1:ne_l, j in 1:ne_r, i in 1:ne_c
-        i_next = (i == ne_c) ? 1 : i + 1
-        push!(cells, Hexahedron((node_array[i,j,k], node_array[i_next,j,k], node_array[i_next,j+1,k], node_array[i,j+1,k],
-                                 node_array[i,j,k+1], node_array[i_next,j,k+1], node_array[i_next,j+1,k+1], node_array[i,j+1,k+1])))
-    end
-
-    # Cell faces
-    cell_array = reshape(collect(1:ne_tot),(ne_c, ne_r, ne_l))
-    boundary = FaceIndex[[FaceIndex(cl, 1) for cl in cell_array[:,:,1][:]];
-                            [FaceIndex(cl, 2) for cl in cell_array[:,1,:][:]];
-                            #[FaceIndex(cl, 3) for cl in cell_array[end,:,:][:]];
-                            [FaceIndex(cl, 4) for cl in cell_array[:,end,:][:]];
-                            #[FaceIndex(cl, 5) for cl in cell_array[1,:,:][:]];
-                            [FaceIndex(cl, 6) for cl in cell_array[:,:,end][:]]]
-
-    # boundary_matrix = boundaries_to_sparse(boundary)
-
-    # Cell face sets
-    offset = 0
-    facesets = Dict{String,Set{FaceIndex}}()
-    facesets["Myocardium"] = Set{FaceIndex}(boundary[(1:length(cell_array[:,:,1][:]))   .+ offset]); offset += length(cell_array[:,:,1][:])
-    facesets["Endocardium"]  = Set{FaceIndex}(boundary[(1:length(cell_array[:,1,:][:]))   .+ offset]); offset += length(cell_array[:,1,:][:])
-    facesets["Epicardium"]   = Set{FaceIndex}(boundary[(1:length(cell_array[:,end,:][:])) .+ offset]); offset += length(cell_array[:,end,:][:])
-    facesets["Base"]    = Set{FaceIndex}(boundary[(1:length(cell_array[:,:,end][:])) .+ offset]); offset += length(cell_array[:,:,end][:])
-
-    return Grid(cells, nodes, facesets=facesets)
-end
-
 # ╔═╡ d387f754-15cc-4875-8130-ca7482faac94
-function solve_test_ring()
+function solve_test_ring(pv_name_base, mp, grid, coordinate_system, fiber_model)
 	# geo = Tetrahedron
 	# refgeo = RefTetrahedron
 	# intorder = 1
@@ -1490,16 +1441,7 @@ function solve_test_ring()
 	order = 1
 	intorder = 2
 
-    grid = generate_ring_mesh(40,6,10; longitudinal_upper=1.0)
-	coordinate_system = compute_midmyocardial_section_coordinate_system(grid)
-	#fiber_model = create_simple_fiber_model(coordinate_system, Lagrange{3, refgeo, 1}(), endo_angle = 50.0, epi_angle = -70.0)
-	# α from "Transmural left ventricular mechanics underlying torsional recoil during relaxation."
-	#fiber_model = create_simple_fiber_model(coordinate_system, Lagrange{3, refgeo, 1}(), endo_angle = 80.0, epi_angle = -55.0)
-	#fiber_model = create_simple_fiber_model(coordinate_system, Lagrange{3, refgeo, 1}(), endo_angle = 40.0, epi_angle = -60.0, endo_transversal_angle = 30.0, epi_transversal_angle = 10.0)
-	# fiber_model = create_simple_fiber_model(coordinate_system, Lagrange{3, refgeo, 1}(), endo_angle = 40.0, epi_angle = -60.0, endo_transversal_angle = 30.0, epi_transversal_angle = 10.0)
-	fiber_model = create_simple_fiber_model(coordinate_system, Lagrange{3, refgeo, 1}(), endo_angle = 60.0, epi_angle = -60.0, endo_transversal_angle = 15.0, epi_transversal_angle = 15.0)
-
-	pvd = paraview_collection("GMK2014_ring.pvd");
+	pvd = paraview_collection("$pv_name_base.pvd");
 
 	T = 2.0
 	Δt = 0.1
@@ -1517,7 +1459,7 @@ function solve_test_ring()
 	#mp = BioNeoHooekan(4.0, 10.25, 1, 2, 10.0)
 	#mp = BioNeoHooekan(1.01, 1.01, 1, 2, 10.0)
 	# mp = BioNeoHooekan(0.25, 4.00, 1, 2, 15.0) # Looks okay :)
-	mp = HolzapfelOgden2009(η = 15.0)
+	#mp = HolzapfelOgden2009(η = 15.0)
 	#mp = AmborsiPezzuto2014(A=0.25,B=0.0,K=5.0)
 
     # Finite element base
@@ -1533,10 +1475,10 @@ function solve_test_ring()
     push!(dh, :u, 3) # Add a displacement field
     close!(dh)
 
-	vtk_save(vtk_grid("GMK2014-ring.vtu", dh))
+	vtk_save(vtk_grid("$pv_name_base-grid.vtu", dh))
 
     dbcs = ConstraintHandler(dh)
-    # # Clamp three sides
+    # Clamp three sides
     dbc = Dirichlet(:u, getfaceset(grid, "Myocardium"), (x,t) -> [0.0], [3])
     add!(dbcs, dbc)
     # dbc = Dirichlet(:u, Set([first(getfaceset(grid, "Base"))]), (x,t) -> [0.0], [3])
@@ -1684,7 +1626,7 @@ function solve_test_ring()
 		end
 
 	    # Save the solution
-		vtk_grid("GMK2014-ring-$t.vtu", dh) do vtk
+		vtk_grid("$pv_name_base-$t.vtu", dh) do vtk
             vtk_point_data(vtk,dh,uₜ)
 	        vtk_cell_data(vtk,hcat(frefdata...),"Reference Fiber Data")
 	        vtk_cell_data(vtk,hcat(srefdata...),"Reference Sheet Data")
@@ -1712,8 +1654,149 @@ function solve_test_ring()
 	return uₜ
 end
 
+# ╔═╡ 97ee6462-7f42-4729-a237-e0e966335e5f
+#solve_test_ring("BRDQ-LVS", HolzapfelOgden2009(), LVS_grid, LVS_cs, LVS_fm)
+
+# ╔═╡ df771870-34a6-45c4-a5c9-0c4fccf78941
+function compute_midmyocardial_section_coordinate_system(grid)
+	ip = Lagrange{3, RefCube, 1}()
+	qr = QuadratureRule{3, RefCube}(2)
+	cellvalues = CellScalarValues(qr, ip);
+
+	dh = DofHandler(grid)
+	push!(dh, :coordinates, 1)
+	vertex_dict,_,_,_ = Ferrite.__close!(dh);
+
+	# Assemble Laplacian
+	K = create_sparsity_pattern(dh)
+
+    n_basefuncs = getnbasefunctions(cellvalues)
+    Ke = zeros(n_basefuncs, n_basefuncs)
+
+    assembler = start_assemble(K)
+    @inbounds for cell in CellIterator(dh)
+        fill!(Ke, 0)
+
+        reinit!(cellvalues, cell)
+
+        for q_point in 1:getnquadpoints(cellvalues)
+            dΩ = getdetJdV(cellvalues, q_point)
+
+            for i in 1:n_basefuncs
+                ∇v = shape_gradient(cellvalues, q_point, i)
+                for j in 1:n_basefuncs
+                    ∇u = shape_gradient(cellvalues, q_point, j)
+                    Ke[i, j] += (∇v ⋅ ∇u) * dΩ
+                end
+            end
+        end
+
+        assemble!(assembler, celldofs(cell), Ke)
+    end
+
+	# Transmural coordinate
+	ch = ConstraintHandler(dh);
+	dbc = Dirichlet(:coordinates, getfaceset(grid, "Endocardium"), (x, t) -> 0)
+	add!(ch, dbc);
+	dbc = Dirichlet(:coordinates, getfaceset(grid, "Epicardium"), (x, t) -> 1)
+	add!(ch, dbc);
+	close!(ch)
+	update!(ch, 0.0);
+
+	K_transmural = copy(K)
+    f = zeros(ndofs(dh))
+
+	apply!(K_transmural, f, ch)
+	transmural = K_transmural \ f;
+
+	vtk_grid("coordinates_transmural", dh) do vtk
+	    vtk_point_data(vtk, dh, transmural)
+	end
+
+	ch = ConstraintHandler(dh);
+	dbc = Dirichlet(:coordinates, getfaceset(grid, "Base"), (x, t) -> 0)
+	add!(ch, dbc);
+	dbc = Dirichlet(:coordinates, getfaceset(grid, "Myocardium"), (x, t) -> 0.15)
+	add!(ch, dbc);
+	close!(ch)
+	update!(ch, 0.0);
+
+	K_apicobasal = copy(K)
+	f = zeros(ndofs(dh))
+	
+	apply!(K_apicobasal, f, ch)
+	apicobasal = K_apicobasal \ f;
+
+	vtk_grid("coordinates_apicobasal", dh) do vtk
+	    vtk_point_data(vtk, dh, apicobasal)
+	end
+
+	return LVCoordinateSystem(dh, qr, cellvalues, transmural, apicobasal)
+end
+
+# ╔═╡ 3aa86aa9-308a-494f-bb8c-0983f22dfa07
+function generate_ring_mesh(ne_c, ne_r, ne_l; radial_inner::T = Float64(0.75), radial_outer::T = Float64(1.0), longitudinal_lower::T = Float64(-0.2), longitudinal_upper::T = Float64(0.2)) where {T}
+    # Generate a rectangle in cylindrical coordinates and transform coordinates back to carthesian.
+    ne_tot = ne_c*ne_r*ne_l;
+    n_nodes_c = ne_c; n_nodes_r = ne_r+1; n_nodes_l = ne_l+1;
+    n_nodes = n_nodes_c * n_nodes_r * n_nodes_l;
+
+    # Generate nodes
+    coords_c = range(0.0, stop=2*π, length=n_nodes_c+1)
+    coords_r = range(radial_inner, stop=radial_outer, length=n_nodes_r)
+    coords_l = range(longitudinal_upper, stop=longitudinal_lower, length=n_nodes_l)
+    nodes = Node{3,T}[]
+    for k in 1:n_nodes_l, j in 1:n_nodes_r, i in 1:n_nodes_c
+        # cylindrical -> carthesian
+        radius = coords_r[j]#-0.03*coords_l[k]/maximum(abs.(coords_l))
+        push!(nodes, Node((radius*cos(coords_c[i]), radius*sin(coords_c[i]), coords_l[k])))
+    end
+
+    # Generate cells
+    node_array = reshape(collect(1:n_nodes), (n_nodes_c, n_nodes_r, n_nodes_l))
+    cells = Hexahedron[]
+    for k in 1:ne_l, j in 1:ne_r, i in 1:ne_c
+        i_next = (i == ne_c) ? 1 : i + 1
+        push!(cells, Hexahedron((node_array[i,j,k], node_array[i_next,j,k], node_array[i_next,j+1,k], node_array[i,j+1,k],
+                                 node_array[i,j,k+1], node_array[i_next,j,k+1], node_array[i_next,j+1,k+1], node_array[i,j+1,k+1])))
+    end
+
+    # Cell faces
+    cell_array = reshape(collect(1:ne_tot),(ne_c, ne_r, ne_l))
+    boundary = FaceIndex[[FaceIndex(cl, 1) for cl in cell_array[:,:,1][:]];
+                            [FaceIndex(cl, 2) for cl in cell_array[:,1,:][:]];
+                            #[FaceIndex(cl, 3) for cl in cell_array[end,:,:][:]];
+                            [FaceIndex(cl, 4) for cl in cell_array[:,end,:][:]];
+                            #[FaceIndex(cl, 5) for cl in cell_array[1,:,:][:]];
+                            [FaceIndex(cl, 6) for cl in cell_array[:,:,end][:]]]
+
+    # boundary_matrix = boundaries_to_sparse(boundary)
+
+    # Cell face sets
+    offset = 0
+    facesets = Dict{String,Set{FaceIndex}}()
+    facesets["Myocardium"] = Set{FaceIndex}(boundary[(1:length(cell_array[:,:,1][:]))   .+ offset]); offset += length(cell_array[:,:,1][:])
+    facesets["Endocardium"]  = Set{FaceIndex}(boundary[(1:length(cell_array[:,1,:][:]))   .+ offset]); offset += length(cell_array[:,1,:][:])
+    facesets["Epicardium"]   = Set{FaceIndex}(boundary[(1:length(cell_array[:,end,:][:])) .+ offset]); offset += length(cell_array[:,end,:][:])
+    facesets["Base"]    = Set{FaceIndex}(boundary[(1:length(cell_array[:,:,end][:])) .+ offset]); offset += length(cell_array[:,:,end][:])
+
+    return Grid(cells, nodes, facesets=facesets)
+end
+
+# ╔═╡ 76998b7a-891b-434a-abac-8f1a3c1e55dd
+LVS_grid = generate_ring_mesh(30,4,3; longitudinal_upper=0.25)
+
+# ╔═╡ cefd456e-3001-4986-a514-c1ea09848616
+LVS_cs = compute_midmyocardial_section_coordinate_system(LVS_grid)
+
+# ╔═╡ a530f300-a1dc-43ce-80ba-533facb5896f
+LVS_fm = create_simple_fiber_model(LVS_cs, Lagrange{3, RefCube, 1}(), endo_angle = 60.0, epi_angle = -60.0, endo_transversal_angle = -20.0, epi_transversal_angle = 20.0)
+
 # ╔═╡ 7fdacae4-747a-46fc-a0ca-cb6ea5c47bc8
-solve_test_ring()
+solve_test_ring("HO-LVS", HolzapfelOgden2009(η = 10.0), LVS_grid, LVS_cs, LVS_fm)
+
+# ╔═╡ fc88ec84-1833-4475-97b0-35e535edbbdb
+solve_test_ring("BRDQ-LVS", BarbarottaRossiDedeQuarteroni2018(K=20.0), LVS_grid, LVS_cs, LVS_fm)
 
 # ╔═╡ Cell order:
 # ╟─6e43f86d-6341-445f-be8d-146eb0447457
@@ -1751,6 +1834,8 @@ solve_test_ring()
 # ╟─4ff78cdf-1efc-4c00-91a3-4c29f3d27305
 # ╠═35f192f3-940f-4524-a78d-f589622ab666
 # ╠═bcfbbc2c-e79f-471b-8af5-82dc3013cd0b
+# ╠═2236108c-a326-4015-84e7-1726bad61a76
+# ╠═adc9d639-d7eb-490c-a4c1-9e5b03a9338d
 # ╠═53e2e8ac-2110-4dfb-9cc4-824427a9ebf0
 # ╠═f3289e09-4ca7-4e71-b798-32908ae23ce0
 # ╠═2f59a097-e566-46c3-98a2-bedd35663073
@@ -1773,6 +1858,11 @@ solve_test_ring()
 # ╠═76b6b377-287a-45a0-b02b-92e205dde287
 # ╟─4b76b944-2054-47ed-bbcb-b1412643fed0
 # ╠═d387f754-15cc-4875-8130-ca7482faac94
+# ╠═76998b7a-891b-434a-abac-8f1a3c1e55dd
+# ╠═cefd456e-3001-4986-a514-c1ea09848616
+# ╠═a530f300-a1dc-43ce-80ba-533facb5896f
 # ╠═7fdacae4-747a-46fc-a0ca-cb6ea5c47bc8
+# ╠═fc88ec84-1833-4475-97b0-35e535edbbdb
+# ╠═97ee6462-7f42-4729-a237-e0e966335e5f
 # ╠═df771870-34a6-45c4-a5c9-0c4fccf78941
 # ╠═3aa86aa9-308a-494f-bb8c-0983f22dfa07
