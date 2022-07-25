@@ -47,8 +47,8 @@ function ψstar(Q̇, Ca, mp::PPMK2017ContractionUnitModel)
     return F₀(Ca)*v₀/β * exp(β*Q̇/v₀)
 end
 
-# Evaluation of min function apprearing in (47) without substraction
-function Ψmin_reduced(Fₖ₊₁, Fᵃₖ, Qₖ₊₁, Qₖ, Δt, Ca, mp, f₀, s₀, n₀)
+# Evaluation of min function apprearing in (47)
+function Ψmin(Fₖ₊₁, Fᵃₖ, Qₖ₊₁, Qₖ, Δt, Ca, mp, f₀, s₀, n₀)
     # Apply flow rule (44)
     ΔQ = Qₖ₊₁ - Qₖ
     Fᵃₖ₊₁ = (exp(ΔQ)*f₀⊗f₀ + s₀⊗s₀ + n₀⊗n₀)⋅Fᵃₖ
@@ -57,23 +57,12 @@ function Ψmin_reduced(Fₖ₊₁, Fᵃₖ, Qₖ₊₁, Qₖ, Δt, Ca, mp, f₀,
     return Ψ(Fₖ₊₁, mp.P) + Ψ(Fᵉₖ₊₁, mp.A) + Δt * ψstar(ΔQ/Δt, Ca, mp.C)
 end
 
-# Evaluation of min function apprearing in (47)
-function Ψmin(Fₖ₊₁, Fᵃₖ, Fₖ, Qₖ₊₁, Qₖ, Δt, Ca, mp, f₀, s₀, n₀)
-    # Apply flow rule (44)
-    ΔQ = Qₖ₊₁ - Qₖ
-    Fᵃₖ₊₁ = (exp(ΔQ)*f₀⊗f₀ + s₀⊗s₀ + n₀⊗n₀)*Fᵃₖ
-    Fᵉₖ₊₁ = Fₖ₊₁*inv(Fᵃₖ₊₁)
-
-    return Ψ(Fₖ₊₁, mp.P) + Ψ(Fᵉₖ₊₁, mp.A) - Ψ(Fₖ, mp.P) - Ψ(Fᵉₖ, mp.A) + Δt * ψstar(ΔQ/Δt, Ca, mp.C)
-end
-
 function predictor(Fₖ₊₁, Fᵃₖ, Qₖ, mp, Δt, Ca, f₀, s₀, n₀)
     Qₖ₊₁ = copy(Qₖ) # initial guess
     ΔQ = 0.0 # Newton increment
     # Newton loop for minimization in (47)
     for i = 1:10
-        # println("Internal iteration $i with energy ", Ψmin_reduced(Fₖ₊₁, Fᵃₖ, Qₖ₊₁, Qₖ, Δt, Ca, mp, f₀, s₀, n₀))
-        jacobian, residual = Tensors.hessian(Qₖ₊₁_ -> Ψmin_reduced(Fₖ₊₁, Fᵃₖ, Qₖ₊₁_, Qₖ, Δt, Ca, mp, f₀, s₀, n₀), Qₖ₊₁, :all)
+        jacobian, residual = Tensors.hessian(Qₖ₊₁_ -> Ψmin(Fₖ₊₁, Fᵃₖ, Qₖ₊₁_, Qₖ, Δt, Ca, mp, f₀, s₀, n₀), Qₖ₊₁, :all)
         ΔQ = jacobian \ -residual
         Qₖ₊₁ += ΔQ
 
@@ -81,7 +70,7 @@ function predictor(Fₖ₊₁, Fᵃₖ, Qₖ, mp, Δt, Ca, f₀, s₀, n₀)
             return Qₖ₊₁
         end
     end
-    println("Predictor failed to converge with energy ", Ψmin_reduced(Fₖ₊₁, Fᵃₖ, Qₖ₊₁, Qₖ, Δt, Ca, mp, f₀, s₀, n₀))
+    println("Predictor failed to converge with energy ", Ψmin(Fₖ₊₁, Fᵃₖ, Qₖ₊₁, Qₖ, Δt, Ca, mp, f₀, s₀, n₀))
     return Qₖ₊₁
 end
 
@@ -219,7 +208,7 @@ function assemble_element!(ke, ge, cell, cv, fv, mp::GeneralizedHillMaterial, ue
     end
 end
 
-function assemble_global!(K, f, dh, cv, fv, mp, u, ΓN)
+function assemble_global!(K, f, dh, cv, fv, mp, u, Q, ΓN)
     n_total = getnbasefunctions(cellvalues)
     Ke = zeros(ntotal, ntotal)
     ge = zeros(ntotal)
@@ -316,7 +305,10 @@ function solve(Δt = 0.01, T = 1.0)
         while true; newton_itr += 1
             u .= un .+ Δu # Current guess
 
-            assemble_global!(J, g, dh, cv, fv, mp, u, ΓN)
+            # Update internal variable
+            Qₖ₊₁ = predictor(Fₖ₊₁, Fᵃₖ, Qₖ, mp, Δt, Ca, f₀, s₀, n₀)
+
+            assemble_global!(J, g, dh, cv, fv, mp, u, Q, ΓN)
             normg = norm(g[Ferrite.free_dofs(dbcs)])
             apply_zero!(J, g, dbcs)
 
@@ -398,13 +390,13 @@ function solve_qp()
             Qₖ₊₁ = predictor(Fₖ₊₁, Fᵃₖ, Qₖ, mp, Δt, Ca, f₀, s₀, n₀)
 
             #TODO Rewrite with arrays to handle higher dimensional Q
-            ∂W_F = (Qₖ₊₁_) -> Tensors.gradient(Fₖ₊₁_ -> Ψmin_reduced(Fₖ₊₁_, Fᵃₖ, Qₖ₊₁_, Qₖ, Δt, Ca, mp, f₀, s₀, n₀), Fₖ₊₁)
-            ∂W_Q = (Fₖ₊₁_) -> Tensors.gradient(Qₖ₊₁_ -> Ψmin_reduced(Fₖ₊₁_, Fᵃₖ, Qₖ₊₁_, Qₖ, Δt, Ca, mp, f₀, s₀, n₀), Qₖ₊₁)
+            ∂W_F = (Qₖ₊₁_) -> Tensors.gradient(Fₖ₊₁_ -> Ψmin(Fₖ₊₁_, Fᵃₖ, Qₖ₊₁_, Qₖ, Δt, Ca, mp, f₀, s₀, n₀), Fₖ₊₁)
+            ∂W_Q = (Fₖ₊₁_) -> Tensors.gradient(Qₖ₊₁_ -> Ψmin(Fₖ₊₁_, Fᵃₖ, Qₖ₊₁_, Qₖ, Δt, Ca, mp, f₀, s₀, n₀), Qₖ₊₁)
 
             # Eval second derivatives
-            ∂²W∂F² = Tensors.hessian(Fₖ₊₁_ -> Ψmin_reduced(Fₖ₊₁_, Fᵃₖ, Qₖ₊₁, Qₖ, Δt, Ca, mp, f₀, s₀, n₀), Fₖ₊₁)
+            ∂²W∂F² = Tensors.hessian(Fₖ₊₁_ -> Ψmin(Fₖ₊₁_, Fᵃₖ, Qₖ₊₁, Qₖ, Δt, Ca, mp, f₀, s₀, n₀), Fₖ₊₁)
             # ∂²W∂Q² = Tensors.gradient(Qₖ₊₁_ -> ∂W_Q(Fₖ₊₁, Qₖ₊₁_), Qₖ₊₁)
-            ∂²W∂Q² = Tensors.hessian(Qₖ₊₁_ -> Ψmin_reduced(Fₖ₊₁, Fᵃₖ, Qₖ₊₁_, Qₖ, Δt, Ca, mp, f₀, s₀, n₀), Qₖ₊₁)
+            ∂²W∂Q² = Tensors.hessian(Qₖ₊₁_ -> Ψmin(Fₖ₊₁, Fᵃₖ, Qₖ₊₁_, Qₖ, Δt, Ca, mp, f₀, s₀, n₀), Qₖ₊₁)
             ∂²W∂F∂Q = Tensors.gradient(Qₖ₊₁_ -> ∂W_F(Qₖ₊₁_), Qₖ₊₁)
             ∂²W∂Q∂F = Tensors.gradient(Fₖ₊₁_ -> ∂W_Q(Fₖ₊₁_), Fₖ₊₁)
 
