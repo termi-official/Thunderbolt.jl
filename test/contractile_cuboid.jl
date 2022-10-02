@@ -74,18 +74,23 @@ function compute_Fᵃ(Ca, f₀, s₀, n₀, mp::PelceSunLangeveld1995Model)
     return Fᵃ
 end
 
-struct GeneralizedHillModel{PMat, AMat, CMod}
+abstract type QuasiStaticModel end
+struct GeneralizedHillModel{PMat, AMat, CMod} <: QuasiStaticModel
     passive_spring::PMat
     active_spring::AMat
     contraction_model::CMod
 end
 
+struct ConstantFieldCoefficient{T}
+    val::T
+end
+value(coeff::ConstantFieldCoefficient, cell_id, ξ, t = 0.0) = coeff.val
 
-struct FieldCoefficient
+struct FieldDataCoefficient
 	elementwise_data #3d array (element_idx, base_fun_idx, dim)
 	ip
 end
-function value(coeff::FieldCoefficient, cell_id, ξ)
+function value(coeff::FieldDataCoefficient, cell_id, ξ, t = 0.0)
 	@unpack ip, elementwise_data = coeff
 	dim = 3 #@FIXME PLS
 
@@ -98,28 +103,35 @@ function value(coeff::FieldCoefficient, cell_id, ξ)
     return val / norm(val)
 end
 
+struct ElastodynamicsModel{RHSModel <: QuasiStaticModel, CoefficienType}
+    rhs::RHSModel
+    ρ::CoefficienType
+    # TODO refactor into cache
+    vₜ₋₁::Vector
+end
+
 struct OrthotropicMicrostructureModel{FiberCoefficientType, SheetletCoefficientType, NormalCoefficientType}
     fiber_coefficient::FiberCoefficientType
     sheetlet_coefficient::SheetletCoefficientType
     normal_coefficient::NormalCoefficientType
 end
 
-function directions(fsn::OrthotropicMicrostructureModel, cell_id, ξ)
-    f₀ = value(fsn.fiber_coefficient, cell_id, ξ)
-    s₀ = value(fsn.sheetlet_coefficient, cell_id, ξ)
-    n₀ = value(fsn.normal_coefficient, cell_id, ξ)
+function directions(fsn::OrthotropicMicrostructureModel, cell_id, ξ, t = 0.0)
+    f₀ = value(fsn.fiber_coefficient, cell_id, ξ, t)
+    s₀ = value(fsn.sheetlet_coefficient, cell_id, ξ, t)
+    n₀ = value(fsn.normal_coefficient, cell_id, ξ, t)
 
     f₀, s₀, n₀
 end
 
 function constitutive_driver(F, f₀, s₀, n₀, Caᵢ, model::GeneralizedHillModel)
     # TODO what is a good abstraction here?
-    Fᵃ = compute_Fᵃ(Caᵢ,  f₀, s₀, n₀,  model.contraction_model) 
+    Fᵃ = compute_Fᵃ(Caᵢ,  f₀, s₀, n₀,  model.contraction_model)
 
     ∂²Ψ∂F², ∂Ψ∂F = Tensors.hessian(
-        F_ad -> 
-              Ψ(F_ad,     f₀, s₀, n₀, model.passive_spring) 
-            + Ψ(F_ad, Fᵃ, f₀, s₀, n₀, model.active_spring), 
+        F_ad ->
+              Ψ(F_ad,     f₀, s₀, n₀, model.passive_spring)
+            + Ψ(F_ad, Fᵃ, f₀, s₀, n₀, model.active_spring),
         F, :all)
 
     return ∂Ψ∂F, ∂²Ψ∂F²
@@ -152,20 +164,20 @@ function assemble_element!(
 
     @inbounds for qp in 1:getnquadpoints(cv)
         dΩ = getdetJdV(cv, qp)
-		
+
         # Compute deformation gradient F
         ∇u = function_gradient(cv, qp, uₑ)
         F = one(∇u) + ∇u
 
         # Compute stress and tangent
-		x_ref = cv.qr.points[qp]
-		f₀, s₀, n₀ = directions(fsn_model, cellid, x_ref)
-		P, ∂P∂F = constitutive_driver(F, f₀, s₀, n₀, Caᵢ(cellid, x_ref, time), mp)
+		ξ = cv.qr.points[qp]
+		f₀, s₀, n₀ = directions(fsn_model, cellid, ξ, time)
+		P, ∂P∂F = constitutive_driver(F, f₀, s₀, n₀, Caᵢ(cellid, ξ, time), mp)
 
         # Loop over test functions
         for i in 1:ndofs
             ∇δui = shape_gradient(cv, qp, i)
-			
+
             # Add contribution to the residual from this test function
             residualₑ[i] += ∇δui ⊡ P * dΩ
 
@@ -188,7 +200,7 @@ function assemble_element!(
     #             dΓ = getdetJdV(fv, qp)
 
 	# 			# ∇u_prev = function_gradient(fv, qp, uₑ_prev)
-    #             # F_prev = one(∇u_prev) + ∇u_prev 
+    #             # F_prev = one(∇u_prev) + ∇u_prev
 	# 			# N = transpose(inv(F_prev)) ⋅ getnormal(fv, qp) # TODO this may mess up reversibility
 
 	# 			N = getnormal(fv, qp)
@@ -260,11 +272,11 @@ function assemble_element!(
     #             dΓ = getdetJdV(fv, qp)
 
 	# 			#∇u_prev = function_gradient(fv, qp, uₑ_prev)
-    #             #F_prev = one(∇u_prev) + ∇u_prev 
+    #             #F_prev = one(∇u_prev) + ∇u_prev
 	# 			#N = transpose(inv(F_prev)) ⋅ getnormal(fv, qp) # TODO this may mess up reversibility
 
 	# 			N = getnormal(fv, qp)
-				
+
 	# 			∇u_q = function_gradient(fv, qp, uₑ)
 	# 			F = one(∇u_q) + ∇u_q
 	# 			J = det(F)
@@ -309,6 +321,147 @@ function assemble_global!(K, f, uₜ, dh, cv, fv, constitutive_model, fsn_model,
     end
 end
 
+function assemble_mass!(cellvalues::CellScalarValues{dim}, M::SparseMatrixCSC, dh::DofHandler, coeff, t) where {dim}
+    n_basefuncs = getnbasefunctions(cellvalues)
+    Me = zeros(n_basefuncs, n_basefuncs)
+
+    assembler_M = start_assemble(M)
+
+    #Now we iterate over all cells of the grid
+    @inbounds for cell in CellIterator(dh)
+        fill!(Me, 0)
+        #get the coordinates of the current cell
+        coords = getcoordinates(cell)
+        cellid = cell.current_cellid.x
+
+        Ferrite.reinit!(cellvalues, cell)
+        #loop over all Gauss points
+        for q_point in 1:getnquadpoints(cellvalues)
+            #get the spatial coordinates of the current gauss point
+            #ξ = spatial_coordinate(cellvalues, q_point, coords)
+            ξ = cellvalues.qr.points[q_point]
+            dΩ = getdetJdV(cellvalues, q_point)
+            coeff_qp = value(coeff, cellid, ξ, t)
+            for i in 1:n_basefuncs
+                Nᵢ = shape_value(cellvalues, q_point, i)
+                for j in 1:n_basefuncs
+                    Nⱼ = shape_value(cellvalues, q_point, j)
+                    #mass matrices
+                    Me[i,j] +=  coeff_qp * Nᵢ * Nⱼ * dΩ
+                end
+            end
+        end
+
+        assemble!(assembler_M, celldofs(cell), Me)
+    end
+    return M
+end;
+
+# TODO this needs quite a bit of refactoring.
+# Basically this is a
+#     * "NonlinearProblem"
+#     * "NewtonRaphsonSolver"
+function solve_timestep!(uₜ, uₜ₋₁, dh, dbcs, cv, fv, constitutive_model::ConstitutiveModel, fsn_model, t, Δt) where {ConstitutiveModel <: QuasiStaticModel}
+    # Update with new boundary conditions (if available)
+    Ferrite.update!(dbcs, t)
+    apply!(uₜ, dbcs)
+
+    NEWTON_TOL = 1e-8
+    MAX_NEWTON_ITER = 100
+
+    _ndofs = ndofs(dh)
+
+    # TODO move into some kind of cache
+    Δu = zeros(_ndofs)
+    g  = zeros(_ndofs)
+
+    # TODO move into some kind of cache
+    K = create_sparsity_pattern(dh)
+
+    # Perform Newton iterations
+    newton_itr = -1
+    while true
+        newton_itr += 1
+
+        assemble_global!(K, g, uₜ, dh, cv, fv, constitutive_model, fsn_model, t)
+        normg = norm(g[Ferrite.free_dofs(dbcs)])
+        apply_zero!(K, g, dbcs)
+        @info "||g|| = " normg
+
+        if normg < NEWTON_TOL
+            break
+        elseif newton_itr > MAX_NEWTON_ITER
+            error("Reached maximum Newton iterations. Aborting.")
+        end
+
+        # @info det(K)
+        Δu .= K \ g
+
+        apply_zero!(Δu, dbcs)
+
+        uₜ .-= Δu # Current guess
+    end
+end
+
+# TODO this needs quite a bit of refactoring.
+# Basically this combines
+#     * "SemiImplicitEuler"
+#     * "NonlinearProblem"
+#     * "NewtonRaphsonSolver"
+function solve_timestep!(uₜ, uₜ₋₁, dh, dbcs, cv, fv, constitutive_model::ElastodynamicsModel, fsn_model, t, Δt)
+    # Update with new boundary conditions (if available)
+    Ferrite.update!(dbcs, t)
+    apply!(uₜ, dbcs)
+
+    vₜ = uₜ₋₁ + Δt*uₜ
+
+    NEWTON_TOL = 1e-8
+    MAX_NEWTON_ITER = 100
+
+    _ndofs = ndofs(dh)
+
+    # TODO move into some kind of cache
+    Δu = zeros(_ndofs)
+    g  = zeros(_ndofs)
+
+    # TODO move into some kind of cache
+    M = create_sparsity_pattern(dh)
+    cv_mass = CellScalarValues(QuadratureRule{3, RefCube}(1), Lagrange{3, RefCube, 1}())
+    assemble_mass!(cv_mass, M, dh, constitutive_model.ρ, t)
+
+    K = create_sparsity_pattern(dh)
+
+    # Perform Newton iterations
+    newton_itr = -1
+    while true
+        newton_itr += 1
+
+        assemble_global!(K, g, uₜ, dh, cv, fv, constitutive_model.rhs, fsn_model, t)
+
+        g += M*(vₜ - constitutive_model.vₜ₋₁)
+
+        normg = norm(g[Ferrite.free_dofs(dbcs)])
+        apply_zero!(K, g, dbcs)
+        @info "||g|| = " normg
+
+        if normg < NEWTON_TOL
+            break
+        elseif newton_itr > MAX_NEWTON_ITER
+            error("Reached maximum Newton iterations. Aborting.")
+        end
+
+        # @info det(K)
+        Δu .= K \ g
+
+        apply_zero!(Δu, dbcs)
+
+        uₜ .-= Δu # Current guess
+    end
+
+    constitutive_model.vₜ₋₁ .= vₜ
+end
+
+
 function solve()
     grid = generate_grid(Hexahedron, (15, 3, 3), Vec{3}((0.0,0.0,0.0)), Vec{3}((0.5, 0.1, 0.1)))
 
@@ -321,10 +474,10 @@ function solve()
     ip = Lagrange{dim, RefCube, order}()
     qr = QuadratureRule{dim, RefCube}(qorder)
     qr_face = QuadratureRule{dim-1, RefCube}(qorder)
-    
+
     cv = CellVectorValues(qr, ip, ip_geo)
     fv = FaceVectorValues(qr_face, ip, ip_geo)
-    
+
     # TODO get this from the models
     dim_ionic_state = 1
     internal_state_ionic = Vector(undef, getncells(grid)*length(getpoints(qr))*dim_ionic_state)
@@ -332,39 +485,48 @@ function solve()
     internal_state_concentration = Vector(undef, getncells(grid)*length(getpoints(qr))*dim_concentration_state)
     dim_contraction_state = 0
     internal_state_contraction = Vector(undef, getncells(grid)*length(getpoints(qr))*dim_contraction_state)
-    
+
     dh = DofHandler(grid)
     push!(dh, :d, dim, ip)
     close!(dh);
-    
-    # TODO move outta here
-    K = create_sparsity_pattern(dh)
+    _ndofs = ndofs(dh)
 
-    f₀data = Vector{Vec{3}}(undef, getncells(grid))
-    for cellindex ∈ 1:getncells(grid)
-        f₀data[cellindex] = Vec{3}((1.0, 0.0, 0.0))
-    end
-    s₀data = Vector{Vec{3}}(undef, getncells(grid))
-    for cellindex ∈ 1:getncells(grid)
-        s₀data[cellindex] = Vec{3}((0.0, 1.0, 0.0))
-    end
-    n₀data = Vector{Vec{3}}(undef, getncells(grid))
-    for cellindex ∈ 1:getncells(grid)
-        n₀data[cellindex] = Vec{3}((0.0, 0.0, 1.0))
-    end
-    ip_fiber = DiscontinuousLagrange{dim, RefCube, 0}()
+    # f₀data = Vector{Vec{3}}(undef, getncells(grid))
+    # for cellindex ∈ 1:getncells(grid)
+    #     f₀data[cellindex] = Vec{3}((1.0, 0.0, 0.0))
+    # end
+    # s₀data = Vector{Vec{3}}(undef, getncells(grid))
+    # for cellindex ∈ 1:getncells(grid)
+    #     s₀data[cellindex] = Vec{3}((0.0, 1.0, 0.0))
+    # end
+    # n₀data = Vector{Vec{3}}(undef, getncells(grid))
+    # for cellindex ∈ 1:getncells(grid)
+    #     n₀data[cellindex] = Vec{3}((0.0, 0.0, 1.0))
+    # end
+    # ip_fiber = DiscontinuousLagrange{dim, RefCube, 0}()
+    # fsn_model = OrthotropicMicrostructureModel(
+    #     FieldCoefficient(f₀data, ip_fiber),
+    #     FieldCoefficient(s₀data, ip_fiber),
+    #     FieldCoefficient(n₀data, ip_fiber)
+    # )
     fsn_model = OrthotropicMicrostructureModel(
-        FieldCoefficient(f₀data, ip_fiber),
-        FieldCoefficient(s₀data, ip_fiber),
-        FieldCoefficient(n₀data, ip_fiber)
+        ConstantFieldCoefficient(Vec{3}((1.0, 0.0, 0.0))),
+        ConstantFieldCoefficient(Vec{3}((0.0, 1.0, 0.0))),
+        ConstantFieldCoefficient(Vec{3}((0.0, 0.0, 1.0)))
     )
-    
-    constitutive_model = GeneralizedHillModel(
-        TransverseIsotopicNeoHookeanModel(),
-        LinearActiveSpringModel(),
-        PelceSunLangeveld1995Model()
+
+
+    constitutive_model = 
+    ElastodynamicsModel(
+        GeneralizedHillModel(
+            TransverseIsotopicNeoHookeanModel(),
+            LinearActiveSpringModel(),
+            PelceSunLangeveld1995Model()
+        ),
+        ConstantFieldCoefficient(1.0),
+        zeros(_ndofs)
     )
-    
+
     #
     # Boundary conditions are added to the problem in the usual way.
     # Please check out the other examples for an in depth explanation.
@@ -380,17 +542,10 @@ function solve()
     dbc = Dirichlet(:d, Set([1]), (x,t) -> [0.0, 0.0, 0.0], [1, 2, 3])
     add!(dbcs, dbc)
     close!(dbcs)
-    
-    _ndofs = ndofs(dh)
-    
+
     uₜ   = zeros(_ndofs)
     uₜ₋₁ = zeros(_ndofs)
-    Δu   = zeros(_ndofs)
-    
-    g = zeros(_ndofs)
 
-    NEWTON_TOL = 1e-8
-    MAX_NEWTON_ITER = 100
     pvd = paraview_collection("cube-test.pvd");
     for t ∈ 0.0:Δt:T
         @info "t = " t
@@ -398,33 +553,7 @@ function solve()
         # Store last solution
         uₜ₋₁ .= uₜ
 
-        # Update with new boundary conditions (if available)
-        Ferrite.update!(dbcs, t)
-        apply!(uₜ, dbcs)
-
-        # Perform Newton iterations
-        newton_itr = -1
-        while true
-            newton_itr += 1
-
-            assemble_global!(K, g, uₜ, dh, cv, fv, constitutive_model, fsn_model, t)
-            normg = norm(g[Ferrite.free_dofs(dbcs)])
-            apply_zero!(K, g, dbcs)
-            @info "||g|| = " normg
-
-            if normg < NEWTON_TOL
-                break
-            elseif newton_itr > MAX_NEWTON_ITER
-                error("Reached maximum Newton iterations. Aborting.")
-            end
-
-            # @info det(K)
-            Δu = K \ g
-
-            apply_zero!(Δu, dbcs)
-
-            uₜ .-= Δu # Current guess
-        end
+        solve_timestep!(uₜ, uₜ₋₁, dh, dbcs, cv, fv, constitutive_model, fsn_model, t, Δt)
 
         # Save the solution
         vtk_grid("cube-em-$t.vtu", dh) do vtk
