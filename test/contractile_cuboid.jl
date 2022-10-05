@@ -137,6 +137,61 @@ function constitutive_driver(F, f₀, s₀, n₀, Caᵢ, model::GeneralizedHillM
     return ∂Ψ∂F, ∂²Ψ∂F²
 end
 
+
+function constitutive_driver_rhs(F, f₀, s₀, n₀, Caᵢ, model::GeneralizedHillModel)
+    # TODO what is a good abstraction here?
+    Fᵃ = compute_Fᵃ(Caᵢ,  f₀, s₀, n₀,  model.contraction_model)
+
+    ∂Ψ∂F = Tensors.gradient(
+        F_ad ->
+              Ψ(F_ad,     f₀, s₀, n₀, model.passive_spring)
+            + Ψ(F_ad, Fᵃ, f₀, s₀, n₀, model.active_spring),
+        F)
+
+    return ∂Ψ∂F
+end
+
+
+function assemble_element_rhs!(
+    residualₑ, uₑ, # Element local quantities
+    cell, # Ferrite cell
+    cv, fv, # Ferrite FEValues
+    mp, fsn_model, # Model Parts
+    time) # Time point
+
+    cellid = cell.current_cellid.x
+
+	Caᵢ(cellid,x,t) = t < 1.0 ? t : 2.0-t
+    # Reinitialize cell values, and reset output arrays
+    reinit!(cv, cell)
+    fill!(residualₑ, 0.0)
+
+    ndofs = getnbasefunctions(cv)
+
+    @inbounds for qp in 1:getnquadpoints(cv)
+        dΩ = getdetJdV(cv, qp)
+
+        # Compute deformation gradient F
+        ∇u = function_gradient(cv, qp, uₑ)
+        F = one(∇u) + ∇u
+
+        # Compute stress and tangent
+		ξ = cv.qr.points[qp]
+		f₀, s₀, n₀ = directions(fsn_model, cellid, ξ, time)
+		# P = constitutive_driver_rhs(F, f₀, s₀, n₀, Caᵢ(cellid, ξ, time), mp)
+        P, ∂P∂F = constitutive_driver(F, f₀, s₀, n₀, Caᵢ(cellid, ξ, time), mp)
+
+        # Loop over test functions
+        for i in 1:ndofs
+            ∇δui = shape_gradient(cv, qp, i)
+
+            # Add contribution to the residual from this test function
+            residualₑ[i] += ∇δui ⊡ P * dΩ
+        end
+    end
+end
+
+
 function assemble_element!(
     Kₑ, residualₑ, uₑ, # Element local quantities
     cell, # Ferrite cell
@@ -305,8 +360,8 @@ end
 
 function assemble_global!(K, f, uₜ, dh, cv, fv, constitutive_model, fsn_model, t)
     n = ndofs_per_cell(dh)
-    ke = zeros(n, n)
-    ge = zeros(n)
+    kₑ = zeros(n, n)
+    gₑ = zeros(n)
 
     # start_assemble resets K and f
     assembler = start_assemble(K, f)
@@ -316,12 +371,28 @@ function assemble_global!(K, f, uₜ, dh, cv, fv, constitutive_model, fsn_model,
 	for cell in CellIterator(dh)
         global_dofs = celldofs(cell)
         uₑ = uₜ[global_dofs] # element dofs
-		assemble_element!(ke, ge, uₑ, cell, cv, fv, constitutive_model, fsn_model, t)
-        assemble!(assembler, global_dofs, ge, ke)
+		assemble_element!(kₑ, gₑ, uₑ, cell, cv, fv, constitutive_model, fsn_model, t)
+        assemble!(assembler, global_dofs, gₑ, kₑ)
     end
 end
 
-function assemble_mass!(cellvalues::CellScalarValues{dim}, M::SparseMatrixCSC, dh::DofHandler, coeff, t) where {dim}
+function assemble_rhs!(g, uₜ, dh, cv, fv, constitutive_model, fsn_model, t)
+    g .= 0.0
+    n = ndofs_per_cell(dh)
+    gₑ = zeros(n)
+    kₑ = zeros(n, n)
+
+    # Loop over all cells in the grid
+    #@timeit "assemble" for cell in CellIterator(dh)
+	for cell in CellIterator(dh)
+        global_dofs = celldofs(cell)
+        uₑ = uₜ[global_dofs] # element dofs
+		assemble_element_rhs!(gₑ, uₑ, cell, cv, fv, constitutive_model, fsn_model, t)
+        assemble!(g, global_dofs, gₑ)
+    end
+end
+
+function assemble_mass!(cellvalues::CellVectorValues{dim}, M::SparseMatrixCSC, dh::DofHandler, coeff, t) where {dim}
     n_basefuncs = getnbasefunctions(cellvalues)
     Me = zeros(n_basefuncs, n_basefuncs)
 
@@ -341,13 +412,13 @@ function assemble_mass!(cellvalues::CellScalarValues{dim}, M::SparseMatrixCSC, d
             #ξ = spatial_coordinate(cellvalues, q_point, coords)
             ξ = cellvalues.qr.points[q_point]
             dΩ = getdetJdV(cellvalues, q_point)
-            coeff_qp = value(coeff, cellid, ξ, t)
+            coeff_qp = 1.0# value(coeff, cellid, ξ, t)
             for i in 1:n_basefuncs
                 Nᵢ = shape_value(cellvalues, q_point, i)
                 for j in 1:n_basefuncs
                     Nⱼ = shape_value(cellvalues, q_point, j)
                     #mass matrices
-                    Me[i,j] +=  coeff_qp * Nᵢ * Nⱼ * dΩ
+                    Me[i,i] += coeff_qp * Nᵢ ⋅ Nⱼ * dΩ
                 end
             end
         end
@@ -411,9 +482,9 @@ end
 function solve_timestep!(uₜ, uₜ₋₁, dh, dbcs, cv, fv, constitutive_model::ElastodynamicsModel, fsn_model, t, Δt)
     # Update with new boundary conditions (if available)
     Ferrite.update!(dbcs, t)
-    apply!(uₜ, dbcs)
+    # apply!(uₜ, dbcs)
 
-    vₜ = uₜ₋₁ + Δt*uₜ
+    # vₜ = uₜ₋₁ + Δt*uₜ
 
     NEWTON_TOL = 1e-8
     MAX_NEWTON_ITER = 100
@@ -426,50 +497,65 @@ function solve_timestep!(uₜ, uₜ₋₁, dh, dbcs, cv, fv, constitutive_model:
 
     # TODO move into some kind of cache
     M = create_sparsity_pattern(dh)
-    cv_mass = CellScalarValues(QuadratureRule{3, RefCube}(1), Lagrange{3, RefCube, 1}())
+    cv_mass = CellVectorValues(QuadratureRule{3, RefCube}(1), Lagrange{3, RefCube, 1}())
     assemble_mass!(cv_mass, M, dh, constitutive_model.ρ, t)
 
     K = create_sparsity_pattern(dh)
 
     # Perform Newton iterations
-    newton_itr = -1
-    while true
-        newton_itr += 1
+    # newton_itr = -1
+    # while true
+    #     newton_itr += 1
 
-        assemble_global!(K, g, uₜ, dh, cv, fv, constitutive_model.rhs, fsn_model, t)
+    #     assemble_global!(K, g, uₜ, dh, cv, fv, constitutive_model.rhs, fsn_model, t)
 
-        g += M*(vₜ - constitutive_model.vₜ₋₁)
+    #     g += M*(vₜ - constitutive_model.vₜ₋₁)
 
-        normg = norm(g[Ferrite.free_dofs(dbcs)])
-        apply_zero!(K, g, dbcs)
-        @info "||g|| = " normg
+    #     normg = norm(g[Ferrite.free_dofs(dbcs)])
+    #     apply_zero!(K, g, dbcs)
+    #     @info "||g|| = " normg
 
-        if normg < NEWTON_TOL
-            break
-        elseif newton_itr > MAX_NEWTON_ITER
-            error("Reached maximum Newton iterations. Aborting.")
-        end
+    #     if normg < NEWTON_TOL
+    #         break
+    #     elseif newton_itr > MAX_NEWTON_ITER
+    #         error("Reached maximum Newton iterations. Aborting.")
+    #     end
 
-        # @info det(K)
-        Δu .= K \ g
+    #     # @info det(K)
+    #     Δu .= K \ g
 
-        apply_zero!(Δu, dbcs)
+    #     apply_zero!(Δu, dbcs)
 
-        uₜ .-= Δu # Current guess
-    end
+    #     uₜ .-= Δu # Current guess
+    # end
 
+    # assemble_global!(K, g, uₜ₋₁, dh, cv, fv, constitutive_model.rhs, fsn_model, t)
+    assemble_rhs!(g, uₜ₋₁, dh, cv, fv, constitutive_model.rhs, fsn_model, t)
+    # @info Matrix(M) 
+    aₜ₋₁ = M \ -g
+    # @info aₜ₋₁
+
+    uₜ .= uₜ₋₁ + Δt * constitutive_model.vₜ₋₁ + Δt^2/2.0 * aₜ₋₁
+    # @info uₜ
+
+    # assemble_global!(K, g, uₜ, dh, cv, fv, constitutive_model.rhs, fsn_model, t)
+    assemble_rhs!(g, uₜ, dh, cv, fv, constitutive_model.rhs, fsn_model, t)
+    aₜ = M \ -g
+    vₜ = constitutive_model.vₜ₋₁ + Δt * (aₜ₋₁ + aₜ) / 2.0
+    # @info vₜ
     constitutive_model.vₜ₋₁ .= vₜ
 end
 
 
 function solve()
     grid = generate_grid(Hexahedron, (15, 3, 3), Vec{3}((0.0,0.0,0.0)), Vec{3}((0.5, 0.1, 0.1)))
+    # grid = generate_grid(Hexahedron, (1, 1, 1), Vec{3}((0.0,0.0,0.0)), Vec{3}((0.1, 0.1, 0.1)))
 
     dim = 3
     order = 1
     qorder = 2
-    Δt = 0.1
-    T = 2.0
+    Δt = 0.01
+    T = 0.25
     ip_geo = Lagrange{dim, RefCube, order}()
     ip = Lagrange{dim, RefCube, order}()
     qr = QuadratureRule{dim, RefCube}(qorder)
@@ -514,7 +600,6 @@ function solve()
         ConstantFieldCoefficient(Vec{3}((0.0, 1.0, 0.0))),
         ConstantFieldCoefficient(Vec{3}((0.0, 0.0, 1.0)))
     )
-
 
     constitutive_model = 
     ElastodynamicsModel(
