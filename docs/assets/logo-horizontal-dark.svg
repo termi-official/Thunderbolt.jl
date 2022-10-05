@@ -25,8 +25,8 @@
      inkscape:document-units="mm"
      showgrid="true"
      inkscape:zoom="1.1893044"
-     inkscape:cx="415.78926"
-     inkscape:cy="80.299038"
+     inkscape:cx="416.63009"
+     inkscape:cy="80.299039"
      inkscape:window-width="1680"
      inkscape:window-height="1013"
      inkscape:window-x="0"
@@ -101,13 +101,13 @@
        sodipodi:nodetypes="ccccccccc" />
     <text
        xml:space="preserve"
-       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:21.1667px;font-family:'Source Code Pro';-inkscape-font-specification:'Source Code Pro';text-align:center;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:#000000;stroke-width:0.529"
+       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:21.1667px;font-family:'Source Code Pro';-inkscape-font-specification:'Source Code Pro';text-align:center;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:#ffffff;stroke-width:0.529;stroke-opacity:1"
        x="164.24327"
        y="45.405178"
        id="text8575"><tspan
          sodipodi:role="line"
          id="tspan8573"
-         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:21.1667px;font-family:'Noto Sans Math';-inkscape-font-specification:'Noto Sans Math';fill:#ffffff;stroke-width:0.529"
+         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:21.1667px;font-family:'Noto Sans Math';-inkscape-font-specification:'Noto Sans Math';fill:#ffffff;stroke-width:0.529;stroke:#ffffff;stroke-opacity:1"
          x="164.24327"
          y="45.405178">Thunderbolt.jl</tspan></text>
   </g>
