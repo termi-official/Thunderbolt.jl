@@ -43,41 +43,95 @@ function Ψ(F, f₀, s₀, n₀, mp::TransverseIsotopicNeoHookeanModel)
     return Ψᵖ
 end
 
-@Base.kwdef struct LinearActiveSpringModel
+@Base.kwdef struct LinearSpringModel
 	η = 10.0
 end
-function Ψ(F, Fᵃ, f₀, s₀, n₀, mp::LinearActiveSpringModel)
+function Ψ(F, f₀, s₀, n₀, mp::LinearSpringModel)
     @unpack η = mp
 
     M = Tensors.unsafe_symmetric(f₀ ⊗ f₀)
+	FMF = Tensors.unsafe_symmetric(F ⋅ M ⋅ transpose(F))
+	I₄ = tr(FMF)
+
+    return η / 2.0 * (I₄ - 1)^2.0
+end
+
+struct ActiveMaterialAdapter{Mat}
+    mat::Mat
+end
+
+function Ψ(F, Fᵃ, f₀, s₀, n₀, adapter::ActiveMaterialAdapter)
 	f̃ = Fᵃ ⋅ f₀ / norm(Fᵃ ⋅ f₀)
-	M̃ = f̃ ⊗ f̃
+    s̃ = Fᵃ ⋅ s₀ / norm(Fᵃ ⋅ s₀)
+    ñ = Fᵃ ⋅ n₀ / norm(Fᵃ ⋅ n₀)
 
 	Fᵉ = F⋅inv(Fᵃ)
-	FMF = Tensors.unsafe_symmetric(Fᵉ ⋅ M̃ ⋅ transpose(Fᵉ))
-	Iᵉ₄ = tr(FMF)
-	Ψᵃ = η / 2.0 * (Iᵉ₄ - 1)^2.0
 
+	Ψᵃ = Ψ(Fᵉ, f̃, s̃, ñ, adapter.mat)
     return Ψᵃ
 end
 
-
-Base.@kwdef struct PelceSunLangeveld1995Model
+"""
+@TODO citation pelce paper
+"""
+Base.@kwdef struct PelceSunLangeveld1995Model 
     β = 3.0
     λᵃₘₐₓ = 0.7
 end
-function compute_Fᵃ(Ca, f₀, s₀, n₀, mp::PelceSunLangeveld1995Model)
+
+function compute_λᵃ(Ca, mp::PelceSunLangeveld1995Model)
     @unpack β, λᵃₘₐₓ = mp
     f(c) = c > 0.0 ? 0.5 + atan(β*log(c))/π  : 0.0
-    λᵃ(Ca) = 1.0 / (1.0 + f(Ca)*(1.0/λᵃₘₐₓ - 1.0))
-    Fᵃ = Tensors.unsafe_symmetric(one(SymmetricTensor{2, 3}) + (λᵃ(Ca) - 1.0) * f₀ ⊗ f₀)
+    return 1.0 / (1.0 + f(Ca)*(1.0/λᵃₘₐₓ - 1.0))
+end
+
+"""
+@TODO citation original GMK paper
+"""
+struct GMKActiveDeformationGradientModel end
+
+function compute_Fᵃ(Ca, f₀, s₀, n₀, contraction_model::PelceSunLangeveld1995Model, ::GMKActiveDeformationGradientModel)
+    λᵃ = compute_λᵃ(Ca, contraction_model)
+    Fᵃ = Tensors.unsafe_symmetric(one(SymmetricTensor{2, 3}) + (λᵃ - 1.0) * f₀ ⊗ f₀)
+    return Fᵃ
+end
+
+"""
+@TODO citation 10.1016/j.euromechsol.2013.10.009
+"""
+struct GMKIncompressibleActiveDeformationGradientModel end
+
+function compute_Fᵃ(Ca, f₀, s₀, n₀, contraction_model::PelceSunLangeveld1995Model, ::GMKIncompressibleActiveDeformationGradientModel)
+    λᵃ = compute_λᵃ(Ca, contraction_model)
+    Fᵃ = λᵃ*f₀ ⊗ f₀ + 1.0/sqrt(λᵃ) * s₀ ⊗ s₀ + 1.0/sqrt(λᵃ) * n₀ ⊗ n₀
+    return Fᵃ
+end
+
+"""
+@TODO citation 10.1016/j.euromechsol.2013.10.009
+"""
+struct RLRSQActiveDeformationGradientModel
+    sheetlet_part
+end
+
+function compute_Fᵃ(Ca, f₀, s₀, n₀, contraction_model::PelceSunLangeveld1995Model, Fᵃ_model::RLRSQActiveDeformationGradientModel)
+    @unpack sheetlet_part = Fᵃ_model
+    λᵃ = compute_λᵃ(Ca, contraction_model)
+    Fᵃ = λᵃ * f₀ ⊗ f₀ + sheetlet_part*λᵃ* s₀ ⊗ s₀ + 1.0/(sheetlet_part*λᵃ^2) * n₀ ⊗ n₀
     return Fᵃ
 end
 
 abstract type QuasiStaticModel end
-struct GeneralizedHillModel{PMat, AMat, CMod} <: QuasiStaticModel
+struct GeneralizedHillModel{PMat, AMat, ADGMod, CMod} <: QuasiStaticModel
     passive_spring::PMat
     active_spring::AMat
+    active_deformation_gradient_model::ADGMod
+    contraction_model::CMod
+end
+
+struct ActiveStressModel{Mat, AMat, ADGMod, CMod} <: QuasiStaticModel
+    material_model::Mat
+    active_deformation_gradient_model::ADGMod
     contraction_model::CMod
 end
 
@@ -126,7 +180,21 @@ end
 
 function constitutive_driver(F, f₀, s₀, n₀, Caᵢ, model::GeneralizedHillModel)
     # TODO what is a good abstraction here?
-    Fᵃ = compute_Fᵃ(Caᵢ,  f₀, s₀, n₀,  model.contraction_model)
+    Fᵃ = compute_Fᵃ(Caᵢ,  f₀, s₀, n₀, model.contraction_model, model.active_deformation_gradient_model)
+
+    ∂²Ψ∂F², ∂Ψ∂F = Tensors.hessian(
+        F_ad ->
+              Ψ(F_ad,     f₀, s₀, n₀, model.passive_spring)
+            + Ψ(F_ad, Fᵃ, f₀, s₀, n₀, model.active_spring),
+        F, :all)
+
+    return ∂Ψ∂F, ∂²Ψ∂F²
+end
+
+
+function constitutive_driver(F, f₀, s₀, n₀, Caᵢ, model::ActiveStressModel)
+    # TODO what is a good abstraction here?
+    Fᵃ = compute_Fᵃ(Caᵢ,  f₀, s₀, n₀, model.contraction_model, model.active_deformation_gradient_model)
 
     ∂²Ψ∂F², ∂Ψ∂F = Tensors.hessian(
         F_ad ->
@@ -140,7 +208,7 @@ end
 
 function constitutive_driver_rhs(F, f₀, s₀, n₀, Caᵢ, model::GeneralizedHillModel)
     # TODO what is a good abstraction here?
-    Fᵃ = compute_Fᵃ(Caᵢ,  f₀, s₀, n₀,  model.contraction_model)
+    Fᵃ = compute_Fᵃ(Caᵢ,  f₀, s₀, n₀, model.contraction_model, model.active_deformation_gradient_model)
 
     ∂Ψ∂F = Tensors.gradient(
         F_ad ->
@@ -548,14 +616,14 @@ end
 
 
 function solve()
-    grid = generate_grid(Hexahedron, (15, 3, 3), Vec{3}((0.0,0.0,0.0)), Vec{3}((0.5, 0.1, 0.1)))
-    # grid = generate_grid(Hexahedron, (1, 1, 1), Vec{3}((0.0,0.0,0.0)), Vec{3}((0.1, 0.1, 0.1)))
+    # grid = generate_grid(Hexahedron, (15, 3, 3), Vec{3}((0.0,0.0,0.0)), Vec{3}((0.5, 0.1, 0.1)))
+    grid = generate_grid(Hexahedron, (10, 10, 2), Vec{3}((0.0,0.0,0.0)), Vec{3}((1.0, 1.0, 0.2)))
 
     dim = 3
     order = 1
     qorder = 2
-    Δt = 0.01
-    T = 0.25
+    Δt = 0.1
+    T = 1.0
     ip_geo = Lagrange{dim, RefCube, order}()
     ip = Lagrange{dim, RefCube, order}()
     qr = QuadratureRule{dim, RefCube}(qorder)
@@ -602,15 +670,18 @@ function solve()
     )
 
     constitutive_model = 
-    ElastodynamicsModel(
+    #ElastodynamicsModel(
         GeneralizedHillModel(
             TransverseIsotopicNeoHookeanModel(),
-            LinearActiveSpringModel(),
+            ActiveMaterialAdapter(LinearSpringModel()),
+            RLRSQActiveDeformationGradientModel(0.2),
+            #GMKActiveDeformationGradientModel(),
+            # GMKIncompressibleActiveDeformationGradientModel(),
             PelceSunLangeveld1995Model()
-        ),
-        ConstantFieldCoefficient(1.0),
-        zeros(_ndofs)
-    )
+        )#,
+    #    ConstantFieldCoefficient(1.0),
+    #    zeros(_ndofs)
+    #)
 
     #
     # Boundary conditions are added to the problem in the usual way.
@@ -650,4 +721,4 @@ function solve()
     vtk_save(pvd);
 end
 
-solve()
+# solve()
