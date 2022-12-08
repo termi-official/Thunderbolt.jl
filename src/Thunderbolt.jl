@@ -22,7 +22,7 @@ Parameters for a generic sigmoid function of the form
 
 σ(x) = \frac{A + B x}{C + D \exp{\frac{E + F x}{G}}}
 """
-struct GenericSigmoidParameters where {T}
+struct GenericSigmoidParameters{T}
     A::T
     B::T
     C::T
@@ -47,7 +47,7 @@ Note that the original formulation is
 
 where αₖ = aₖ - bₖ and βₖ = bₖ.
 """
-struct GenericHodgkinHuxleyGate <: HodgkinHuxleyTypeGate where {T}
+struct GenericHodgkinHuxleyGate{T} <: HodgkinHuxleyTypeGate where {T}
     αₚ::GenericSigmoidParameters{T}
     βₚ::GenericSigmoidParameters{T}
 end
@@ -72,7 +72,7 @@ They can be derived as special cases of Markov type ion channels with
 tensor-product structure (TODO citation). 𝐬 is called the gating vector
 and its entries are the gating variables.
 """
-struct HodgkinHuxleyTypeIonChannel <: AbstractIonChannel where {NGates}
+struct HodgkinHuxleyTypeIonChannel{NGates} <: AbstractIonChannel where {NGates}
     gates::SVector{NGates, HodgkinHuxleyTypeGate}
     powers::SVector{NGates, Int}
 end;
@@ -92,7 +92,7 @@ Iⱼ = ̄gⱼ pⱼ (φₘ - Eⱼ)
 
 where ̄gⱼ is the maximal conductance, pᵢ the open probability of the associated channel and Eⱼ the equilibrium potential.
 """
-struct OhmicCurrent where {T, NChannels}
+struct OhmicCurrent{T, NChannels}
     g::T
     channels::SVector{NChannels, HodgkinHuxleyTypeIonChannel}
 end
@@ -164,13 +164,12 @@ Transformed bidomain model with the structure
 This formulation is a transformation of the parabolic-parabolic
 form (c.f. TODO citation) and has been derived by (TODO citation) first.
 """
-struct ParabolicEllipticBidomainModel <: AbstractEPModel
-struct ParabolicEllipticBidomainModel <: AbstractEPModel where {T1,T2,T3,T4}
+struct ParabolicEllipticBidomainModel{T1,T2,T3,T4} <: AbstractEPModel where {T1,T2,T3,T4}
     χ::T1
     Cₘ::T2
     κᵢ::T3
     κₑ::T4
-    stim::AbstractStimulationProtocoll
+    stim::AbstractStimulationProtocol
     ion::AbstractIonicModel
 end
 
@@ -185,7 +184,7 @@ Simplification of the bidomain model with the structure
 assumption is violated we can construct optimal κ (TODO citation+example) for the
 reconstruction of φₘ.
 """
-struct MonodomainModel <: AbstractEPModel where {T1,T2,T3}
+struct MonodomainModel{T1,T2,T3} <: AbstractEPModel where {T1,T2,T3}
     χ::T1
     Cₘ::T2
     κ::T3
