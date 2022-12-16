@@ -1,5 +1,8 @@
 using Ferrite, SparseArrays, BlockArrays, Thunderbolt, UnPack, Tensors
 
+struct NullEnergyModel end
+Ψ(F, f₀, s₀, n₀, mp::NullEnergyModel) = 0.0
+
 # TODO citation
 @Base.kwdef struct NeffCompressionPenalty
     a  = 1.0
@@ -9,6 +12,15 @@ end
 function U(I₃, mp::NeffCompressionPenalty)
     mp.β * (I₃^mp.b + 1/I₃^mp.b - 2)^mp.a
 end
+
+# TODO how is this one called in literature? citation?
+@Base.kwdef struct SimpleCompressionPenalty
+    β  = 1.0
+end
+function U(I₃, mp::SimpleCompressionPenalty)
+    mp.β * (I₃ - 1 - 2*log(sqrt(I₃)))
+end
+
 # https://onlinelibrary.wiley.com/doi/epdf/10.1002/cnm.2866
 @Base.kwdef struct TransverseIsotopicNeoHookeanModel
 	a₁ = 2.6
@@ -41,6 +53,119 @@ function Ψ(F, f₀, s₀, n₀, mp::TransverseIsotopicNeoHookeanModel)
     end
 
     return Ψᵖ
+end
+
+# TODO citation
+Base.@kwdef struct HolzapfelOgden2009Model #<: OrthotropicMaterialModel
+	a   =  0.059
+	b   =  8.023
+	aᶠ  = 18.472
+	bᶠ  = 16.026
+	aˢ  =  2.581
+	bˢ  = 11.120
+	aᶠˢ =  0.216
+	bᶠˢ = 11.436
+	mpU = SimpleCompressionPenalty()
+end
+
+function Ψ(F, f₀, s₀, n₀, mp::HolzapfelOgden2009Model)
+	# Modified version of https://onlinelibrary.wiley.com/doi/epdf/10.1002/cnm.2866
+    @unpack a, b, aᶠ, bᶠ, aˢ, bˢ, aᶠˢ, bᶠˢ, mpU = mp
+
+	C = tdot(F)
+	I₃ = det(C)
+	J = det(F)
+    I₁ = tr(C/cbrt(J^2))
+	I₄ᶠ = f₀ ⋅ C ⋅ f₀
+	I₄ˢ = s₀ ⋅ C ⋅ s₀
+	I₈ᶠˢ = (f₀ ⋅ C ⋅ s₀ + s₀ ⋅ C ⋅ f₀)/2.0
+
+	Ψᵖ = a/(2.0*b)*exp(b*(I₁-3.0)) + aᶠˢ/(2.0*bᶠˢ)*(exp(bᶠˢ*I₈ᶠˢ^2)-1.0) + U(I₃, mpU)
+	if I₄ᶠ > 1.0
+		Ψᵖ += aᶠ/(2.0*bᶠ)*(exp(bᶠ*(I₄ᶠ - 1)^2)-1.0)
+	end
+	if I₄ˢ > 1.0
+		Ψᵖ += aˢ/(2.0*bˢ)*(exp(bˢ*(I₄ˢ - 1)^2)-1.0)
+	end
+
+    return Ψᵖ
+end
+
+
+"""
+"""
+Base.@kwdef struct LinYinPassiveModel #<: TransverseIsotropicMaterialModel
+	C₁ = 1.05
+	C₂ = 9.13
+	C₃ = 2.32
+	C₄ = 0.08
+    mpU = SimpleCompressionPenalty()
+end
+
+"""
+"""
+function Ψ(F, f₀, s₀, n₀, model::LinYinPassiveModel)
+	@unpack C₁, C₂, C₃, C₄, mpU = model
+
+	C = tdot(F) # = FᵀF
+
+	# Invariants
+	I₁ = tr(C)
+	I₃ = det(C)
+	I₄ = f₀ ⋅ C ⋅ f₀ # = C : (f ⊗ f)
+
+	# Exponential portion
+	Q = C₂*(I₁-3)^2 + C₃*(I₁-3)*(I₄-1) + C₄*(I₄-1)^2
+	return C₁*(exp(Q)-1) + U(I₃, mpU)
+end
+
+Base.@kwdef struct LinYinActiveModel #<: TransverseIsotropicMaterialModel
+    C₀ = 0.0
+	C₁ = -13.03
+	C₂ = 36.65
+	C₃ = 35.42
+	C₄ = 15.52
+    C₅ = 1.62
+    mpU = SimpleCompressionPenalty()
+end
+
+"""
+"""
+function Ψ(F, f₀, s₀, n₀, model::LinYinActiveModel)
+	@unpack C₀, C₁, C₂, C₃, C₄, C₅, mpU = model
+
+	C = tdot(F) # = FᵀF
+
+	# Invariants
+	I₁ = tr(C)
+	I₃ = det(C)
+	I₄ = f₀ ⋅ C ⋅ f₀ # = C : (f ⊗ f)
+
+	return C₀ + C₁*(I₁-3)*(I₄-1) + C₂*(I₁-3)^2 + C₃*(I₄-1)^2 + C₄*(I₁-3) + C₅*(I₄-1) + U(I₃, mpU)
+end
+
+
+Base.@kwdef struct HumphreyStrumpfYinModel #<: TransverseIsotropicMaterialModel
+	C₁ = 15.93
+	C₂ = 55.85
+	C₃ =  3.59
+	C₄ = 30.21
+    mpU = SimpleCompressionPenalty()
+end
+
+"""
+"""
+function Ψ(F, f₀, s₀, n₀, model::HumphreyStrumpfYinModel)
+	@unpack C₁, C₂, C₃, C₄, mpU = model
+
+	C = tdot(F) # = FᵀF
+
+	# Invariants
+	I₁ = tr(C)
+	I₃ = det(C)
+	I₄ = f₀ ⋅ C ⋅ f₀ # = C : (f ⊗ f)
+
+	return C₁*(√I₄-1)^2 + C₂*(√I₄-1)^3 + C₃*(√I₄-1)*(I₁-3) + C₄*(I₁-3)^2 + U(I₃, mpU)
 end
 
 @Base.kwdef struct LinearSpringModel
@@ -117,7 +242,7 @@ end
 function compute_Fᵃ(Ca, f₀, s₀, n₀, contraction_model::PelceSunLangeveld1995Model, Fᵃ_model::RLRSQActiveDeformationGradientModel)
     @unpack sheetlet_part = Fᵃ_model
     λᵃ = compute_λᵃ(Ca, contraction_model)
-    Fᵃ = λᵃ * f₀ ⊗ f₀ + sheetlet_part*λᵃ* s₀ ⊗ s₀ + 1.0/(sheetlet_part*λᵃ^2) * n₀ ⊗ n₀
+    Fᵃ = λᵃ * f₀⊗f₀ + (1.0+sheetlet_part*(λᵃ-1.0))* s₀⊗s₀ + 1.0/((1.0+sheetlet_part*(λᵃ-1.0))*λᵃ) * n₀⊗n₀
     return Fᵃ
 end
 
@@ -615,7 +740,7 @@ function solve_timestep!(uₜ, uₜ₋₁, dh, dbcs, cv, fv, constitutive_model:
 end
 
 
-function solve()
+function solve(constitutive_model, name)
     # grid = generate_grid(Hexahedron, (15, 3, 3), Vec{3}((0.0,0.0,0.0)), Vec{3}((0.5, 0.1, 0.1)))
     grid = generate_grid(Hexahedron, (10, 10, 2), Vec{3}((0.0,0.0,0.0)), Vec{3}((1.0, 1.0, 0.2)))
 
@@ -669,19 +794,19 @@ function solve()
         ConstantFieldCoefficient(Vec{3}((0.0, 0.0, 1.0)))
     )
 
-    constitutive_model = 
-    #ElastodynamicsModel(
-        GeneralizedHillModel(
-            TransverseIsotopicNeoHookeanModel(),
-            ActiveMaterialAdapter(LinearSpringModel()),
-            RLRSQActiveDeformationGradientModel(0.2),
-            #GMKActiveDeformationGradientModel(),
-            # GMKIncompressibleActiveDeformationGradientModel(),
-            PelceSunLangeveld1995Model()
-        )#,
-    #    ConstantFieldCoefficient(1.0),
-    #    zeros(_ndofs)
-    #)
+    # constitutive_model = 
+    # #ElastodynamicsModel(
+    #     GeneralizedHillModel(
+    #         TransverseIsotopicNeoHookeanModel(),
+    #         ActiveMaterialAdapter(LinearSpringModel()),
+    #         RLRSQActiveDeformationGradientModel(0.2),
+    #         #GMKActiveDeformationGradientModel(),
+    #         # GMKIncompressibleActiveDeformationGradientModel(),
+    #         PelceSunLangeveld1995Model()
+    #     )#,
+    # #    ConstantFieldCoefficient(1.0),
+    # #    zeros(_ndofs)
+    # #)
 
     #
     # Boundary conditions are added to the problem in the usual way.
@@ -702,7 +827,7 @@ function solve()
     uₜ   = zeros(_ndofs)
     uₜ₋₁ = zeros(_ndofs)
 
-    pvd = paraview_collection("cube-test.pvd");
+    pvd = paraview_collection("$name.pvd");
     for t ∈ 0.0:Δt:T
         @info "t = " t
 
@@ -712,7 +837,7 @@ function solve()
         solve_timestep!(uₜ, uₜ₋₁, dh, dbcs, cv, fv, constitutive_model, fsn_model, t, Δt)
 
         # Save the solution
-        vtk_grid("cube-em-$t.vtu", dh) do vtk
+        vtk_grid("$name-$t.vtu", dh) do vtk
             vtk_point_data(vtk,dh,uₜ)
             vtk_save(vtk)
             pvd[t] = vtk
@@ -721,4 +846,24 @@ function solve()
     vtk_save(pvd);
 end
 
-# solve()
+# Reproducer for original paper
+gmk2014model = GeneralizedHillModel(
+    HolzapfelOgden2009Model(),
+    ActiveMaterialAdapter(LinearSpringModel()),
+    GMKActiveDeformationGradientModel(),
+    PelceSunLangeveld1995Model()
+)
+
+ppek2017likemodel = GeneralizedHillModel(
+    HumphreyStrumpfYinModel(),
+    ActiveMaterialAdapter(LinYinActiveModel()),
+    GMKIncompressibleActiveDeformationGradientModel(),
+    PelceSunLangeveld1995Model()
+)
+
+rlrsqlikemodel = GeneralizedHillModel(
+    NullEnergyModel(),
+    ActiveMaterialAdapter(HolzapfelOgden2009Model()),
+    RLRSQActiveDeformationGradientModel(0.3),
+    PelceSunLangeveld1995Model()
+)
