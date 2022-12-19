@@ -92,7 +92,7 @@ linyin1998_4_sheet_passive[:,1] .-= λshift
 linyin1998_4_fiber_active[:,1] .-= λshift
 linyin1998_4_sheet_active[:,1] .-= λshift
 
-# 2. weird unit to kPa
+# 2. kPa to original unit
 # linyin1998_4_fiber_passive[:,2] .*= 10.0 #(scale)
 # linyin1998_4_sheet_passive[:,2] .*= 10.0 #(scale)
 # linyin1998_4_fiber_active[:,2] .*= 10.0 #(scale)
@@ -138,13 +138,12 @@ model = (λ,p_)->equibiaxial_evaluation_passive(λ, p_, p->GeneralizedHillModel(
 fit = curve_fit(model,
     xdata,
     ydata,
-    # Take original parameters as initial guess
     [0.1, 0.1, 0.1, 0.1]
 )
 
-p = fit.param
+p_ho_refit_pass = fit.param
 ho2009a_refit_passive = GeneralizedHillModel(
-    HolzapfelOgden2009Model(p[1],p[2],p[3],p[4],0.0,1.0,0.0,1.0,NullCompressionModel()),
+    HolzapfelOgden2009Model(p_ho_refit_pass[1],p_ho_refit_pass[2],p_ho_refit_pass[3],p_ho_refit_pass[4],0.0,1.0,0.0,1.0,NullCompressionModel()),
     ActiveMaterialAdapter(NullEnergyModel()),
     RLRSQActiveDeformationGradientModel(0.5),
     PelceSunLangeveld1995Model()
@@ -157,4 +156,59 @@ scatter!(ax2, linyin1998_4_fiber_passive)
 scatter!(ax2, linyin1998_4_sheet_passive)
 
 # 2. refit total stress with different active energies for the generalized Hill model
-# 3. refilt total stress with the same active energy, but holzapfel-Ogden 2009 passive energy (anisotropic form)
+function equibiaxial_evaluation_active(λset, p, model_construction::Function)
+    mp = model_construction(p)
+    Pset = zero(λset)
+    for i ∈ 1:35
+        λ = λset[i]
+        # Assume incompressibility to construct deformation gradient
+        F1 = Tensor{2,3,Float64}((
+            λ,0.0,0.0,
+            0.0,λ,0.0,
+            0.0,0.0,1.0/λ^2))
+        P1 = constitutive_driver(F1, f₀, s₀, n₀, 1.0, mp)[1]
+        Pset[i] = P1[1,1]
+    end
+    for i ∈ 36:length(λset)
+        λ = λset[i]
+        # Assume incompressibility to construct deformation gradient
+        F2 = Tensor{2,3,Float64}((
+            λ,0.0,0.0,
+            0.0,λ,0.0,
+            0.0,0.0,1.0/λ^2))
+        P2 = constitutive_driver(F2, f₀, s₀, n₀, 1.0, mp)[1]
+        Pset[i] = P2[2,2]
+    end
+    return Pset
+end
+
+new_xdata = [linyin1998_4_fiber_active[:,1]; linyin1998_4_sheet_active[:,1]]
+# not sure why we have to flatten the matrix here...
+new_ydata = [linyin1998_4_fiber_active[:,2]; linyin1998_4_sheet_active[:,2]]
+
+new_model_hoho = (λ,p_)->equibiaxial_evaluation_active(λ, p_, p->GeneralizedHillModel(
+    HolzapfelOgden2009Model(p_ho_refit_pass[1],p_ho_refit_pass[2],p_ho_refit_pass[3],p_ho_refit_pass[4],0.0,1.0,0.0,1.0,NullCompressionModel()),
+    ActiveMaterialAdapter(HolzapfelOgden2009Model(p[1],p[2],p[3],p[4],0.0,1.0,0.0,1.0,NullCompressionModel())),
+    RLRSQActiveDeformationGradientModel(0.5),
+    PelceSunLangeveld1995Model())
+)
+new_fit = curve_fit(new_model_hoho,
+    new_xdata,
+    new_ydata,
+    [0.1, 0.1, 0.1, 0.1]
+)
+
+p_new_model_hoho = new_fit.param
+new_model_hoho_fit = GeneralizedHillModel(
+    HolzapfelOgden2009Model(p_ho_refit_pass[1],p_ho_refit_pass[2],p_ho_refit_pass[3],p_ho_refit_pass[4],0.0,1.0,0.0,1.0,NullCompressionModel()),
+    ActiveMaterialAdapter(HolzapfelOgden2009Model(p_new_model_hoho[1],p_new_model_hoho[2],p_new_model_hoho[3],p_new_model_hoho[4],0.0,1.0,0.0,1.0,NullCompressionModel())),
+    RLRSQActiveDeformationGradientModel(0.5),
+    PelceSunLangeveld1995Model()
+)
+
+plot_equibiaxial(ax2, F -> constitutive_driver(F, f₀, s₀, n₀, 1.0, new_model_hoho_fit)[1]; λₘᵢₙ=minimum(new_xdata), λₘₐₓ=maximum(new_xdata))
+
+# add raw data
+scatter!(ax2, linyin1998_4_fiber_active)
+scatter!(ax2, linyin1998_4_sheet_active)
+
