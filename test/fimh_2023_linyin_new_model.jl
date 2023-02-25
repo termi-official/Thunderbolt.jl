@@ -1,7 +1,8 @@
-include("contractile_cuboid.jl")
-
+using Thunderbolt
+import Thunderbolt: Ψ, U
 using LsqFit
 using DelimitedFiles
+using UnPack
 
 set_theme!(theme_ggplot2())
 
@@ -37,8 +38,8 @@ function NI_GeneralizedHillModel(args...)
     return NI_GeneralizedHillModel(GeneralizedHillModel(args...))
 end
 
-function constitutive_driver(F, f₀, s₀, n₀, Caᵢ, model::NI_GeneralizedHillModel)
-    Fᵃ = compute_Fᵃ(Caᵢ,  f₀, s₀, n₀, model.ghm.contraction_model, model.ghm.active_deformation_gradient_model)
+function Thunderbolt.constitutive_driver(F, f₀, s₀, n₀, Caᵢ, model::NI_GeneralizedHillModel)
+    Fᵃ = Thunderbolt.compute_Fᵃ(Caᵢ,  f₀, s₀, n₀, model.ghm.contraction_model, model.ghm.active_deformation_gradient_model)
 
     ∂²Ψ∂F², ∂Ψ∂F = Tensors.hessian(
         F_ad ->
@@ -59,11 +60,6 @@ function constitutive_driver(F, f₀, s₀, n₀, Caᵢ, model::NI_GeneralizedHi
     #p = ∂Ψ∂F[3,3]/cofC[3,3]
     #return ∂Ψ∂F - p*cofC, zero(typeof(∂²Ψ∂F²))
 end
-
-Base.@kwdef struct ConstantStretchModel 
-    λ = 1.0
-end
-compute_λᵃ(Ca, mp::ConstantStretchModel) = mp.λ
 
 # Helper to plot equibiaxial model
 function plot_equibiaxial(axis, comp1, comp2, P, label_base, color; λ₀ = 0.0, λₘᵢₙ = 1.08, λₘₐₓ = 1.3, num_samples=25, linestyle=nothing, linewidth=3)
