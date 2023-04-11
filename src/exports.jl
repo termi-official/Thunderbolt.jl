@@ -27,6 +27,7 @@ export
     MonodomainModel,
     ParabolicParabolicBidomainModel,
     ParabolicEllipticBidomainModel,
+    NoStimulationProtocol,
     # Microstructure
     OrthotropicMicrostructureModel,
     ConstantFieldCoefficient,

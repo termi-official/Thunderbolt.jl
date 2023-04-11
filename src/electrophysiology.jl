@@ -179,12 +179,12 @@ Simplification of the bidomain model with the structure
 assumption is violated we can construct optimal κ (TODO citation+example) for the
 reconstruction of φₘ.
 """
-struct MonodomainModel <: AbstractEPModel
-    χ
-    Cₘ
-    κ
-    stim::TransmembraneStimulationProtocol
-    ion::AbstractIonicModel
+struct MonodomainModel{F1,F2,F3,STIM<:TransmembraneStimulationProtocol,ION<:AbstractIonicModel} <: AbstractEPModel
+    χ::F1
+    Cₘ::F2
+    κ::F3
+    stim::STIM
+    ion::ION
 end
 
 # mutable struct MonodomainOSElementCache
@@ -257,42 +257,42 @@ function assemble_element!(Mₑ, operator::MassOperator)
     end
 end
 
-"""
-Solver for the heat portion of the Monodomain problem.
-"""
-struct ImplicitEulerHeatSolver <: AbstractEPSolver
-end
-
-"""
-"""
-struct ImplicitEulerHeatSolverCache <: AbstractEPSolverCache
-    dh::DofHandler
-    transmembranevoltage::Symbol
-    ch::ConstraintHandler
-    K::MatrixType
-    M::MatrixType
-    A::MatrixType
-end
-
-"""
-"""
-struct LTGMonodomainSolver
-    heatsolver
-    cellsolver
-end
-
-"""
-"""
-struct LTG_RDMonodomainSolverCache{HC,CC}
-    heatcache::HC
-    cellcache::CC
-end
-
-"""
-"""
-struct LTGOSCache{OperatorType} <: AbstractEPSolver
-end
-
-# function solve(solver::LTGOSSolver, model::AbstractEPModel, u₀, s₀, tspan=(0.0,100.0))
-    
+# """
+# Solver for the heat portion of the Monodomain problem.
+# """
+# struct ImplicitEulerHeatSolver <: AbstractEPSolver
 # end
+
+# """
+# """
+# struct ImplicitEulerHeatSolverCache <: AbstractEPSolverCache
+#     dh::DofHandler
+#     transmembranevoltage::Symbol
+#     ch::ConstraintHandler
+#     K::MatrixType
+#     M::MatrixType
+#     A::MatrixType
+# end
+
+# """
+# """
+# struct LTGMonodomainSolver
+#     heatsolver
+#     cellsolver
+# end
+
+# """
+# """
+# struct LTG_RDMonodomainSolverCache{HC,CC}
+#     heatcache::HC
+#     cellcache::CC
+# end
+
+# """
+# """
+# struct LTGOSCache{OperatorType} <: AbstractEPSolver
+# end
+
+# # function solve(solver::LTGOSSolver, model::AbstractEPModel, u₀, s₀, tspan=(0.0,100.0))
+    
+# # end

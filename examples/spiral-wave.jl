@@ -1,31 +1,45 @@
 using Thunderbolt, LinearAlgebra, SparseArrays, UnPack
 import Thunderbolt: AbstractIonicModel
 
-Base.@kwdef struct FHNModel <: AbstractIonicModel
-    a::Float64 = 0.1
-    b::Float64 = 0.5
-    c::Float64 = 1.0
-    d::Float64 = 0.0
-    e::Float64 = 0.01
+using TimerOutputs, BenchmarkTools
+
+using Krylov
+
+using SparseMatricesCSR, ThreadedSparseCSR
+ThreadedSparseCSR.multithread_matmul(PolyesterThreads())
+
+Base.@kwdef struct ParametrizedFHNModel{T} <: AbstractIonicModel
+    a::T = T(0.1)
+    b::T = T(0.5)
+    c::T = T(1.0)
+    d::T = T(0.0)
+    e::T = T(0.01)
 end;
 
-num_states(::FHNModel) = 1
+const FHNModel = ParametrizedFHNModel{Float64};
 
-function cell_rhs!(du,φₘ,s,x,t,cell_parameters::T) where {T <: AbstractIonicModel}
+num_states(::ParametrizedFHNModel{T}) where{T} = 1
+
+function cell_rhs!(du::TD,φₘ::TV,s::TS,x::TX,t::TT,cell_parameters::TP) where {TD,TV,TS,TX,TT,TP <: AbstractIonicModel}
     dφₘ = @view du[1:1]
-    ds = @view du[2:2]
     reaction_rhs!(dφₘ,φₘ,s,x,t,cell_parameters)
+
+    ds = @view du[2:end]
     state_rhs!(ds,φₘ,s,x,t,cell_parameters)
+
+    return nothing
 end
 
-function reaction_rhs!(dφₘ,φₘ,s,x,t,cell_parameters::FHNModel)
-    @unpack a,b,c,d,e = cell_parameters
-    dφₘ .= -φₘ^3 + (1+a)*φₘ^2 -a*φₘ -s #φₘ*(1-φₘ)*(φₘ+a)
+@inline function reaction_rhs!(dφₘ::TD,φₘ::TV,s::TS,x::TX,t::TT,cell_parameters::FHNModel) where {TD<:SubArray,TV,TS,TX,TT}
+    @unpack a = cell_parameters
+    dφₘ .= φₘ*(1-φₘ)*(φₘ-a) -s[1]
+    return nothing
 end
 
-function state_rhs!(ds,φₘ,s,x,t,cell_parameters::FHNModel)
-    @unpack a,b,c,d,e = cell_parameters
+@inline function state_rhs!(ds::TD,φₘ::TV,s::TS,x::TX,t::TT,cell_parameters::FHNModel) where {TD<:SubArray,TV,TS,TX,TT}
+    @unpack b,c,d,e = cell_parameters
     ds .= e*(b*φₘ - c*s[1] - d)
+    return nothing
 end
 
 epmodel = MonodomainModel(
@@ -35,15 +49,11 @@ epmodel = MonodomainModel(
     NoStimulationProtocol(),
     FHNModel()
 )
-T = 10.0
-Δt = 0.1
 
 # TODO where to put this setup?
-grid = generate_grid(Quadrilateral, (80, 80), Vec{2}((0.0,0.0)), Vec{2}((2.5,2.5)))
+grid = generate_grid(Quadrilateral, (100, 100), Vec{2}((0.0,0.0)), Vec{2}((2.5,2.5)))
 # addnodeset!(grid, "ground", x-> x[2] == -0 && x[1] == -0)
 dim = 2
-Δt = 0.1
-T = 1000
 ip = Lagrange{dim, RefCube, 1}()
 qr = QuadratureRule{dim, RefCube}(2)
 cellvalues = CellScalarValues(qr, ip);
@@ -57,7 +67,7 @@ close!(dh);
 # Initial condition
 # TODO apply_analytical!
 u₀ = zeros(ndofs(dh));
-s₀ = zeros(ndofs(dh));
+s₀ = zeros(ndofs(dh),num_states(epmodel.ion));
 for cell in CellIterator(dh)
     _celldofs = celldofs(cell)
     ϕₘ_celldofs = _celldofs[dof_range(dh, :ϕₘ)]
@@ -66,7 +76,7 @@ for cell in CellIterator(dh)
             u₀[ϕₘ_celldofs[i]] = 1.0
         end
         if coordinate[2] >= 1.25
-            s₀[ϕₘ_celldofs[i]] = 0.1
+            s₀[ϕₘ_celldofs[i],1] = 0.1
         end
     end
 end
@@ -114,114 +124,126 @@ function assemble_global!(cellvalues::CellScalarValues{dim}, K::SparseMatrixCSC,
     end
 end
 
-# function assemble_global!(cellvalues::CellScalarValues{dim}, K::SparseMatrixCSC, M::SparseMatrixCSC, dh::DofHandler; params::FHNParameters = FHNParameters()) where {dim}
-#     n_ϕₘ = getnbasefunctions(cellvalues)
-#     n_ϕₑ = getnbasefunctions(cellvalues)
-#     n_s = getnbasefunctions(cellvalues)
-#     ntotal = n_ϕₘ + n_ϕₑ + n_s
-#     n_basefuncs = getnbasefunctions(cellvalues)
-#     #We use PseudoBlockArrays to write into the right places of Ke
-#     Ke = PseudoBlockArray(zeros(ntotal, ntotal), [n_ϕₘ, n_ϕₑ, n_s], [n_ϕₘ, n_ϕₑ, n_s])
-#     Me = PseudoBlockArray(zeros(ntotal, ntotal), [n_ϕₘ, n_ϕₑ, n_s], [n_ϕₘ, n_ϕₑ, n_s])
+function step_cells!(uₙ::T1, sₙ::T2, sₙ₋₁::T2, cell_model::ION, t::Float64, Δt::Float64, du_cell_arr::T3) where {T1, T2, T3, ION <: AbstractIonicModel}
+    @timeit "cell" for i ∈ 1:length(uₙ)
+        # for i ∈ tid:min((tid+cells_per_thread-1),ndofs(dh))
+            @inbounds φₘ_cell = uₙ[i]
+            @inbounds s_cell  = @view sₙ₋₁[i,:]
 
-#     assembler_K = start_assemble(K)
-#     assembler_M = start_assemble(M)
+            #TODO get x and Cₘ
+            du_cell = du_cell_arr[Threads.threadid()]
+            cell_rhs!(du_cell, φₘ_cell, s_cell, nothing, t, cell_model)
 
-#     #Here the block indices of the variables are defined.
-#     ϕₘ▄, ϕₑ▄, s▄ = 1, 2, 3
+            @inbounds uₙ[i] = φₘ_cell + Δt*du_cell[1]
+            # Non-allocating assignment
+            @inbounds for j ∈ 1:num_states(cell_model)
+                sₙ[i,j] = s_cell[j] + Δt*du_cell[j+1]
+            end
+        # end
+    end
+end
 
-#     #Now we iterate over all cells of the grid
-#     @inbounds for cell in CellIterator(dh)
-#         fill!(Ke, 0)
-#         fill!(Me, 0)
-#         #get the coordinates of the current cell
-#         coords = getcoordinates(cell)
+# """
+# Shared memory sparse matrix.
+# """
+# struct ParSparseMatrixCSC
+#     A::SparseMatrixCSC
+# end
+# LinearAlgebra.mul!(y, A::ParSparseMatrixCSC, x) = ParSpMatVec.A_mul_B!( 1.0, A.A, x, 0.0, y, Threads.nthreads())
+# Base.eltype(A::ParSparseMatrixCSC) = eltype(A.A)
+# Base.size(A::ParSparseMatrixCSC, d) = size(A.A, d)
 
-#         JuAFEM.reinit!(cellvalues, cell)
-#         #loop over all Gauss points
-#         for q_point in 1:getnquadpoints(cellvalues)
-#             #get the spatial coordinates of the current gauss point
-#             coords_qp = spatial_coordinate(cellvalues, q_point, coords)
-#             #based on the gauss point coordinates, we get the spatial dependent
-#             #material parameters
-#             κₑ_loc = κₑ(coords_qp)
-#             κᵢ_loc = κᵢ(coords_qp)
-#             Cₘ_loc = Cₘ(coords_qp)
-#             χ_loc = χ(coords_qp)
-#             dΩ = getdetJdV(cellvalues, q_point)
-#             for i in 1:n_basefuncs
-#                 Nᵢ = shape_value(cellvalues, q_point, i)
-#                 ∇Nᵢ = shape_gradient(cellvalues, q_point, i)
-#                 for j in 1:n_basefuncs
-#                     Nⱼ = shape_value(cellvalues, q_point, j)
-#                     ∇Nⱼ = shape_gradient(cellvalues, q_point, j)
-#                     #diffusion parts
-#                     Ke[BlockIndex((ϕₘ▄,ϕₘ▄),(i,j))] -= ((κᵢ_loc ⋅ ∇Nᵢ) ⋅ ∇Nⱼ) * dΩ
-#                     Ke[BlockIndex((ϕₘ▄,ϕₑ▄),(i,j))] -= ((κᵢ_loc ⋅ ∇Nᵢ) ⋅ ∇Nⱼ) * dΩ
-#                     Ke[BlockIndex((ϕₑ▄,ϕₘ▄),(i,j))] -= ((κᵢ_loc ⋅ ∇Nᵢ) ⋅ ∇Nⱼ) * dΩ
-#                     Ke[BlockIndex((ϕₑ▄,ϕₑ▄),(i,j))] -= (((κₑ_loc + κᵢ_loc) ⋅ ∇Nᵢ) ⋅ ∇Nⱼ) * dΩ
-#                     #linear reaction parts
-#                     Ke[BlockIndex((ϕₘ▄,ϕₘ▄),(i,j))] -= params.a * Nᵢ * Nⱼ * dΩ
-#                     Ke[BlockIndex((ϕₘ▄,s▄),(i,j))]  -= Nᵢ * Nⱼ * dΩ
-#                     Ke[BlockIndex((s▄,ϕₘ▄),(i,j))]  += params.e * params.b * Nᵢ * Nⱼ * dΩ
-#                     Ke[BlockIndex((s▄,s▄),(i,j))]   -= params.e * params.c * Nᵢ * Nⱼ * dΩ
-#                     #mass matrices
-#                     Me[BlockIndex((ϕₘ▄,ϕₘ▄),(i,j))] += Cₘ_loc * χ_loc * Nᵢ * Nⱼ * dΩ
-#                     Me[BlockIndex((s▄,s▄),(i,j))]   += Nᵢ * Nⱼ * dΩ
-#                 end
-#             end
-#         end
+struct JacobiPreconditioner{T}
+    Ainv::Diagonal{T}
+end
+function JacobiPreconditioner(A)
+    JacobiPreconditioner{eltype(A)}(inv(Diagonal(diag(A))))
+end
+LinearAlgebra.ldiv!(P::JacobiPreconditioner{T}, b) where {T} = mul!(b, P.Ainv, b)
+LinearAlgebra.ldiv!(y, P::JacobiPreconditioner{T}, b) where {T} = mul!(y, P.Ainv, b)
+import Base: \
+function (\)(P::JacobiPreconditioner{T}, b) where {T}
+    return ldiv!(similar(b), P.Ainv, b)
+end
+# TODO contribute to ferrite
+function WriteVTK.vtk_grid(filename::AbstractString, grid::Grid{dim,C,T}; compress::Bool=true) where {dim,C,T}
+    cells = MeshCell[MeshCell(Ferrite.cell_to_vtkcell(typeof(cell)), Ferrite.nodes_to_vtkorder(cell)) for cell in getcells(grid)]
+    coords = reshape(reinterpret(T, Ferrite.getnodes(grid)), (dim, Ferrite.getnnodes(grid)))
+    return vtk_grid(filename, coords, cells; compress=compress)
+end
 
-#         assemble!(assembler_K, celldofs(cell), Ke)
-#         assemble!(assembler_M, celldofs(cell), Me)
-#     end
-#     return K, M
-# end;
+function solve(;Δt=0.1, T=3.0, vtkskip = 50)
+    cells_per_thread = 64
 
-function solve()
     M = create_sparsity_pattern(dh);
     K = create_sparsity_pattern(dh);
-    assemble_global!(cellvalues, K, M, dh, epmodel)
+    @timeit "assembly" assemble_global!(cellvalues, K, M, dh, epmodel)
 
     #precompute decomposition
     # M(uₙ-uₙ₋₁)/Δt = Kuₙ -> (M-ΔtK)uₙ = Muₙ₋₁
     # here A := (M-ΔtK), b := Muₙ₋₁
-    A = cholesky(Symmetric(M - Δt*K))
+    # A = cholesky(Symmetric(M - Δt*K))
+    # A = factorize(Symmetric(M - Δt*K))
+
+    # A = Symmetric(M - Δt*K)
+    # Pl = JacobiPreconditioner(A) # Jacobi preconditioner
+
+    # A = ParSparseMatrixCSC(M-Δt*K)
+    # Pl = JacobiPreconditioner(A.A) # Jacobi preconditioner
+    # Pl = aspreconditioner(ruge_stuben(A))
+
+    A = SparseMatrixCSR(transpose(M - Δt*K))
 
     uₙ₋₁ = u₀
     sₙ₋₁ = s₀
     uₙ = zeros(ndofs(dh))
-    sₙ = zeros(ndofs(dh))
-    du_cell = zeros(num_states(epmodel.ion)+1)
+    b  = zeros(ndofs(dh))
+    sₙ = zeros(ndofs(dh),num_states(epmodel.ion))
+    du_cell_arr = [zeros(num_states(epmodel.ion)+1) for t ∈ 1:Threads.nthreads()]
 
     pvd = paraview_collection("monodomain.pvd");
-
-    for (i,t) ∈ enumerate(0.0:Δt:T)
+    
+    linsolver = CgSolver(length(u₀), length(u₀), Vector{Float64})
+    
+    @timeit "solver" for (i,t) ∈ enumerate(0.0:Δt:T)
         @info t
-        
-        if (i-1) % 10 == 0
-            vtk_grid("monodomain-$t.vtu", dh) do vtk
-                vtk_point_data(vtk,dh,uₙ₋₁)
-                vtk_save(vtk)
-                pvd[t] = vtk
-            end
-        end
+
+        # @timeit "io" if (i-1) % vtkskip == 0
+        #     vtk_grid("monodomain-$t.vtu", dh) do vtk
+        #         vtk_point_data(vtk,dh,uₙ₋₁)
+        #         vtk_save(vtk)
+        #         pvd[t] = vtk
+        #     end
+        # end
 
         # Heat Solver - Implicit Euler
-        b = M*uₙ₋₁
-        uₙ = A\b
+        @timeit "rhs" mul!(b, M, uₙ₋₁)
+        # @timeit "Axb" cg!(uₙ, A, b, Pl=Pl, verbose=false, abstol=1e-11, reltol=1e-9)
+        # @timeit "Axb" cg!(uₙ, A, b, verbose=false, abstol=1e-11, reltol=1e-9)
+        # @timeit "Axb" (uₙ, _) = Krylov.cg(A, b, uₙ₋₁)
+        @timeit "Axb" begin
+            Krylov.cg!(linsolver, A, b, uₙ₋₁)
+            uₙ = linsolver.x
+        end
 
         # Cell Solver - Explicit Euler
-        for i ∈ 1:ndofs(dh)
-            φₘ_cell = uₙ[i]
-            s_cell  = sₙ₋₁[i]
+        step_cells!(uₙ, sₙ, sₙ₋₁, epmodel.ion, t, Δt, du_cell_arr)
+        #@timeit "cell" Threads.@threads for tid ∈ 1:cells_per_thread:ndofs(dh)
+        # @timeit "cell" for i ∈ 1:ndofs(dh)
+        #     du_cell = du_cell_arr[Threads.threadid()]
+        #     # for i ∈ tid:min((tid+cells_per_thread-1),ndofs(dh))
+        #         φₘ_cell = uₙ[i]
+        #         s_cell  = @view sₙ₋₁[i,1:num_states(epmodel.ion)]
 
-            #TODO get x and Cₘ
-            cell_rhs!(du_cell, φₘ_cell, s_cell, [], t, epmodel.ion)
+        #         #TODO get x and Cₘ
+        #         cell_rhs!(du_cell, 0.0, 0.0, nothing, t, epmodel.ion)
 
-            uₙ[i] = φₘ_cell + Δt*du_cell[1]
-            sₙ[i] = s_cell + Δt*du_cell[2]
-        end
+        #         uₙ[i] = φₘ_cell + Δt*du_cell[1]
+        #         for j ∈ 1:num_states(epmodel.ion)
+        #             sₙ[i,j] = s_cell[j] + Δt*du_cell[j+1]
+        #         end
+        #     # end
+        # end
 
         uₙ₋₁ .= uₙ
         sₙ₋₁ .= sₙ
