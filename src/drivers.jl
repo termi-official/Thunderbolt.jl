@@ -44,9 +44,9 @@ function constitutive_driver(F::Tensor{2,dim}, f₀::Vec{dim}, s₀::Vec{dim}, n
 
     λᵃ = compute_λᵃ(Caᵢ, model.contraction_model)
     ∂2 = Tensors.gradient(
-        F_ad -> ∂(model.active_stress_model, λᵃ, Caᵢ, F_ad, f₀, s₀, n₀),
+        F_ad -> ∂(model.active_stress_model, Caᵢ, F_ad, f₀, s₀, n₀),
     F)
-    return ∂Ψ∂F + ∂(model.active_stress_model, λᵃ, Caᵢ, F, f₀, s₀, n₀), ∂²Ψ∂F² + ∂2 
+    return ∂Ψ∂F + ∂(model.active_stress_model, Caᵢ, F, f₀, s₀, n₀), ∂²Ψ∂F² + ∂2
 end
 
 

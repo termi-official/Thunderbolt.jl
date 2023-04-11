@@ -11,8 +11,8 @@
 struct NullEnergyModel end
 Ψ(F, f₀, s₀, n₀, mp::NullEnergyModel) = 0.0
 
-struct NullCompressionModel end
-U(I₃, mp::NullCompressionModel) = 0.0
+struct NullCompressionPenalty end
+U(I₃, mp::NullCompressionPenalty) = 0.0
 
 # TODO citation
 @Base.kwdef struct NeffCompressionPenalty

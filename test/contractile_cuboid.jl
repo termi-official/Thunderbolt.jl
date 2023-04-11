@@ -7,9 +7,9 @@ function assemble_element_rhs!(
     mp, fsn_model, # Model Parts
     time) # Time point
 
-    cellid = cell.current_cellid.x
+    cid = Ferrite.cellid(cell)
 
-	Caᵢ(cellid,x,t) = t < 1.0 ? t : 2.0-t
+	Caᵢ(cid,x,t) = t < 1.0 ? t : 2.0-t
     # Reinitialize cell values, and reset output arrays
     reinit!(cv, cell)
     fill!(residualₑ, 0.0)
@@ -25,9 +25,8 @@ function assemble_element_rhs!(
 
         # Compute stress and tangent
 		ξ = cv.qr.points[qp]
-		f₀, s₀, n₀ = directions(fsn_model, cellid, ξ, time)
-		# P = constitutive_driver_rhs(F, f₀, s₀, n₀, Caᵢ(cellid, ξ, time), mp)
-        P, ∂P∂F = constitutive_driver(F, f₀, s₀, n₀, Caᵢ(cellid, ξ, time), mp)
+		f₀, s₀, n₀ = directions(fsn_model, cid, ξ, time)
+        P, ∂P∂F = constitutive_driver(F, f₀, s₀, n₀, Caᵢ(cid, ξ, time), mp)
 
         # Loop over test functions
         for i in 1:ndofs
@@ -50,9 +49,9 @@ function assemble_element!(
 	kₛ = 3.5 # "Spring stiffness"
 	kᵇ = 0.0 # Basal bending penalty
 
-    cellid = cell.current_cellid.x
+    cid = Ferrite.cellid(cell)
 
-	Caᵢ(cellid,x,t) = t < 1.0 ? t : 2.0-t
+	Caᵢ(cid,x,t) = t < 1.0 ? t : 2.0-t
 	#p = 7.5*(1.0/λᵃ(Caᵢ(0,0,time)) - 1.0/λᵃ(Caᵢ(0,0,0)))
 	#p = 5.0*(1.0/λᵃ(Caᵢ(0,0,time)) - 1.0/λᵃ(Caᵢ(0,0,0)))
 	#p = 0.0*(1.0/λᵃ(Caᵢ(0,0,time)) - 1.0/λᵃ(Caᵢ(0,0,0)))
@@ -74,8 +73,8 @@ function assemble_element!(
 
         # Compute stress and tangent
 		ξ = cv.qr.points[qp]
-		f₀, s₀, n₀ = directions(fsn_model, cellid, ξ, time)
-		P, ∂P∂F = constitutive_driver(F, f₀, s₀, n₀, Caᵢ(cellid, ξ, time), mp)
+		f₀, s₀, n₀ = directions(fsn_model, cid, ξ, time)
+		P, ∂P∂F = constitutive_driver(F, f₀, s₀, n₀, Caᵢ(cid, ξ, time), mp)
 
         # Loop over test functions
         for i in 1:ndofs
@@ -96,7 +95,7 @@ function assemble_element!(
     # Surface integrals
     # for local_face_index in 1:nfaces(cell)
 	# 	# How does this interact with the stress?
-	# 	if (cell.current_cellid.x, local_face_index) ∈ getfaceset(cell.grid, "Epicardium")
+	# 	if (cell.current_cid.x, local_face_index) ∈ getfaceset(cell.grid, "Epicardium")
     #         reinit!(fv, cell, local_face_index)
 	# 		ndofs_face = getnbasefunctions(fv)
     #         for qp in 1:getnquadpoints(fv)
@@ -139,7 +138,7 @@ function assemble_element!(
     #         end
     #     end
 
-	# 	if (cell.current_cellid.x, local_face_index) ∈ getfaceset(cell.grid, "Base")
+	# 	if (cell.current_cid.x, local_face_index) ∈ getfaceset(cell.grid, "Base")
 	# 		reinit!(fv, cell, local_face_index)
 	# 		ndofs_face = getnbasefunctions(fv)
     #         for qp in 1:getnquadpoints(fv)
@@ -168,7 +167,7 @@ function assemble_element!(
 	# 	end
 
 	# 	# Pressure boundary
-	# 	if (cell.current_cellid.x, local_face_index) ∈ getfaceset(cell.grid, "Endocardium")
+	# 	if (cell.current_cid.x, local_face_index) ∈ getfaceset(cell.grid, "Endocardium")
 	# 		reinit!(fv, cell, local_face_index)
 	# 		ndofs_face = getnbasefunctions(fv)
     #         for qp in 1:getnquadpoints(fv)
@@ -251,7 +250,7 @@ function assemble_mass!(cellvalues::CellVectorValues{dim}, M::SparseMatrixCSC, d
         fill!(Me, 0)
         #get the coordinates of the current cell
         coords = getcoordinates(cell)
-        cellid = cell.current_cellid.x
+        # cid = Ferrite.cellid(cell)
 
         Ferrite.reinit!(cellvalues, cell)
         #loop over all Gauss points
@@ -260,7 +259,7 @@ function assemble_mass!(cellvalues::CellVectorValues{dim}, M::SparseMatrixCSC, d
             #ξ = spatial_coordinate(cellvalues, q_point, coords)
             ξ = cellvalues.qr.points[q_point]
             dΩ = getdetJdV(cellvalues, q_point)
-            coeff_qp = 1.0# value(coeff, cellid, ξ, t)
+            coeff_qp = 1.0# value(coeff, cid, ξ, t)
             for i in 1:n_basefuncs
                 Nᵢ = shape_value(cellvalues, q_point, i)
                 for j in 1:n_basefuncs
@@ -280,7 +279,7 @@ end;
 # Basically this is a
 #     * "NonlinearProblem"
 #     * "NewtonRaphsonSolver"
-function solve_timestep!(uₜ, uₜ₋₁, dh, dbcs, cv, fv, constitutive_model::ConstitutiveModel, fsn_model, t, Δt) where {ConstitutiveModel <: QuasiStaticModel}
+function solve_timestep!(uₜ, uₜ₋₁, dh, dbcs, cv, fv, constitutive_model::ConstitutiveModel, fsn_model, t, Δt) where {ConstitutiveModel <: Thunderbolt.QuasiStaticModel}
     # Update with new boundary conditions (if available)
     Ferrite.update!(dbcs, t)
     apply!(uₜ, dbcs)
@@ -327,7 +326,7 @@ end
 #     * "SemiImplicitEuler"
 #     * "NonlinearProblem"
 #     * "NewtonRaphsonSolver"
-function solve_timestep!(uₜ, uₜ₋₁, dh, dbcs, cv, fv, constitutive_model::ElastodynamicsModel, fsn_model, t, Δt)
+function solve_timestep!(uₜ, uₜ₋₁, dh, dbcs, cv, fv, constitutive_model::Thunderbolt.ElastodynamicsModel, fsn_model, t, Δt)
     # Update with new boundary conditions (if available)
     Ferrite.update!(dbcs, t)
     # apply!(uₜ, dbcs)
@@ -396,8 +395,8 @@ end
 
 
 function solve(constitutive_model, name)
-    # grid = generate_grid(Hexahedron, (15, 3, 3), Vec{3}((0.0,0.0,0.0)), Vec{3}((0.5, 0.1, 0.1)))
-    grid = generate_grid(Hexahedron, (10, 10, 2), Vec{3}((0.0,0.0,0.0)), Vec{3}((1.0, 1.0, 0.2)))
+    # grid = generate_grid(Hexahedron, (15, 3, 3), Ferrite.Vec{3}((0.0,0.0,0.0)), Ferrite.Vec{3}((0.5, 0.1, 0.1)))
+    grid = generate_grid(Hexahedron, (10, 10, 2), Ferrite.Vec{3}((0.0,0.0,0.0)), Ferrite.Vec{3}((1.0, 1.0, 0.2)))
 
     dim = 3
     order = 1
@@ -425,17 +424,17 @@ function solve(constitutive_model, name)
     close!(dh);
     _ndofs = ndofs(dh)
 
-    # f₀data = Vector{Vec{3}}(undef, getncells(grid))
+    # f₀data = Vector{Ferrite.Vec{3}}(undef, getncells(grid))
     # for cellindex ∈ 1:getncells(grid)
-    #     f₀data[cellindex] = Vec{3}((1.0, 0.0, 0.0))
+    #     f₀data[cellindex] = Ferrite.Vec{3}((1.0, 0.0, 0.0))
     # end
-    # s₀data = Vector{Vec{3}}(undef, getncells(grid))
+    # s₀data = Vector{Ferrite.Vec{3}}(undef, getncells(grid))
     # for cellindex ∈ 1:getncells(grid)
-    #     s₀data[cellindex] = Vec{3}((0.0, 1.0, 0.0))
+    #     s₀data[cellindex] = Ferrite.Vec{3}((0.0, 1.0, 0.0))
     # end
-    # n₀data = Vector{Vec{3}}(undef, getncells(grid))
+    # n₀data = Vector{Ferrite.Vec{3}}(undef, getncells(grid))
     # for cellindex ∈ 1:getncells(grid)
-    #     n₀data[cellindex] = Vec{3}((0.0, 0.0, 1.0))
+    #     n₀data[cellindex] = Ferrite.Vec{3}((0.0, 0.0, 1.0))
     # end
     # ip_fiber = DiscontinuousLagrange{dim, RefCube, 0}()
     # fsn_model = OrthotropicMicrostructureModel(
@@ -444,9 +443,9 @@ function solve(constitutive_model, name)
     #     FieldCoefficient(n₀data, ip_fiber)
     # )
     fsn_model = OrthotropicMicrostructureModel(
-        ConstantFieldCoefficient(Vec{3}((1.0, 0.0, 0.0))),
-        ConstantFieldCoefficient(Vec{3}((0.0, 1.0, 0.0))),
-        ConstantFieldCoefficient(Vec{3}((0.0, 0.0, 1.0)))
+        ConstantFieldCoefficient(Ferrite.Vec{3}((1.0, 0.0, 0.0))),
+        ConstantFieldCoefficient(Ferrite.Vec{3}((0.0, 1.0, 0.0))),
+        ConstantFieldCoefficient(Ferrite.Vec{3}((0.0, 0.0, 1.0)))
     )
 
     # constitutive_model = 

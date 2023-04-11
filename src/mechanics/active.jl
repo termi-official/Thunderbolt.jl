@@ -58,7 +58,7 @@ Base.@kwdef struct SimpleActiveStress
     Tmax = 1.0
 end
 
-∂(sas::SimpleActiveStress, λᵃ, Caᵢ, F::Tensor{2, dim}, f₀::Vec{dim}, s₀::Vec{dim}, n₀::Vec{dim}) where {dim} = sas.Tmax * Caᵢ * λᵃ * (F ⋅ f₀ ) ⊗ f₀
+∂(sas::SimpleActiveStress, Caᵢ, F::Tensor{2, dim}, f₀::Vec{dim}, s₀::Vec{dim}, n₀::Vec{dim}) where {dim} = sas.Tmax * Caᵢ * (F ⋅ f₀ ) ⊗ f₀ / norm(F ⋅ f₀)
 
 Base.@kwdef struct PiersantiActiveStress
     Tmax = 1.0
@@ -67,5 +67,5 @@ Base.@kwdef struct PiersantiActiveStress
     pn = 0.0
 end
 
-∂(sas::PiersantiActiveStress, λᵃ, Caᵢ, F::Tensor{2, dim}, f₀::Vec{dim}, s₀::Vec{dim}, n₀::Vec{dim}) where {dim} = sas.Tmax * Caᵢ * λᵃ * (sas.pf*(F ⋅ f₀) ⊗ f₀ / norm(F ⋅ f₀) + sas.ps*(F ⋅ s₀) ⊗ s₀ / norm(F ⋅ s₀) + sas.pn * (F ⋅ n₀) ⊗ n₀ / norm(F ⋅ n₀))
+∂(sas::PiersantiActiveStress, Caᵢ, F::Tensor{2, dim}, f₀::Vec{dim}, s₀::Vec{dim}, n₀::Vec{dim}) where {dim} = sas.Tmax * Caᵢ * (sas.pf*(F ⋅ f₀) ⊗ f₀ / norm(F ⋅ f₀) + sas.ps*(F ⋅ s₀) ⊗ s₀ / norm(F ⋅ s₀) + sas.pn * (F ⋅ n₀) ⊗ n₀ / norm(F ⋅ n₀))
 

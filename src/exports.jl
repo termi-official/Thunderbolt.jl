@@ -3,7 +3,7 @@ export
     generate_ring_mesh,
     # Passive material models
     NullEnergyModel,
-    NullCompressionModel,
+    NullCompressionPenalty,
     SimpleCompressionPenalty,
     NeffCompressionPenalty,
     TransverseIsotopicNeoHookeanModel,
@@ -29,6 +29,7 @@ export
     ParabolicEllipticBidomainModel,
     # Microstructure
     OrthotropicMicrostructureModel,
+    ConstantFieldCoefficient,
     create_simple_fiber_model,
     directions,
     # Coordinate system

@@ -27,7 +27,7 @@ end
 
 """
 """
-value(coeff::ConstantFieldCoefficient, cell_id::Int, ξ::Vec{dim}) where {dim} = coeff.val
+value(coeff::ConstantFieldCoefficient, cell_id::Int, ξ::Vec{dim}, t::Float64=0.0) where {dim} = coeff.val
 
 
 

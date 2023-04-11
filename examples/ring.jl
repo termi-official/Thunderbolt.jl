@@ -11,7 +11,7 @@ function assemble_element!(Kₑ, residualₑ, cell, cv, fv, mp, uₑ, uₑ_prev,
 	#p = 5.0*(1.0/λᵃ(Caᵢ(0,0,time)) - 1.0/λᵃ(Caᵢ(0,0,0)))
 	# p = 0.0*(1.0/λᵃ(Caᵢ(0,0,time)) - 1.0/λᵃ(Caᵢ(0,0,0)))
     p = 0.0
-	
+
     # Reinitialize cell values, and reset output arrays
     reinit!(cv, cell)
     fill!(Kₑ, 0.0)
@@ -21,11 +21,11 @@ function assemble_element!(Kₑ, residualₑ, cell, cv, fv, mp, uₑ, uₑ_prev,
 
     @inbounds for qp in 1:getnquadpoints(cv)
         dΩ = getdetJdV(cv, qp)
-		
+
         # Compute deformation gradient F
         ∇u = function_gradient(cv, qp, uₑ)
         F = one(∇u) + ∇u
-		
+
         # Compute stress and tangent
 		x_ref = cv.qr.points[qp]
 		f₀, s₀, n₀ = directions(fiber_model, Ferrite.cellid(cell), x_ref)
@@ -34,7 +34,7 @@ function assemble_element!(Kₑ, residualₑ, cell, cv, fv, mp, uₑ, uₑ_prev,
         # Loop over test functions
         for i in 1:ndofs
             ∇δui = shape_gradient(cv, qp, i)
-			
+
             # Add contribution to the residual from this test function
             residualₑ[i] += ∇δui ⊡ P * dΩ
 
@@ -56,12 +56,12 @@ function assemble_element!(Kₑ, residualₑ, cell, cv, fv, mp, uₑ, uₑ_prev,
             for qp in 1:getnquadpoints(fv)
                 dΓ = getdetJdV(fv, qp)
 
-				∇u_prev = function_gradient(fv, qp, uₑ_prev)
-                F_prev = one(∇u_prev) + ∇u_prev 
-				N = transpose(inv(F_prev)) ⋅ getnormal(fv, qp) # TODO this may mess up reversibility
+				# ∇u_prev = function_gradient(fv, qp, uₑ_prev)
+                # F_prev = one(∇u_prev) + ∇u_prev
+				# N = transpose(inv(F_prev)) ⋅ getnormal(fv, qp) # TODO this may mess up reversibility
 
-				# N = getnormal(fv, qp)
-				
+				N = getnormal(fv, qp)
+
 				u_q = function_value(fv, qp, uₑ)
 				#∂²Ψ∂u², ∂Ψ∂u = Tensors.hessian(u -> 0.0, u_q, :all)
 				∂²Ψ∂u², ∂Ψ∂u = Tensors.hessian(u -> 0.5*kₛ*(u⋅N)^2, u_q, :all)
@@ -126,12 +126,12 @@ function assemble_element!(Kₑ, residualₑ, cell, cv, fv, mp, uₑ, uₑ_prev,
             for qp in 1:getnquadpoints(fv)
                 dΓ = getdetJdV(fv, qp)
 
-				∇u_prev = function_gradient(fv, qp, uₑ_prev)
-                F_prev = one(∇u_prev) + ∇u_prev 
-				N = transpose(inv(F_prev)) ⋅ getnormal(fv, qp) # TODO this may mess up reversibility
+				# ∇u_prev = function_gradient(fv, qp, uₑ_prev)
+                # F_prev = one(∇u_prev) + ∇u_prev
+				# N = transpose(inv(F_prev)) ⋅ getnormal(fv, qp) # TODO this may mess up reversibility
 
-				# N = getnormal(fv, qp)
-				
+				N = getnormal(fv, qp)
+
 				# u_q = function_value(fv, qp, uₑ)
 				#∂²Ψ∂u², ∂Ψ∂u = Tensors.hessian(u -> 0.0, u_q, :all)
 				# ∂²Ψ∂u², ∂Ψ∂u = Tensors.hessian(u -> 0.5*kₛ*(u⋅N)^2, u_q, :all)
@@ -173,7 +173,7 @@ function assemble_global!(K, f, dh, cv, fv, mp, uₜ, uₜ₋₁, fiber_model, t
     end
 end
 
-function solve_test_ring(pv_name_base, mp, grid, coordinate_system, fiber_model)
+function solve_test_ring(pv_name_base, mp, grid, coordinate_system, fiber_model; Δt = 0.1)
 	# geo = Tetrahedron
 	# refgeo = RefTetrahedron
 	# intorder = 1
@@ -186,23 +186,6 @@ function solve_test_ring(pv_name_base, mp, grid, coordinate_system, fiber_model)
 	pvd = paraview_collection("$pv_name_base.pvd");
 
 	T = 2.0
-	Δt = 0.1
-
-    # Material parameters
-    # E = 4.0
-    # ν = 0.45
-    # μ = E / (2(1 + ν))
-    # λ = (E * ν) / ((1 + ν) * (1 - 2ν))
-	# μ = 0.001
-	# λ = 0.001
-	# η = 1.001
-    # mp = ActiveNeoHookean(μ, λ, η)
-	#mp = Passive2017Energy(1.0, 2.6, 2.82, 2.0, 30.48, 7.25, 1.0, 100.0)
-	#mp = BioNeoHooekan(4.0, 10.25, 1, 2, 10.0)
-	#mp = BioNeoHooekan(1.01, 1.01, 1, 2, 10.0)
-	# mp = BioNeoHooekan(0.25, 4.00, 1, 2, 15.0) # Looks okay :)
-	#mp = HolzapfelOgden2009(η = 15.0)
-	#mp = AmborsiPezzuto2014(A=0.25,B=0.0,K=5.0)
 
     # Finite element base
     ip = Lagrange{3, refgeo, order}()
@@ -264,8 +247,8 @@ function solve_test_ring(pv_name_base, mp, grid, coordinate_system, fiber_model)
 	        assemble_global!(K, g, dh, cv, fv, mp, uₜ, uₜ₋₁, fiber_model, t)
 	        normg = norm(g[Ferrite.free_dofs(dbcs)])
 	        apply_zero!(K, g, dbcs)
-			@info "t = " t ": ||g|| = " normg
-	
+			@info t normg
+
 	        if normg < NEWTON_TOL
 	            break
 	        elseif newton_itr > MAX_NEWTON_ITER
@@ -274,7 +257,7 @@ function solve_test_ring(pv_name_base, mp, grid, coordinate_system, fiber_model)
 
 			#@info det(K)
 			Δu = K \ g
-	
+
 	        apply_zero!(Δu, dbcs)
 
 			uₜ .-= Δu # Current guess
@@ -289,16 +272,16 @@ function solve_test_ring(pv_name_base, mp, grid, coordinate_system, fiber_model)
 
 		Jdata = zeros(getncells(grid))
 
-		frefdata = zero(Vector{Vec{3}}(undef, getncells(grid)))
-		srefdata = zero(Vector{Vec{3}}(undef, getncells(grid)))
-		fdata = zero(Vector{Vec{3}}(undef, getncells(grid)))
-		sdata = zero(Vector{Vec{3}}(undef, getncells(grid)))
+		frefdata = zero(Vector{Ferrite.Vec{3}}(undef, getncells(grid)))
+		srefdata = zero(Vector{Ferrite.Vec{3}}(undef, getncells(grid)))
+		fdata = zero(Vector{Ferrite.Vec{3}}(undef, getncells(grid)))
+		sdata = zero(Vector{Ferrite.Vec{3}}(undef, getncells(grid)))
 
 		for cell in CellIterator(dh)
 			reinit!(cv, cell)
 			global_dofs = celldofs(cell)
         	uₑ = uₜ[global_dofs] # element dofs
-			
+
 			E_ff_cell = 0.0
 			E_ff_cell2 = 0.0
 			E_cc_cell = 0.0
@@ -306,10 +289,10 @@ function solve_test_ring(pv_name_base, mp, grid, coordinate_system, fiber_model)
 			E_ll_cell = 0.0
 
 			Jdata_cell = 0.0
-			frefdata_cell = Vec{3}((0.0, 0.0, 0.0))
-			srefdata_cell = Vec{3}((0.0, 0.0, 0.0))
-			fdata_cell = Vec{3}((0.0, 0.0, 0.0))
-			sdata_cell = Vec{3}((0.0, 0.0, 0.0))
+			frefdata_cell = Ferrite.Vec{3}((0.0, 0.0, 0.0))
+			srefdata_cell = Ferrite.Vec{3}((0.0, 0.0, 0.0))
+			fdata_cell = Ferrite.Vec{3}((0.0, 0.0, 0.0))
+			sdata_cell = Ferrite.Vec{3}((0.0, 0.0, 0.0))
 
 			nqp = getnquadpoints(cv)
 			for qp in 1:nqp
@@ -325,7 +308,7 @@ function solve_test_ring(pv_name_base, mp, grid, coordinate_system, fiber_model)
 				f₀,s₀,n₀ = directions(fiber_model, Ferrite.cellid(cell), x_ref)
 
 				E_ff_cell += f₀ ⋅ E ⋅ f₀
-				
+
 				f₀_current = F⋅f₀
 				f₀_current /= norm(f₀_current)
 
@@ -337,14 +320,14 @@ function solve_test_ring(pv_name_base, mp, grid, coordinate_system, fiber_model)
 				coords = getcoordinates(cell)
 				x_global = spatial_coordinate(cv, qp, coords)
 				# @TODO compute properly
-				v_longitudinal = Vec{3}((0.0, 0.0, 1.0))
-				v_radial = Vec{3}((x_global[1],x_global[2],0.0))/norm(Vec{3}((x_global[1],x_global[2],0.0)))
-				v_circimferential = Vec{3}((x_global[2],-x_global[1],0.0))/norm(Vec{3}((x_global[2],-x_global[1],0.0)))
+				v_longitudinal = Ferrite.Vec{3}((0.0, 0.0, 1.0))
+				v_radial = Ferrite.Vec{3}((x_global[1],x_global[2],0.0))/norm(Ferrite.Vec{3}((x_global[1],x_global[2],0.0)))
+				v_circimferential = Ferrite.Vec{3}((x_global[2],-x_global[1],0.0))/norm(Ferrite.Vec{3}((x_global[2],-x_global[1],0.0)))
 				#
 				E_ll_cell += v_longitudinal ⋅ E ⋅ v_longitudinal
 				E_rr_cell += v_radial ⋅ E ⋅ v_radial
 				E_cc_cell += v_circimferential ⋅ E ⋅ v_circimferential
-		
+
 				Jdata_cell += det(F)
 
 				frefdata_cell += f₀
@@ -389,7 +372,7 @@ function solve_test_ring(pv_name_base, mp, grid, coordinate_system, fiber_model)
 
 	println("Compression: ", (ref_vol/min_vol - 1.0)*100, "%")
 	println("Expansion: ", (ref_vol/max_vol - 1.0)*100, "%")
-	
+
 	vtk_save(pvd);
 
 	return uₜ
@@ -399,40 +382,99 @@ LVS_grid = generate_ring_mesh(30,4,3; longitudinal_upper=0.25)
 LVS_cs = compute_midmyocardial_section_coordinate_system(LVS_grid)
 LVS_fm = create_simple_fiber_model(LVS_cs, Lagrange{3, RefCube, 1}(), endo_angle = 60.0, epi_angle = -60.0, endo_transversal_angle = -20.0, epi_transversal_angle = 20.0)
 
-"""
-Our fit against LinYin.
-"""
-Base.@kwdef struct NewActiveSpring2
-	a   = 15.020986456784657
-	aᶠ  =  4.562365556553194
-	mpU = NullCompressionModel()
-end
+using UnPack
 
-function Thunderbolt.Ψ(F, f₀, s₀, n₀, mp::NewActiveSpring2)
-    @unpack a, aᶠ, mpU = mp
+# Base.@kwdef struct NewActiveSpring
+# 	a   = 1.0
+# 	aᶠ  = 1.0
+# 	mpU = NullCompressionPenalty()
+# end
 
-    C = tdot(F)
-	I₃ = det(C)
-	J = det(F)
-    I₁ = tr(C/cbrt(J^2))
-	I₄ᶠ = f₀ ⋅ C ⋅ f₀
+# function Ψ(F, f₀, s₀, n₀, mp::NewActiveSpring)
+#     @unpack a, aᶠ, mpU = mp
 
-    return a/2.0*(I₁-3.0)^2 + aᶠ/2.0*(I₄ᶠ-1.0) + Thunderbolt.U(I₃, mpU)
-end
+#     C = tdot(F)
+# 	I₃ = det(C)
+# 	J = det(F)
+#     I₁ = tr(C/cbrt(J^2))
+# 	I₄ᶠ = f₀ ⋅ C ⋅ f₀
 
-solve_test_ring("HO-LVS", 
+#     return a/2.0*(I₁-3.0)^2 + aᶠ/2.0*(I₄ᶠ-1.0)^2 + U(I₃, mpU)
+# end
+
+# """
+# Our fit against LinYin. Broken...?
+# """
+# Base.@kwdef struct NewActiveSpring2
+# 	a   = 15.020986456784657
+# 	aᶠ  =  4.562365556553194
+# 	mpU = NullCompressionPenalty()
+# end
+
+# function Thunderbolt.Ψ(F, f₀, s₀, n₀, mp::NewActiveSpring2)
+#     @unpack a, aᶠ, mpU = mp
+
+#     C = tdot(F)
+# 	I₃ = det(C)
+# 	J = det(F)
+#     I₁ = tr(C/cbrt(J^2))
+# 	I₄ᶠ = f₀ ⋅ C ⋅ f₀
+
+#     return a/2.0*(I₁-3.0)^2 + aᶠ/2.0*(I₄ᶠ-1.0) + U(I₃, mpU)
+# end
+
+solve_test_ring("GHM-HO_AS1_GMKI_Pelce",
     GeneralizedHillModel(
-        HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 0.28504197825657906, 4.126552003938297, 0.0, 1.0, 0.0, 1.0, SimpleCompressionPenalty(1.0)),
-        ActiveMaterialAdapter(NewActiveSpring2()),
-        RLRSQActiveDeformationGradientModel(1.0),
+        HolzapfelOgden2009Model(;mpU=NeffCompressionPenalty()),
+		ActiveMaterialAdapter(NewActiveSpring()),
+		GMKIncompressibleActiveDeformationGradientModel(),
         PelceSunLangeveld1995Model()
     ), LVS_grid, LVS_cs, LVS_fm
 )
 
-solve_test_ring("HO-AS", 
-    ActiveStressModel(
-        HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 0.28504197825657906, 4.126552003938297, 0.0, 1.0, 0.0, 1.0, SimpleCompressionPenalty(10.0)),
-        PiersantiActiveStress(3.0, 1.0, 1.0, 0.0),
+# Diverges...?
+solve_test_ring("GHM-HO_AS2_GMKI_Pelce",
+    GeneralizedHillModel(
+        HolzapfelOgden2009Model(;mpU=NeffCompressionPenalty()),
+		ActiveMaterialAdapter(NewActiveSpring2()),
+		GMKIncompressibleActiveDeformationGradientModel(),
         PelceSunLangeveld1995Model()
     ), LVS_grid, LVS_cs, LVS_fm
+)
+
+solve_test_ring("GHM-HO_AS1_RLRSQ75_Pelce",
+    GeneralizedHillModel(
+        # HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 0.28504197825657906, 4.126552003938297, 0.0, 1.0, 0.0, 1.0, SimpleCompressionPenalty(1.0)),
+        HolzapfelOgden2009Model(;mpU=NeffCompressionPenalty()),
+		ActiveMaterialAdapter(NewActiveSpring()),
+        RLRSQActiveDeformationGradientModel(0.75),
+        PelceSunLangeveld1995Model()
+    ), LVS_grid, LVS_cs, LVS_fm
+)
+
+solve_test_ring("GHM-HO_HO_RLRSQ75_Pelce",
+    GeneralizedHillModel(
+        # HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 0.28504197825657906, 4.126552003938297, 0.0, 1.0, 0.0, 1.0, SimpleCompressionPenalty(1.0)),
+        HolzapfelOgden2009Model(;mpU=NeffCompressionPenalty()),
+		ActiveMaterialAdapter(HolzapfelOgden2009Model(mpU=NullCompressionPenalty())),
+        RLRSQActiveDeformationGradientModel(0.75),
+        PelceSunLangeveld1995Model()
+    ), LVS_grid, LVS_cs, LVS_fm
+)
+
+solve_test_ring("ActiveStress-HO_Simple_Pelce",
+    ActiveStressModel(
+        HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 0.28504197825657906, 4.126552003938297, 0.0, 1.0, 0.0, 1.0, NeffCompressionPenalty()),
+        SimpleActiveStress(),
+        PelceSunLangeveld1995Model()
+    ), LVS_grid, LVS_cs, LVS_fm
+)
+
+solve_test_ring("ActiveStress-HO_Piersanti_Pelce",
+    ActiveStressModel(
+        HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 0.28504197825657906, 4.126552003938297, 0.0, 1.0, 0.0, 1.0, NeffCompressionPenalty()),
+        PiersantiActiveStress(2.0, 1.0, 0.75, 0.0),
+        PelceSunLangeveld1995Model()
+    ), LVS_grid, LVS_cs, LVS_fm,
+	Δt=0.025
 )

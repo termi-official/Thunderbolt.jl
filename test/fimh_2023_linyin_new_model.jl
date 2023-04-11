@@ -100,14 +100,14 @@ function NI_plot_equibiaxial_pressure(axis, P, label_base, color; λ₀ = 0.0, �
 end
 
 linyin_original_passive = NI_GeneralizedHillModel(
-    LinYinPassiveModel(;mpU=NullCompressionModel()),
+    LinYinPassiveModel(;mpU=NullCompressionPenalty()),
     ActiveMaterialAdapter(NullEnergyModel()),
     RLRSQActiveDeformationGradientModel(sheet_portion_rlrsq),
     PelceSunLangeveld1995Model()
 )
 
 linyin_original_active = NI_GeneralizedHillModel(
-    LinYinActiveModel(;mpU=NullCompressionModel()),
+    LinYinActiveModel(;mpU=NullCompressionPenalty()),
     ActiveMaterialAdapter(NullEnergyModel()),
     RLRSQActiveDeformationGradientModel(sheet_portion_rlrsq),
     PelceSunLangeveld1995Model()
@@ -183,7 +183,7 @@ ydata = vec(hcat(linyin1998_4_fiber_passive[:,2], linyin1998_4_sheet_passive[:,2
 # linyin1998_4_sheet_active[:,2] .*= 10.0 #(scale)
 
 model = (λ,p_)->equibiaxial_evaluation_passive(λ, p_, p->NI_GeneralizedHillModel(
-    LinYinPassiveModel(p[1],p[2],p[3],p[4],NullCompressionModel()),
+    LinYinPassiveModel(p[1],p[2],p[3],p[4],NullCompressionPenalty()),
     ActiveMaterialAdapter(NullEnergyModel()),
     RLRSQActiveDeformationGradientModel(sheet_portion_rlrsq),
     PelceSunLangeveld1995Model())
@@ -197,7 +197,7 @@ fit = curve_fit(model,
 
 linyin_pass_refit_p = fit.param
 linyin_refit_passive = NI_GeneralizedHillModel(
-    LinYinPassiveModel(linyin_pass_refit_p[1], linyin_pass_refit_p[2], linyin_pass_refit_p[3], linyin_pass_refit_p[4], NullCompressionModel()),
+    LinYinPassiveModel(linyin_pass_refit_p[1], linyin_pass_refit_p[2], linyin_pass_refit_p[3], linyin_pass_refit_p[4], NullCompressionPenalty()),
     ActiveMaterialAdapter(NullEnergyModel()),
     RLRSQActiveDeformationGradientModel(sheet_portion_rlrsq),
     PelceSunLangeveld1995Model()
@@ -217,7 +217,7 @@ plot_equibiaxial(ax2p, 2, 2, F -> constitutive_driver(F, f₀, s₀, n₀, 0.0, 
 # ------
 
 model = (λ,p_)->equibiaxial_evaluation_passive(λ, p_, p->NI_GeneralizedHillModel(
-    HolzapfelOgden2009Model(p[1],p[2],p[3],p[4],0.0,1.0,0.0,1.0,NullCompressionModel()),
+    HolzapfelOgden2009Model(p[1],p[2],p[3],p[4],0.0,1.0,0.0,1.0,NullCompressionPenalty()),
     ActiveMaterialAdapter(NullEnergyModel()),
     RLRSQActiveDeformationGradientModel(sheet_portion_rlrsq),
     PelceSunLangeveld1995Model())
@@ -230,7 +230,7 @@ fit = curve_fit(model,
 
 p_ho_refit_pass = fit.param
 ho2009a_refit_passive = NI_GeneralizedHillModel(
-    HolzapfelOgden2009Model(p_ho_refit_pass[1],p_ho_refit_pass[2],p_ho_refit_pass[3],p_ho_refit_pass[4],0.0,1.0,0.0,1.0,NullCompressionModel()),
+    HolzapfelOgden2009Model(p_ho_refit_pass[1],p_ho_refit_pass[2],p_ho_refit_pass[3],p_ho_refit_pass[4],0.0,1.0,0.0,1.0,NullCompressionPenalty()),
     ActiveMaterialAdapter(NullEnergyModel()),
     RLRSQActiveDeformationGradientModel(sheet_portion_rlrsq),
     PelceSunLangeveld1995Model()
@@ -276,8 +276,8 @@ new_xdata = [linyin1998_4_fiber_active[:,1]; linyin1998_4_sheet_active[:,1]]
 new_ydata = [linyin1998_4_fiber_active[:,2]; linyin1998_4_sheet_active[:,2]]
 
 new_model_hoho = (λ,p_)->equibiaxial_evaluation_active(λ, p_, p->NI_GeneralizedHillModel(
-    HolzapfelOgden2009Model(p_ho_refit_pass[1],p_ho_refit_pass[2],p_ho_refit_pass[3],p_ho_refit_pass[4],0.0,1.0,0.0,1.0,NullCompressionModel()),
-    ActiveMaterialAdapter(HolzapfelOgden2009Model(p[1],p[2],p[3],p[4],0.0,1.0,0.0,1.0,NullCompressionModel())),
+    HolzapfelOgden2009Model(p_ho_refit_pass[1],p_ho_refit_pass[2],p_ho_refit_pass[3],p_ho_refit_pass[4],0.0,1.0,0.0,1.0,NullCompressionPenalty()),
+    ActiveMaterialAdapter(HolzapfelOgden2009Model(p[1],p[2],p[3],p[4],0.0,1.0,0.0,1.0,NullCompressionPenalty())),
     RLRSQActiveDeformationGradientModel(sheet_portion_rlrsq),
     PelceSunLangeveld1995Model())
 )
@@ -290,8 +290,8 @@ new_fit = curve_fit(new_model_hoho,
 
 p_new_model_hoho = new_fit.param
 new_model_hoho_fit = NI_GeneralizedHillModel(
-    HolzapfelOgden2009Model(p_ho_refit_pass[1],p_ho_refit_pass[2],p_ho_refit_pass[3],p_ho_refit_pass[4],0.0,1.0,0.0,1.0,NullCompressionModel()),
-    ActiveMaterialAdapter(HolzapfelOgden2009Model(p_new_model_hoho[1],p_new_model_hoho[2],p_new_model_hoho[3],p_new_model_hoho[4],0.0,1.0,0.0,1.0,NullCompressionModel())),
+    HolzapfelOgden2009Model(p_ho_refit_pass[1],p_ho_refit_pass[2],p_ho_refit_pass[3],p_ho_refit_pass[4],0.0,1.0,0.0,1.0,NullCompressionPenalty()),
+    ActiveMaterialAdapter(HolzapfelOgden2009Model(p_new_model_hoho[1],p_new_model_hoho[2],p_new_model_hoho[3],p_new_model_hoho[4],0.0,1.0,0.0,1.0,NullCompressionPenalty())),
     RLRSQActiveDeformationGradientModel(sheet_portion_rlrsq),
     PelceSunLangeveld1995Model()
 )
@@ -304,7 +304,7 @@ plot_equibiaxial(ax2a, 3,3, F -> constitutive_driver(F, f₀, s₀, n₀, 1.0, n
 Base.@kwdef struct NewActiveSpring
 	a   = 1.0
 	aᶠ  = 1.0
-	mpU = NullCompressionModel()
+	mpU = NullCompressionPenalty()
 end
 
 function Ψ(F, f₀, s₀, n₀, mp::NewActiveSpring)
@@ -322,7 +322,7 @@ end
 Base.@kwdef struct NewActiveSpring2
 	a   = 1.0
 	aᶠ  = 1.0
-	mpU = NullCompressionModel()
+	mpU = NullCompressionPenalty()
 end
 
 function Ψ(F, f₀, s₀, n₀, mp::NewActiveSpring2)
@@ -340,7 +340,7 @@ end
 Base.@kwdef struct NewActiveSpring3
 	a   = 1.0
 	aᶠ  = 1.0
-	mpU = NullCompressionModel()
+	mpU = NullCompressionPenalty()
 end
 
 function Ψ(F, f₀, s₀, n₀, mp::NewActiveSpring3)
@@ -357,8 +357,8 @@ end
 
 
 new_model_hopo = (λ,p_)->equibiaxial_evaluation_active(λ, p_, p->NI_GeneralizedHillModel(
-    HolzapfelOgden2009Model(p_ho_refit_pass[1],p_ho_refit_pass[2],p_ho_refit_pass[3],p_ho_refit_pass[4],0.0,1.0,0.0,1.0,NullCompressionModel()),
-    ActiveMaterialAdapter(NewActiveSpring(p[1],p[2],NullCompressionModel())),
+    HolzapfelOgden2009Model(p_ho_refit_pass[1],p_ho_refit_pass[2],p_ho_refit_pass[3],p_ho_refit_pass[4],0.0,1.0,0.0,1.0,NullCompressionPenalty()),
+    ActiveMaterialAdapter(NewActiveSpring(p[1],p[2],NullCompressionPenalty())),
     RLRSQActiveDeformationGradientModel(sheet_portion_rlrsq),
     PelceSunLangeveld1995Model())
 )
@@ -370,8 +370,8 @@ new_fit = curve_fit(new_model_hopo,
 
 p_new_model_hopo = new_fit.param
 new_model_hopo_fit_22 = NI_GeneralizedHillModel(
-    HolzapfelOgden2009Model(p_ho_refit_pass[1],p_ho_refit_pass[2],p_ho_refit_pass[3],p_ho_refit_pass[4],0.0,1.0,0.0,1.0,NullCompressionModel()),
-    ActiveMaterialAdapter(NewActiveSpring(p_new_model_hopo[1],p_new_model_hopo[2],NullCompressionModel())),
+    HolzapfelOgden2009Model(p_ho_refit_pass[1],p_ho_refit_pass[2],p_ho_refit_pass[3],p_ho_refit_pass[4],0.0,1.0,0.0,1.0,NullCompressionPenalty()),
+    ActiveMaterialAdapter(NewActiveSpring(p_new_model_hopo[1],p_new_model_hopo[2],NullCompressionPenalty())),
     RLRSQActiveDeformationGradientModel(sheet_portion_rlrsq),
     PelceSunLangeveld1995Model()
 )
@@ -381,8 +381,8 @@ plot_equibiaxial(ax2a, 3,3, F -> constitutive_driver(F, f₀, s₀, n₀, 1.0, n
 
 
 new_model_hopop = (λ,p_)->equibiaxial_evaluation_active(λ, p_, p->NI_GeneralizedHillModel(
-    HolzapfelOgden2009Model(p_ho_refit_pass[1],p_ho_refit_pass[2],p_ho_refit_pass[3],p_ho_refit_pass[4],0.0,1.0,0.0,1.0,NullCompressionModel()),
-    ActiveMaterialAdapter(NewActiveSpring2(p[1],p[2],NullCompressionModel())),
+    HolzapfelOgden2009Model(p_ho_refit_pass[1],p_ho_refit_pass[2],p_ho_refit_pass[3],p_ho_refit_pass[4],0.0,1.0,0.0,1.0,NullCompressionPenalty()),
+    ActiveMaterialAdapter(NewActiveSpring2(p[1],p[2],NullCompressionPenalty())),
     RLRSQActiveDeformationGradientModel(1.0),
     ConstantStretchModel())
 )
@@ -394,8 +394,8 @@ new_fit = curve_fit(new_model_hopop,
 
 p_new_model_hopop = new_fit.param
 new_model_hopop_fit_21 = NI_GeneralizedHillModel(
-    HolzapfelOgden2009Model(p_ho_refit_pass[1],p_ho_refit_pass[2],p_ho_refit_pass[3],p_ho_refit_pass[4],0.0,1.0,0.0,1.0,NullCompressionModel()),
-    ActiveMaterialAdapter(NewActiveSpring2(p_new_model_hopop[1],p_new_model_hopop[2],NullCompressionModel())),
+    HolzapfelOgden2009Model(p_ho_refit_pass[1],p_ho_refit_pass[2],p_ho_refit_pass[3],p_ho_refit_pass[4],0.0,1.0,0.0,1.0,NullCompressionPenalty()),
+    ActiveMaterialAdapter(NewActiveSpring2(p_new_model_hopop[1],p_new_model_hopop[2],NullCompressionPenalty())),
     RLRSQActiveDeformationGradientModel(1.0),
     ConstantStretchModel()
 )
@@ -406,8 +406,8 @@ plot_equibiaxial(ax2a, 3,3, F -> constitutive_driver(F, f₀, s₀, n₀, 1.0, n
 
 
 new_model_hopo = (λ,p_)->equibiaxial_evaluation_active(λ, p_, p->NI_GeneralizedHillModel(
-    HolzapfelOgden2009Model(p_ho_refit_pass[1],p_ho_refit_pass[2],p_ho_refit_pass[3],p_ho_refit_pass[4],0.0,1.0,0.0,1.0,NullCompressionModel()),
-    ActiveMaterialAdapter(NewActiveSpring2(p[1],p[2],NullCompressionModel())),
+    HolzapfelOgden2009Model(p_ho_refit_pass[1],p_ho_refit_pass[2],p_ho_refit_pass[3],p_ho_refit_pass[4],0.0,1.0,0.0,1.0,NullCompressionPenalty()),
+    ActiveMaterialAdapter(NewActiveSpring2(p[1],p[2],NullCompressionPenalty())),
     RLRSQActiveDeformationGradientModel(sheet_portion_rlrsq),
     PelceSunLangeveld1995Model())
 )
@@ -419,8 +419,8 @@ new_fit = curve_fit(new_model_hopo,
 
 p_new_model_hopo = new_fit.param
 new_model_hopo_fit_21 = NI_GeneralizedHillModel(
-    HolzapfelOgden2009Model(p_ho_refit_pass[1],p_ho_refit_pass[2],p_ho_refit_pass[3],p_ho_refit_pass[4],0.0,1.0,0.0,1.0,NullCompressionModel()),
-    ActiveMaterialAdapter(NewActiveSpring2(p_new_model_hopo[1],p_new_model_hopo[2],NullCompressionModel())),
+    HolzapfelOgden2009Model(p_ho_refit_pass[1],p_ho_refit_pass[2],p_ho_refit_pass[3],p_ho_refit_pass[4],0.0,1.0,0.0,1.0,NullCompressionPenalty()),
+    ActiveMaterialAdapter(NewActiveSpring2(p_new_model_hopo[1],p_new_model_hopo[2],NullCompressionPenalty())),
     RLRSQActiveDeformationGradientModel(sheet_portion_rlrsq),
     PelceSunLangeveld1995Model()
 )
@@ -430,8 +430,8 @@ plot_equibiaxial(ax2a, 3,3, F -> constitutive_driver(F, f₀, s₀, n₀, 1.0, n
 
 
 new_model_hopo = (λ,p_)->equibiaxial_evaluation_active(λ, p_, p->NI_GeneralizedHillModel(
-    HolzapfelOgden2009Model(p_ho_refit_pass[1],p_ho_refit_pass[2],p_ho_refit_pass[3],p_ho_refit_pass[4],0.0,1.0,0.0,1.0,NullCompressionModel()),
-    ActiveMaterialAdapter(NewActiveSpring3(p[1],p[2],NullCompressionModel())),
+    HolzapfelOgden2009Model(p_ho_refit_pass[1],p_ho_refit_pass[2],p_ho_refit_pass[3],p_ho_refit_pass[4],0.0,1.0,0.0,1.0,NullCompressionPenalty()),
+    ActiveMaterialAdapter(NewActiveSpring3(p[1],p[2],NullCompressionPenalty())),
     RLRSQActiveDeformationGradientModel(sheet_portion_rlrsq),
     PelceSunLangeveld1995Model())
 )
@@ -443,8 +443,8 @@ new_fit = curve_fit(new_model_hopo,
 
 p_new_model_hopo = new_fit.param
 new_model_hopo_fit_12 = NI_GeneralizedHillModel(
-    HolzapfelOgden2009Model(p_ho_refit_pass[1],p_ho_refit_pass[2],p_ho_refit_pass[3],p_ho_refit_pass[4],0.0,1.0,0.0,1.0,NullCompressionModel()),
-    ActiveMaterialAdapter(NewActiveSpring3(p_new_model_hopo[1],p_new_model_hopo[2],NullCompressionModel())),
+    HolzapfelOgden2009Model(p_ho_refit_pass[1],p_ho_refit_pass[2],p_ho_refit_pass[3],p_ho_refit_pass[4],0.0,1.0,0.0,1.0,NullCompressionPenalty()),
+    ActiveMaterialAdapter(NewActiveSpring3(p_new_model_hopo[1],p_new_model_hopo[2],NullCompressionPenalty())),
     RLRSQActiveDeformationGradientModel(sheet_portion_rlrsq),
     PelceSunLangeveld1995Model()
 )
@@ -474,7 +474,7 @@ function Ψ(F, f₀, s₀, n₀, mp::PiersantiActiveStressEnergy2022)
 end
 
 new_model_hopa = (λ,p_)->equibiaxial_evaluation_active(λ, p_, p->NI_GeneralizedHillModel(
-    HolzapfelOgden2009Model(p_ho_refit_pass[1],p_ho_refit_pass[2],p_ho_refit_pass[3],p_ho_refit_pass[4],0.0,1.0,0.0,1.0,NullCompressionModel()),
+    HolzapfelOgden2009Model(p_ho_refit_pass[1],p_ho_refit_pass[2],p_ho_refit_pass[3],p_ho_refit_pass[4],0.0,1.0,0.0,1.0,NullCompressionPenalty()),
     ActiveMaterialAdapter(PiersantiActiveStressEnergy2022(1.0,p[1],p[2],p[3])),
     RLRSQActiveDeformationGradientModel(sheet_portion_rlrsq),
     PelceSunLangeveld1995Model())
@@ -487,7 +487,7 @@ new_fit = curve_fit(new_model_hopa,
 
 p_new_model_hopa = new_fit.param
 new_model_hopa_fit = NI_GeneralizedHillModel(
-    HolzapfelOgden2009Model(p_ho_refit_pass[1],p_ho_refit_pass[2],p_ho_refit_pass[3],p_ho_refit_pass[4],0.0,1.0,0.0,1.0,NullCompressionModel()),
+    HolzapfelOgden2009Model(p_ho_refit_pass[1],p_ho_refit_pass[2],p_ho_refit_pass[3],p_ho_refit_pass[4],0.0,1.0,0.0,1.0,NullCompressionPenalty()),
     ActiveMaterialAdapter(PiersantiActiveStressEnergy2022(1.0,p_new_model_hopa[1],p_new_model_hopa[2],p_new_model_hopa[3])),
     RLRSQActiveDeformationGradientModel(sheet_portion_rlrsq),
     PelceSunLangeveld1995Model()
@@ -498,7 +498,7 @@ plot_equibiaxial(ax2a, 3,3, F -> constitutive_driver(F, f₀, s₀, n₀, 1.0, n
 
 
 new_model_hop = (λ,p_)->equibiaxial_evaluation_active(λ, p_, p->NI_GeneralizedHillModel(
-    HolzapfelOgden2009Model(p_ho_refit_pass[1],p_ho_refit_pass[2],p_ho_refit_pass[3],p_ho_refit_pass[4],0.0,1.0,0.0,1.0,NullCompressionModel()),
+    HolzapfelOgden2009Model(p_ho_refit_pass[1],p_ho_refit_pass[2],p_ho_refit_pass[3],p_ho_refit_pass[4],0.0,1.0,0.0,1.0,NullCompressionPenalty()),
     ActiveMaterialAdapter(PiersantiActiveStressEnergy2022(1.0,p[1],p[2],p[3])),
     RLRSQActiveDeformationGradientModel(1.0),
     ConstantStretchModel())
@@ -511,7 +511,7 @@ new_fit = curve_fit(new_model_hop,
 
 p_new_model_hop = new_fit.param
 new_model_hop_fit = NI_GeneralizedHillModel(
-    HolzapfelOgden2009Model(p_ho_refit_pass[1],p_ho_refit_pass[2],p_ho_refit_pass[3],p_ho_refit_pass[4],0.0,1.0,0.0,1.0,NullCompressionModel()),
+    HolzapfelOgden2009Model(p_ho_refit_pass[1],p_ho_refit_pass[2],p_ho_refit_pass[3],p_ho_refit_pass[4],0.0,1.0,0.0,1.0,NullCompressionPenalty()),
     ActiveMaterialAdapter(PiersantiActiveStressEnergy2022(1.0,p_new_model_hop[1],p_new_model_hop[2],p_new_model_hop[3])),
     RLRSQActiveDeformationGradientModel(1.0),
     ConstantStretchModel()
@@ -531,13 +531,13 @@ axislegend(ax2a; position=:lt)
 # Active strain failure
 ho2009_active_strain = NI_GeneralizedHillModel(
     NullEnergyModel(),
-    ActiveMaterialAdapter(HolzapfelOgden2009Model(p_ho_refit_pass[1],p_ho_refit_pass[2],p_ho_refit_pass[3],p_ho_refit_pass[4],0.0,1.0,0.0,1.0,NullCompressionModel())),
+    ActiveMaterialAdapter(HolzapfelOgden2009Model(p_ho_refit_pass[1],p_ho_refit_pass[2],p_ho_refit_pass[3],p_ho_refit_pass[4],0.0,1.0,0.0,1.0,NullCompressionPenalty())),
     RLRSQActiveDeformationGradientModel(sheet_portion_rlrsq),
     PelceSunLangeveld1995Model()
 )
 linyin_active_strain = NI_GeneralizedHillModel(
     NullEnergyModel(),
-    ActiveMaterialAdapter(LinYinPassiveModel(linyin_pass_refit_p[1], linyin_pass_refit_p[2], linyin_pass_refit_p[3], linyin_pass_refit_p[4], NullCompressionModel())),
+    ActiveMaterialAdapter(LinYinPassiveModel(linyin_pass_refit_p[1], linyin_pass_refit_p[2], linyin_pass_refit_p[3], linyin_pass_refit_p[4], NullCompressionPenalty())),
     RLRSQActiveDeformationGradientModel(sheet_portion_rlrsq),
     PelceSunLangeveld1995Model()
 )
@@ -624,15 +624,15 @@ plot_equibiaxial(ax4s, 2,2, F -> constitutive_driver(F, f₀, s₀, n₀, 1.0, n
 # plot_equibiaxial(ax4n, 3,3, F -> constitutive_driver(F, f₀, s₀, n₀, 1.0, new_model_hop_fit)[1], label, :teal; λₘᵢₙ=minimum(new_xdata), λₘₐₓ=maximum(new_xdata))
 # NI_plot_equibiaxial_pressure(ax4p, F -> constitutive_driver(F, f₀, s₀, n₀, 1.0, new_model_hop_fit.ghm)[1], label, :teal; λₘᵢₙ=minimum(new_xdata), λₘₐₓ=maximum(new_xdata))
 
-label = L"\Psi^{\mathrm{a}} = \sum_d s_d \sqrt{I^{\textrm{e}}_{4,d}}"
-plot_equibiaxial(ax4f, 1,1, F -> constitutive_driver(F, f₀, s₀, n₀, 1.0, new_model_hopa_fit)[1], label, :blue; λₘᵢₙ=minimum(new_xdata), λₘₐₓ=maximum(new_xdata), linestyle=:dot, linewidth=linyinlinewidth)
-plot_equibiaxial(ax4s, 2,2, F -> constitutive_driver(F, f₀, s₀, n₀, 1.0, new_model_hopa_fit)[1], label, :blue; λₘᵢₙ=minimum(new_xdata), λₘₐₓ=maximum(new_xdata), linestyle=:dot, linewidth=linyinlinewidth)
+# label = L"\Psi^{\mathrm{a}} = \sum_d s_d \sqrt{I^{\textrm{e}}_{4,d}}"
+# plot_equibiaxial(ax4f, 1,1, F -> constitutive_driver(F, f₀, s₀, n₀, 1.0, new_model_hopa_fit)[1], label, :blue; λₘᵢₙ=minimum(new_xdata), λₘₐₓ=maximum(new_xdata), linestyle=:dot, linewidth=linyinlinewidth)
+# plot_equibiaxial(ax4s, 2,2, F -> constitutive_driver(F, f₀, s₀, n₀, 1.0, new_model_hopa_fit)[1], label, :blue; λₘᵢₙ=minimum(new_xdata), λₘₐₓ=maximum(new_xdata), linestyle=:dot, linewidth=linyinlinewidth)
 # plot_equibiaxial(ax4n, 3,3, F -> constitutive_driver(F, f₀, s₀, n₀, 1.0, new_model_hopa_fit)[1], label, :orange; λₘᵢₙ=minimum(new_xdata), λₘₐₓ=maximum(new_xdata))
 # NI_plot_equibiaxial_pressure(ax4p, F -> constitutive_driver(F, f₀, s₀, n₀, 1.0, new_model_hopa_fit.ghm)[1], label, :orange; λₘᵢₙ=minimum(new_xdata), λₘₐₓ=maximum(new_xdata))
 
-# label = L"\Psi^{\mathrm{a}} = a(I^{\textrm{e}}_{1}-3) + \frac{a_f}{2}(I^{\textrm{e}}_{4,f}-1)^2"
-# plot_equibiaxial(ax4f, 1,1, F -> constitutive_driver(F, f₀, s₀, n₀, 1.0, new_model_hopo_fit_12)[1], label, :green; λₘᵢₙ=minimum(new_xdata), λₘₐₓ=maximum(new_xdata))
-# plot_equibiaxial(ax4s, 2,2, F -> constitutive_driver(F, f₀, s₀, n₀, 1.0, new_model_hopo_fit_12)[1], label, :green; λₘᵢₙ=minimum(new_xdata), λₘₐₓ=maximum(new_xdata))
+label = L"\Psi^{\mathrm{a}} = a(I^{\textrm{e}}_{1}-3) + \frac{a_f}{2}(I^{\textrm{e}}_{4,f}-1)^2"
+plot_equibiaxial(ax4f, 1,1, F -> constitutive_driver(F, f₀, s₀, n₀, 1.0, new_model_hopo_fit_12)[1], label, :green; λₘᵢₙ=minimum(new_xdata), λₘₐₓ=maximum(new_xdata))
+plot_equibiaxial(ax4s, 2,2, F -> constitutive_driver(F, f₀, s₀, n₀, 1.0, new_model_hopo_fit_12)[1], label, :green; λₘᵢₙ=minimum(new_xdata), λₘₐₓ=maximum(new_xdata))
 # plot_equibiaxial(ax4n, 3,3, F -> constitutive_driver(F, f₀, s₀, n₀, 1.0, new_model_hopo_fit_12)[1], label, :green; λₘᵢₙ=minimum(new_xdata), λₘₐₓ=maximum(new_xdata))
 # NI_plot_equibiaxial_pressure(ax4p, F -> constitutive_driver(F, f₀, s₀, n₀, 1.0, new_model_hopo_fit_12.ghm)[1], label, :green; λₘᵢₙ=minimum(new_xdata), λₘₐₓ=maximum(new_xdata))
 
@@ -642,15 +642,15 @@ plot_equibiaxial(ax4s, 2,2, F -> constitutive_driver(F, f₀, s₀, n₀, 1.0, n
 # plot_equibiaxial(ax4n, 3,3, F -> constitutive_driver(F, f₀, s₀, n₀, 1.0, new_model_hopop_fit_21)[1], label, :black; λₘᵢₙ=minimum(new_xdata), λₘₐₓ=maximum(new_xdata))
 # NI_plot_equibiaxial_pressure(ax4p, F -> constitutive_driver(F, f₀, s₀, n₀, 1.0, new_model_hopop_fit_21.ghm)[1], label, :black; λₘᵢₙ=minimum(new_xdata), λₘₐₓ=maximum(new_xdata))
 
-label = L"\Psi^{\mathrm{a}} = \frac{a}{2}(I^{\textrm{e}}_{1}-3)^2 + a_f(I^{\textrm{e}}_{4,f}-1)"
-plot_equibiaxial(ax4f, 1,1, F -> constitutive_driver(F, f₀, s₀, n₀, 1.0, new_model_hopo_fit_21)[1], label, :orange; λₘᵢₙ=minimum(new_xdata), λₘₐₓ=maximum(new_xdata), linestyle=:dot, linewidth=linyinlinewidth)
-plot_equibiaxial(ax4s, 2,2, F -> constitutive_driver(F, f₀, s₀, n₀, 1.0, new_model_hopo_fit_21)[1], label, :orange; λₘᵢₙ=minimum(new_xdata), λₘₐₓ=maximum(new_xdata), linestyle=:dot, linewidth=linyinlinewidth)
+# label = L"\Psi^{\mathrm{a}} = \frac{a}{2}(I^{\textrm{e}}_{1}-3)^2 + a_f(I^{\textrm{e}}_{4,f}-1)"
+# plot_equibiaxial(ax4f, 1,1, F -> constitutive_driver(F, f₀, s₀, n₀, 1.0, new_model_hopo_fit_21)[1], label, :orange; λₘᵢₙ=minimum(new_xdata), λₘₐₓ=maximum(new_xdata), linestyle=:dot, linewidth=linyinlinewidth)
+# plot_equibiaxial(ax4s, 2,2, F -> constitutive_driver(F, f₀, s₀, n₀, 1.0, new_model_hopo_fit_21)[1], label, :orange; λₘᵢₙ=minimum(new_xdata), λₘₐₓ=maximum(new_xdata), linestyle=:dot, linewidth=linyinlinewidth)
 # plot_equibiaxial(ax4n, 3,3, F -> constitutive_driver(F, f₀, s₀, n₀, 1.0, new_model_hopo_fit_21)[1], label, :orange; λₘᵢₙ=minimum(new_xdata), λₘₐₓ=maximum(new_xdata))
 # NI_plot_equibiaxial_pressure(ax4p, F -> constitutive_driver(F, f₀, s₀, n₀, 1.0, new_model_hopo_fit_21.ghm)[1], label, :orange; λₘᵢₙ=minimum(new_xdata), λₘₐₓ=maximum(new_xdata))
 
-# label = L"\Psi^{\mathrm{a}} = \frac{a}{2}(I^{\textrm{e}}_{1}-3)^2 + \frac{a_f}{2}(I^{\textrm{e}}_{4,f}-1)^2"
-# plot_equibiaxial(ax4f, 1,1, F -> constitutive_driver(F, f₀, s₀, n₀, 1.0, new_model_hopo_fit_22)[1], label, :red; λₘᵢₙ=minimum(new_xdata), λₘₐₓ=maximum(new_xdata))
-# plot_equibiaxial(ax4s, 2,2, F -> constitutive_driver(F, f₀, s₀, n₀, 1.0, new_model_hopo_fit_22)[1], label, :red; λₘᵢₙ=minimum(new_xdata), λₘₐₓ=maximum(new_xdata))
+label = L"\Psi^{\mathrm{a}} = \frac{a}{2}(I^{\textrm{e}}_{1}-3)^2 + \frac{a_f}{2}(I^{\textrm{e}}_{4,f}-1)^2"
+plot_equibiaxial(ax4f, 1,1, F -> constitutive_driver(F, f₀, s₀, n₀, 1.0, new_model_hopo_fit_22)[1], label, :red; λₘᵢₙ=minimum(new_xdata), λₘₐₓ=maximum(new_xdata))
+plot_equibiaxial(ax4s, 2,2, F -> constitutive_driver(F, f₀, s₀, n₀, 1.0, new_model_hopo_fit_22)[1], label, :red; λₘᵢₙ=minimum(new_xdata), λₘₐₓ=maximum(new_xdata))
 # plot_equibiaxial(ax4n, 3,3, F -> constitutive_driver(F, f₀, s₀, n₀, 1.0, new_model_hopo_fit_22)[1], label, :red; λₘᵢₙ=minimum(new_xdata), λₘₐₓ=maximum(new_xdata))
 # NI_plot_equibiaxial_pressure(ax4p, F -> constitutive_driver(F, f₀, s₀, n₀, 1.0, new_model_hopo_fit_22.ghm)[1], label, :red; λₘᵢₙ=minimum(new_xdata), λₘₐₓ=maximum(new_xdata))
 
