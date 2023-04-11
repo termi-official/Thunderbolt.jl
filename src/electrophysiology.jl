@@ -128,6 +128,8 @@ Assumtion: Iₛₜᵢₘ,ₑ = Iₛₜᵢₘ,ᵢ.
 """
 abstract type TransmembraneStimulationProtocol <: AbstractStimulationProtocol end;
 
+struct NoStimulationProtocol <: TransmembraneStimulationProtocol end
+
 """
 The original model formulation (TODO citation) with the structure
 
@@ -184,3 +186,113 @@ struct MonodomainModel <: AbstractEPModel
     stim::TransmembraneStimulationProtocol
     ion::AbstractIonicModel
 end
+
+# mutable struct MonodomainOSElementCache
+#     """
+#     Vector of 
+#     """
+#     φₘ_element::AbstractVector
+    
+# end
+
+# function assemble_system()
+
+# end
+
+"""
+    Represents the bilinearform <ϕ,ψ> = -∫ D∇ϕ ⋅ ∇ψ dΩ .
+"""
+struct DiffusionOperator
+    D
+    cv_trial
+    cv_test
+    coordinate_system
+end
+
+function assemble_element!(Kₑ, operator::DiffusionOperator)
+    @unpack coordinate_system, cellvalues = operator
+    for q_point in 1:getnquadpoints(cellvalues)
+        #get the spatial coordinates of the current gauss point
+        x = coordinate(coordinate_system, q_point)
+        #based on the gauss point coordinates, we get the spatial dependent
+        #material parameters
+        D_loc = operator.D(x)
+        dΩ = getdetJdV(cellvalues, q_point)
+        for i in 1:n_basefuncs
+            ∇Nᵢ = shape_gradient(cellvalues, q_point, i)
+            for j in 1:n_basefuncs
+                ∇Nⱼ = shape_gradient(cellvalues, q_point, j)
+                Kₑ[i,j] -= ((D_loc ⋅ ∇Nᵢ) ⋅ ∇Nⱼ) * dΩ
+            end
+        end
+    end
+end
+
+"""
+    Represents the bilinearform <ϕ,ψ> = ∫ ρϕ ⋅ ψ dΩ .
+"""
+struct MassOperator
+    ρ
+    cv_trial
+    cv_test
+    coordinate_system
+end
+
+function assemble_element!(Mₑ, operator::MassOperator)
+    @unpack coordinate_system, cv_trial, cv_test = operator
+    for q_point in 1:getnquadpoints(cellvalues)
+        #get the spatial coordinates of the current gauss point
+        x = coordinate(coordinate_system, q_point)
+        #based on the gauss point coordinates, we get the spatial dependent
+        #material parameters
+        ρ = operator.ρ(x)
+        dΩ = getdetJdV(cv_trial, q_point)
+        for i in 1:n_basefuncs
+            Nᵢ = shape_value(cv_trial, q_point, i)
+            for j in 1:n_basefuncs
+                Nⱼ = shape_value(cv_test, q_point, j)
+                Mₑ[i,j] += ρ * Nᵢ * Nⱼ * dΩ 
+            end
+        end
+    end
+end
+
+"""
+Solver for the heat portion of the Monodomain problem.
+"""
+struct ImplicitEulerHeatSolver <: AbstractEPSolver
+end
+
+"""
+"""
+struct ImplicitEulerHeatSolverCache <: AbstractEPSolverCache
+    dh::DofHandler
+    transmembranevoltage::Symbol
+    ch::ConstraintHandler
+    K::MatrixType
+    M::MatrixType
+    A::MatrixType
+end
+
+"""
+"""
+struct LTGMonodomainSolver
+    heatsolver
+    cellsolver
+end
+
+"""
+"""
+struct LTG_RDMonodomainSolverCache{HC,CC}
+    heatcache::HC
+    cellcache::CC
+end
+
+"""
+"""
+struct LTGOSCache{OperatorType} <: AbstractEPSolver
+end
+
+# function solve(solver::LTGOSSolver, model::AbstractEPModel, u₀, s₀, tspan=(0.0,100.0))
+    
+# end
