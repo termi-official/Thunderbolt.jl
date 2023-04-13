@@ -3,6 +3,8 @@ module Thunderbolt
 using Reexport, UnPack, StaticArrays
 @reexport using Ferrite
 
+using JLD2
+
 import Ferrite: AbstractDofHandler, AbstractGrid
 
 include("meshtools.jl")
@@ -17,6 +19,8 @@ include("mechanics/contraction.jl")
 include("mechanics/active.jl")
 
 include("drivers.jl")
+
+include("io.jl")
 
 include("utils.jl")
 

@@ -42,6 +42,11 @@ export
     # Utils
     calculate_volume_deformed_mesh,
     value,
+    # IO
+    ParaViewWriter,
+    JLD2Writer,
+    store_timestep!,
+    finalize!,
     # Drivers
     GeneralizedHillModel,
     ActiveStressModel,
