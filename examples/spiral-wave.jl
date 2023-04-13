@@ -8,6 +8,7 @@ using Krylov
 using SparseMatricesCSR, ThreadedSparseCSR
 ThreadedSparseCSR.multithread_matmul(PolyesterThreads())
 
+######################################################
 Base.@kwdef struct ParametrizedFHNModel{T} <: AbstractIonicModel
     a::T = T(0.1)
     b::T = T(0.5)
@@ -19,6 +20,7 @@ end;
 const FHNModel = ParametrizedFHNModel{Float64};
 
 num_states(::ParametrizedFHNModel{T}) where{T} = 1
+default_initial_state(::ParametrizedFHNModel{T}) where {T} = [0.0, 0.0]
 
 function cell_rhs!(du::TD,φₘ::TV,s::TS,x::TX,t::TT,cell_parameters::TP) where {TD,TV,TS,TX,TT,TP <: AbstractIonicModel}
     dφₘ = @view du[1:1]
@@ -42,6 +44,8 @@ end
     return nothing
 end
 
+######################################################
+
 epmodel = MonodomainModel(
     x->1.0,
     x->1.0,
@@ -51,7 +55,7 @@ epmodel = MonodomainModel(
 )
 
 # TODO where to put this setup?
-grid = generate_grid(Quadrilateral, (512, 512), Vec{2}((0.0,0.0)), Vec{2}((2.5,2.5)))
+grid = generate_grid(Quadrilateral, (256, 256), Vec{2}((0.0,0.0)), Vec{2}((2.5,2.5)))
 # addnodeset!(grid, "ground", x-> x[2] == -0 && x[1] == -0)
 dim = 2
 ip = Lagrange{dim, RefCube, 1}()
@@ -81,7 +85,16 @@ for cell in CellIterator(dh)
     end
 end
 
-# Solver
+######################################################
+struct ImplicitEulerHeatSolver end
+mutable struct ImplicitEulerHeatSolverCache{MassMatrixType, DiffusionMatrixType, SystemMatrixType, LinSolverType, RHSType}
+    M::MassMatrixType
+    K::DiffusionMatrixType
+    A::SystemMatrixType
+    linsolver::LinSolverType
+    b::RHSType
+end
+
 function assemble_global!(cellvalues::CellScalarValues{dim}, K::SparseMatrixCSC, M::SparseMatrixCSC, dh::DofHandler, model::MonodomainModel) where {dim}
     n_basefuncs = getnbasefunctions(cellvalues)
     Kₑ = zeros(n_basefuncs, n_basefuncs)
@@ -124,6 +137,16 @@ function assemble_global!(cellvalues::CellScalarValues{dim}, K::SparseMatrixCSC,
     end
 end
 
+function solve!(uₙ, uₙ₋₁, cache::ImplicitEulerHeatSolverCache)
+    @timeit "rhs" mul!(cache.b, cache.M, uₙ₋₁)
+    @timeit "Axb" begin
+        Krylov.cg!(cache.linsolver, cache.A, cache.b, uₙ₋₁)
+        uₙ .= cache.linsolver.x
+    end
+end
+
+######################################################
+
 abstract type AbstractCellSolver end
 abstract type AbstractCellSolverCache end
 
@@ -133,7 +156,7 @@ struct ForwardEulerStepperCache{T} <: AbstractCellSolverCache
     du::Vector{T}
 end
 
-function step_cells!(uₙ::T1, sₙ::T2, cell_model::ION, t::Float64, Δt::Float64, solver::ForwardEulerStepper, solver_cache::ForwardEulerStepperCache{T3}) where {T1, T2, T3, ION <: AbstractIonicModel}
+function solve!(uₙ::T1, sₙ::T2, cell_model::ION, t::Float64, Δt::Float64, solver::ForwardEulerStepper, solver_cache::ForwardEulerStepperCache{T3}) where {T1, T2, T3, ION <: AbstractIonicModel}
     # Eval buffer
     @unpack du = solver_cache
     
@@ -162,7 +185,7 @@ struct AdaptiveForwardEulerReactionSubStepperCache{T} <: AbstractCellSolverCache
     du::Vector{T}
 end
 
-function step_cells!(uₙ::T1, sₙ::T2, cell_model::ION, t::Float64, Δt::Float64, solver::AdaptiveForwardEulerReactionSubStepper{T3}, solver_cache::AdaptiveForwardEulerReactionSubStepperCache{T3}) where {T1, T2, T3, ION <: AbstractIonicModel}
+function solve!(uₙ::T1, sₙ::T2, cell_model::ION, t::Float64, Δt::Float64, solver::AdaptiveForwardEulerReactionSubStepper{T3}, solver_cache::AdaptiveForwardEulerReactionSubStepperCache{T3}) where {T1, T2, T3, ION <: AbstractIonicModel}
     @unpack du = solver_cache
 
     for i ∈ 1:length(uₙ)
@@ -218,17 +241,19 @@ Base.@kwdef struct ThreadedStepperCache{CacheType<:AbstractCellSolverCache} <: A
     scratch::Vector{CacheType}
 end
 
-function step_cells!(uₙ::T1, sₙ::T2, cell_model::ION, t::Float64, Δt::Float64, solver::ThreadedStepper{SolverType}, cache::ThreadedStepperCache{CacheType}) where {T1, T2, SolverType, CacheType, ION <: AbstractIonicModel}
+function solve!(uₙ::T1, sₙ::T2, cell_model::ION, t::Float64, Δt::Float64, solver::ThreadedStepper{SolverType}, cache::ThreadedStepperCache{CacheType}) where {T1, T2, SolverType, CacheType, ION <: AbstractIonicModel}
     for tid ∈ 1:solver.cells_per_thread:length(uₙ)
         tcache = cache.scratch[Threads.threadid()]
         last_cell_in_thread = min((tid+cells_per_thread),length(uₙ))
         tuₙ = @view uₙ[tid:last_cell_in_thread]
         tsₙ = @view sₙ[tid:last_cell_in_thread]
         Threads.@threads for tid ∈ 1:cells_per_thread:length(uₙ)
-            step_cells!(tuₙ, tsₙ, cell_model, t, Δt, solver.solver, tcache)
+            solve!(tuₙ, tsₙ, cell_model, t, Δt, solver.solver, tcache)
         end
     end
 end
+
+######################################################
 
 # TODO contribute back to Ferrite
 function WriteVTK.vtk_grid(filename::AbstractString, grid::Grid{dim,C,T}; compress::Bool=true) where {dim,C,T}
@@ -237,55 +262,80 @@ function WriteVTK.vtk_grid(filename::AbstractString, grid::Grid{dim,C,T}; compre
     return vtk_grid(filename, coords, cells; compress=compress)
 end
 
-function solve(;Δt=0.1, T=3.0, vtkskip = 50)
-    M = create_sparsity_pattern(dh);
-    K = create_sparsity_pattern(dh);
+######################################################
+# struct GodunovSolver <: AbstractSolver
+# end
+
+######################################################
+
+struct ParaViewWriter{PVD}
+    filename::String
+    pvd::PVD
+end
+ParaViewWriter(filename::String) = ParaViewWriter(filename, paraview_collection("$filename.pvd"))
+function store_timestep!(io::ParaViewWriter, t, dh, u)
+    mkpath(io.filename)
+    vtk_grid(io.filename * "/$t.vtu", dh) do vtk
+        vtk_point_data(vtk, dh, u)
+        vtk_save(vtk)
+        io.pvd[t] = vtk
+    end
+end
+function finalize!(io::ParaViewWriter)
+    vtk_save(io.pvd)
+end
+
+using JLD2
+struct JLD2Writer{FD}
+    filename::String
+    fd::FD
+end
+JLD2Writer(filename::String, overwrite::Bool=true) = JLD2Writer(filename, jldopen("$filename.jld2", overwrite ? "w" : "a+"))
+function store_timestep!(io::JLD2Writer, t, dh, u)
+    io.fd["timesteps/$t/solution"] = u
+end
+function finalize!(io::JLD2Writer)
+end
+
+######################################################
+
+function solve(;Δt=0.1, T=3.0, storeskip = 50, heatsolver = ImplicitEulerHeatSolver(), cellsolver = ForwardEulerStepper())
+    heatsolvercache = ImplicitEulerHeatSolverCache(
+        create_sparsity_pattern(dh),
+        create_sparsity_pattern(dh),
+        SparseMatrixCSR(transpose(create_sparsity_pattern(dh))),
+        CgSolver(length(u₀), length(u₀), Vector{Float64}),
+        zeros(ndofs(dh))
+    )
+
+    @unpack M, K, linsolver = heatsolvercache
     @timeit "assembly" assemble_global!(cellvalues, K, M, dh, epmodel)
 
-    A = SparseMatrixCSR(transpose(M - Δt*K))
-    # Pl = JacobiPreconditioner(A) # Jacobi preconditioner
+    heatsolvercache.A = SparseMatrixCSR(transpose(M - Δt*K))
 
-    cellsolver = ForwardEulerStepper()
     cellsolvercache = ForwardEulerStepperCache(zeros(num_states(epmodel.ion)+1))
 
     uₙ₋₁ = u₀
-    # sₙ₋₁ = s₀
     uₙ = zeros(ndofs(dh))
-    b  = zeros(ndofs(dh))
-    # sₙ = zeros(ndofs(dh),num_states(epmodel.ion))
     sₙ = s₀
-    du_cell_arr = [zeros(num_states(epmodel.ion)+1) for t ∈ 1:Threads.nthreads()]
 
-    pvd = paraview_collection("monodomain.pvd");
-    
-    linsolver = CgSolver(length(u₀), length(u₀), Vector{Float64})
+    io = ParaViewWriter("monodomain")
 
     @timeit "solver" for (i,t) ∈ enumerate(0.0:Δt:T)
         @info t
 
-        # @timeit "io" if (i-1) % vtkskip == 0
-        #     vtk_grid("monodomain-$t.vtu", dh) do vtk
-        #         vtk_point_data(vtk,dh,uₙ₋₁)
-        #         vtk_save(vtk)
-        #         pvd[t] = vtk
-        #     end
-        # end
-
-        # Heat Solver - Implicit Euler
-        @timeit "rhs" mul!(b, M, uₙ₋₁)
-        @timeit "Axb" begin
-            # Krylov.cg!(linsolver, A, b, uₙ₋₁, M=Pl, ldiv=true)
-            Krylov.cg!(linsolver, A, b, uₙ₋₁)
-            uₙ = linsolver.x
+        @timeit "io" if (i-1) % storeskip == 0
+            store_timestep!(io, t, dh, uₙ₋₁)
         end
-        # sₙ .= sₙ₋₁
 
+        @timeit "heat" solve!(uₙ, uₙ₋₁, heatsolvercache)
         # Cell Solver - Explicit Euler
-        step_cells!(uₙ, sₙ, epmodel.ion, t, Δt, cellsolver, cellsolvercache)
+        @timeit "cell" solve!(uₙ, sₙ, epmodel.ion, t, Δt, cellsolver, cellsolvercache)
 
         uₙ₋₁ .= uₙ
-        # sₙ₋₁ .= sₙ
     end
-    vtk_save(pvd);
+    
+    finalize!(io)
+
     @info "Done."
 end
