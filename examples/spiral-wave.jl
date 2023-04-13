@@ -51,7 +51,7 @@ epmodel = MonodomainModel(
 )
 
 # TODO where to put this setup?
-grid = generate_grid(Quadrilateral, (100, 100), Vec{2}((0.0,0.0)), Vec{2}((2.5,2.5)))
+grid = generate_grid(Quadrilateral, (512, 512), Vec{2}((0.0,0.0)), Vec{2}((2.5,2.5)))
 # addnodeset!(grid, "ground", x-> x[2] == -0 && x[1] == -0)
 dim = 2
 ip = Lagrange{dim, RefCube, 1}()
@@ -125,13 +125,18 @@ function assemble_global!(cellvalues::CellScalarValues{dim}, K::SparseMatrixCSC,
 end
 
 function step_cells!(uₙ::T1, sₙ::T2, sₙ₋₁::T2, cell_model::ION, t::Float64, Δt::Float64, du_cell_arr::T3) where {T1, T2, T3, ION <: AbstractIonicModel}
+    cells_per_thread = 64
+    # @timeit "cell" for tid ∈ 1:cells_per_thread:length(uₙ)
+    # # @timeit "cell" Threads.@threads for tid ∈ 1:cells_per_thread:length(uₙ)
+    #     du_cell = du_cell_arr[Threads.threadid()]
+    #     upper_bound = min((tid+cells_per_thread),length(uₙ))
+    #     for i ∈ tid:upper_bound
     @timeit "cell" for i ∈ 1:length(uₙ)
-        # for i ∈ tid:min((tid+cells_per_thread-1),ndofs(dh))
+        du_cell = du_cell_arr[Threads.threadid()]
             @inbounds φₘ_cell = uₙ[i]
             @inbounds s_cell  = @view sₙ₋₁[i,:]
 
             #TODO get x and Cₘ
-            du_cell = du_cell_arr[Threads.threadid()]
             cell_rhs!(du_cell, φₘ_cell, s_cell, nothing, t, cell_model)
 
             @inbounds uₙ[i] = φₘ_cell + Δt*du_cell[1]
@@ -139,33 +144,11 @@ function step_cells!(uₙ::T1, sₙ::T2, sₙ₋₁::T2, cell_model::ION, t::Flo
             @inbounds for j ∈ 1:num_states(cell_model)
                 sₙ[i,j] = s_cell[j] + Δt*du_cell[j+1]
             end
-        # end
+    #    end
     end
 end
 
-# """
-# Shared memory sparse matrix.
-# """
-# struct ParSparseMatrixCSC
-#     A::SparseMatrixCSC
-# end
-# LinearAlgebra.mul!(y, A::ParSparseMatrixCSC, x) = ParSpMatVec.A_mul_B!( 1.0, A.A, x, 0.0, y, Threads.nthreads())
-# Base.eltype(A::ParSparseMatrixCSC) = eltype(A.A)
-# Base.size(A::ParSparseMatrixCSC, d) = size(A.A, d)
-
-struct JacobiPreconditioner{T}
-    Ainv::Diagonal{T}
-end
-function JacobiPreconditioner(A)
-    JacobiPreconditioner{eltype(A)}(inv(Diagonal(diag(A))))
-end
-LinearAlgebra.ldiv!(P::JacobiPreconditioner{T}, b) where {T} = mul!(b, P.Ainv, b)
-LinearAlgebra.ldiv!(y, P::JacobiPreconditioner{T}, b) where {T} = mul!(y, P.Ainv, b)
-import Base: \
-function (\)(P::JacobiPreconditioner{T}, b) where {T}
-    return ldiv!(similar(b), P.Ainv, b)
-end
-# TODO contribute to ferrite
+# TODO contribute back to Ferrite
 function WriteVTK.vtk_grid(filename::AbstractString, grid::Grid{dim,C,T}; compress::Bool=true) where {dim,C,T}
     cells = MeshCell[MeshCell(Ferrite.cell_to_vtkcell(typeof(cell)), Ferrite.nodes_to_vtkorder(cell)) for cell in getcells(grid)]
     coords = reshape(reinterpret(T, Ferrite.getnodes(grid)), (dim, Ferrite.getnnodes(grid)))
@@ -179,20 +162,8 @@ function solve(;Δt=0.1, T=3.0, vtkskip = 50)
     K = create_sparsity_pattern(dh);
     @timeit "assembly" assemble_global!(cellvalues, K, M, dh, epmodel)
 
-    #precompute decomposition
-    # M(uₙ-uₙ₋₁)/Δt = Kuₙ -> (M-ΔtK)uₙ = Muₙ₋₁
-    # here A := (M-ΔtK), b := Muₙ₋₁
-    # A = cholesky(Symmetric(M - Δt*K))
-    # A = factorize(Symmetric(M - Δt*K))
-
-    # A = Symmetric(M - Δt*K)
-    # Pl = JacobiPreconditioner(A) # Jacobi preconditioner
-
-    # A = ParSparseMatrixCSC(M-Δt*K)
-    # Pl = JacobiPreconditioner(A.A) # Jacobi preconditioner
-    # Pl = aspreconditioner(ruge_stuben(A))
-
     A = SparseMatrixCSR(transpose(M - Δt*K))
+    # Pl = JacobiPreconditioner(A) # Jacobi preconditioner
 
     uₙ₋₁ = u₀
     sₙ₋₁ = s₀
@@ -204,24 +175,22 @@ function solve(;Δt=0.1, T=3.0, vtkskip = 50)
     pvd = paraview_collection("monodomain.pvd");
     
     linsolver = CgSolver(length(u₀), length(u₀), Vector{Float64})
-    
+
     @timeit "solver" for (i,t) ∈ enumerate(0.0:Δt:T)
         @info t
 
-        # @timeit "io" if (i-1) % vtkskip == 0
-        #     vtk_grid("monodomain-$t.vtu", dh) do vtk
-        #         vtk_point_data(vtk,dh,uₙ₋₁)
-        #         vtk_save(vtk)
-        #         pvd[t] = vtk
-        #     end
-        # end
+        @timeit "io" if (i-1) % vtkskip == 0
+            vtk_grid("monodomain-$t.vtu", dh) do vtk
+                vtk_point_data(vtk,dh,uₙ₋₁)
+                vtk_save(vtk)
+                pvd[t] = vtk
+            end
+        end
 
         # Heat Solver - Implicit Euler
         @timeit "rhs" mul!(b, M, uₙ₋₁)
-        # @timeit "Axb" cg!(uₙ, A, b, Pl=Pl, verbose=false, abstol=1e-11, reltol=1e-9)
-        # @timeit "Axb" cg!(uₙ, A, b, verbose=false, abstol=1e-11, reltol=1e-9)
-        # @timeit "Axb" (uₙ, _) = Krylov.cg(A, b, uₙ₋₁)
         @timeit "Axb" begin
+            # Krylov.cg!(linsolver, A, b, uₙ₋₁, M=Pl, ldiv=true)
             Krylov.cg!(linsolver, A, b, uₙ₋₁)
             uₙ = linsolver.x
         end
