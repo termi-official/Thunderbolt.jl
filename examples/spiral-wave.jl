@@ -137,12 +137,10 @@ function assemble_global!(cellvalues::CellScalarValues{dim}, K::SparseMatrixCSC,
     end
 end
 
-function solve!(uₙ, uₙ₋₁, cache::ImplicitEulerHeatSolverCache)
-    @timeit "rhs" mul!(cache.b, cache.M, uₙ₋₁)
-    @timeit "Axb" begin
-        Krylov.cg!(cache.linsolver, cache.A, cache.b, uₙ₋₁)
-        uₙ .= cache.linsolver.x
-    end
+function solve!(uₙ, uₙ₋₁, t, Δt, cache::ImplicitEulerHeatSolverCache)
+    mul!(cache.b, cache.M, uₙ₋₁)
+    Krylov.cg!(cache.linsolver, cache.A, cache.b, uₙ₋₁)
+    uₙ .= cache.linsolver.x
 end
 
 ######################################################
@@ -150,13 +148,13 @@ end
 abstract type AbstractCellSolver end
 abstract type AbstractCellSolverCache end
 
-struct ForwardEulerStepper <: AbstractCellSolver end
+struct ForwardEulerCellSolver <: AbstractCellSolver end
 
-struct ForwardEulerStepperCache{T} <: AbstractCellSolverCache
+struct ForwardEulerCellSolverCache{T} <: AbstractCellSolverCache
     du::Vector{T}
 end
 
-function solve!(uₙ::T1, sₙ::T2, cell_model::ION, t::Float64, Δt::Float64, solver::ForwardEulerStepper, solver_cache::ForwardEulerStepperCache{T3}) where {T1, T2, T3, ION <: AbstractIonicModel}
+function solve!(uₙ::T1, sₙ::T2, cell_model::ION, t::Float64, Δt::Float64, solver_cache::ForwardEulerCellSolverCache{T3}) where {T1, T2, T3, ION <: AbstractIonicModel}
     # Eval buffer
     @unpack du = solver_cache
     
@@ -176,17 +174,19 @@ function solve!(uₙ::T1, sₙ::T2, cell_model::ION, t::Float64, Δt::Float64, s
     end
 end
 
-Base.@kwdef struct AdaptiveForwardEulerReactionSubStepper{T} <: AbstractCellSolver
+Base.@kwdef struct AdaptiveForwardEulerReactionSubCellSolver{T} <: AbstractCellSolver
     substeps::Int = 10
     reaction_threshold::T = 0.1
 end
 
-struct AdaptiveForwardEulerReactionSubStepperCache{T} <: AbstractCellSolverCache
+struct AdaptiveForwardEulerReactionSubCellSolverCache{T} <: AbstractCellSolverCache
     du::Vector{T}
+    substeps::Int
+    reaction_threshold::T
 end
 
-function solve!(uₙ::T1, sₙ::T2, cell_model::ION, t::Float64, Δt::Float64, solver::AdaptiveForwardEulerReactionSubStepper{T3}, solver_cache::AdaptiveForwardEulerReactionSubStepperCache{T3}) where {T1, T2, T3, ION <: AbstractIonicModel}
-    @unpack du = solver_cache
+function solve!(uₙ::T1, sₙ::T2, cell_model::ION, t::Float64, Δt::Float64, cache::AdaptiveForwardEulerReactionSubCellSolverCache{T3}) where {T1, T2, T3, ION <: AbstractIonicModel}
+    @unpack du = cache
 
     for i ∈ 1:length(uₙ)
         @inbounds φₘ_cell = uₙ[i]
@@ -195,7 +195,7 @@ function solve!(uₙ::T1, sₙ::T2, cell_model::ION, t::Float64, Δt::Float64, s
         #TODO get x and Cₘ
         cell_rhs!(du, φₘ_cell, s_cell, nothing, t, cell_model)
 
-        if du[1] < solver.reaction_threshold
+        if du[1] < cache.reaction_threshold
             @inbounds uₙ[i] = φₘ_cell + Δt*du[1]
 
             # Non-allocating assignment
@@ -203,7 +203,7 @@ function solve!(uₙ::T1, sₙ::T2, cell_model::ION, t::Float64, Δt::Float64, s
                 sₙ[i,j] = s_cell[j] + Δt*du[j+1]
             end
         else
-            Δtₛ = Δt/solver.substeps
+            Δtₛ = Δt/cache.substeps
 
             @inbounds uₙ[i] = φₘ_cell + Δtₛ*du[1]
 
@@ -232,23 +232,23 @@ function solve!(uₙ::T1, sₙ::T2, cell_model::ION, t::Float64, Δt::Float64, s
     end
 end
 
-Base.@kwdef struct ThreadedStepper{SolverType<:AbstractCellSolver} <: AbstractCellSolver
-    solver::SolverType
+Base.@kwdef struct ThreadedCellSolver{SolverType<:AbstractCellSolver} <: AbstractCellSolver
     cells_per_thread::Int = 64
 end
 
-Base.@kwdef struct ThreadedStepperCache{CacheType<:AbstractCellSolverCache} <: AbstractCellSolverCache
+Base.@kwdef struct ThreadedCellSolverCache{CacheType<:AbstractCellSolverCache} <: AbstractCellSolverCache
     scratch::Vector{CacheType}
+    cells_per_thread::Int = 64
 end
 
-function solve!(uₙ::T1, sₙ::T2, cell_model::ION, t::Float64, Δt::Float64, solver::ThreadedStepper{SolverType}, cache::ThreadedStepperCache{CacheType}) where {T1, T2, SolverType, CacheType, ION <: AbstractIonicModel}
-    for tid ∈ 1:solver.cells_per_thread:length(uₙ)
+function solve!(uₙ::T1, sₙ::T2, cell_model::ION, t::Float64, Δt::Float64, cache::ThreadedCellSolverCache{CacheType}) where {T1, T2, CacheType, ION <: AbstractIonicModel}
+    for tid ∈ 1:cache.cells_per_thread:length(uₙ)
         tcache = cache.scratch[Threads.threadid()]
         last_cell_in_thread = min((tid+cells_per_thread),length(uₙ))
         tuₙ = @view uₙ[tid:last_cell_in_thread]
         tsₙ = @view sₙ[tid:last_cell_in_thread]
         Threads.@threads for tid ∈ 1:cells_per_thread:length(uₙ)
-            solve!(tuₙ, tsₙ, cell_model, t, Δt, solver.solver, tcache)
+            solve!(tuₙ, tsₙ, cell_model, t, Δt, tcache)
         end
     end
 end
@@ -269,7 +269,7 @@ end
 ######################################################
 
 
-function solve(;Δt=0.1, T=3.0, storeskip = 50, heatsolver = ImplicitEulerHeatSolver(), cellsolver = ForwardEulerStepper())
+function solve(;Δt=0.1, T=3.0, storeskip = 50, heatsolver = ImplicitEulerHeatSolver(), cellsolver = ForwardEulerCellSolver())
     heatsolvercache = ImplicitEulerHeatSolverCache(
         create_sparsity_pattern(dh),
         create_sparsity_pattern(dh),
@@ -283,7 +283,7 @@ function solve(;Δt=0.1, T=3.0, storeskip = 50, heatsolver = ImplicitEulerHeatSo
 
     heatsolvercache.A = SparseMatrixCSR(transpose(M - Δt*K))
 
-    cellsolvercache = ForwardEulerStepperCache(zeros(num_states(epmodel.ion)+1))
+    cellsolvercache = ForwardEulerCellSolverCache(zeros(num_states(epmodel.ion)+1))
 
     uₙ₋₁ = u₀
     uₙ = zeros(ndofs(dh))
@@ -298,13 +298,12 @@ function solve(;Δt=0.1, T=3.0, storeskip = 50, heatsolver = ImplicitEulerHeatSo
             store_timestep!(io, t, dh, uₙ₋₁)
         end
 
-        @timeit "heat" solve!(uₙ, uₙ₋₁, heatsolvercache)
-        # Cell Solver - Explicit Euler
-        @timeit "cell" solve!(uₙ, sₙ, epmodel.ion, t, Δt, cellsolver, cellsolvercache)
+        @timeit "heat" solve!(uₙ, uₙ₋₁, t, Δt, heatsolvercache)
+        @timeit "cell" solve!(uₙ, sₙ, epmodel.ion, t, Δt, cellsolvercache)
 
         uₙ₋₁ .= uₙ
     end
-    
+
     finalize!(io)
 
     @info "Done."
