@@ -5,9 +5,9 @@ abstract type SteadyStateSarcomereModel end
 """
 @TODO citation pelce paper
 """
-Base.@kwdef struct PelceSunLangeveld1995Model <: SteadyStateSarcomereModel
-    β = 3.0
-    λᵃₘₐₓ = 0.7
+Base.@kwdef struct PelceSunLangeveld1995Model{TD} <: SteadyStateSarcomereModel
+    β::TD = 3.0
+    λᵃₘₐₓ::TD = 0.7
 end
 function compute_λᵃ(Ca, mp::PelceSunLangeveld1995Model)
     @unpack β, λᵃₘₐₓ = mp
@@ -16,7 +16,7 @@ function compute_λᵃ(Ca, mp::PelceSunLangeveld1995Model)
 end
 
 
-Base.@kwdef struct ConstantStretchModel <: SteadyStateSarcomereModel
-    λ = 1.0
+Base.@kwdef struct ConstantStretchModel{TD} <: SteadyStateSarcomereModel
+    λ::TD = 1.0
 end
 compute_λᵃ(Ca, mp::ConstantStretchModel) = mp.λ

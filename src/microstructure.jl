@@ -1,13 +1,13 @@
 """
 """
-struct FieldCoefficient{dim}
-	elementwise_data #3d array (element_idx, base_fun_idx, dim)
-	ip::Interpolation{dim}
+struct FieldCoefficient{dim,TA,IP<:Interpolation{dim}}
+	elementwise_data::TA #3d array (element_idx, base_fun_idx, dim)
+	ip::IP
 end
 
 """
 """
-function value(coeff::FieldCoefficient{dim}, cell_id::Int, ξ::Vec{dim}, t::Float64=0.0) where {dim}
+function value(coeff::FieldCoefficient{dim,TA}, cell_id::Int, ξ::Vec{dim}, t::Float64=0.0) where {dim,TA}
 	@unpack elementwise_data, ip = coeff
 
     n_base_funcs = Ferrite.getnbasefunctions(ip)
@@ -27,7 +27,7 @@ end
 
 """
 """
-value(coeff::ConstantFieldCoefficient, cell_id::Int, ξ::Vec{dim}, t::Float64=0.0) where {dim} = coeff.val
+value(coeff::ConstantFieldCoefficient{T}, cell_id::Int, ξ::Vec{dim}, t::Float64=0.0) where {dim,T} = coeff.val
 
 
 

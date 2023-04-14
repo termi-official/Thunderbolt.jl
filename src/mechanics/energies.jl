@@ -15,29 +15,29 @@ struct NullCompressionPenalty end
 U(I₃, mp::NullCompressionPenalty) = 0.0
 
 # TODO citation
-@Base.kwdef struct NeffCompressionPenalty
-    a  = 1.0
-    b  = 2.0
-    β  = 1.0
+@Base.kwdef struct NeffCompressionPenalty{TD1, TD2}
+    a::TD1  = 1.0
+    b::TD1  = 2.0
+    β::TD2  = 1.0
 end
-function U(I₃, mp::NeffCompressionPenalty)
+function U(I₃::T, mp::NeffCompressionPenalty) where {T}
     mp.β * (I₃^mp.b + 1/I₃^mp.b - 2)^mp.a
 end
 
 # TODO how is this one called in literature? citation?
-@Base.kwdef struct SimpleCompressionPenalty
-    β  = 1.0
+@Base.kwdef struct SimpleCompressionPenalty{TD}
+    β::TD  = 1.0
 end
-function U(I₃, mp::SimpleCompressionPenalty)
+function U(I₃::T, mp::SimpleCompressionPenalty) where {T}
     mp.β * (I₃ - 1 - 2*log(sqrt(I₃)))
 end
 
 # https://onlinelibrary.wiley.com/doi/epdf/10.1002/cnm.2866
-@Base.kwdef struct TransverseIsotopicNeoHookeanModel
-	a₁ = 2.6
-	a₂ = 2.82
-	α₁ = 30.48
-	α₂ = 7.25
+@Base.kwdef struct TransverseIsotopicNeoHookeanModel{TD}
+	a₁::TD = 2.6
+	a₂::TD = 2.82
+	α₁::TD = 30.48
+	α₂::TD = 7.25
 
     mpU = NeffCompressionPenalty()
 end
@@ -67,16 +67,16 @@ function Ψ(F, f₀, s₀, n₀, mp::TransverseIsotopicNeoHookeanModel)
 end
 
 # TODO citation
-Base.@kwdef struct HolzapfelOgden2009Model #<: OrthotropicMaterialModel
-	a   =  0.059
-	b   =  8.023
-	aᶠ  = 18.472
-	bᶠ  = 16.026
-	aˢ  =  2.581
-	bˢ  = 11.120
-	aᶠˢ =  0.216
-	bᶠˢ = 11.436
-	mpU = SimpleCompressionPenalty()
+Base.@kwdef struct HolzapfelOgden2009Model{TD,TU} #<: OrthotropicMaterialModel
+	a::TD   =  0.059
+	b::TD   =  8.023
+	aᶠ::TD  = 18.472
+	bᶠ::TD  = 16.026
+	aˢ::TD  =  2.581
+	bˢ::TD  = 11.120
+	aᶠˢ::TD =  0.216
+	bᶠˢ::TD = 11.436
+	mpU::TU = SimpleCompressionPenalty()
 end
 
 function Ψ(F, f₀, s₀, n₀, mp::HolzapfelOgden2009Model)
@@ -105,12 +105,12 @@ end
 
 """
 """
-Base.@kwdef struct LinYinPassiveModel #<: TransverseIsotropicMaterialModel
-	C₁ = 1.05
-	C₂ = 9.13
-	C₃ = 2.32
-	C₄ = 0.08
-    mpU = SimpleCompressionPenalty()
+Base.@kwdef struct LinYinPassiveModel{TD,TU} #<: TransverseIsotropicMaterialModel
+	C₁::TD = 1.05
+	C₂::TD = 9.13
+	C₃::TD = 2.32
+	C₄::TD = 0.08
+    mpU::TU = SimpleCompressionPenalty()
 end
 
 """
@@ -130,14 +130,14 @@ function Ψ(F, f₀, s₀, n₀, model::LinYinPassiveModel)
 	return C₁*(exp(Q)-1) + U(I₃, mpU)
 end
 
-Base.@kwdef struct LinYinActiveModel #<: TransverseIsotropicMaterialModel
-    C₀ = 0.0
-	C₁ = -13.03
-	C₂ = 36.65
-	C₃ = 35.42
-	C₄ = 15.52
-    C₅ = 1.62
-    mpU = SimpleCompressionPenalty()
+Base.@kwdef struct LinYinActiveModel{TD,TU} #<: TransverseIsotropicMaterialModel
+    C₀::TD = 0.0
+	C₁::TD = -13.03
+	C₂::TD = 36.65
+	C₃::TD = 35.42
+	C₄::TD = 15.52
+    C₅::TD = 1.62
+    mpU::TU = SimpleCompressionPenalty()
 end
 
 """
@@ -156,12 +156,12 @@ function Ψ(F, f₀, s₀, n₀, model::LinYinActiveModel)
 end
 
 
-Base.@kwdef struct HumphreyStrumpfYinModel #<: TransverseIsotropicMaterialModel
-	C₁ = 15.93
-	C₂ = 55.85
-	C₃ =  3.59
-	C₄ = 30.21
-    mpU = SimpleCompressionPenalty()
+Base.@kwdef struct HumphreyStrumpfYinModel{TD,TU} #<: TransverseIsotropicMaterialModel
+	C₁::TD = 15.93
+	C₂::TD = 55.85
+	C₃::TD =  3.59
+	C₄::TD = 30.21
+    mpU::TU = SimpleCompressionPenalty()
 end
 
 """
@@ -179,8 +179,9 @@ function Ψ(F, f₀, s₀, n₀, model::HumphreyStrumpfYinModel)
 	return C₁*(√I₄-1)^2 + C₂*(√I₄-1)^3 + C₃*(√I₄-1)*(I₁-3) + C₄*(I₁-3)^2 + U(I₃, mpU)
 end
 
-@Base.kwdef struct LinearSpringModel
-	η = 10.0
+@Base.kwdef struct LinearSpringModel{TD, TU}
+	η::TD = 10.0
+	mpU::TU = NullCompressionPenalty()
 end
 function Ψ(F, f₀, s₀, n₀, mp::LinearSpringModel)
     @unpack η = mp
@@ -298,51 +299,22 @@ end
 
 
 
-# """
-# """
-# Base.@kwdef struct BioNeoHooekean #<: IsotropicMaterialModel
-# 	α = 1.0
-# 	β = 100.0
-# 	a = 1
-# 	b = 2
-# 	η = 10.0
-# end
+"""
+"""
+Base.@kwdef struct BioNeoHooekean{TD,TU} #<: IsotropicMaterialModel
+	α::TD = 1.0
+	mpU::TU = SimpleCompressionPenalty()
+end
 
-# """
-# """
-# function Ψ(F, f₀, s₀, Caᵢ, mp::BioNeoHooekean)
-# 	# Modified version of https://onlinelibrary.wiley.com/doi/epdf/10.1002/cnm.2866
-#     @unpack a, b, α, β, η = mp
-# 	C = tdot(F)
-#     I₁ = tr(C)
-# 	I₃ = det(C)
-# 	n₀ = cross(f₀,s₀)
-# 	#I₄ = f₀ ⋅ C ⋅ f₀
+"""
+"""
+function Ψ(F, f₀, s₀, n₀, mp::BioNeoHooekean)
+	# Modified version of https://onlinelibrary.wiley.com/doi/epdf/10.1002/cnm.2866
+    @unpack α, mpU = mp
+	C = tdot(F)
+    I₁ = tr(C)
+	I₃ = det(C)
 
-# 	I₃ᵇ = I₃^b
-# 	#U = β * (I₃ᵇ + 1/I₃ᵇ - 2)^a
-# 	U = β*log(I₃)^2
-# 	Ψᵖ = α*(I₁/cbrt(I₃) - 3) + U + (n₀ ⋅ C ⋅ n₀ - 1)^2 
-
-# 	#M = Tensors.unsafe_symmetric(f₀ ⊗ f₀)
-# 	M = f₀ ⊗ f₀
-# 	Fᵃ = one(F) + (λᵃ(Caᵢ) - 1.0) * M
-# 	#Fᵃ = Tensors.unsafe_symmetric(λᵃ(Caᵢ) * M + (1.0/sqrt(λᵃ(Caᵢ)))*(one(F) - M))
-
-# 	#Fᵉ = F - (1 - 1.0/λᵃ(Caᵢ)) * ((F ⋅ f₀) ⊗ f₀
-# 	Fᵉ = F⋅inv(Fᵃ)
-# 	Cᵉ = tdot(Fᵉ)
-# 	#I₃ᵉ = det(Cᵉ)
-# 	#I₃ᵉᵇ = I₃ᵉ^b
-# 	#Uᵃ = 1.0 * (I₃ᵉᵇ + 1/I₃ᵉᵇ - 2)^a
-
-# 	#Iᵉ₁ = tr(Cᵉ)
-# 	Iᵉ₄ = f₀ ⋅ Cᵉ ⋅ f₀
-# 	#Ψᵃ = η / 2 * (Iᵉ₄/cbrt(I₃ᵉ) - 1)^2 + 1.0*(Iᵉ₁/cbrt(I₃ᵉ)-3) + Uᵃ 
-# 	#Ψᵃ = 1.00*(Iᵉ₁/cbrt(I₃ᵉ)-3) #+ Uᵃ 
-# 	#Ψᵃ = η / 2 * (Iᵉ₄/cbrt(I₃ᵉ) - 1)^2 + Uᵃ
-# 	Ψᵃ = η / 2 * (Iᵉ₄ - 1)^2
-
-#     return Ψᵖ + Ψᵃ
-# end
+    return α*(I₁/cbrt(I₃) - 3) + U(I₃, mpU)
+end
 
