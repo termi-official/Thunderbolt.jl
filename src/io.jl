@@ -27,9 +27,10 @@ struct JLD2Writer{FD}
     fd::FD
 end
 
-JLD2Writer(filename::String, overwrite::Bool=true) = JLD2Writer(filename, jldopen("$filename.jld2", overwrite ? "w" : "a+"))
+JLD2Writer(filename::String, overwrite::Bool=true) = JLD2Writer(filename, jldopen("$filename.jld2", overwrite ? "w" : "a+"; compress = true))
 
 function store_timestep!(io::JLD2Writer, t, dh, u)
+    t ≈ 0.0 && (io.fd["dh"] = dh)
     io.fd["timesteps/$t/solution"] = u
 end
 

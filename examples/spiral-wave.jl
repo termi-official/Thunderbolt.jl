@@ -289,7 +289,7 @@ function solve(;Δt=0.1, T=3.0, storeskip = 50, heatsolver = ImplicitEulerHeatSo
     uₙ = zeros(ndofs(dh))
     sₙ = s₀
 
-    io = ParaViewWriter("monodomain")
+    io = JLD2Writer("monodomain")
 
     @timeit "solver" for (i,t) ∈ enumerate(0.0:Δt:T)
         @info t
