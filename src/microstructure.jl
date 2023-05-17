@@ -57,7 +57,7 @@ end
 """
 Create a rotating fiber field by deducing the circumferential direction from apicobasal and transmural gradients.
 """
-function create_simple_fiber_model(coordinate_system, ip_fiber::Interpolation{dim}; endo_angle = 80.0, epi_angle = -65.0, endo_transversal_angle = 0.0, epi_transversal_angle = 0.0) where {dim}
+function create_simple_fiber_model(coordinate_system, ip_fiber::Interpolation{dim}, ip_geo; endo_angle = 80.0, epi_angle = -65.0, endo_transversal_angle = 0.0, epi_transversal_angle = 0.0) where {dim}
 	@unpack dh = coordinate_system
 
 	ip = dh.field_interpolations[1] #TODO refactor this. Pls.
@@ -69,7 +69,7 @@ function create_simple_fiber_model(coordinate_system, ip_fiber::Interpolation{di
     elementwise_data_n = zero(Array{Vec{dim}, 2}(undef, getncells(dh.grid), n_basefuns))
 
 	qr_fiber = generate_nodal_quadrature_rule(ip_fiber)
-	cv = CellScalarValues(qr_fiber, ip)
+	cv = CellScalarValues(qr_fiber, ip, ip_geo)
 
 	for (cellindex,cell) in enumerate(CellIterator(dh))
         reinit!(cv, cell)
