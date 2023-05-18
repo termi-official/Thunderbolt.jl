@@ -25,7 +25,7 @@ Physical Point("Apex", 7) = {2};
 //Recombine Surface{1,2,3};
 
 // Algorithm settings
-Mesh.Algorithm   = 6;
+//Mesh.Algorithm   = 6;
 //Mesh.Algorithm   = 8;
 //Mesh.Algorithm3D = 6;
 Mesh.CharacteristicLengthFromCurvature = 1;
