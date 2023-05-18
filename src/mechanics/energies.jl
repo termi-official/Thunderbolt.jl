@@ -34,10 +34,10 @@ end
 
 # https://onlinelibrary.wiley.com/doi/epdf/10.1002/cnm.2866
 @Base.kwdef struct TransverseIsotopicNeoHookeanModel{TD}
-	a₁::TD = 2.6
-	a₂::TD = 2.82
-	α₁::TD = 30.48
-	α₂::TD = 7.25
+    a₁::TD = 2.6
+    a₂::TD = 2.82
+    α₁::TD = 30.48
+    α₂::TD = 7.25
 
     mpU = NeffCompressionPenalty()
 end
@@ -46,9 +46,9 @@ end
 """
 function Ψ(F, f₀, s₀, n₀, mp::TransverseIsotopicNeoHookeanModel)
     @unpack a₁, a₂, α₁, α₂, mpU = mp
-	C = tdot(F)
+    C = tdot(F)
     I₁ = tr(C)
-	I₃ = det(C)
+    I₃ = det(C)
 
     Ī₁ = I₁/cbrt(I₃)
     # this is a hotfix to fight numerical noise when returning to the equilibrium state...
@@ -56,9 +56,9 @@ function Ψ(F, f₀, s₀, n₀, mp::TransverseIsotopicNeoHookeanModel)
         Ī₁ = 3.0
     end
 
-	I₄ = tr(C ⋅ f₀ ⊗ f₀)
+    I₄ = tr(C ⋅ f₀ ⊗ f₀)
 
-	Ψᵖ = α₁*(Ī₁ - 3)^a₁ + U(I₃, mpU)
+    Ψᵖ = α₁*(Ī₁ - 3)^a₁ + U(I₃, mpU)
     if I₄ > 1
         Ψᵖ += α₂*(I₄ - 1)^2
     end
@@ -68,36 +68,36 @@ end
 
 # TODO citation
 Base.@kwdef struct HolzapfelOgden2009Model{TD,TU} #<: OrthotropicMaterialModel
-	a::TD   =  0.059
-	b::TD   =  8.023
-	aᶠ::TD  = 18.472
-	bᶠ::TD  = 16.026
-	aˢ::TD  =  2.581
-	bˢ::TD  = 11.120
-	aᶠˢ::TD =  0.216
-	bᶠˢ::TD = 11.436
-	mpU::TU = SimpleCompressionPenalty()
+    a::TD   =  0.059
+    b::TD   =  8.023
+    aᶠ::TD  = 18.472
+    bᶠ::TD  = 16.026
+    aˢ::TD  =  2.581
+    bˢ::TD  = 11.120
+    aᶠˢ::TD =  0.216
+    bᶠˢ::TD = 11.436
+    mpU::TU = SimpleCompressionPenalty()
 end
 
 function Ψ(F, f₀, s₀, n₀, mp::HolzapfelOgden2009Model)
-	# Modified version of https://onlinelibrary.wiley.com/doi/epdf/10.1002/cnm.2866
+    # Modified version of https://onlinelibrary.wiley.com/doi/epdf/10.1002/cnm.2866
     @unpack a, b, aᶠ, bᶠ, aˢ, bˢ, aᶠˢ, bᶠˢ, mpU = mp
 
-	C = tdot(F)
-	I₃ = det(C)
-	J = det(F)
+    C = tdot(F)
+    I₃ = det(C)
+    J = det(F)
     I₁ = tr(C/cbrt(J^2))
-	I₄ᶠ = f₀ ⋅ C ⋅ f₀
-	I₄ˢ = s₀ ⋅ C ⋅ s₀
-	I₈ᶠˢ = (f₀ ⋅ C ⋅ s₀ + s₀ ⋅ C ⋅ f₀)/2.0
+    I₄ᶠ = f₀ ⋅ C ⋅ f₀
+    I₄ˢ = s₀ ⋅ C ⋅ s₀
+    I₈ᶠˢ = (f₀ ⋅ C ⋅ s₀ + s₀ ⋅ C ⋅ f₀)/2.0
 
-	Ψᵖ = a/(2.0*b)*exp(b*(I₁-3.0)) + aᶠˢ/(2.0*bᶠˢ)*(exp(bᶠˢ*I₈ᶠˢ^2)-1.0) + U(I₃, mpU)
-	if I₄ᶠ >= 1.0
-		Ψᵖ += aᶠ/(2.0*bᶠ)*(exp(bᶠ*(I₄ᶠ - 1)^2)-1.0)
-	end
-	if I₄ˢ >= 1.0
-		Ψᵖ += aˢ/(2.0*bˢ)*(exp(bˢ*(I₄ˢ - 1)^2)-1.0)
-	end
+    Ψᵖ = a/(2.0*b)*exp(b*(I₁-3.0)) + aᶠˢ/(2.0*bᶠˢ)*(exp(bᶠˢ*I₈ᶠˢ^2)-1.0) + U(I₃, mpU)
+    if I₄ᶠ >= 1.0
+        Ψᵖ += aᶠ/(2.0*bᶠ)*(exp(bᶠ*(I₄ᶠ - 1)^2)-1.0)
+    end
+    if I₄ˢ >= 1.0
+        Ψᵖ += aˢ/(2.0*bˢ)*(exp(bˢ*(I₄ˢ - 1)^2)-1.0)
+    end
 
     return Ψᵖ
 end
@@ -106,36 +106,36 @@ end
 """
 """
 Base.@kwdef struct LinYinPassiveModel{TD,TU} #<: TransverseIsotropicMaterialModel
-	C₁::TD = 1.05
-	C₂::TD = 9.13
-	C₃::TD = 2.32
-	C₄::TD = 0.08
+    C₁::TD = 1.05
+    C₂::TD = 9.13
+    C₃::TD = 2.32
+    C₄::TD = 0.08
     mpU::TU = SimpleCompressionPenalty()
 end
 
 """
 """
 function Ψ(F, f₀, s₀, n₀, model::LinYinPassiveModel)
-	@unpack C₁, C₂, C₃, C₄, mpU = model
+    @unpack C₁, C₂, C₃, C₄, mpU = model
 
-	C = tdot(F) # = FᵀF
+    C = tdot(F) # = FᵀF
 
-	# Invariants
-	I₁ = tr(C)
-	I₃ = det(C)
-	I₄ = f₀ ⋅ C ⋅ f₀ # = C : (f ⊗ f)
+    # Invariants
+    I₁ = tr(C)
+    I₃ = det(C)
+    I₄ = f₀ ⋅ C ⋅ f₀ # = C : (f ⊗ f)
 
-	# Exponential portion
-	Q = C₂*(I₁-3)^2 + C₃*(I₁-3)*(I₄-1) + C₄*(I₄-1)^2
-	return C₁*(exp(Q)-1) + U(I₃, mpU)
+    # Exponential portion
+    Q = C₂*(I₁-3)^2 + C₃*(I₁-3)*(I₄-1) + C₄*(I₄-1)^2
+    return C₁*(exp(Q)-1) + U(I₃, mpU)
 end
 
 Base.@kwdef struct LinYinActiveModel{TD,TU} #<: TransverseIsotropicMaterialModel
     C₀::TD = 0.0
-	C₁::TD = -13.03
-	C₂::TD = 36.65
-	C₃::TD = 35.42
-	C₄::TD = 15.52
+    C₁::TD = -13.03
+    C₂::TD = 36.65
+    C₃::TD = 35.42
+    C₄::TD = 15.52
     C₅::TD = 1.62
     mpU::TU = SimpleCompressionPenalty()
 end
@@ -143,52 +143,52 @@ end
 """
 """
 function Ψ(F, f₀, s₀, n₀, model::LinYinActiveModel)
-	@unpack C₀, C₁, C₂, C₃, C₄, C₅, mpU = model
+    @unpack C₀, C₁, C₂, C₃, C₄, C₅, mpU = model
 
-	C = tdot(F) # = FᵀF
+    C = tdot(F) # = FᵀF
 
-	# Invariants
-	I₁ = tr(C)
-	I₃ = det(C)
-	I₄ = f₀ ⋅ C ⋅ f₀ # = C : (f ⊗ f)
+    # Invariants
+    I₁ = tr(C)
+    I₃ = det(C)
+    I₄ = f₀ ⋅ C ⋅ f₀ # = C : (f ⊗ f)
 
-	return C₀ + C₁*(I₁-3)*(I₄-1) + C₂*(I₁-3)^2 + C₃*(I₄-1)^2 + C₄*(I₁-3) + C₅*(I₄-1) + U(I₃, mpU)
+    return C₀ + C₁*(I₁-3)*(I₄-1) + C₂*(I₁-3)^2 + C₃*(I₄-1)^2 + C₄*(I₁-3) + C₅*(I₄-1) + U(I₃, mpU)
 end
 
 
 Base.@kwdef struct HumphreyStrumpfYinModel{TD,TU} #<: TransverseIsotropicMaterialModel
-	C₁::TD = 15.93
-	C₂::TD = 55.85
-	C₃::TD =  3.59
-	C₄::TD = 30.21
+    C₁::TD = 15.93
+    C₂::TD = 55.85
+    C₃::TD =  3.59
+    C₄::TD = 30.21
     mpU::TU = SimpleCompressionPenalty()
 end
 
 """
 """
 function Ψ(F, f₀, s₀, n₀, model::HumphreyStrumpfYinModel)
-	@unpack C₁, C₂, C₃, C₄, mpU = model
+    @unpack C₁, C₂, C₃, C₄, mpU = model
 
-	C = tdot(F) # = FᵀF
+    C = tdot(F) # = FᵀF
 
-	# Invariants
-	I₁ = tr(C)
-	I₃ = det(C)
-	I₄ = f₀ ⋅ C ⋅ f₀ # = C : (f ⊗ f)
+    # Invariants
+    I₁ = tr(C)
+    I₃ = det(C)
+    I₄ = f₀ ⋅ C ⋅ f₀ # = C : (f ⊗ f)
 
-	return C₁*(√I₄-1)^2 + C₂*(√I₄-1)^3 + C₃*(√I₄-1)*(I₁-3) + C₄*(I₁-3)^2 + U(I₃, mpU)
+    return C₁*(√I₄-1)^2 + C₂*(√I₄-1)^3 + C₃*(√I₄-1)*(I₁-3) + C₄*(I₁-3)^2 + U(I₃, mpU)
 end
 
 @Base.kwdef struct LinearSpringModel{TD, TU}
-	η::TD = 10.0
-	mpU::TU = NullCompressionPenalty()
+    η::TD = 10.0
+    mpU::TU = NullCompressionPenalty()
 end
 function Ψ(F, f₀, s₀, n₀, mp::LinearSpringModel)
     @unpack η = mp
 
     M = Tensors.unsafe_symmetric(f₀ ⊗ f₀)
-	FMF = Tensors.unsafe_symmetric(F ⋅ M ⋅ transpose(F))
-	I₄ = tr(FMF)
+    FMF = Tensors.unsafe_symmetric(F ⋅ M ⋅ transpose(F))
+    I₄ = tr(FMF)
 
     return η / 2.0 * (I₄ - 1)^2.0
 end
@@ -220,7 +220,7 @@ end
 # 	# Reconstruct normal
 # 	n₀ = cross(f₀, s₀)
 # 	n₀ /= norm(n₀)
-	
+    
 # 	# Transverse isotropic active contraction (incompressible) - Also Rossi?
 # 	λ = λᵃ(Caᵢ)
 # 	Fᵃ = λ*f₀⊗f₀ + (one(F) - f₀⊗f₀)/sqrt(λ)
@@ -302,18 +302,18 @@ end
 """
 """
 Base.@kwdef struct BioNeoHooekean{TD,TU} #<: IsotropicMaterialModel
-	α::TD = 1.0
-	mpU::TU = SimpleCompressionPenalty()
+    α::TD = 1.0
+    mpU::TU = SimpleCompressionPenalty()
 end
 
 """
 """
 function Ψ(F, f₀, s₀, n₀, mp::BioNeoHooekean)
-	# Modified version of https://onlinelibrary.wiley.com/doi/epdf/10.1002/cnm.2866
+    # Modified version of https://onlinelibrary.wiley.com/doi/epdf/10.1002/cnm.2866
     @unpack α, mpU = mp
-	C = tdot(F)
+    C = tdot(F)
     I₁ = tr(C)
-	I₃ = det(C)
+    I₃ = det(C)
 
     return α*(I₁/cbrt(I₃) - 3) + U(I₃, mpU)
 end

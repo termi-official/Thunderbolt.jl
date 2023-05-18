@@ -1,14 +1,14 @@
 """
 """
 struct FieldCoefficient{dim,TA,IP<:Interpolation{dim}}
-	elementwise_data::TA #3d array (element_idx, base_fun_idx, dim)
-	ip::IP
+    elementwise_data::TA #3d array (element_idx, base_fun_idx, dim)
+    ip::IP
 end
 
 """
 """
 function value(coeff::FieldCoefficient{dim,TA}, cell_id::Int, ξ::Vec{dim}, t::Float64=0.0) where {dim,TA}
-	@unpack elementwise_data, ip = coeff
+    @unpack elementwise_data, ip = coeff
 
     n_base_funcs = Ferrite.getnbasefunctions(ip)
     val = zero(Vec{dim, Float64})
@@ -49,80 +49,80 @@ end
 """
 """
 function generate_nodal_quadrature_rule(ip::Interpolation{dim, ref_shape, order}) where {dim, ref_shape, order}
-	n_base = Ferrite.getnbasefunctions(ip)
-	positions = Ferrite.reference_coordinates(ip)
-	return QuadratureRule{dim, ref_shape, Float64}(ones(length(positions)), positions)
+    n_base = Ferrite.getnbasefunctions(ip)
+    positions = Ferrite.reference_coordinates(ip)
+    return QuadratureRule{dim, ref_shape, Float64}(ones(length(positions)), positions)
 end
 
 """
 Create a rotating fiber field by deducing the circumferential direction from apicobasal and transmural gradients.
 """
 function create_simple_fiber_model(coordinate_system, ip_fiber::Interpolation{dim}, ip_geo; endo_angle = 80.0, epi_angle = -65.0, endo_transversal_angle = 0.0, epi_transversal_angle = 0.0) where {dim}
-	@unpack dh = coordinate_system
+    @unpack dh = coordinate_system
 
-	ip = dh.field_interpolations[1] #TODO refactor this. Pls.
+    ip = dh.field_interpolations[1] #TODO refactor this. Pls.
 
-	n_basefuns = getnbasefunctions(ip_fiber)
+    n_basefuns = getnbasefunctions(ip_fiber)
 
-	elementwise_data_f = zero(Array{Vec{dim}, 2}(undef, getncells(dh.grid), n_basefuns))
-	elementwise_data_s = zero(Array{Vec{dim}, 2}(undef, getncells(dh.grid), n_basefuns))
+    elementwise_data_f = zero(Array{Vec{dim}, 2}(undef, getncells(dh.grid), n_basefuns))
+    elementwise_data_s = zero(Array{Vec{dim}, 2}(undef, getncells(dh.grid), n_basefuns))
     elementwise_data_n = zero(Array{Vec{dim}, 2}(undef, getncells(dh.grid), n_basefuns))
 
-	qr_fiber = generate_nodal_quadrature_rule(ip_fiber)
-	cv = CellScalarValues(qr_fiber, ip, ip_geo)
+    qr_fiber = generate_nodal_quadrature_rule(ip_fiber)
+    cv = CellScalarValues(qr_fiber, ip, ip_geo)
 
-	for (cellindex,cell) in enumerate(CellIterator(dh))
+    for (cellindex,cell) in enumerate(CellIterator(dh))
         reinit!(cv, cell)
-		dof_indices = celldofs(cell)
+        dof_indices = celldofs(cell)
 
-		for qp in 1:getnquadpoints(cv)
-			# compute fiber direction
-			∇apicobasal = function_gradient(cv, qp, coordinate_system.u_apicobasal[dof_indices])
-			∇transmural = function_gradient(cv, qp, coordinate_system.u_transmural[dof_indices])
-			∇radial = ∇apicobasal × ∇transmural
+        for qp in 1:getnquadpoints(cv)
+            # compute fiber direction
+            ∇apicobasal = function_gradient(cv, qp, coordinate_system.u_apicobasal[dof_indices])
+            ∇transmural = function_gradient(cv, qp, coordinate_system.u_transmural[dof_indices])
+            ∇radial = ∇apicobasal × ∇transmural
 
-			transmural  = function_value(cv, qp, coordinate_system.u_transmural[dof_indices])
+            transmural  = function_value(cv, qp, coordinate_system.u_transmural[dof_indices])
 
-			# linear interpolation of rotation angle
-			θ = (1-transmural) * endo_angle + (transmural) * epi_angle
-			ϕ = (1-transmural) * endo_transversal_angle + (transmural) * epi_transversal_angle
+            # linear interpolation of rotation angle
+            θ = (1-transmural) * endo_angle + (transmural) * epi_angle
+            ϕ = (1-transmural) * endo_transversal_angle + (transmural) * epi_transversal_angle
 
-			# Rodriguez rotation of ∇radial around ∇transmural with angle θ
-			v = ∇radial / norm(∇radial)
-			sinθ = sin(deg2rad(θ))
-			cosθ = cos(deg2rad(θ))
-			k = ∇transmural / norm(∇transmural)
-			vᵣ = v * cosθ + (k × v) * sinθ + k * (k ⋅ v) * (1-cosθ)
-			vᵣ = vᵣ / norm(vᵣ)
+            # Rodriguez rotation of ∇radial around ∇transmural with angle θ
+            v = ∇radial / norm(∇radial)
+            sinθ = sin(deg2rad(θ))
+            cosθ = cos(deg2rad(θ))
+            k = ∇transmural / norm(∇transmural)
+            vᵣ = v * cosθ + (k × v) * sinθ + k * (k ⋅ v) * (1-cosθ)
+            vᵣ = vᵣ / norm(vᵣ)
 
-			# Rodriguez rotation of vᵣ around ∇radial with angle ϕ
-			v = vᵣ / norm(vᵣ)
-			sinϕ = sin(deg2rad(ϕ))
-			cosϕ = cos(deg2rad(ϕ))
-			k = ∇radial / norm(∇radial)
-			vᵣ = v * cosϕ + (k × v) * sinϕ + k * (k ⋅ v) * (1-cosϕ)
-			vᵣ = vᵣ / norm(vᵣ)
+            # Rodriguez rotation of vᵣ around ∇radial with angle ϕ
+            v = vᵣ / norm(vᵣ)
+            sinϕ = sin(deg2rad(ϕ))
+            cosϕ = cos(deg2rad(ϕ))
+            k = ∇radial / norm(∇radial)
+            vᵣ = v * cosϕ + (k × v) * sinϕ + k * (k ⋅ v) * (1-cosϕ)
+            vᵣ = vᵣ / norm(vᵣ)
 
-			elementwise_data_f[cellindex, qp] = vᵣ / norm(vᵣ)
+            elementwise_data_f[cellindex, qp] = vᵣ / norm(vᵣ)
 
-			v = -∇apicobasal / norm(∇apicobasal)
-			# v = -∇transmural / norm(∇transmural)
-			sinϕ = sin(deg2rad(ϕ))
-			cosϕ = cos(deg2rad(ϕ))
-			k = ∇radial / norm(∇radial)
-			# k = ∇apicobasal / norm(∇apicobasal)
-			vᵣ = v * cosϕ + (k × v) * sinϕ + k * (k ⋅ v) * (1-cosϕ)
-			vᵣ = vᵣ / norm(vᵣ)
+            v = -∇apicobasal / norm(∇apicobasal)
+            # v = -∇transmural / norm(∇transmural)
+            sinϕ = sin(deg2rad(ϕ))
+            cosϕ = cos(deg2rad(ϕ))
+            k = ∇radial / norm(∇radial)
+            # k = ∇apicobasal / norm(∇apicobasal)
+            vᵣ = v * cosϕ + (k × v) * sinϕ + k * (k ⋅ v) * (1-cosϕ)
+            vᵣ = vᵣ / norm(vᵣ)
 
-			vᵣ = vᵣ - (elementwise_data_f[cellindex, qp]⋅vᵣ)*elementwise_data_f[cellindex, qp]
-			elementwise_data_s[cellindex, qp] = vᵣ / norm(vᵣ)
+            vᵣ = vᵣ - (elementwise_data_f[cellindex, qp]⋅vᵣ)*elementwise_data_f[cellindex, qp]
+            elementwise_data_s[cellindex, qp] = vᵣ / norm(vᵣ)
 
             elementwise_data_n[cellindex, qp] = Tensors.cross(elementwise_data_f[cellindex, qp], elementwise_data_s[cellindex, qp])
             elementwise_data_n[cellindex, qp] /= norm(elementwise_data_n[cellindex, qp])
         end
-	end
+    end
 
-	OrthotropicMicrostructureModel(
+    OrthotropicMicrostructureModel(
         FieldCoefficient(elementwise_data_f, ip_fiber),
         FieldCoefficient(elementwise_data_s, ip_fiber),
         FieldCoefficient(elementwise_data_n, ip_fiber)
