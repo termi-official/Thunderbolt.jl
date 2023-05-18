@@ -102,7 +102,7 @@ end
 
 """
 """
-function compute_midmyocardial_section_coordinate_system(grid::AbstractGrid,ip_geo::Interpolation;ref_shape=RefTetrahedron)
+function compute_midmyocardial_section_coordinate_system(grid::AbstractGrid,ip_geo::Interpolation{3,ref_shape}) where {ref_shape}
     ip = Lagrange{3, ref_shape, 1}()
     qr = QuadratureRule{3, ref_shape}(2)
     cellvalues = CellScalarValues(qr, ip, ip_geo);
