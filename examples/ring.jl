@@ -173,34 +173,21 @@ function assemble_global!(K, f, dh, cv, fv, mp, uₜ, uₜ₋₁, fiber_model, t
     end
 end
 
-function solve_test_ring(pv_name_base, mp, grid, coordinate_system, fiber_model; Δt = 0.1)
-    # geo = Tetrahedron
-    # refgeo = RefTetrahedron
-    # intorder = 1
-
-    geo = Hexahedron
-    refgeo = RefCube
-    order = 1
-    intorder = 2
-
-    pvd = paraview_collection("$pv_name_base.pvd");
+function solve_test_ring(pv_name_base, mp, grid, coordinate_system, fiber_model, ip_mech::Interpolation{3, ref_shape}, ip_geo::Interpolation{3, ref_shape}, intorder, Δt = 0.1) where {ref_shape}
+    io = ParaViewWriter(pv_name_base);
 
     T = 2.0
 
     # Finite element base
-    ip = Lagrange{3, refgeo, order}()
-    ip_geo = Lagrange{3, refgeo, order}()
-    qr = QuadratureRule{3, refgeo}(intorder)
-    qr_face = QuadratureRule{2, refgeo}(intorder)
-    cv = CellVectorValues(qr, ip, ip_geo)
-    fv = FaceVectorValues(qr_face, ip, ip_geo)
+    qr = QuadratureRule{3, ref_shape}(intorder)
+    qr_face = QuadratureRule{2, ref_shape}(intorder)
+    cv = CellVectorValues(qr, ip_mech, ip_geo)
+    fv = FaceVectorValues(qr_face, ip_mech, ip_geo)
 
     # DofHandler
     dh = DofHandler(grid)
     push!(dh, :u, 3) # Add a displacement field
     close!(dh)
-
-    vtk_save(vtk_grid("$pv_name_base-grid.vtu", dh))
 
     dbcs = ConstraintHandler(dh)
     # Clamp three sides
@@ -220,9 +207,9 @@ function solve_test_ring(pv_name_base, mp, grid, coordinate_system, fiber_model;
     uₜ₋₁ = zeros(_ndofs)
     Δu   = zeros(_ndofs)
 
-    ref_vol = calculate_volume_deformed_mesh(uₜ,dh,cv);
-    min_vol = ref_vol
-    max_vol = ref_vol
+    # ref_vol = calculate_volume_deformed_mesh(uₜ,dh,cv);
+    # min_vol = ref_vol
+    # max_vol = ref_vol
 
     # Create sparse matrix and residual vector
     K = create_sparsity_pattern(dh)
@@ -256,7 +243,13 @@ function solve_test_ring(pv_name_base, mp, grid, coordinate_system, fiber_model;
             end
 
             #@info det(K)
-            Δu = K \ g
+            try
+                Δu = K \ g
+            catch 
+                finalize!(io)
+                @warn "Failed Solve at " t
+                return uₜ
+            end
 
             apply_zero!(Δu, dbcs)
 
@@ -350,43 +343,36 @@ function solve_test_ring(pv_name_base, mp, grid, coordinate_system, fiber_model;
         end
 
         # Save the solution
-        vtk_grid("$pv_name_base-$t.vtu", dh) do vtk
-            vtk_point_data(vtk,dh,uₜ)
-            vtk_cell_data(vtk,hcat(frefdata...),"Reference Fiber Data")
-            vtk_cell_data(vtk,hcat(srefdata...),"Reference Sheet Data")
-            vtk_cell_data(vtk,hcat(fdata...),"Current Fiber Data")
-            vtk_cell_data(vtk,hcat(sdata...),"Current Sheet Data")
-            vtk_cell_data(vtk,E_ff,"E_ff")
-            vtk_cell_data(vtk,E_ff2,"E_ff2")
-            vtk_cell_data(vtk,E_cc,"E_cc")
-            vtk_cell_data(vtk,E_rr,"E_rr")
-            vtk_cell_data(vtk,E_ll,"E_ll")
-            vtk_cell_data(vtk,Jdata,"J")
-            vtk_save(vtk)
-            pvd[t] = vtk
-        end
+        Thunderbolt.store_timestep!(io, t, dh, uₜ)
+        Thunderbolt.store_timestep_celldata!(io, t, hcat(frefdata...),"Reference Fiber Data")
+        Thunderbolt.store_timestep_celldata!(io, t, hcat(fdata...),"Current Fiber Data")
+        Thunderbolt.store_timestep_celldata!(io, t, hcat(srefdata...),"Reference Sheet Data")
+        Thunderbolt.store_timestep_celldata!(io, t, hcat(sdata...),"Current Sheet Data")
+        Thunderbolt.store_timestep_celldata!(io, t, E_ff,"E_ff")
+        Thunderbolt.store_timestep_celldata!(io, t, E_ff2,"E_ff2")
+        Thunderbolt.store_timestep_celldata!(io, t, E_cc,"E_cc")
+        Thunderbolt.store_timestep_celldata!(io, t, E_rr,"E_rr")
+        Thunderbolt.store_timestep_celldata!(io, t, E_ll,"E_ll")
+        Thunderbolt.store_timestep_celldata!(io, t, Jdata,"J")
+        Thunderbolt.finalize_timestep!(io, t)
 
-        min_vol = min(min_vol, calculate_volume_deformed_mesh(uₜ,dh,cv));
-        max_vol = max(max_vol, calculate_volume_deformed_mesh(uₜ,dh,cv));
+        # min_vol = min(min_vol, calculate_volume_deformed_mesh(uₜ,dh,cv));
+        # max_vol = max(max_vol, calculate_volume_deformed_mesh(uₜ,dh,cv));
     end
 
-    println("Compression: ", (ref_vol/min_vol - 1.0)*100, "%")
-    println("Expansion: ", (ref_vol/max_vol - 1.0)*100, "%")
+    # println("Compression: ", (ref_vol/min_vol - 1.0)*100, "%")
+    # println("Expansion: ", (ref_vol/max_vol - 1.0)*100, "%")
 
-    vtk_save(pvd);
+    finalize!(io)
 
     return uₜ
 end
 
-LVS_grid = generate_ring_mesh(30,4,3; longitudinal_upper=0.25)
-LVS_cs = compute_midmyocardial_section_coordinate_system(LVS_grid)
-LVS_fm = create_simple_fiber_model(LVS_cs, Lagrange{3, RefCube, 1}(), Lagrange{3, RefCube, 1}(), endo_angle = -60.0, epi_angle = 70.0, endo_transversal_angle = -10.0, epi_transversal_angle = 20.0)
-
 using UnPack
 
 Base.@kwdef struct NewActiveSpring{CPT}
-    a::Float64   = 1.0
-    aᶠ::Float64  = 1.0
+    a::Float64   = 2.7
+    aᶠ::Float64  = 1.6
     mpU::CPT = NullCompressionPenalty()
 end
 
@@ -401,83 +387,6 @@ function Thunderbolt.Ψ(F, f₀, s₀, n₀, mp::NewActiveSpring{CPT}) where {CP
 
     return a/2.0*(I₁-3.0)^2 + aᶠ/2.0*(I₄ᶠ-1.0)^2 + Thunderbolt.U(I₃, mpU)
 end
-
-# """
-# Our fit against LinYin. Broken...?
-# """
-Base.@kwdef struct NewActiveSpring2{CPT}
-    a::Float64   = 15.020986456784657
-    aᶠ::Float64  =  4.562365556553194
-    mpU::CPT = NullCompressionPenalty()
-end
-
-function Thunderbolt.Ψ(F, f₀, s₀, n₀, mp::NewActiveSpring2{CPT}) where {CPT}
-    @unpack a, aᶠ, mpU = mp
-
-    C = tdot(F)
-    I₃ = det(C)
-    J = det(F)
-    I₁ = tr(C/cbrt(J^2))
-    I₄ᶠ = f₀ ⋅ C ⋅ f₀
-
-    return a/2.0*(I₁-3.0)^2 + aᶠ/2.0*(I₄ᶠ-1.0) + U(I₃, mpU)
-end
-
-# solve_test_ring("GHM-HO_AS1_GMKI_Pelce",
-#     GeneralizedHillModel(
-#         HolzapfelOgden2009Model(;mpU=NeffCompressionPenalty()),
-#         ActiveMaterialAdapter(NewActiveSpring()),
-#         GMKIncompressibleActiveDeformationGradientModel(),
-#         PelceSunLangeveld1995Model()
-#     ), LVS_grid, LVS_cs, LVS_fm
-# )
-
-# # Diverges...?
-# # solve_test_ring("GHM-HO_AS2_GMKI_Pelce",
-# #     GeneralizedHillModel(
-# #         HolzapfelOgden2009Model(;mpU=NeffCompressionPenalty()),
-# #         ActiveMaterialAdapter(NewActiveSpring2()),
-# #         GMKIncompressibleActiveDeformationGradientModel(),
-# #         PelceSunLangeveld1995Model()
-# #     ), LVS_grid, LVS_cs, LVS_fm
-# # )
-
-solve_test_ring("GHM-HO_AS1_RLRSQ75_Pelce",
-    GeneralizedHillModel(
-        # HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 0.28504197825657906, 4.126552003938297, 0.0, 1.0, 0.0, 1.0, SimpleCompressionPenalty(1.0)),
-        HolzapfelOgden2009Model(;mpU=NeffCompressionPenalty()),
-        ActiveMaterialAdapter(NewActiveSpring()),
-        RLRSQActiveDeformationGradientModel(0.75),
-        PelceSunLangeveld1995Model()
-    ), LVS_grid, LVS_cs, LVS_fm, Δt=0.025
-)
-
-# solve_test_ring("GHM-HO_HO_RLRSQ75_Pelce",
-#     GeneralizedHillModel(
-#         # HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 0.28504197825657906, 4.126552003938297, 0.0, 1.0, 0.0, 1.0, SimpleCompressionPenalty(1.0)),
-#         HolzapfelOgden2009Model(;mpU=NeffCompressionPenalty()),
-#         ActiveMaterialAdapter(HolzapfelOgden2009Model(mpU=NullCompressionPenalty())),
-#         RLRSQActiveDeformationGradientModel(0.75),
-#         PelceSunLangeveld1995Model()
-#     ), LVS_grid, LVS_cs, LVS_fm
-# )
-
-# solve_test_ring("ActiveStress-HO_Simple_Pelce",
-#     ActiveStressModel(
-#         HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 0.28504197825657906, 4.126552003938297, 0.0, 1.0, 0.0, 1.0, NeffCompressionPenalty()),
-#         SimpleActiveStress(),
-#         PelceSunLangeveld1995Model()
-#     ), LVS_grid, LVS_cs, LVS_fm
-# )
-
-# solve_test_ring("ActiveStress-HO_Piersanti_Pelce",
-#     ActiveStressModel(
-#         HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 0.28504197825657906, 4.126552003938297, 0.0, 1.0, 0.0, 1.0, NeffCompressionPenalty()),
-#         PiersantiActiveStress(2.0, 1.0, 0.75, 0.0),
-#         PelceSunLangeveld1995Model()
-#     ), LVS_grid, LVS_cs, LVS_fm,
-#     Δt=0.025
-# )
 
 Base.@kwdef struct NewHolzapfelOgden2009Model{TD,TU} #<: OrthotropicMaterialModel
     a::TD   =  1.0
@@ -503,13 +412,107 @@ function Thunderbolt.Ψ(F, f₀, s₀, n₀, mp::NewHolzapfelOgden2009Model)
     return Ψᵖ
 end
 
+# """
+# Our fit against LinYin. Broken...?
+# """
+Base.@kwdef struct NewActiveSpring2{CPT}
+    # a::Float64   = 15.020986456784657
+    # aᶠ::Float64  =  4.562365556553194
+    a::Float64   = 2.6
+    aᶠ::Float64  =  1.6
+    mpU::CPT = NullCompressionPenalty()
+end
 
-solve_test_ring("GHM-HO2_HO2_RLRSQ75_Pelce",
+function Thunderbolt.Ψ(F, f₀, s₀, n₀, mp::NewActiveSpring2{CPT}) where {CPT}
+    @unpack a, aᶠ, mpU = mp
+
+    C = tdot(F)
+    I₃ = det(C)
+    J = det(F)
+    I₁ = tr(C/cbrt(J^2))
+    I₄ᶠ = f₀ ⋅ C ⋅ f₀
+
+    return a/2.0*(I₁-3.0)^2 + aᶠ/2.0*(I₄ᶠ-1.0) + U(I₃, mpU)
+end
+
+using FerriteGmsh
+
+for (filename, ref_shape, order) ∈ [
+    ("MidVentricularSectionQuadTet.msh", RefTetrahedron, 2),
+    ("MidVentricularSectionTet.msh", RefTetrahedron, 1),
+    ("MidVentricularSectionHex.msh", RefCube, 1),
+    ("MidVentricularSectionQuadHex.msh", RefCube, 2)
+]
+
+ip_fiber = Lagrange{3, ref_shape, order}()
+ip_geo = Lagrange{3, ref_shape, order}()
+
+ring_grid = saved_file_to_grid("data/meshes/" * filename)
+ring_cs = compute_midmyocardial_section_coordinate_system(ring_grid, ip_geo)
+ring_fm = create_simple_fiber_model(ring_cs, ip_fiber, ip_geo, endo_angle = -60.0, epi_angle = 70.0, endo_transversal_angle = -10.0, epi_transversal_angle = 20.0)
+
+passive_model = HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 0.28504197825657906, 4.126552003938297, 0.0, 1.0, 0.0, 1.0, SimpleCompressionPenalty(4.0))
+# passive_model = HolzapfelOgden2009Model(;mpU=NeffCompressionPenalty())
+
+solve_test_ring(filename*"_GHM-HO_AS1_GMKI_Pelce",
     GeneralizedHillModel(
-        # HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 0.28504197825657906, 4.126552003938297, 0.0, 1.0, 0.0, 1.0, SimpleCompressionPenalty(1.0)),
-        NewHolzapfelOgden2009Model(;b₁=0.1,b₂=0.1,b₃=0.1,mpU=NeffCompressionPenalty()),
+        passive_model,
+        ActiveMaterialAdapter(NewActiveSpring()),
+        GMKIncompressibleActiveDeformationGradientModel(),
+        PelceSunLangeveld1995Model()
+    ), ring_grid, ring_cs, ring_fm, ip_geo, ip_geo, 2*order
+)
+
+# Diverges...?
+solve_test_ring(filename*"_GHM-HO_AS2_GMKI_Pelce",
+    GeneralizedHillModel(
+        passive_model,
+        ActiveMaterialAdapter(NewActiveSpring2()),
+        GMKIncompressibleActiveDeformationGradientModel(),
+        PelceSunLangeveld1995Model()
+    ), ring_grid, ring_cs, ring_fm, ip_geo, ip_geo, 2*order
+)
+
+solve_test_ring(filename*"_GHM-HO_AS1_RLRSQ75_Pelce",
+    GeneralizedHillModel(
+        passive_model,
+        ActiveMaterialAdapter(NewActiveSpring()),
+        RLRSQActiveDeformationGradientModel(0.75),
+        PelceSunLangeveld1995Model()
+    ), ring_grid, ring_cs, ring_fm, ip_geo, ip_geo, 2*order
+)
+
+solve_test_ring(filename*"_GHM-HO_HO_RLRSQ75_Pelce",
+    GeneralizedHillModel(
+        passive_model,
+        RLRSQActiveDeformationGradientModel(0.75),
+        PelceSunLangeveld1995Model()
+    ), ring_grid, ring_cs, ring_fm, ip_geo, ip_geo, 2*order
+)
+
+solve_test_ring(filename*"_ActiveStress-HO_Simple_Pelce",
+    ActiveStressModel(
+        passive_model,
+        SimpleActiveStress(),
+        PelceSunLangeveld1995Model()
+    ), ring_grid, ring_cs, ring_fm, ip_geo, ip_geo, 2*order
+)
+
+solve_test_ring(filename*"_ActiveStress-HO_Piersanti_Pelce",
+    ActiveStressModel(
+        passive_model,
+        PiersantiActiveStress(2.0, 1.0, 0.75, 0.0),
+        PelceSunLangeveld1995Model()
+    ), ring_grid, ring_cs, ring_fm, ip_geo, ip_geo, 2*order
+)
+
+solve_test_ring(filename*"_GHM-HO2_HO2_RLRSQ75_Pelce",
+    GeneralizedHillModel(
+        passive_model,
         ActiveMaterialAdapter(NewHolzapfelOgden2009Model(;b₁=10.0,b₂=10.0,b₃=10.0,mpU=NullCompressionPenalty())),
         RLRSQActiveDeformationGradientModel(0.75),
         PelceSunLangeveld1995Model()
-    ), LVS_grid, LVS_cs, LVS_fm
+    ), ring_grid, ring_cs, ring_fm, ip_geo, ip_geo, 2*order
 )
+
+end
