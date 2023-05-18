@@ -19,3 +19,7 @@ Physical Surface("Base", 9) = {2};
 Physical Surface("Myocardium", 10) = {3};
 //+
 Physical Volume("Myocardium", 11) = {3};
+//+
+Coherence;
+//+
+Coherence;
