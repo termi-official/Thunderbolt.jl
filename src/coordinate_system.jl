@@ -19,7 +19,7 @@ Requires a grid with facesets
 and a nodeset
 * Apex
 """
-function compute_LV_coordinate_system(grid::AbstractGrid,ip_geo;ref_shape=RefTetrahedron)
+function compute_LV_coordinate_system(grid::AbstractGrid,ip_geo::Interpolation{3, ref_shape}) where {ref_shape}
     ip = Lagrange{3, ref_shape, 1}()
     qr = QuadratureRule{3, ref_shape}(2)
     cellvalues = CellScalarValues(qr, ip, ip_geo);
