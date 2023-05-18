@@ -105,12 +105,17 @@ function create_simple_fiber_model(coordinate_system, ip_fiber::Interpolation{di
 
             elementwise_data_f[cellindex, qp] = vᵣ / norm(vᵣ)
 
-            v = -∇apicobasal / norm(∇apicobasal)
-            # v = -∇transmural / norm(∇transmural)
+            v = elementwise_data_f[cellindex, qp]
+            sinθ = sin(π/2)
+            cosθ = cos(π/2)
+            k = ∇transmural / norm(∇transmural)
+            vᵣ = v * cosθ + (k × v) * sinθ + k * (k ⋅ v) * (1-cosθ)
+            vᵣ = vᵣ / norm(vᵣ)
+            
+            v = vᵣ / norm(vᵣ)
             sinϕ = sin(deg2rad(ϕ))
             cosϕ = cos(deg2rad(ϕ))
             k = ∇radial / norm(∇radial)
-            # k = ∇apicobasal / norm(∇apicobasal)
             vᵣ = v * cosϕ + (k × v) * sinϕ + k * (k ⋅ v) * (1-cosϕ)
             vᵣ = vᵣ / norm(vᵣ)
 
