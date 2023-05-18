@@ -245,7 +245,7 @@ function solve_test_ring(pv_name_base, mp, grid, coordinate_system, fiber_model,
             #@info det(K)
             try
                 Δu = K \ g
-            catch 
+            catch
                 finalize!(io)
                 @warn "Failed Solve at " t
                 return uₜ
@@ -276,7 +276,6 @@ function solve_test_ring(pv_name_base, mp, grid, coordinate_system, fiber_model,
             uₑ = uₜ[global_dofs] # element dofs
 
             E_ff_cell = 0.0
-            E_ff_cell2 = 0.0
             E_cc_cell = 0.0
             E_rr_cell = 0.0
             E_ll_cell = 0.0
@@ -308,8 +307,6 @@ function solve_test_ring(pv_name_base, mp, grid, coordinate_system, fiber_model,
                 s₀_current = F⋅s₀
                 s₀_current /= norm(s₀_current)
 
-                E_ff_cell2 += f₀_current ⋅ E ⋅ f₀_current
-
                 coords = getcoordinates(cell)
                 x_global = spatial_coordinate(cv, qp, coords)
                 # @TODO compute properly
@@ -331,7 +328,6 @@ function solve_test_ring(pv_name_base, mp, grid, coordinate_system, fiber_model,
             end
 
             E_ff[Ferrite.cellid(cell)] = E_ff_cell / nqp
-            E_ff2[Ferrite.cellid(cell)] = E_ff_cell2 / nqp
             E_cc[Ferrite.cellid(cell)] = E_cc_cell / nqp
             E_rr[Ferrite.cellid(cell)] = E_rr_cell / nqp
             E_ll[Ferrite.cellid(cell)] = E_ll_cell / nqp
@@ -413,7 +409,7 @@ function Thunderbolt.Ψ(F, f₀, s₀, n₀, mp::NewHolzapfelOgden2009Model)
 end
 
 # """
-# Our fit against LinYin. Broken...?
+# Our reported fit against LinYin.
 # """
 Base.@kwdef struct NewActiveSpring2{CPT}
     # a::Float64   = 15.020986456784657
@@ -432,7 +428,7 @@ function Thunderbolt.Ψ(F, f₀, s₀, n₀, mp::NewActiveSpring2{CPT}) where {C
     I₁ = tr(C/cbrt(J^2))
     I₄ᶠ = f₀ ⋅ C ⋅ f₀
 
-    return a/2.0*(I₁-3.0)^2 + aᶠ/2.0*(I₄ᶠ-1.0) + U(I₃, mpU)
+    return a/2.0*(I₁-3.0)^2 + aᶠ/2.0*(I₄ᶠ-1.0) + Thunderbolt.U(I₃, mpU)
 end
 
 using FerriteGmsh
@@ -441,13 +437,13 @@ for (filename, ref_shape, order) ∈ [
     ("MidVentricularSectionQuadTet.msh", RefTetrahedron, 2),
     ("MidVentricularSectionTet.msh", RefTetrahedron, 1),
     ("MidVentricularSectionHex.msh", RefCube, 1),
-    ("MidVentricularSectionQuadHex.msh", RefCube, 2)
+    # ("MidVentricularSectionQuadHex.msh", RefCube, 2) # We have to update FerriteGmsh first, because the hex27 translator is missing. See https://github.com/Ferrite-FEM/FerriteGmsh.jl/pull/29
 ]
 
 ip_fiber = Lagrange{3, ref_shape, order}()
 ip_geo = Lagrange{3, ref_shape, order}()
 
-ring_grid = saved_file_to_grid("data/meshes/" * filename)
+ring_grid = saved_file_to_grid("data/meshes/ring/" * filename)
 ring_cs = compute_midmyocardial_section_coordinate_system(ring_grid, ip_geo)
 ring_fm = create_simple_fiber_model(ring_cs, ip_fiber, ip_geo, endo_angle = -60.0, epi_angle = 70.0, endo_transversal_angle = -10.0, epi_transversal_angle = 20.0)
 
@@ -485,6 +481,7 @@ solve_test_ring(filename*"_GHM-HO_AS1_RLRSQ75_Pelce",
 solve_test_ring(filename*"_GHM-HO_HO_RLRSQ75_Pelce",
     GeneralizedHillModel(
         passive_model,
+        ActiveMaterialAdapter(passive_model),
         RLRSQActiveDeformationGradientModel(0.75),
         PelceSunLangeveld1995Model()
     ), ring_grid, ring_cs, ring_fm, ip_geo, ip_geo, 2*order
@@ -506,7 +503,7 @@ solve_test_ring(filename*"_ActiveStress-HO_Piersanti_Pelce",
     ), ring_grid, ring_cs, ring_fm, ip_geo, ip_geo, 2*order
 )
 
-solve_test_ring(filename*"_GHM-HO2_HO2_RLRSQ75_Pelce",
+solve_test_ring(filename*"_GHM-HO_HO2_RLRSQ75_Pelce",
     GeneralizedHillModel(
         passive_model,
         ActiveMaterialAdapter(NewHolzapfelOgden2009Model(;b₁=10.0,b₂=10.0,b₃=10.0,mpU=NullCompressionPenalty())),
