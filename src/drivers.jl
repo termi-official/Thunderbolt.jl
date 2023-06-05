@@ -15,7 +15,7 @@ end
 """
 function constitutive_driver(F::Tensor{2,dim}, f₀::Vec{dim}, s₀::Vec{dim}, n₀::Vec{dim}, Caᵢ, model::GeneralizedHillModel) where {dim}
     # TODO what is a good abstraction here?
-    Fᵃ = compute_Fᵃ(Caᵢ,  f₀, s₀, n₀, model.contraction_model, model.active_deformation_gradient_model)
+    Fᵃ = compute_Fᵃ(Caᵢ, f₀, s₀, n₀, model.contraction_model, model.active_deformation_gradient_model)
 
     ∂²Ψ∂F², ∂Ψ∂F = Tensors.hessian(
         F_ad ->
