@@ -1,5 +1,3 @@
-using TimerOutputs
-
 using Thunderbolt, UnPack, SparseArrays
 import Thunderbolt: Ψ, U
 
@@ -15,7 +13,6 @@ import Thunderbolt: Ψ, U
 
 
 # ----------------------------------------------
-
 
 mutable struct LazyMicrostructureCache{MM, VT}
     const microstructure_model::MM
@@ -248,8 +245,8 @@ function assemble_global!(K::SparseMatrixCSC, f::Vector, dh::DH, cv::CV, fv::FV,
     face_caches = ntuple(i->setup_face_cache(face_models[i], fv), length(face_models))
 
     # Loop over all cells in the grid
-    @timeit "assemble" for cell in CellIterator(dh)
-    # for cell in CellIterator(dh)
+    # @timeit "assemble" for cell in CellIterator(dh)
+    for cell in CellIterator(dh)
         global_dofs = celldofs(cell)
 
         # TODO refactor
@@ -507,26 +504,30 @@ function Thunderbolt.Ψ(F, f₀, s₀, n₀, mp::NewActiveSpring{CPT}) where {CP
 end
 
 Base.@kwdef struct NewHolzapfelOgden2009Model{TD,TU} #<: OrthotropicMaterialModel
-    a::TD   =  1.0
-    b₁::TD  = 16.023
-    b₂::TD  = 16.023
-    b₃::TD  =  1.023
-    mpU::TU = SimpleCompressionPenalty()
+    a₁::TD  =  5.0
+    a₂::TD  =  2.5
+    a₃::TD  =  0.5
+    a₄::TD  = 10.0
+    b₁::TD  =  5.0
+    b₂::TD  =  2.5
+    b₃::TD  =  0.5
+    b₄::TD  =  2.0
+    mpU::TU = SimpleCompressionPenalty(50.0)
 end
 
 function Thunderbolt.Ψ(F, f₀, s₀, n₀, mp::NewHolzapfelOgden2009Model)
-    @unpack a, b₁, b₂, b₃, mpU = mp
+    @unpack a₁, b₁, a₂, b₂, a₃, b₃, a₄, b₄, mpU = mp
 
     C = tdot(F)
     I₃ = det(C)
     J = det(F)
-    # I₁ = tr(C/cbrt(J^2))
-    I₄ᶠ = f₀ ⋅ C ⋅ f₀
-    I₄ˢ = s₀ ⋅ C ⋅ s₀
-    I₄ⁿ = n₀ ⋅ C ⋅ n₀
+
+    I₄ᶠ = f₀ ⋅ C ⋅ f₀ / cbrt(J^2)
+    I₄ˢ = s₀ ⋅ C ⋅ s₀ / cbrt(J^2)
+    I₄ⁿ = n₀ ⋅ C ⋅ n₀ / cbrt(J^2)
     I₈ᶠˢ = (f₀ ⋅ C ⋅ s₀ + s₀ ⋅ C ⋅ f₀)/2.0
 
-    Ψᵖ = a/(2.0*b₁)*exp(b₁*(I₄ᶠ/cbrt(J^2) - 1.0)) + a/(2.0*b₂)*exp(b₂*(I₄ˢ/cbrt(J^2) -1.0)) + a/(2.0*b₃)*exp(b₃*(I₄ⁿ/cbrt(J^2) - 1.0)) + U(I₃, mpU)
+    Ψᵖ = a₁/(2.0*b₁)*exp(b₁*(I₄ᶠ - 1.0)) + a₂/(2.0*b₂)*exp(b₂*(I₄ˢ -1.0)) + a₃/(2.0*b₃)*exp(b₃*(I₄ⁿ - 1.0)) + a₄/(2.0*b₄)*exp(b₄*(I₈ᶠˢ - 1.0)) + U(I₃, mpU)
     return Ψᵖ
 end
 
@@ -578,26 +579,30 @@ ring_grid = saved_file_to_grid("../data/meshes/ring/" * filename)
 ring_cs = compute_midmyocardial_section_coordinate_system(ring_grid, ip_geo)
 ring_fm = create_simple_fiber_model(ring_cs, ip_fiber, ip_geo, endo_angle = 60.0, epi_angle = -70.0, endo_transversal_angle = -10.0, epi_transversal_angle = 20.0)
 
-passive_model = HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 0.28504197825657906, 4.126552003938297, 0.0, 1.0, 0.0, 1.0, SimpleCompressionPenalty(4.0))
-# passive_model = HolzapfelOgden2009Model(;mpU=NeffCompressionPenalty())
+# passive_model = HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 0.28504197825657906, 4.126552003938297, 0.0, 1.0, 0.0, 1.0, SimpleCompressionPenalty(4.0))
 
-solve_test_ring(filename*"_GHM-HO_AS1_GMKI_Pelce",
-    GeneralizedHillModel(
-        passive_model,
-        ActiveMaterialAdapter(NewActiveSpring()),
-        GMKIncompressibleActiveDeformationGradientModel(),
-        PelceSunLangeveld1995Model()
-    ), ring_grid, ring_cs, ring_fm, ip_geo, ip_geo, 2*order
-)
+# solve_test_ring(filename*"_GHM-HO_AS1_GMKI_Pelce",
+#     GeneralizedHillModel(
+#         passive_model,
+#         ActiveMaterialAdapter(NewActiveSpring()),
+#         GMKIncompressibleActiveDeformationGradientModel(),
+#         PelceSunLangeveld1995Model()
+#     ), 
+#     ring_grid, ring_cs, ring_fm,
+#     [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
+#     ip_geo, ip_geo, 2*order
+# )
 
-# # Diverges...?
+# Diverges...?
 # solve_test_ring(filename*"_GHM-HO_AS2_GMKI_Pelce",
 #     GeneralizedHillModel(
 #         passive_model,
 #         ActiveMaterialAdapter(NewActiveSpring2()),
 #         GMKIncompressibleActiveDeformationGradientModel(),
 #         PelceSunLangeveld1995Model()
-#     ), ring_grid, ring_cs, ring_fm, ip_geo, ip_geo, 2*order
+#     ), ring_grid, ring_cs, ring_fm, 
+#     [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
+#     ip_geo, ip_geo, 2*order
 # )
 
 # solve_test_ring(filename*"_GHM-HO_AS1_RLRSQ75_Pelce",
@@ -606,7 +611,9 @@ solve_test_ring(filename*"_GHM-HO_AS1_GMKI_Pelce",
 #         ActiveMaterialAdapter(NewActiveSpring()),
 #         RLRSQActiveDeformationGradientModel(0.75),
 #         PelceSunLangeveld1995Model()
-#     ), ring_grid, ring_cs, ring_fm, ip_geo, ip_geo, 2*order
+#     ), ring_grid, ring_cs, ring_fm, 
+#     [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
+#     ip_geo, ip_geo, 2*order
 # )
 
 # solve_test_ring(filename*"_GHM-HO_HO_RLRSQ75_Pelce",
@@ -615,7 +622,9 @@ solve_test_ring(filename*"_GHM-HO_AS1_GMKI_Pelce",
 #         ActiveMaterialAdapter(passive_model),
 #         RLRSQActiveDeformationGradientModel(0.75),
 #         PelceSunLangeveld1995Model()
-#     ), ring_grid, ring_cs, ring_fm, ip_geo, ip_geo, 2*order
+#     ), ring_grid, ring_cs, ring_fm, 
+#     [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
+#     ip_geo, ip_geo, 2*order
 # )
 
 # solve_test_ring(filename*"_ActiveStress-HO_Simple_Pelce",
@@ -623,7 +632,9 @@ solve_test_ring(filename*"_GHM-HO_AS1_GMKI_Pelce",
 #         passive_model,
 #         SimpleActiveStress(),
 #         PelceSunLangeveld1995Model()
-#     ), ring_grid, ring_cs, ring_fm, ip_geo, ip_geo, 2*order
+#     ), ring_grid, ring_cs, ring_fm, 
+#     [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
+#     ip_geo, ip_geo, 2*order
 # )
 
 # solve_test_ring(filename*"_ActiveStress-HO_Piersanti_Pelce",
@@ -631,16 +642,30 @@ solve_test_ring(filename*"_GHM-HO_AS1_GMKI_Pelce",
 #         passive_model,
 #         PiersantiActiveStress(2.0, 1.0, 0.75, 0.0),
 #         PelceSunLangeveld1995Model()
-#     ), ring_grid, ring_cs, ring_fm, ip_geo, ip_geo, 2*order
+#     ), ring_grid, ring_cs, ring_fm, 
+#     [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
+#     ip_geo, ip_geo, 2*order
 # )
 
-# solve_test_ring(filename*"_GHM-HO_HO2_RLRSQ75_Pelce",
-#     GeneralizedHillModel(
-#         passive_model,
-#         ActiveMaterialAdapter(NewHolzapfelOgden2009Model(;b₁=10.0,b₂=10.0,b₃=10.0,mpU=NullCompressionPenalty())),
-#         RLRSQActiveDeformationGradientModel(0.75),
-#         PelceSunLangeveld1995Model()
-#     ), ring_grid, ring_cs, ring_fm, ip_geo, ip_geo, 2*order
-# )
+solve_test_ring(filename*"_GHM-HONEW_HONEW_RLRSQ100_Pelce",
+    ExtendedHillModel(
+        NewHolzapfelOgden2009Model(),
+        ActiveMaterialAdapter(NewHolzapfelOgden2009Model(;mpU=NullCompressionPenalty())),
+        RLRSQActiveDeformationGradientModel(0.5),
+        PelceSunLangeveld1995Model()
+    ), ring_grid, ring_cs, ring_fm, 
+    [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
+    ip_geo, ip_geo, 2*order
+)
+
+solve_test_ring(filename*"_ActiveStress-HONEW_Piersanti_Pelce",
+    ActiveStressModel(
+        NewHolzapfelOgden2009Model(),
+        PiersantiActiveStress(2.0, 1.0, 0.75, 0.0),
+        PelceSunLangeveld1995Model()
+    ), ring_grid, ring_cs, ring_fm, 
+    [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
+    ip_geo, ip_geo, 2*order
+)
 
 end
