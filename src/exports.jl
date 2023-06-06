@@ -50,4 +50,5 @@ export
     # Drivers
     GeneralizedHillModel,
     ActiveStressModel,
+    ExtendedHillModel,
     constitutive_driver

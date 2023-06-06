@@ -27,6 +27,32 @@ function constitutive_driver(F::Tensor{2,dim}, f₀::Vec{dim}, s₀::Vec{dim}, n
 end
 
 """
+@TODO citation
+"""
+struct ExtendedHillModel{PMat, AMat, ADGMod, CMod} <: QuasiStaticModel
+    passive_spring::PMat
+    active_spring::AMat
+    active_deformation_gradient_model::ADGMod
+    contraction_model::CMod
+end
+
+"""
+"""
+function constitutive_driver(F::Tensor{2,dim}, f₀::Vec{dim}, s₀::Vec{dim}, n₀::Vec{dim}, Caᵢ, model::ExtendedHillModel) where {dim}
+    # TODO what is a good abstraction here?
+    Fᵃ = compute_Fᵃ(Caᵢ, f₀, s₀, n₀, model.contraction_model, model.active_deformation_gradient_model)
+    N = 𝓝(Caᵢ, model.contraction_model)
+
+    ∂²Ψ∂F², ∂Ψ∂F = Tensors.hessian(
+        F_ad ->
+                Ψ(F_ad,     f₀, s₀, n₀, model.passive_spring)
+            + N*Ψ(F_ad, Fᵃ, f₀, s₀, n₀, model.active_spring),
+        F, :all)
+
+    return ∂Ψ∂F, ∂²Ψ∂F²
+end
+
+"""
 """
 struct ActiveStressModel{Mat, ASMod, CMod} <: QuasiStaticModel
     material_model::Mat
@@ -46,7 +72,8 @@ function constitutive_driver(F::Tensor{2,dim}, f₀::Vec{dim}, s₀::Vec{dim}, n
     ∂2 = Tensors.gradient(
         F_ad -> ∂(model.active_stress_model, Caᵢ, F_ad, f₀, s₀, n₀),
     F)
-    return ∂Ψ∂F + ∂(model.active_stress_model, Caᵢ, F, f₀, s₀, n₀), ∂²Ψ∂F² + ∂2
+    N = 𝓝(Caᵢ, model.contraction_model)
+    return ∂Ψ∂F + N*∂(model.active_stress_model, Caᵢ, F, f₀, s₀, n₀), ∂²Ψ∂F² + N*∂2
 end
 
 
@@ -58,3 +85,4 @@ struct ElastodynamicsModel{RHSModel <: QuasiStaticModel, CoefficienType}
     # TODO refactor into cache
     vₜ₋₁::Vector
 end
+

@@ -20,3 +20,5 @@ Base.@kwdef struct ConstantStretchModel{TD} <: SteadyStateSarcomereModel
     λ::TD = 1.0
 end
 compute_λᵃ(Ca, mp::ConstantStretchModel) = mp.λ
+
+𝓝(Ca, mp::PelceSunLangeveld1995Model) = Ca
