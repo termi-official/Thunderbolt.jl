@@ -434,10 +434,10 @@ end
 using FerriteGmsh
 
 for (filename, ref_shape, order) ∈ [
-    # ("MidVentricularSectionQuadTet.msh", RefTetrahedron, 2),
+    ("MidVentricularSectionQuadTet.msh", RefTetrahedron, 2),
     ("MidVentricularSectionTet.msh", RefTetrahedron, 1),
-    # ("MidVentricularSectionHex.msh", RefCube, 1),
-    # ("MidVentricularSectionQuadHex.msh", RefCube, 2) # We have to update FerriteGmsh first, because the hex27 translator is missing. See https://github.com/Ferrite-FEM/FerriteGmsh.jl/pull/29
+    ("MidVentricularSectionHex.msh", RefCube, 1),
+    ("MidVentricularSectionQuadHex.msh", RefCube, 2) # We have to update FerriteGmsh first, because the hex27 translator is missing. See https://github.com/Ferrite-FEM/FerriteGmsh.jl/pull/29
 ]
 
 ip_fiber = Lagrange{3, ref_shape, order}()
