@@ -470,3 +470,52 @@ struct CalciumHatField end
 """
 """
 value(coeff::CalciumHatField, cell_id::Int, ξ::Vec{dim}, t::Float64=0.0) where {dim} = t < 1.0 ? t : 2.0-t
+
+"""
+Parameterization from Vallespin paper.
+
+TDODO citations
+"""
+Base.@kwdef struct Guccione1991Passive{CPT}
+    C₀::Float64   = 100.0
+    Bᶠᶠ::Float64 =  29.8
+    Bˢˢ::Float64 =  14.9
+    Bⁿⁿ::Float64 =  14.9
+    Bⁿˢ::Float64 =   9.3
+    Bᶠˢ::Float64 =  19.2
+    Bᶠⁿ::Float64 =  14.4
+    mpU::CPT = SimpleCompressionPenalty()
+end
+
+function Thunderbolt.Ψ(F, f₀, s₀, n₀, mp::Guccione1991Passive{CPT}) where {CPT}
+    @unpack C₀, Bᶠᶠ, Bˢˢ, Bⁿⁿ, Bⁿˢ, Bᶠˢ, Bᶠⁿ, mpU = mp
+
+    C  = tdot(F)
+    I₃ = det(C)
+    J  = det(F)
+
+    E  = (C-one(F))/2.0
+
+    Eᶠᶠ = f₀ ⋅ E ⋅ f₀
+    Eˢˢ = s₀ ⋅ E ⋅ s₀
+    Eⁿⁿ = n₀ ⋅ E ⋅ n₀
+
+    Eᶠˢ = f₀ ⋅ E ⋅ s₀
+    Eˢᶠ = s₀ ⋅ E ⋅ f₀ 
+
+    Eˢⁿ = s₀ ⋅ E ⋅ n₀
+    Eⁿˢ = n₀ ⋅ E ⋅ s₀
+
+    Eᶠⁿ = f₀ ⋅ E ⋅ n₀
+    Eⁿᶠ = n₀ ⋅ E ⋅ f₀
+
+    Q = Bᶠᶠ*Eᶠᶠ^2 + Bˢˢ*Eˢˢ^2 + Bⁿⁿ*Eⁿⁿ^2 + Bⁿˢ*(Eⁿˢ^2+Eˢⁿ^2) + Bᶠˢ*(Eᶠˢ^2+Eˢᶠ^2) + Bᶠⁿ*(Eᶠⁿ^2+Eⁿᶠ^2)
+
+    return C₀*exp(Q)/2.0 + Thunderbolt.U(I₃, mpU)
+end
+
+Base.@kwdef struct Guccione1993Active
+    Tₘₐₓ::Float64 = 100.0
+end
+
+Thunderbolt.∂(sas::Guccione1993Active, Caᵢ, F::Tensor{2, dim}, f₀::Vec{dim}, s₀::Vec{dim}, n₀::Vec{dim}) where {dim} = sas.Tₘₐₓ * Caᵢ * (F ⋅ f₀ ) ⊗ f₀

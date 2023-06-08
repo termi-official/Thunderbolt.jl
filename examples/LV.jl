@@ -353,13 +353,23 @@ LV_fm = create_simple_fiber_model(LV_cs, ip, ip, endo_angle = -60.0, epi_angle =
 # )
 
 
-solve_ideal_lv("BarbarottaRossiDedeQuarteroni2018-Adjusted",
-    GeneralizedHillModel(
-        NullEnergyModel(),
-        ActiveMaterialAdapter(HolzapfelOgden2009Model(;a=0.2, b=4.61, aᶠ=4.19, bᶠ=7.85, aˢ=2.56, bˢ=10.44, aᶠˢ=0.13, bᶠˢ=15.25, mpU=SimpleCompressionPenalty())),
-        RLRSQActiveDeformationGradientModel(0.25),
+# solve_ideal_lv("BarbarottaRossiDedeQuarteroni2018-Adjusted",
+#     GeneralizedHillModel(
+#         NullEnergyModel(),
+#         ActiveMaterialAdapter(HolzapfelOgden2009Model(;a=0.2, b=4.61, aᶠ=4.19, bᶠ=7.85, aˢ=2.56, bˢ=10.44, aᶠˢ=0.13, bᶠˢ=15.25, mpU=SimpleCompressionPenalty())),
+#         RLRSQActiveDeformationGradientModel(0.25),
+#         PelceSunLangeveld1995Model()
+#     ), LV_grid, LV_fm, 
+#     [RobinBC(0.01, "Epicardium"), NormalSpringBC(1.0, "Base"), ConstantPressureBC(0.0, "Endocardium")], 
+#     CalciumHatField(), ip_geo, ip_geo, 2*order
+# )
+
+solve_ideal_lv("Vallespin2023-Reproducer",
+    ActiveStressModel(
+        Guccione1991Passive(),
+        Guccione1993Active(150),
         PelceSunLangeveld1995Model()
     ), LV_grid, LV_fm, 
-    [RobinBC(0.01, "Epicardium"), NormalSpringBC(1.0, "Base"), ConstantPressureBC(0.0, "Endocardium")], 
+    [NormalSpringBC(0.01, "Epicardium")], 
     CalciumHatField(), ip_geo, ip_geo, 2*order
 )
