@@ -99,6 +99,7 @@ function solve_test_ring(pv_name_base, material_model, grid, coordinate_system, 
         srefdata = zero(Vector{Ferrite.Vec{3}}(undef, getncells(grid)))
         fdata = zero(Vector{Ferrite.Vec{3}}(undef, getncells(grid)))
         sdata = zero(Vector{Ferrite.Vec{3}}(undef, getncells(grid)))
+        helixangledata = zero(Vector{Float64}(undef, getncells(grid)))
 
         microstructure_cache = setup_microstructure_cache(cv, microstructure_model)
 
@@ -119,6 +120,7 @@ function solve_test_ring(pv_name_base, material_model, grid, coordinate_system, 
             srefdata_cell = Ferrite.Vec{3}((0.0, 0.0, 0.0))
             fdata_cell = Ferrite.Vec{3}((0.0, 0.0, 0.0))
             sdata_cell = Ferrite.Vec{3}((0.0, 0.0, 0.0))
+            helixangle_cell = 0.0
 
             nqp = getnquadpoints(cv)
             for qp in 1:nqp
@@ -142,7 +144,7 @@ function solve_test_ring(pv_name_base, material_model, grid, coordinate_system, 
 
                 coords = getcoordinates(cell)
                 x_global = spatial_coordinate(cv, qp, coords)
-                # @TODO compute properly
+                # @TODO compute properly via coordinate system
                 v_longitudinal = Ferrite.Vec{3}((0.0, 0.0, 1.0))
                 v_radial = Ferrite.Vec{3}((x_global[1],x_global[2],0.0))/norm(Ferrite.Vec{3}((x_global[1],x_global[2],0.0)))
                 v_circimferential = Ferrite.Vec{3}((x_global[2],-x_global[1],0.0))/norm(Ferrite.Vec{3}((x_global[2],-x_global[1],0.0)))
@@ -158,6 +160,8 @@ function solve_test_ring(pv_name_base, material_model, grid, coordinate_system, 
 
                 fdata_cell += f₀_current
                 sdata_cell += s₀_current
+
+                helixangle_cell += cos(f₀_current ⋅ v_circimferential) * sign((f₀_current × v_circimferential) ⋅ v_radial)
             end
 
             E_ff[Ferrite.cellid(cell)] = E_ff_cell / nqp
@@ -166,9 +170,14 @@ function solve_test_ring(pv_name_base, material_model, grid, coordinate_system, 
             E_ll[Ferrite.cellid(cell)] = E_ll_cell / nqp
             Jdata[Ferrite.cellid(cell)] = Jdata_cell / nqp
             frefdata[Ferrite.cellid(cell)] = frefdata_cell / nqp
+            frefdata[Ferrite.cellid(cell)] /= norm(frefdata[Ferrite.cellid(cell)])
             srefdata[Ferrite.cellid(cell)] = srefdata_cell / nqp
+            srefdata[Ferrite.cellid(cell)] /= norm(srefdata[Ferrite.cellid(cell)])
             fdata[Ferrite.cellid(cell)] = fdata_cell / nqp
+            fdata[Ferrite.cellid(cell)] /= norm(fdata[Ferrite.cellid(cell)])
             sdata[Ferrite.cellid(cell)] = sdata_cell / nqp
+            sdata[Ferrite.cellid(cell)] /= norm(sdata[Ferrite.cellid(cell)])
+            helixangledata[Ferrite.cellid(cell)] = helixangle_cell / nqp
         end
 
         # Save the solution
@@ -183,6 +192,7 @@ function solve_test_ring(pv_name_base, material_model, grid, coordinate_system, 
         Thunderbolt.store_timestep_celldata!(io, t, E_rr,"E_rr")
         Thunderbolt.store_timestep_celldata!(io, t, E_ll,"E_ll")
         Thunderbolt.store_timestep_celldata!(io, t, Jdata,"J")
+        Thunderbolt.store_timestep_celldata!(io, t, helixangledata,"Helix Angle")
         Thunderbolt.finalize_timestep!(io, t)
 
         # min_vol = min(min_vol, calculate_volume_deformed_mesh(uₜ,dh,cv));
@@ -211,7 +221,7 @@ ring_grid = saved_file_to_grid("../data/meshes/ring/" * filename)
 ring_cs = compute_midmyocardial_section_coordinate_system(ring_grid, ip_geo)
 ring_fm = create_simple_fiber_model(ring_cs, ip_fiber, ip_geo, endo_angle = 60.0, epi_angle = -70.0, endo_transversal_angle = -10.0, epi_transversal_angle = 20.0)
 
-# passive_model = HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 0.28504197825657906, 4.126552003938297, 0.0, 1.0, 0.0, 1.0, SimpleCompressionPenalty(4.0))
+passive_model = HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 0.28504197825657906, 4.126552003938297, 0.0, 1.0, 0.0, 1.0, SimpleCompressionPenalty(4.0))
 
 # solve_test_ring(filename*"_GHM-HO_AS1_GMKI_Pelce",
 #     GeneralizedHillModel(
@@ -237,16 +247,16 @@ ring_fm = create_simple_fiber_model(ring_cs, ip_fiber, ip_geo, endo_angle = 60.0
 #     ip_geo, ip_geo, 2*order
 # )
 
-# solve_test_ring(filename*"_GHM-HO_AS1_RLRSQ75_Pelce",
-#     GeneralizedHillModel(
-#         passive_model,
-#         ActiveMaterialAdapter(NewActiveSpring()),
-#         RLRSQActiveDeformationGradientModel(0.75),
-#         PelceSunLangeveld1995Model()
-#     ), ring_grid, ring_cs, ring_fm, 
-#     [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
-#     ip_geo, ip_geo, 2*order
-# )
+solve_test_ring(filename*"_GHM-HO_AS1_RLRSQ75_Pelce",
+    GeneralizedHillModel(
+        passive_model,
+        ActiveMaterialAdapter(NewActiveSpring()),
+        RLRSQActiveDeformationGradientModel(0.75),
+        PelceSunLangeveld1995Model()
+    ), ring_grid, ring_cs, ring_fm, 
+    [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
+    ip_geo, ip_geo, 2*order
+)
 
 # solve_test_ring(filename*"_GHM-HO_HO_RLRSQ75_Pelce",
 #     GeneralizedHillModel(
@@ -279,25 +289,25 @@ ring_fm = create_simple_fiber_model(ring_cs, ip_fiber, ip_geo, endo_angle = 60.0
 #     ip_geo, ip_geo, 2*order
 # )
 
-solve_test_ring(filename*"_GHM-HONEW_HONEW_RLRSQ100_Pelce",
-    ExtendedHillModel(
-        NewHolzapfelOgden2009Model(),
-        ActiveMaterialAdapter(NewHolzapfelOgden2009Model(;mpU=NullCompressionPenalty())),
-        RLRSQActiveDeformationGradientModel(0.5),
-        PelceSunLangeveld1995Model()
-    ), ring_grid, ring_cs, ring_fm, 
-    [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
-    ip_geo, ip_geo, 2*order
-)
+# solve_test_ring(filename*"_GHM-HONEW_HONEW_RLRSQ100_Pelce",
+#     ExtendedHillModel(
+#         NewHolzapfelOgden2009Model(),
+#         ActiveMaterialAdapter(NewHolzapfelOgden2009Model(;mpU=NullCompressionPenalty())),
+#         RLRSQActiveDeformationGradientModel(0.5),
+#         PelceSunLangeveld1995Model()
+#     ), ring_grid, ring_cs, ring_fm, 
+#     [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
+#     ip_geo, ip_geo, 2*order
+# )
 
-solve_test_ring(filename*"_ActiveStress-HONEW_Piersanti_Pelce",
-    ActiveStressModel(
-        NewHolzapfelOgden2009Model(),
-        PiersantiActiveStress(2.0, 1.0, 0.75, 0.0),
-        PelceSunLangeveld1995Model()
-    ), ring_grid, ring_cs, ring_fm, 
-    [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
-    ip_geo, ip_geo, 2*order
-)
+# solve_test_ring(filename*"_ActiveStress-HONEW_Piersanti_Pelce",
+#     ActiveStressModel(
+#         NewHolzapfelOgden2009Model(),
+#         PiersantiActiveStress(2.0, 1.0, 0.75, 0.0),
+#         PelceSunLangeveld1995Model()
+#     ), ring_grid, ring_cs, ring_fm, 
+#     [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
+#     ip_geo, ip_geo, 2*order
+# )
 
 end

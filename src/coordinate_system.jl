@@ -1,5 +1,7 @@
 """
 Simple Coordinate System.
+
+!!! note TODO circumferential coordinate
 """
 struct LVCoordinateSystem
     dh::AbstractDofHandler
@@ -9,7 +11,11 @@ end
 
 """
 """
-getcoordinateinterpolation(cs::LVCoordinateSystem) = getfieldinterpolation(dh, 1)
+getcoordinateinterpolation(cs::LVCoordinateSystem) = Ferrite.getfieldinterpolation(cs.dh, 1)
+
+"""
+"""
+create_cellvalues(cs::LVCoordinateSystem, qr::QuadratureRule, ip_geo=getcoordinateinterpolation(cs)) = CellScalarValues(qr, getcoordinateinterpolation(cs), ip_geo)
 
 """
 Requires a grid with facesets
