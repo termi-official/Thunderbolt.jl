@@ -1,5 +1,5 @@
 # Generates a hexahedral ring in the form of a large cylinder subtracted by a smaller cylinder.
-function generate_ring_mesh(ne_c, ne_r, ne_l; radial_inner::T = Float64(0.75), radial_outer::T = Float64(1.0), longitudinal_lower::T = Float64(-0.2), longitudinal_upper::T = Float64(0.2)) where {T}
+function generate_ring_mesh(ne_c, ne_r, ne_l; radial_inner::T = Float64(0.75), radial_outer::T = Float64(1.0), longitudinal_lower::T = Float64(-0.2), longitudinal_upper::T = Float64(0.2), apicobasal_tilt::T=Float64(0.0)) where {T}
     # Generate a rectangle in cylindrical coordinates and transform coordinates back to carthesian.
     ne_tot = ne_c*ne_r*ne_l;
     n_nodes_c = ne_c; n_nodes_r = ne_r+1; n_nodes_l = ne_l+1;
@@ -12,7 +12,7 @@ function generate_ring_mesh(ne_c, ne_r, ne_l; radial_inner::T = Float64(0.75), r
     nodes = Node{3,T}[]
     for k in 1:n_nodes_l, j in 1:n_nodes_r, i in 1:n_nodes_c
         # cylindrical -> carthesian
-        radius = coords_r[j]-0.03*coords_l[k]/maximum(abs.(coords_l))
+        radius = coords_r[j]-apicobasal_tilt*coords_l[k]/maximum(abs.(coords_l))
         push!(nodes, Node((radius*cos(coords_c[i]), radius*sin(coords_c[i]), coords_l[k])))
     end
 
