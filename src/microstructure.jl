@@ -77,7 +77,7 @@ function create_simple_fiber_model(coordinate_system, ip_fiber::Interpolation{di
             # compute fiber direction
             ∇apicobasal = function_gradient(cv, qp, coordinate_system.u_apicobasal[dof_indices])
             ∇transmural = function_gradient(cv, qp, coordinate_system.u_transmural[dof_indices])
-            ∇radial = ∇apicobasal × ∇transmural
+            ∇circumferential = ∇apicobasal × ∇transmural
 
             transmural  = function_value(cv, qp, coordinate_system.u_transmural[dof_indices])
 
@@ -85,19 +85,19 @@ function create_simple_fiber_model(coordinate_system, ip_fiber::Interpolation{di
             θ = (1-transmural) * endo_angle + (transmural) * epi_angle
             ϕ = (1-transmural) * endo_transversal_angle + (transmural) * epi_transversal_angle
 
-            # Rodriguez rotation of ∇radial around ∇transmural with angle θ
-            v = ∇radial / norm(∇radial)
+            # Rodriguez rotation of ∇circumferential around ∇transmural with angle θ
+            v = ∇circumferential / norm(∇circumferential)
             sinθ = sin(deg2rad(θ))
             cosθ = cos(deg2rad(θ))
             k = ∇transmural / norm(∇transmural)
             vᵣ = v * cosθ + (k × v) * sinθ + k * (k ⋅ v) * (1-cosθ)
             vᵣ = vᵣ / norm(vᵣ)
 
-            # Rodriguez rotation of vᵣ around ∇radial with angle ϕ
+            # Rodriguez rotation of vᵣ around ∇circumferential with angle ϕ
             v = vᵣ / norm(vᵣ)
             sinϕ = sin(deg2rad(ϕ))
             cosϕ = cos(deg2rad(ϕ))
-            k = ∇radial / norm(∇radial)
+            k = ∇circumferential / norm(∇circumferential)
             vᵣ = v * cosϕ + (k × v) * sinϕ + k * (k ⋅ v) * (1-cosϕ)
             vᵣ = vᵣ / norm(vᵣ)
 
@@ -113,7 +113,7 @@ function create_simple_fiber_model(coordinate_system, ip_fiber::Interpolation{di
             v = vᵣ / norm(vᵣ)
             sinϕ = sin(deg2rad(ϕ))
             cosϕ = cos(deg2rad(ϕ))
-            k = ∇radial / norm(∇radial)
+            k = ∇circumferential / norm(∇circumferential)
             vᵣ = v * cosϕ + (k × v) * sinϕ + k * (k ⋅ v) * (1-cosϕ)
             vᵣ = vᵣ / norm(vᵣ)
 
