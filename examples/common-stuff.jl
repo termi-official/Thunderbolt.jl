@@ -474,17 +474,17 @@ value(coeff::CalciumHatField, cell_id::Int, ξ::Vec{dim}, t::Float64=0.0) where 
 """
 Parameterization from Vallespin paper.
 
-TDODO citations
+TODO citations
 """
 Base.@kwdef struct Guccione1991Passive{CPT}
-    C₀::Float64   = 100.0
+    C₀::Float64  =   0.1
     Bᶠᶠ::Float64 =  29.8
     Bˢˢ::Float64 =  14.9
     Bⁿⁿ::Float64 =  14.9
     Bⁿˢ::Float64 =   9.3
     Bᶠˢ::Float64 =  19.2
     Bᶠⁿ::Float64 =  14.4
-    mpU::CPT = SimpleCompressionPenalty()
+    mpU::CPT = SimpleCompressionPenalty(50.0)
 end
 
 function Thunderbolt.Ψ(F, f₀, s₀, n₀, mp::Guccione1991Passive{CPT}) where {CPT}
