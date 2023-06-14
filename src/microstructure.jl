@@ -55,9 +55,13 @@ function generate_nodal_quadrature_rule(ip::Interpolation{dim, ref_shape, order}
 end
 
 """
+    create_simple_fiber_model(coordinate_system, ip_fiber::Interpolation{dim}, ip_geo; endo_helix_angle = deg2rad(80.0), epi_helix_angle = deg2rad(-65.0), endo_transversal_angle = 0.0, epi_transversal_angle = 0.0, sheetlet_angle = 0.0) where {dim}
+
 Create a rotating fiber field by deducing the circumferential direction from apicobasal and transmural gradients.
+
+!!! note Sheetlet angle construction is broken (i.e. does not preserve input angle). FIXME!
 """
-function create_simple_fiber_model(coordinate_system, ip_fiber::Interpolation{dim}, ip_geo; endo_angle = 80.0, epi_angle = -65.0, endo_transversal_angle = 0.0, epi_transversal_angle = 0.0) where {dim}
+function create_simple_fiber_model(coordinate_system, ip_fiber::Interpolation{dim}, ip_geo; endo_helix_angle = deg2rad(80.0), epi_helix_angle = deg2rad(-65.0), endo_transversal_angle = 0.0, epi_transversal_angle = 0.0, sheetlet_pseudo_angle = 0.0, make_orthogonal=true) where {dim}
     @unpack dh = coordinate_system
 
     n_basefuns = getnbasefunctions(ip_fiber)
@@ -74,54 +78,50 @@ function create_simple_fiber_model(coordinate_system, ip_fiber::Interpolation{di
         dof_indices = celldofs(cell)
 
         for qp in 1:getnquadpoints(cv)
-            # compute fiber direction
-            ∇apicobasal = function_gradient(cv, qp, coordinate_system.u_apicobasal[dof_indices])
-            ∇transmural = function_gradient(cv, qp, coordinate_system.u_transmural[dof_indices])
-            ∇circumferential = ∇apicobasal × ∇transmural
+            # TODO grab these via some interface!
+            apicobasal_direction = function_gradient(cv, qp, coordinate_system.u_apicobasal[dof_indices])
+            apicobasal_direction /= norm(apicobasal_direction)
+            transmural_direction = function_gradient(cv, qp, coordinate_system.u_transmural[dof_indices])
+            transmural_direction /= norm(transmural_direction)
+            circumferential_direction = apicobasal_direction × transmural_direction
+            circumferential_direction /= norm(circumferential_direction)
 
             transmural  = function_value(cv, qp, coordinate_system.u_transmural[dof_indices])
 
             # linear interpolation of rotation angle
-            θ = (1-transmural) * endo_angle + (transmural) * epi_angle
-            ϕ = (1-transmural) * endo_transversal_angle + (transmural) * epi_transversal_angle
+            # TODO pass functions or similar for these!
+            helix_angle       = (1-transmural) * endo_helix_angle + (transmural) * epi_helix_angle
+            transversal_angle = (1-transmural) * endo_transversal_angle + (transmural) * epi_transversal_angle
 
-            # Rodriguez rotation of ∇circumferential around ∇transmural with angle θ
-            v = ∇circumferential / norm(∇circumferential)
-            sinθ = sin(deg2rad(θ))
-            cosθ = cos(deg2rad(θ))
-            k = ∇transmural / norm(∇transmural)
-            vᵣ = v * cosθ + (k × v) * sinθ + k * (k ⋅ v) * (1-cosθ)
-            vᵣ = vᵣ / norm(vᵣ)
+            # First we construct the helix rotation ...
+            f₀ = rotate_around(circumferential_direction, transmural_direction, helix_angle)
+            f₀ /= norm(f₀)
+            # ... followed by the transversal_angle ...
+            f₀ = rotate_around(f₀, apicobasal_direction, transversal_angle)
+            f₀ /= norm(f₀)
+            # ... and store it.
+            elementwise_data_f[cellindex, qp] = f₀
 
-            # Rodriguez rotation of vᵣ around ∇circumferential with angle ϕ
-            v = vᵣ / norm(vᵣ)
-            sinϕ = sin(deg2rad(ϕ))
-            cosϕ = cos(deg2rad(ϕ))
-            k = ∇circumferential / norm(∇circumferential)
-            vᵣ = v * cosϕ + (k × v) * sinϕ + k * (k ⋅ v) * (1-cosϕ)
-            vᵣ = vᵣ / norm(vᵣ)
+            # Then we construct the the orthogonal sheetlet vector ...
+            s₀ = rotate_around(circumferential_direction, transmural_direction, helix_angle+π/2.0)
+            s₀ /= norm(f₀)
+            # FIXME this does not preserve the sheetlet angle
+            s₀ = unproject(s₀, -transmural_direction, sheetlet_pseudo_angle)
+            if make_orthogonal
+                s₀ = orthogonalize(s₀/norm(s₀), f₀)
+            end
+            # TODO replace above with an implementation of the following pseudocode
+            # 1. Compute plane via P = I - f₀ ⊗ f₀
+            # 2. Eigen decomposition E of P
+            # 3. Compute a generalized eigenvector s' from the non-zero eigenvalue (with ||s'||=1) from E such that <f₀,s'> minimal
+            # 4. Compute s₀ by rotating s' around f₀ such that cos(sheetlet angle) = <s',f₀>
+            s₀ /= norm(s₀)
+            elementwise_data_s[cellindex, qp] = s₀
 
-            elementwise_data_f[cellindex, qp] = vᵣ / norm(vᵣ)
-
-            v = elementwise_data_f[cellindex, qp]
-            sinθ = sin(π/2)
-            cosθ = cos(π/2)
-            k = ∇transmural / norm(∇transmural)
-            vᵣ = v * cosθ + (k × v) * sinθ + k * (k ⋅ v) * (1-cosθ)
-            vᵣ = vᵣ / norm(vᵣ)
-            
-            v = vᵣ / norm(vᵣ)
-            sinϕ = sin(deg2rad(ϕ))
-            cosϕ = cos(deg2rad(ϕ))
-            k = ∇circumferential / norm(∇circumferential)
-            vᵣ = v * cosϕ + (k × v) * sinϕ + k * (k ⋅ v) * (1-cosϕ)
-            vᵣ = vᵣ / norm(vᵣ)
-
-            vᵣ = vᵣ - (elementwise_data_f[cellindex, qp]⋅vᵣ)*elementwise_data_f[cellindex, qp]
-            elementwise_data_s[cellindex, qp] = vᵣ / norm(vᵣ)
-
-            elementwise_data_n[cellindex, qp] = Tensors.cross(elementwise_data_f[cellindex, qp], elementwise_data_s[cellindex, qp])
-            elementwise_data_n[cellindex, qp] /= norm(elementwise_data_n[cellindex, qp])
+            # Compute normal :)
+            n₀ = f₀ × s₀
+            elementwise_data_n[cellindex, qp] = n₀
+            elementwise_data_n[cellindex, qp] /= norm(n₀)
         end
     end
 

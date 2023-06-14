@@ -211,7 +211,7 @@ function solve_test_ring(name_base, material_model, grid, coordinate_system, mic
         Thunderbolt.store_timestep_celldata!(io, t, E_ll,"E_ll")
         Thunderbolt.store_timestep_celldata!(io, t, Jdata,"J")
         Thunderbolt.store_timestep_celldata!(io, t, rad2deg.(helixangledata),"Helix Angle")
-        Thunderbolt.store_timestep_celldata!(io, t, rad2deg.(helixanglerefdata),"Helix Angle (Peak Diastole)")
+        Thunderbolt.store_timestep_celldata!(io, t, rad2deg.(helixanglerefdata),"Helix Angle (End Diastole)")
         Thunderbolt.finalize_timestep!(io, t)
 
         # min_vol = min(min_vol, calculate_volume_deformed_mesh(uₜ,dh,cv));
@@ -246,7 +246,7 @@ filename = "MidVentricularSectionHexG50-10-10"
 
 # ring_grid = saved_file_to_grid("../data/meshes/ring/" * filename)
 ring_cs = compute_midmyocardial_section_coordinate_system(ring_grid, ip_geo)
-ring_fm = create_simple_fiber_model(ring_cs, ip_fiber, ip_geo, endo_angle = 60.0, epi_angle = -60.0, endo_transversal_angle = 0.0, epi_transversal_angle = 0.0)
+ring_fm = create_simple_fiber_model(ring_cs, ip_fiber, ip_geo, endo_helix_angle = deg2rad(60.0), epi_helix_angle = deg2rad(-60.0), endo_transversal_angle = 0.0, epi_transversal_angle = 0.0)
 
 passive_model = HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 0.28504197825657906, 4.126552003938297, 0.0, 1.0, 0.0, 1.0, SimpleCompressionPenalty(4.0))
 
@@ -274,16 +274,16 @@ passive_model = HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 
 #     ip_u, ip_geo, 2*order
 # )
 
-solve_test_ring(filename*"_GHM-HO_AS1_RLRSQ75_Pelce",
-    GeneralizedHillModel(
-        passive_model,
-        ActiveMaterialAdapter(NewActiveSpring()),
-        RLRSQActiveDeformationGradientModel(0.75),
-        PelceSunLangeveld1995Model()
-    ), ring_grid, ring_cs, ring_fm, 
-    [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
-    ip_u, ip_geo, 2*order
-)
+# solve_test_ring(filename*"_GHM-HO_AS1_RLRSQ75_Pelce",
+#     GeneralizedHillModel(
+#         passive_model,
+#         ActiveMaterialAdapter(NewActiveSpring()),
+#         RLRSQActiveDeformationGradientModel(0.75),
+#         PelceSunLangeveld1995Model()
+#     ), ring_grid, ring_cs, ring_fm, 
+#     [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
+#     ip_u, ip_geo, 2*order
+# )
 
 # solve_test_ring(filename*"_GHM-HO_HO_RLRSQ75_Pelce",
 #     GeneralizedHillModel(
@@ -347,5 +347,22 @@ solve_test_ring(filename*"_GHM-HO_AS1_RLRSQ75_Pelce",
 #     CalciumHatField(),
 #     ip_u, ip_geo, 2*order
 # )
+
+solve_test_ring(filename*"Vallespin2023-Ring",
+    ActiveStressModel(
+        Guccione1991Passive(),
+        Guccione1993Active(10),
+        PelceSunLangeveld1995Model()
+    ), ring_grid, ring_cs,
+    create_simple_fiber_model(ring_cs, ip_fiber, ip_geo, 
+        endo_helix_angle = deg2rad(60.0),
+        epi_helix_angle = deg2rad(-60.0),
+        endo_transversal_angle = 0.0,
+        epi_transversal_angle = 0.0,
+        sheetlet_pseudo_angle = deg2rad(20)
+    ), 
+    [NormalSpringBC(0.01, "Epicardium")], 
+    CalciumHatField(), ip_u, ip_geo, 2*order
+)
 
 end

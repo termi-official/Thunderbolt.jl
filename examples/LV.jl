@@ -197,7 +197,7 @@ end
 # ip = Lagrange{3, ref_shape, order}()
 
 # LV_cs = compute_LV_coordinate_system(LV_grid, ip)
-# LV_fm = create_simple_fiber_model(LV_cs, ip, ip, endo_angle = -60.0, epi_angle = 70.0, endo_transversal_angle = 10.0, epi_transversal_angle = -20.0)
+# LV_fm = create_simple_fiber_model(LV_cs, ip, ip, endo_helix_angle = -60.0, epi_helix_angle = 70.0, endo_transversal_angle = 10.0, epi_transversal_angle = -20.0)
 
 # passive_ho_model = HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 0.28504197825657906, 4.126552003938297, 0.0, 1.0, 0.0, 1.0, SimpleCompressionPenalty(4.0))
 
@@ -283,7 +283,7 @@ end
 # ip = Lagrange{3, ref_shape, order}()
 
 # LV_cs = compute_LV_coordinate_system(LV_grid, ip)
-# LV_fm = create_simple_fiber_model(LV_cs, ip, ip, endo_angle = -60.0, epi_angle = 70.0, endo_transversal_angle = 10.0, epi_transversal_angle = -20.0)
+# LV_fm = create_simple_fiber_model(LV_cs, ip, ip, endo_helix_angle = -60.0, epi_helix_angle = 70.0, endo_transversal_angle = 10.0, epi_transversal_angle = -20.0)
 
 # passive_ho_model = HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 0.28504197825657906, 4.126552003938297, 0.0, 1.0, 0.0, 1.0, SimpleCompressionPenalty(4.0))
 
@@ -314,7 +314,7 @@ ip = ip_geo = Lagrange{3, ref_shape, order}()
 
 LV_grid = togrid("../data/meshes/LV/EllipsoidalLeftVentricleQuadTet.msh")
 LV_cs = compute_LV_coordinate_system(LV_grid, ip)
-LV_fm = create_simple_fiber_model(LV_cs, ip, ip, endo_angle = -60.0, epi_angle = 60.0, endo_transversal_angle = 0.0, epi_transversal_angle = 0.0)
+# LV_fm = create_simple_fiber_model(LV_cs, ip, ip, endo_helix_angle = deg2rad(60.0), epi_helix_angle = deg2rad(-60.0), endo_transversal_angle = 0.0, epi_transversal_angle = 0.0)
 
 # passive_honi_model = HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 0.28504197825657906, 4.126552003938297, 0.0, 1.0, 0.0, 1.0, NeffCompressionPenalty(;β=10.0))
 
@@ -364,12 +364,15 @@ LV_fm = create_simple_fiber_model(LV_cs, ip, ip, endo_angle = -60.0, epi_angle =
 #     CalciumHatField(), ip_geo, ip_geo, 2*order
 # )
 
+# FINALLY SOME SHEETLET REORIENTATION!
+LV_fm = create_simple_fiber_model(LV_cs, ip, ip, endo_helix_angle = deg2rad(60.0), epi_helix_angle = deg2rad(-60.0), endo_transversal_angle = deg2rad(20.0), epi_transversal_angle = deg2rad(20.0), sheetlet_pseudo_angle=deg2rad(20.0), make_orthogonal=false)
 solve_ideal_lv("Vallespin2023-Reproducer",
     ActiveStressModel(
         Guccione1991Passive(),
-        Guccione1993Active(150),
+        Guccione1993Active(),
         PelceSunLangeveld1995Model()
     ), LV_grid, LV_fm, 
-    [NormalSpringBC(0.01, "Epicardium")], 
-    CalciumHatField(), ip_geo, ip_geo, 2*order
+    [NormalSpringBC(1.0, "Epicardium")], 
+    CalciumHatField(), ip_geo, ip_geo, 2*order,
+    0.025
 )
