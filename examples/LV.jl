@@ -6,8 +6,8 @@ function solve_ideal_lv(pv_name_base, material_model, grid, microstructure_model
     T = 2.0
 
     # Finite element base
-    qr = QuadratureRule{3, ref_shape}(2*order)
-    qr_face = QuadratureRule{2, ref_shape}(2*order)
+    qr = QuadratureRule{3, ref_shape}(intorder)
+    qr_face = QuadratureRule{2, ref_shape}(intorder)
     cv = CellVectorValues(qr, ip_mech, ip_geo)
     fv = FaceVectorValues(qr_face, ip_mech, ip_geo)
 
@@ -102,7 +102,7 @@ function solve_ideal_lv(pv_name_base, material_model, grid, microstructure_model
             uₑ = uₜ[global_dofs] # element dofs
 
             update_microstructure_cache!(microstructure_cache, t, cell, cv)
-                
+
             E_ff_cell = 0.0
             E_cc_cell = 0.0
             E_rr_cell = 0.0
@@ -194,7 +194,7 @@ end
 # LV_grid = togrid("data/meshes/LV/EllipsoidalLeftVentricleQuadTet.msh")
 # ref_shape = RefTetrahedron
 # order = 2
-# ip = Lagrange{3, ref_shape, order}()
+# ip = ip_geo = Lagrange{3, ref_shape, order}()
 
 # LV_cs = compute_LV_coordinate_system(LV_grid, ip)
 # LV_fm = create_simple_fiber_model(LV_cs, ip, ip, endo_helix_angle = -60.0, epi_helix_angle = 70.0, endo_transversal_angle = 10.0, epi_transversal_angle = -20.0)
@@ -207,9 +207,9 @@ end
 #         ActiveMaterialAdapter(NewActiveSpring(; aᶠ=5.0)),
 #         RLRSQActiveDeformationGradientModel(0.75),
 #         PelceSunLangeveld1995Model()
-#     ), LV_grid, LV_fm, 
+#     ), LV_grid, LV_fm,
 #     [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
-#     ip_geo, ip_geo, 2*order
+#     ip, ip_geo, max(2*order-1,2)
 # )
 
 # solve_ideal_lv("LV3_GHM-HO_AS1_GMKI_Pelce",
@@ -218,9 +218,9 @@ end
 #         ActiveMaterialAdapter(NewActiveSpring()),
 #         GMKIncompressibleActiveDeformationGradientModel(),
 #         PelceSunLangeveld1995Model()
-#     ), LV_grid, LV_fm, 
+#     ), LV_grid, LV_fm,
 #     [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
-#     ip_geo, ip_geo, 2*order
+#     ip, ip_geo, max(2*order-1,2)
 # )
 
 # solve_ideal_lv("LV3_GHM-HO_AS2_GMKI_Pelce",
@@ -229,9 +229,9 @@ end
 #         ActiveMaterialAdapter(NewActiveSpring2()),
 #         GMKIncompressibleActiveDeformationGradientModel(),
 #         PelceSunLangeveld1995Model()
-#     ), LV_grid, LV_fm, 
+#     ), LV_grid, LV_fm,
 #     [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
-#     ip_geo, ip_geo, 2*order
+#     ip, ip_geo, max(2*order-1,2)
 # )
 
 # solve_ideal_lv("LV3_GHM-HO_AS1_RLRSQ75_Pelce",
@@ -240,9 +240,9 @@ end
 #         ActiveMaterialAdapter(NewActiveSpring()),
 #         RLRSQActiveDeformationGradientModel(0.75),
 #         PelceSunLangeveld1995Model()
-#     ), LV_grid, LV_fm, 
+#     ), LV_grid, LV_fm,
 #     [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
-#     ip_geo, ip_geo, 2*order
+#     ip, ip_geo, max(2*order-1,2)
 # )
 
 # solve_ideal_lv("LV3_GHM-HO_HO_RLRSQ75_Pelce",
@@ -251,9 +251,9 @@ end
 #         ActiveMaterialAdapter(passive_ho_model),
 #         RLRSQActiveDeformationGradientModel(0.75),
 #         PelceSunLangeveld1995Model()
-#     ), LV_grid, LV_fm, 
+#     ), LV_grid, LV_fm,
 #     [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
-#     ip_geo, ip_geo, 2*order
+#     ip, ip_geo, max(2*order-1,2)
 # )
 
 # solve_ideal_lv("LV3_ActiveStress-HO_Simple_Pelce",
@@ -261,9 +261,9 @@ end
 #         passive_ho_model,
 #         SimpleActiveStress(),
 #         PelceSunLangeveld1995Model()
-#     ), LV_grid, LV_fm, 
+#     ), LV_grid, LV_fm,
 #     [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
-#     ip_geo, ip_geo, 2*order
+#     ip, ip_geo, max(2*order-1,2)
 # )
 
 # solve_ideal_lv("LV3_ActiveStress-HO_Piersanti_Pelce",
@@ -271,9 +271,9 @@ end
 #         passive_ho_model,
 #         PiersantiActiveStress(2.0, 1.0, 0.75, 0.0),
 #         PelceSunLangeveld1995Model()
-#     ), LV_grid, LV_fm, 
+#     ), LV_grid, LV_fm,
 #     [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
-#     ip_geo, ip_geo, 2*order
+#     ip, ip_geo, max(2*order-1,2)
 # )
 
 
@@ -293,9 +293,9 @@ end
 #         ActiveMaterialAdapter(NewActiveSpring(; aᶠ=5.0)),
 #         RLRSQActiveDeformationGradientModel(0.75),
 #         PelceSunLangeveld1995Model()
-#     ), LV_grid, LV_fm, 
+#     ), LV_grid, LV_fm,
 #     [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
-#     ip_geo, ip_geo, 2*order
+#     ip, ip_geo, max(2*order-1,2)
 # )
 
 # solve_ideal_lv("LV2_ActiveStress-HO_Piersanti_Pelce",
@@ -303,17 +303,17 @@ end
 #         passive_ho_model,
 #         PiersantiActiveStress(2.0, 1.0, 0.75, 0.0),
 #         PelceSunLangeveld1995Model()
-#     ), LV_grid, LV_fm, 
+#     ), LV_grid, LV_fm,
 #     [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
-#     ip_geo, ip_geo, 2*order
+#     ip, ip_geo, max(2*order-1,2)
 # )
 
-ref_shape = RefTetrahedron
-order = 2
-ip = ip_geo = Lagrange{3, ref_shape, order}()
+# ref_shape = RefTetrahedron
+# order = 2
+# ip = ip_geo = Lagrange{3, ref_shape, order}()
 
-LV_grid = togrid("../data/meshes/LV/EllipsoidalLeftVentricleQuadTet.msh")
-LV_cs = compute_LV_coordinate_system(LV_grid, ip)
+# LV_grid = togrid("../data/meshes/LV/EllipsoidalLeftVentricleQuadTet.msh")
+# LV_cs = compute_LV_coordinate_system(LV_grid, ip)
 # LV_fm = create_simple_fiber_model(LV_cs, ip, ip, endo_helix_angle = deg2rad(60.0), epi_helix_angle = deg2rad(-60.0), endo_transversal_angle = 0.0, epi_transversal_angle = 0.0)
 
 # passive_honi_model = HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 0.28504197825657906, 4.126552003938297, 0.0, 1.0, 0.0, 1.0, NeffCompressionPenalty(;β=10.0))
@@ -324,9 +324,9 @@ LV_cs = compute_LV_coordinate_system(LV_grid, ip)
 #         ActiveMaterialAdapter(NewActiveSpring()),
 #         RLRSQActiveDeformationGradientModel(0.75),
 #         PelceSunLangeveld1995Model()
-#     ), LV_grid, LV_fm, 
+#     ), LV_grid, LV_fm,
 #     [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
-#     ip_geo, ip_geo, 2*order
+#     ip, ip_geo, max(2*order-1,2)
 # )
 
 # solve_ideal_lv("LV3_GHM-HO2NI_AS1_RLRSQ75_Pelce",
@@ -335,9 +335,9 @@ LV_cs = compute_LV_coordinate_system(LV_grid, ip)
 #         ActiveMaterialAdapter(NewActiveSpring()),
 #         RLRSQActiveDeformationGradientModel(0.75),
 #         PelceSunLangeveld1995Model()
-#     ), LV_grid, LV_fm, 
+#     ), LV_grid, LV_fm,
 #     [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
-#     ip_geo, ip_geo, 2*order
+#     ip, ip_geo, max(2*order-1,2)
 # )
 
 
@@ -347,9 +347,9 @@ LV_cs = compute_LV_coordinate_system(LV_grid, ip)
 #         ActiveMaterialAdapter(HolzapfelOgden2009Model(;a=0.2, b=4.61, aᶠ=4.19, bᶠ=7.85, aˢ=2.56, bˢ=10.44, aᶠˢ=0.13, bᶠˢ=15.25, mpU=SimpleCompressionPenalty())),
 #         RLRSQActiveDeformationGradientModel(0.25),
 #         PelceSunLangeveld1995Model()
-#     ), LV_grid, LV_fm, 
-#     [RobinBC(7.5, "Epicardium"), NormalSpringBC(10.0, "Base"), ConstantPressureBC(0.14, "Endocardium")], 
-#     CalciumHatField(), ip_geo, ip_geo, 2*order
+#     ), LV_grid, LV_fm,
+#     [RobinBC(7.5, "Epicardium"), NormalSpringBC(10.0, "Base"), ConstantPressureBC(0.14, "Endocardium")],
+#     CalciumHatField(), ip, ip_geo, max(2*order-1,2)
 # )
 
 
@@ -359,20 +359,62 @@ LV_cs = compute_LV_coordinate_system(LV_grid, ip)
 #         ActiveMaterialAdapter(HolzapfelOgden2009Model(;a=0.2, b=4.61, aᶠ=4.19, bᶠ=7.85, aˢ=2.56, bˢ=10.44, aᶠˢ=0.13, bᶠˢ=15.25, mpU=SimpleCompressionPenalty())),
 #         RLRSQActiveDeformationGradientModel(0.25),
 #         PelceSunLangeveld1995Model()
-#     ), LV_grid, LV_fm, 
-#     [RobinBC(0.01, "Epicardium"), NormalSpringBC(1.0, "Base"), ConstantPressureBC(0.0, "Endocardium")], 
-#     CalciumHatField(), ip_geo, ip_geo, 2*order
+#     ), LV_grid, LV_fm,
+#     [RobinBC(0.01, "Epicardium"), NormalSpringBC(1.0, "Base"), ConstantPressureBC(0.0, "Endocardium")],
+#     CalciumHatField(), ip, ip_geo, max(2*order-1,2)
 # )
 
 # FINALLY SOME SHEETLET REORIENTATION!
-LV_fm = create_simple_fiber_model(LV_cs, ip, ip, endo_helix_angle = deg2rad(60.0), epi_helix_angle = deg2rad(-60.0), endo_transversal_angle = deg2rad(20.0), epi_transversal_angle = deg2rad(20.0), sheetlet_pseudo_angle=deg2rad(20.0), make_orthogonal=false)
-solve_ideal_lv("Vallespin2023-Reproducer",
-    ActiveStressModel(
-        Guccione1991Passive(),
-        Guccione1993Active(),
+# LV_fm = create_simple_fiber_model(LV_cs, ip, ip, endo_helix_angle = deg2rad(60.0), epi_helix_angle = deg2rad(-60.0), endo_transversal_angle = deg2rad(20.0), epi_transversal_angle = deg2rad(20.0), sheetlet_pseudo_angle=deg2rad(20.0), make_orthogonal=false)
+# solve_ideal_lv("Vallespin2023-Reproducer",
+#     ActiveStressModel(
+#         Guccione1991Passive(),
+#         Guccione1993Active(),
+#         PelceSunLangeveld1995Model()
+#     ), LV_grid, LV_fm,
+#     [NormalSpringBC(1.0, "Epicardium")],
+#     CalciumHatField(), ip, ip_geo, max(2*order-1,2),
+#     0.025
+# )
+
+LV_grid = togrid("../data/meshes/LV/EllipsoidalLeftVentricle_fine.msh")
+ref_shape = RefTetrahedron
+order = 1
+ip = ip_geo = Lagrange{3, ref_shape, order}()
+
+passive_ho_model = HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 0.28504197825657906, 4.126552003938297, 0.0, 1.0, 0.0, 1.0, SimpleCompressionPenalty(10.0))
+
+LV_cs = compute_LV_coordinate_system(LV_grid, ip)
+
+solve_ideal_lv("LV-fine_GHM_HO_AS1_RLRSQ75_Pelce",
+    GeneralizedHillModel(
+        passive_ho_model,
+        ActiveMaterialAdapter(NewActiveSpring()),
+        RLRSQActiveDeformationGradientModel(0.75),
         PelceSunLangeveld1995Model()
-    ), LV_grid, LV_fm, 
-    [NormalSpringBC(1.0, "Epicardium")], 
-    CalciumHatField(), ip_geo, ip_geo, 2*order,
-    0.025
+    ), LV_grid, create_simple_fiber_model(LV_cs, ip, ip, endo_helix_angle = deg2rad(-60.0), epi_helix_angle = deg2rad(60.0)),
+    [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
+    ip, ip_geo, max(2*order-1,2)
+)
+
+solve_ideal_lv("LV-fine_GHM_HO_AS1_RLRSQ75_Pelce_SA20",
+    GeneralizedHillModel(
+        passive_ho_model,
+        ActiveMaterialAdapter(NewActiveSpring()),
+        RLRSQActiveDeformationGradientModel(0.75),
+        PelceSunLangeveld1995Model()
+    ), LV_grid, create_simple_fiber_model(LV_cs, ip, ip, endo_helix_angle = deg2rad(-60.0), epi_helix_angle = deg2rad(60.0), sheetlet_pseudo_angle = deg2rad(20.0)),
+    [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
+    ip, ip_geo, max(2*order-1,2)
+)
+
+solve_ideal_lv("LV-fine_GHM_HO_AS1_RLRSQ75_Pelce_SA20_TA20",
+    GeneralizedHillModel(
+        passive_ho_model,
+        ActiveMaterialAdapter(NewActiveSpring()),
+        RLRSQActiveDeformationGradientModel(0.75),
+        PelceSunLangeveld1995Model()
+    ), LV_grid, create_simple_fiber_model(LV_cs, ip, ip, endo_helix_angle = deg2rad(-60.0), epi_helix_angle = deg2rad(60.0), endo_transversal_angle = deg2rad(20.0), epi_transversal_angle = deg2rad(20.0), sheetlet_pseudo_angle = deg2rad(20.0)),
+    [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
+    ip, ip_geo, max(2*order-1,2)
 )

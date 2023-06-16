@@ -118,7 +118,7 @@ function solve_test_ring(name_base, material_model, grid, coordinate_system, mic
             uₑ = uₜ[global_dofs] # element dofs
 
             update_microstructure_cache!(microstructure_cache, t, cell, cv_post)
-                
+
             E_ff_cell = 0.0
             E_cc_cell = 0.0
             E_rr_cell = 0.0
@@ -256,7 +256,7 @@ passive_model = HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 
 #         ActiveMaterialAdapter(NewActiveSpring()),
 #         GMKIncompressibleActiveDeformationGradientModel(),
 #         PelceSunLangeveld1995Model()
-#     ), 
+#     ),
 #     ring_grid, ring_cs, ring_fm,
 #     [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
 #     ip_u, ip_geo, 2*order
@@ -269,7 +269,7 @@ passive_model = HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 
 #         ActiveMaterialAdapter(NewActiveSpring2()),
 #         GMKIncompressibleActiveDeformationGradientModel(),
 #         PelceSunLangeveld1995Model()
-#     ), ring_grid, ring_cs, ring_fm, 
+#     ), ring_grid, ring_cs, ring_fm,
 #     [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
 #     ip_u, ip_geo, 2*order
 # )
@@ -280,7 +280,7 @@ passive_model = HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 
 #         ActiveMaterialAdapter(NewActiveSpring()),
 #         RLRSQActiveDeformationGradientModel(0.75),
 #         PelceSunLangeveld1995Model()
-#     ), ring_grid, ring_cs, ring_fm, 
+#     ), ring_grid, ring_cs, ring_fm,
 #     [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
 #     ip_u, ip_geo, 2*order
 # )
@@ -291,7 +291,7 @@ passive_model = HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 
 #         ActiveMaterialAdapter(passive_model),
 #         RLRSQActiveDeformationGradientModel(0.75),
 #         PelceSunLangeveld1995Model()
-#     ), ring_grid, ring_cs, ring_fm, 
+#     ), ring_grid, ring_cs, ring_fm,
 #     [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
 #     ip_u, ip_geo, 2*order
 # )
@@ -301,7 +301,7 @@ passive_model = HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 
 #         passive_model,
 #         SimpleActiveStress(),
 #         PelceSunLangeveld1995Model()
-#     ), ring_grid, ring_cs, ring_fm, 
+#     ), ring_grid, ring_cs, ring_fm,
 #     [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
 #     ip_u, ip_geo, 2*order
 # )
@@ -311,7 +311,7 @@ passive_model = HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 
 #         passive_model,
 #         PiersantiActiveStress(2.0, 1.0, 0.75, 0.0),
 #         PelceSunLangeveld1995Model()
-#     ), ring_grid, ring_cs, ring_fm, 
+#     ), ring_grid, ring_cs, ring_fm,
 #     [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
 #     ip_u, ip_geo, 2*order
 # )
@@ -322,7 +322,7 @@ passive_model = HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 
 #         ActiveMaterialAdapter(NewHolzapfelOgden2009Model(;mpU=NullCompressionPenalty())),
 #         RLRSQActiveDeformationGradientModel(0.5),
 #         PelceSunLangeveld1995Model()
-#     ), ring_grid, ring_cs, ring_fm, 
+#     ), ring_grid, ring_cs, ring_fm,
 #     [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
 #     ip_u, ip_geo, 2*order
 # )
@@ -332,7 +332,7 @@ passive_model = HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 
 #         NewHolzapfelOgden2009Model(),
 #         PiersantiActiveStress(2.0, 1.0, 0.75, 0.0),
 #         PelceSunLangeveld1995Model()
-#     ), ring_grid, ring_cs, ring_fm, 
+#     ), ring_grid, ring_cs, ring_fm,
 #     [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
 #     ip_u, ip_geo, 2*order
 # )
@@ -343,26 +343,48 @@ passive_model = HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 
 #         Guccione1993Active(150.0),
 #         PelceSunLangeveld1995Model()
 #     ), ring_grid, ring_cs, ring_fm,
-#     [NormalSpringBC(0.01, "Epicardium")], 
+#     [NormalSpringBC(0.01, "Epicardium")],
 #     CalciumHatField(),
 #     ip_u, ip_geo, 2*order
 # )
 
-solve_test_ring(filename*"Vallespin2023-Ring",
-    ActiveStressModel(
-        Guccione1991Passive(),
-        Guccione1993Active(10),
+# solve_test_ring(filename*"Vallespin2023-Ring",
+#     ActiveStressModel(
+#         Guccione1991Passive(),
+#         Guccione1993Active(10),
+#         PelceSunLangeveld1995Model()
+#     ), ring_grid, ring_cs,
+#     create_simple_fiber_model(ring_cs, ip_fiber, ip_geo,
+#         endo_helix_angle = deg2rad(60.0),
+#         epi_helix_angle = deg2rad(-60.0),
+#         endo_transversal_angle = 0.0,
+#         epi_transversal_angle = 0.0,
+#         sheetlet_pseudo_angle = deg2rad(20)
+#     ),
+#     [NormalSpringBC(0.01, "Epicardium")],
+#     CalciumHatField(), ip_u, ip_geo, 2*order
+# )
+
+# solve_test_ring(filename*"_GHM-HO_AS1_RLRSQ75_Pelce_MoulinHelixAngle",
+#     GeneralizedHillModel(
+#         passive_model,
+#         ActiveMaterialAdapter(NewActiveSpring()),
+#         RLRSQActiveDeformationGradientModel(0.75),
+#         PelceSunLangeveld1995Model()
+#     ), ring_grid, ring_cs, create_simple_fiber_model(ring_cs, ip_fiber, ip_geo, endo_helix_angle = deg2rad(50.0), epi_helix_angle = deg2rad(-40.0), endo_transversal_angle = 0.0, epi_transversal_angle = 0.0),
+#     [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
+#     ip_u, ip_geo, 2*order
+# )
+
+solve_test_ring(filename*"_GHM-HO_AS1_RLRSQ75_Pelce_MoulinHelixAngle_SA45",
+    GeneralizedHillModel(
+        passive_model,
+        ActiveMaterialAdapter(NewActiveSpring()),
+        RLRSQActiveDeformationGradientModel(0.75),
         PelceSunLangeveld1995Model()
-    ), ring_grid, ring_cs,
-    create_simple_fiber_model(ring_cs, ip_fiber, ip_geo, 
-        endo_helix_angle = deg2rad(60.0),
-        epi_helix_angle = deg2rad(-60.0),
-        endo_transversal_angle = 0.0,
-        epi_transversal_angle = 0.0,
-        sheetlet_pseudo_angle = deg2rad(20)
-    ), 
-    [NormalSpringBC(0.01, "Epicardium")], 
-    CalciumHatField(), ip_u, ip_geo, 2*order
+    ), ring_grid, ring_cs, create_simple_fiber_model(ring_cs, ip_fiber, ip_geo, endo_helix_angle = deg2rad(50.0), epi_helix_angle = deg2rad(-40.0), endo_transversal_angle = 0.0, epi_transversal_angle = 0.0, sheetlet_pseudo_angle = deg2rad(45)),
+    [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
+    ip_u, ip_geo, 2*order
 )
 
 end
