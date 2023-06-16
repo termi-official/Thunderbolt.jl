@@ -371,24 +371,6 @@ function Thunderbolt.Ψ(F, Fᵃ, f₀, s₀, n₀, mp::SimpleActiveSpring)
     return aᶠ/2.0*(Iᵉ₄ᶠ-1.0)^2
 end
 
-Base.@kwdef struct NewActiveSpring{CPT}
-    a::Float64   = 1.0
-    aᶠ::Float64  = 1.0
-    mpU::CPT = NullCompressionPenalty()
-end
-using UnPack
-function Thunderbolt.Ψ(F, f₀, s₀, n₀, mp::NewActiveSpring{CPT}) where {CPT}
-    @unpack a, aᶠ, mpU = mp
-
-    C = tdot(F)
-    I₃ = det(C)
-    J = det(F)
-    I₁ = tr(C/cbrt(J^2))
-    I₄ᶠ = f₀ ⋅ C ⋅ f₀
-
-    return a/2.0*(I₁-3.0)^2 + aᶠ/2.0*(I₄ᶠ-1.0)^2 + Thunderbolt.U(I₃, mpU)
-end
-
 # """
 # Our reported fit against LinYin.
 # """
@@ -438,29 +420,6 @@ function Thunderbolt.Ψ(F, f₀, s₀, n₀, mp::NewHolzapfelOgden2009Model)
 
     Ψᵖ = a₁/(2.0*b₁)*exp(b₁*(I₄ᶠ - 1.0)) + a₂/(2.0*b₂)*exp(b₂*(I₄ˢ -1.0)) + a₃/(2.0*b₃)*exp(b₃*(I₄ⁿ - 1.0)) + a₄/(2.0*b₄)*exp(b₄*(I₈ᶠˢ - 1.0)) + U(I₃, mpU)
     return Ψᵖ
-end
-
-# """
-# Our reported fit against LinYin.
-# """
-Base.@kwdef struct NewActiveSpring2{CPT}
-    # a::Float64   = 15.020986456784657
-    # aᶠ::Float64  =  4.562365556553194
-    a::Float64   = 2.6
-    aᶠ::Float64  =  1.6
-    mpU::CPT = NullCompressionPenalty()
-end
-
-function Thunderbolt.Ψ(F, f₀, s₀, n₀, mp::NewActiveSpring2{CPT}) where {CPT}
-    @unpack a, aᶠ, mpU = mp
-
-    C = tdot(F)
-    I₃ = det(C)
-    J = det(F)
-    I₁ = tr(C/cbrt(J^2))
-    I₄ᶠ = f₀ ⋅ C ⋅ f₀
-
-    return a/2.0*(I₁-3.0)^2 + aᶠ/2.0*(I₄ᶠ-1.0) + Thunderbolt.U(I₃, mpU)
 end
 
 """
