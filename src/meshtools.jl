@@ -48,7 +48,7 @@ function generate_ring_mesh(ne_c, ne_r, ne_l; radial_inner::T = Float64(0.75), r
 end
 
 # Generates a hexahedral truncated ellipsoidal mesh by reparametrizing a hollow sphere (r=1.0 length units) where longitudinal_upper determines the truncation height.
-function generate_ideal_lv_mesh(ne_c, ne_r, ne_l; radial_inner::T = Float64(0.75), radial_outer::T = Float64(1.0), longitudinal_lower::T = Float64(-1.0), longitudinal_upper::T = Float64(0.2)) where {T}
+function generate_ideal_lv_mesh(ne_c, ne_r, ne_l; radial_inner::T = Float64(0.7), radial_outer::T = Float64(1.0), longitudinal_lower::T = Float64(-1.0), longitudinal_upper::T = Float64(0.2), longitudinal_stretch::T = Float64(1.2)) where {T}
     # Generate a rectangle in cylindrical coordinates and transform coordinates back to carthesian.
     ne_tot = ne_c*ne_r*ne_l;
     n_nodes_c = ne_c; n_nodes_r = ne_r+1; n_nodes_l = ne_l+1;
@@ -62,18 +62,18 @@ function generate_ideal_lv_mesh(ne_c, ne_r, ne_l; radial_inner::T = Float64(0.75
     # Add everything but apex and base
     for θ ∈ coords_l[2:(end-1)], radius ∈ coords_r, φ ∈ coords_c[1:(end-1)]
         # cylindrical -> carthesian
-        push!(nodes, Node((radius*cos(φ)*sin(θ), radius*sin(φ)*sin(θ), radius*cos(θ))))
+        push!(nodes, Node((radius*cos(φ)*sin(θ), radius*sin(φ)*sin(θ), longitudinal_stretch*radius*cos(θ))))
     end
 
     # Add flat base
     for θ ∈ coords_l[end], radius ∈ coords_r, φ ∈ coords_c[1:(end-1)]
         # cylindrical -> carthesian
-        push!(nodes, Node((radius*cos(φ)*sin(θ), radius*sin(φ)*sin(θ), radial_outer*cos(θ))))
+        push!(nodes, Node((radius*cos(φ)*sin(θ), radius*sin(φ)*sin(θ), longitudinal_stretch*radial_outer*cos(θ))))
     end
 
     # Generate all cells but the apex
     node_array = reshape(collect(1:n_nodes), (n_nodes_c, n_nodes_r, n_nodes_l))
-    cells = Hexahedron[]
+    cells = Union{Hexahedron,Wedge,Triangle}[]
     for k in 1:ne_l, j in 1:ne_r, i in 1:ne_c
         i_next = (i == ne_c) ? 1 : i + 1
         push!(cells, Hexahedron((node_array[i,j,k], node_array[i_next,j,k], node_array[i_next,j+1,k], node_array[i,j+1,k],
@@ -97,28 +97,18 @@ function generate_ideal_lv_mesh(ne_c, ne_r, ne_l; radial_inner::T = Float64(0.75
 
     # Add apex nodes
     for radius ∈ coords_r
-        # cylindrical -> carthesian
         push!(nodes, Node((0.0, 0.0, radius)))
     end
 
     # Add apex cells
-    for j ∈ 1:ne_r, i ∈ 1:2:ne_c
-        i_next = (i == ne_c-1) ? 1 : i + 2
-        push!(cells, Hexahedron((length(nodes)-n_nodes_r+j,   node_array[i,j,1],   node_array[i+1,j,1],   node_array[i_next,j,1],
-                                 length(nodes)-n_nodes_r+j+1, node_array[i,j+1,1], node_array[i+1,j+1,1], node_array[i_next,j+1,1])))
-        # push!(cells, Hexahedron((node_array[i,j,k], node_array[i_next,j,k], node_array[i_next,j+1,k], node_array[i,j+1,k],
-        #                          node_array[i,j,k+1], node_array[i_next,j,k+1], node_array[i_next,j+1,k+1], node_array[i,j+1,k+1])))
+    for j ∈ 1:ne_r, i ∈ 1:ne_c
+        i_next = (i == ne_c) ? 1 : i + 1
+        singular_index = length(nodes)-ne_r+j-1
+        push!(cells, Wedge((
+            singular_index , node_array[i,j,1], node_array[i_next,j,1],
+            singular_index+1, node_array[i_next,j+1,1], node_array[i,j+1,1],
+        )))
     end
-
-    # push nodes on the innermost ring into the plane to make the faces of the hexas planar
-    for j ∈ 1:ne_r,i ∈ 2:2:ne_c
-        i_next = i == ne_c ? 1 : i+1
-        x_avg = (nodes[node_array[i-1,j,1]].x[1]+nodes[node_array[i_next,j,1]].x[1])/2.0
-        y_avg = (nodes[node_array[i-1,j,1]].x[2]+nodes[node_array[i_next,j,1]].x[2])/2.0
-        z_avg = (nodes[node_array[i-1,j,1]].x[3]+nodes[node_array[i_next,j,1]].x[3])/2.0
-        nodes[node_array[i,j,1]] = Node((x_avg,y_avg,z_avg))
-    end
-    # Now we made the transformation matrix singular :)
 
     # return Grid(cells, nodes, nodesets=nodesets, facesets=facesets)
     return Grid(cells, nodes, facesets=facesets)
