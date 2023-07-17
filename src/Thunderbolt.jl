@@ -5,7 +5,7 @@ using Reexport, UnPack, StaticArrays
 
 using JLD2
 
-import Ferrite: AbstractDofHandler, AbstractGrid
+import Ferrite: AbstractDofHandler, AbstractGrid, AbstractRefShape
 
 include("meshtools.jl")
 
