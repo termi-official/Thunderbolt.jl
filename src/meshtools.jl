@@ -48,7 +48,13 @@ function generate_ring_mesh(ne_c, ne_r, ne_l; radial_inner::T = Float64(0.75), r
 end
 
 # Generates a hexahedral truncated ellipsoidal mesh by reparametrizing a hollow sphere (r=1.0 length units) where longitudinal_upper determines the truncation height.
-function generate_ideal_lv_mesh(ne_c, ne_r, ne_l; radial_inner::T = Float64(0.7), radial_outer::T = Float64(1.0), longitudinal_lower::T = Float64(-1.0), longitudinal_upper::T = Float64(0.2), longitudinal_stretch::T = Float64(1.2)) where {T}
+"""
+    generate_ideal_lv_mesh(num_elements_circumferential::Int, num_elements_radial::Int, num_elements_logintudinally::Int; inner_chamber_radius = 0.7, outer_wall_radius = 1.0, longitudinal_cutoff_lower::T = Float64(-1.0), longitudinal_cutoff_upper::T = Float64(0.2), longitudinal_stretch::T = Float64(1.2))
+
+Generate an idealized left ventricle as a truncated ellipsoid.
+The number of elements per axis are controlled by the 3 parameters.
+"""
+function generate_ideal_lv_mesh(ne_c::Int, ne_r::Int, ne_l::Int; radial_inner::T = Float64(0.7), radial_outer::T = Float64(1.0), longitudinal_lower::T = Float64(-1.0), longitudinal_upper::T = Float64(0.2), longitudinal_stretch::T = Float64(1.2)) where {T}
     # Generate a rectangle in cylindrical coordinates and transform coordinates back to carthesian.
     ne_tot = ne_c*ne_r*ne_l;
     n_nodes_c = ne_c; n_nodes_r = ne_r+1; n_nodes_l = ne_l+1;
@@ -97,7 +103,7 @@ function generate_ideal_lv_mesh(ne_c, ne_r, ne_l; radial_inner::T = Float64(0.7)
 
     # Add apex nodes
     for radius ∈ coords_r
-        push!(nodes, Node((0.0, 0.0, radius)))
+        push!(nodes, Node((0.0, 0.0, longitudinal_stretch*radius)))
     end
 
     # Add apex cells
@@ -106,7 +112,7 @@ function generate_ideal_lv_mesh(ne_c, ne_r, ne_l; radial_inner::T = Float64(0.7)
         singular_index = length(nodes)-ne_r+j-1
         push!(cells, Wedge((
             singular_index , node_array[i,j,1], node_array[i_next,j,1],
-            singular_index+1, node_array[i_next,j+1,1], node_array[i,j+1,1],
+            singular_index+1, node_array[i,j+1,1], node_array[i_next,j+1,1],
         )))
     end
 
