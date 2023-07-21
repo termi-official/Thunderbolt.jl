@@ -207,3 +207,15 @@ function generate_ideal_lv_mesh_boxed(ne_c, ne_r, ne_l; radial_inner::T = Float6
 
     return Grid(cells, nodes, facesets=facesets)
 end
+
+function compute_Δx(grid::Grid{dim, CT, DT}) where {dim, CT, DT}
+    Δx = DT[DT(Inf) for _ ∈ 1:getncells(grid)]
+    for (cell_idx,cell) ∈ enumerate(getcells(grid)) # todo cell iterator
+        for (node_idx,node1) ∈ enumerate(cell.nodes) # todo node accessor
+            for node2 ∈ cell.nodes[node_idx+1:end] # nodo node accessor
+                Δx[cell_idx] = min(Δx[cell_idx], norm(grid.nodes[node1].x - grid.nodes[node2].x))
+            end
+        end
+    end
+    return Δx
+end
