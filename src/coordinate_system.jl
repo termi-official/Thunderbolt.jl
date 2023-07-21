@@ -11,11 +11,11 @@ end
 
 """
 """
-getcoordinateinterpolation(cs::LVCoordinateSystem) = Ferrite.getfieldinterpolation(cs.dh, 1)
+getcoordinateinterpolation(cs::LVCoordinateSystem) = Ferrite.getfieldinterpolation(cs.dh, (1,1))
 
 """
 """
-create_cellvalues(cs::LVCoordinateSystem, qr::QuadratureRule, ip_geo=getcoordinateinterpolation(cs)) = CellScalarValues(qr, getcoordinateinterpolation(cs), ip_geo)
+create_cellvalues(cs::LVCoordinateSystem, qr::QuadratureRule, ip_geo=getcoordinateinterpolation(cs)) = CellValues(qr, getcoordinateinterpolation(cs), ip_geo)
 
 """
 Requires a grid with facesets
@@ -25,14 +25,14 @@ Requires a grid with facesets
 and a nodeset
 * Apex
 """
-function compute_LV_coordinate_system(grid::AbstractGrid,ip_geo::Interpolation{3, ref_shape}) where {ref_shape}
-    ip = Lagrange{3, ref_shape, 1}()
-    qr = QuadratureRule{3, ref_shape}(2)
-    cellvalues = CellScalarValues(qr, ip, ip_geo);
+function compute_LV_coordinate_system(grid::AbstractGrid, ip_geo::Interpolation{ref_shape}) where {ref_shape <: AbstractRefShape{3}}
+    ip = Lagrange{ref_shape, 1}()
+    qr = QuadratureRule{ref_shape}(2)
+    cellvalues = CellValues(qr, ip, ip_geo);
 
     dh = DofHandler(grid)
-    push!(dh, :coordinates, 1, ip)
-    Ferrite.close!(dh);
+    add!(dh, :coordinates, ip)
+    Ferrite.close!(dh)
 
     # Assemble Laplacian
     K = create_sparsity_pattern(dh)
@@ -108,13 +108,13 @@ end
 
 """
 """
-function compute_midmyocardial_section_coordinate_system(grid::AbstractGrid,ip_geo::Interpolation{3,ref_shape}) where {ref_shape}
-    ip = Lagrange{3, ref_shape, 1}()
-    qr = QuadratureRule{3, ref_shape}(2)
-    cellvalues = CellScalarValues(qr, ip, ip_geo);
+function compute_midmyocardial_section_coordinate_system(grid::AbstractGrid,ip_geo::Interpolation{ref_shape}) where {ref_shape <: AbstractRefShape{3}}
+    ip = Lagrange{ref_shape, 1}()
+    qr = QuadratureRule{ref_shape}(2)
+    cellvalues = CellValues(qr, ip, ip_geo);
 
     dh = DofHandler(grid)
-    push!(dh, :coordinates, 1, ip)
+    add!(dh, :coordinates, ip)
     Ferrite.close!(dh);
 
     # Assemble Laplacian

@@ -173,20 +173,20 @@ function assemble_global!(K, f, dh, cv, fv, mp, uₜ, uₜ₋₁, fiber_model, t
     end
 end
 
-function solve_test_ring(pv_name_base, mp, grid, coordinate_system, fiber_model, ip_mech::Interpolation{3, ref_shape}, ip_geo::Interpolation{3, ref_shape}, intorder, Δt = 0.1) where {ref_shape}
+function solve_test_ring(pv_name_base, mp, grid, coordinate_system, fiber_model, ip_mech::Interpolation{ref_shape}, ip_geo::Interpolation{ref_shape}, intorder, Δt = 0.1) where {ref_shape}
     io = ParaViewWriter(pv_name_base);
 
     T = 2.0
 
     # Finite element base
-    qr = QuadratureRule{3, ref_shape}(intorder)
-    qr_face = QuadratureRule{2, ref_shape}(intorder)
-    cv = CellVectorValues(qr, ip_mech, ip_geo)
-    fv = FaceVectorValues(qr_face, ip_mech, ip_geo)
+    qr = QuadratureRule{ref_shape}(intorder)
+    qr_face = FaceQuadratureRule{ref_shape}(intorder)
+    cv = CellValues(qr, ip_mech, ip_geo)
+    fv = FaceValues(qr_face, ip_mech, ip_geo)
 
     # DofHandler
     dh = DofHandler(grid)
-    push!(dh, :u, 3) # Add a displacement field
+    push!(dh, :u, ip_mech) # Add a displacement field
     close!(dh)
 
     dbcs = ConstraintHandler(dh)
@@ -436,12 +436,12 @@ using FerriteGmsh
 for (filename, ref_shape, order) ∈ [
     ("MidVentricularSectionQuadTet.msh", RefTetrahedron, 2),
     ("MidVentricularSectionTet.msh", RefTetrahedron, 1),
-    ("MidVentricularSectionHex.msh", RefCube, 1),
-    ("MidVentricularSectionQuadHex.msh", RefCube, 2) # We have to update FerriteGmsh first, because the hex27 translator is missing. See https://github.com/Ferrite-FEM/FerriteGmsh.jl/pull/29
+    ("MidVentricularSectionHex.msh", RefHexahedron, 1),
+    ("MidVentricularSectionQuadHex.msh", RefHexahedron, 2) # We have to update FerriteGmsh first, because the hex27 translator is missing. See https://github.com/Ferrite-FEM/FerriteGmsh.jl/pull/29
 ]
 
-ip_fiber = Lagrange{3, ref_shape, order}()
-ip_geo = Lagrange{3, ref_shape, order}()
+ip_fiber = Lagrange{ref_shape, order}()
+ip_geo = Lagrange{ref_shape, order}()
 
 ring_grid = saved_file_to_grid("../data/meshes/ring/" * filename)
 ring_cs = compute_midmyocardial_section_coordinate_system(ring_grid, ip_geo)

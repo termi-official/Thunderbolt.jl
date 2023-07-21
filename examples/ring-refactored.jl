@@ -2,25 +2,25 @@ include("common-stuff.jl")
 using FerriteGmsh
 
 
-function solve_test_ring(name_base, material_model, grid, coordinate_system, microstructure_model, face_models, calcium_field, ip_mech::Interpolation{3, ref_shape}, ip_geo::Interpolation{3, ref_shape}, intorder, Δt = 0.1) where {ref_shape}
+function solve_test_ring(name_base, material_model, grid, coordinate_system, microstructure_model, face_models, calcium_field, ip_mech::Interpolation{ref_shape}, ip_geo::Interpolation{ref_shape}, intorder, Δt = 0.1) where {ref_shape}
     io = ParaViewWriter(name_base);
     # io = JLD2Writer(name_base);
 
     T = 2.0
 
     # Finite element base
-    qr = QuadratureRule{3, ref_shape}(intorder)
-    qr_face = QuadratureRule{2, ref_shape}(intorder)
-    cv = CellVectorValues(qr, ip_mech, ip_geo)
-    fv = FaceVectorValues(qr_face, ip_mech, ip_geo)
-    qr_post = QuadratureRule{3, ref_shape}(intorder-1)
-    cv_post = CellVectorValues(qr_post, ip_mech, ip_geo)
+    qr = QuadratureRule{ref_shape}(intorder)
+    qr_face = FaceQuadratureRule{ref_shape}(intorder)
+    cv = CellValues(qr, ip_mech, ip_geo)
+    fv = FaceValues(qr_face, ip_mech, ip_geo)
+    qr_post = QuadratureRule{ref_shape}(intorder-1)
+    cv_post = CellValues(qr_post, ip_mech, ip_geo)
 
     # cv_cs = Thunderbolt.create_cellvalues(coordinate_system, qr, ip_geo)
 
     # DofHandler
     dh = DofHandler(grid)
-    push!(dh, :u, 3, ip_mech) # Add a displacement field
+    add!(dh, :u, ip_mech) # Add a displacement field
     close!(dh)
 
     dbcs = ConstraintHandler(dh)
@@ -234,12 +234,12 @@ end
 # ]
 begin
 
-ref_shape = RefCube
+ref_shape = RefHexahedron
 order = 1
 
-ip_fiber = Lagrange{3, ref_shape, order}()
-ip_u = Lagrange{3, ref_shape, order}()
-ip_geo = Lagrange{3, ref_shape, order}()
+ip_fiber = Lagrange{ref_shape, order}()
+ip_u = Lagrange{ref_shape, order}()^3
+ip_geo = Lagrange{ref_shape, order}()
 
 ring_grid = generate_ring_mesh(50,10,10)
 filename = "MidVentricularSectionHexG50-10-10"

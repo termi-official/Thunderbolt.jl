@@ -60,7 +60,7 @@ grid = generate_grid(Quadrilateral, (256, 256), Vec{2}((0.0,0.0)), Vec{2}((2.5,2
 dim = 2
 ip = Lagrange{dim, RefCube, 1}()
 qr = QuadratureRule{dim, RefCube}(2)
-cellvalues = CellScalarValues(qr, ip);
+cellvalues = CellValues(qr, ip);
 
 dh = DofHandler(grid)
 push!(dh, :ϕₘ, 1)
@@ -95,7 +95,7 @@ mutable struct ImplicitEulerHeatSolverCache{MassMatrixType, DiffusionMatrixType,
     b::RHSType
 end
 
-function assemble_global!(cellvalues::CellScalarValues{dim}, K::SparseMatrixCSC, M::SparseMatrixCSC, dh::DofHandler, model::MonodomainModel) where {dim}
+function assemble_global!(cellvalues::CellValues{dim}, K::SparseMatrixCSC, M::SparseMatrixCSC, dh::DofHandler, model::MonodomainModel) where {dim}
     n_basefuncs = getnbasefunctions(cellvalues)
     Kₑ = zeros(n_basefuncs, n_basefuncs)
     Mₑ = zeros(n_basefuncs, n_basefuncs)

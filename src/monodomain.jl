@@ -8,24 +8,23 @@ using Ferrite, SparseArrays, BlockArrays
 import DifferentialEquations
 #
 # Now, we define the computational domain and cellvalues. We exploit the fact that all fields of
-# the Bidomain model are approximated with the same Ansatz. Hence, we use one CellScalarValues struct for all three fields.
+# the Bidomain model are approximated with the same Ansatz. Hence, we use one CellValues struct for all three fields.
 grid = generate_grid(QuadraticQuadrilateral, (30, 30), Vec{2}((0.0,0.0)), Vec{2}((1.0, 1.0)))
-dim = 2
 Δt = 0.2
 T = 10
-ip_geo = Lagrange{dim, RefCube, 2}()
-ip = Lagrange{dim, RefCube, 2}()
-ip_gq = DiscontinuousLagrange{dim, RefCube, 2}() #TODO this is a quick hack to get the right number of dofs into the system
-qr = QuadratureRule{dim, RefCube}(3)
-cellvalues = CellScalarValues(qr, ip, ip_geo)
-# cellvalues_s = CellVectorValues(qr, ip);
+ip = Lagrange{RefQuadrilateral, 1}()
+ip_geo = Lagrange{RefQuadrilateral,1}()
+ip_gq = Lagrange{dim, RefQuadrilateral, 1}()
+qr = QuadratureRule{dim, RefQuadrilateral}(2)
+cellvalues = CellValues(qr, ip, ip_geo)
+# cellvalues_s = CellValues(qr, ip^6);
 #
 # We need to intialize a DofHandler. The DofHandler needs to be aware of three different fields
 # which are all first order approximations. After pushing all fields into the DofHandler, we `close`
 # it and thereby distribute the dofs of the problem.
 dh = DofHandler(grid)
-push!(dh, :ϕₘ, 1, ip)
-push!(dh, :s, 6, ip_gq)
+push!(dh, :ϕₘ, ip)
+push!(dh, :s, ip_gq^6)
 close!(dh);
 #
 # The linear parts of the Bidomain equations contribute to the stiffness and mass matrix, respectively.
@@ -86,7 +85,7 @@ update!(ch, 0.0);
 #
 # In the following function, `doassemble_linear!`, we assemble all linear parts of the system that stay same over all time steps.
 # This follows from the used Method of Lines, where we first discretize in space and afterwards in time.
-function doassemble_linear!(cellvalues::CellScalarValues{dim}, K::SparseMatrixCSC, M::SparseMatrixCSC, dh::DofHandler) where {dim}
+function doassemble_linear!(cellvalues::CellValues{dim}, K::SparseMatrixCSC, M::SparseMatrixCSC, dh::DofHandler) where {dim}
     n_ϕₘ = getnbasefunctions(cellvalues)
     n_s = 6*getnquadpoints(cellvalues)
     ntotal = n_ϕₘ + n_s

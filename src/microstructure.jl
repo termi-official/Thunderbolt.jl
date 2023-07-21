@@ -1,13 +1,13 @@
 """
 """
-struct FieldCoefficient{dim,TA,IP<:Interpolation{dim}}
+struct FieldCoefficient{TA,IP<:Interpolation}
     elementwise_data::TA #3d array (element_idx, base_fun_idx, dim)
     ip::IP
 end
 
 """
 """
-function value(coeff::FieldCoefficient{dim,TA}, cell_id::Int, ξ::Vec{dim}, t::Float64=0.0) where {dim,TA}
+function value(coeff::FieldCoefficient{TA,IP}, cell_id::Int, ξ::Vec{dim}, t::Float64=0.0) where {dim,TA,IP}
     @unpack elementwise_data, ip = coeff
 
     n_base_funcs = Ferrite.getnbasefunctions(ip)
@@ -48,20 +48,20 @@ end
 
 """
 """
-function generate_nodal_quadrature_rule(ip::Interpolation{dim, ref_shape, order}) where {dim, ref_shape, order}
+function generate_nodal_quadrature_rule(ip::Interpolation{ref_shape, order}) where {ref_shape, order}
     n_base = Ferrite.getnbasefunctions(ip)
     positions = Ferrite.reference_coordinates(ip)
-    return QuadratureRule{dim, ref_shape, Float64}(ones(length(positions)), positions)
+    return QuadratureRule{ref_shape, Float64}(ones(length(positions)), positions)
 end
 
 """
-    create_simple_fiber_model(coordinate_system, ip_fiber::Interpolation{dim}, ip_geo; endo_helix_angle = deg2rad(80.0), epi_helix_angle = deg2rad(-65.0), endo_transversal_angle = 0.0, epi_transversal_angle = 0.0, sheetlet_angle = 0.0) where {dim}
+    create_simple_fiber_model(coordinate_system, ip_fiber::Interpolation{ref_shape}, ip_geo; endo_helix_angle = deg2rad(80.0), epi_helix_angle = deg2rad(-65.0), endo_transversal_angle = 0.0, epi_transversal_angle = 0.0, sheetlet_angle = 0.0) where {dim}
 
 Create a rotating fiber field by deducing the circumferential direction from apicobasal and transmural gradients.
 
 !!! note Sheetlet angle construction is broken (i.e. does not preserve input angle). FIXME!
 """
-function create_simple_fiber_model(coordinate_system, ip_fiber::Interpolation{dim}, ip_geo; endo_helix_angle = deg2rad(80.0), epi_helix_angle = deg2rad(-65.0), endo_transversal_angle = 0.0, epi_transversal_angle = 0.0, sheetlet_pseudo_angle = 0.0, make_orthogonal=true) where {dim}
+function create_simple_fiber_model(coordinate_system, ip_fiber::Interpolation{ref_shape}, ip_geo; endo_helix_angle = deg2rad(80.0), epi_helix_angle = deg2rad(-65.0), endo_transversal_angle = 0.0, epi_transversal_angle = 0.0, sheetlet_pseudo_angle = 0.0, make_orthogonal=true) where {dim, ref_shape <: AbstractRefShape{dim}}
     @unpack dh = coordinate_system
 
     n_basefuns = getnbasefunctions(ip_fiber)
