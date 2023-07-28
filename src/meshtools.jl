@@ -6,14 +6,14 @@ function generate_ring_mesh(ne_c, ne_r, ne_l; radial_inner::T = Float64(0.75), r
     n_nodes = n_nodes_c * n_nodes_r * n_nodes_l;
 
     # Generate nodes
-    coords_c = range(0.0, stop=2*π, length=n_nodes_c+1)
-    coords_r = range(radial_inner, stop=radial_outer, length=n_nodes_r)
-    coords_l = range(longitudinal_upper, stop=longitudinal_lower, length=n_nodes_l)
+    circumferential_angle = range(0.0, stop=2*π, length=n_nodes_c+1)
+    radial_coords = range(radial_inner, stop=radial_outer, length=n_nodes_r)
+    longitudinal_angle = range(longitudinal_upper, stop=longitudinal_lower, length=n_nodes_l)
     nodes = Node{3,T}[]
     for k in 1:n_nodes_l, j in 1:n_nodes_r, i in 1:n_nodes_c
         # cylindrical -> carthesian
-        radius = coords_r[j]-apicobasal_tilt*coords_l[k]/maximum(abs.(coords_l))
-        push!(nodes, Node((radius*cos(coords_c[i]), radius*sin(coords_c[i]), coords_l[k])))
+        radius = radial_coords[j]-apicobasal_tilt*longitudinal_angle[k]/maximum(abs.(longitudinal_angle))
+        push!(nodes, Node((radius*cos(circumferential_angle[i]), radius*sin(circumferential_angle[i]), longitudinal_angle[k])))
     end
 
     # Generate cells
@@ -54,27 +54,36 @@ end
 Generate an idealized left ventricle as a truncated ellipsoid.
 The number of elements per axis are controlled by the 3 parameters.
 """
-function generate_ideal_lv_mesh(ne_c::Int, ne_r::Int, ne_l::Int; radial_inner::T = Float64(0.7), radial_outer::T = Float64(1.0), longitudinal_lower::T = Float64(-1.0), longitudinal_upper::T = Float64(0.2), longitudinal_stretch::T = Float64(1.2)) where {T}
+function generate_ideal_lv_mesh(ne_c::Int, ne_r::Int, ne_l::Int; radial_inner::T = Float64(0.7), radial_outer::T = Float64(1.0), longitudinal_upper::T = Float64(0.2), apex_inner::T = Float64(1.3), apex_outer::T = Float64(1.5)) where {T}
     # Generate a rectangle in cylindrical coordinates and transform coordinates back to carthesian.
     ne_tot = ne_c*ne_r*ne_l;
     n_nodes_c = ne_c; n_nodes_r = ne_r+1; n_nodes_l = ne_l+1;
     n_nodes = n_nodes_c * n_nodes_r * n_nodes_l;
 
     # Generate nodes
-    coords_c = range(0.0, stop=2*π, length=n_nodes_c+1)
-    coords_r = range(radial_inner, stop=radial_outer, length=n_nodes_r)
-    coords_l = range(0, stop=(1.0+longitudinal_upper)*π/2, length=n_nodes_l+1)
+    # Take a ring section of the heart and mark its circumferential coordinate by its angle
+    circumferential_angle = range(0.0, stop=2*π, length=n_nodes_c+1)
+    # Untransformed radial coordinate of a ring section
+    radii_in_percent = range(0.0, stop=1.0, length=n_nodes_r)
+    # z axis expressed as the angle between the apicobasal vector and the current layer from apex (0.0) to base ((1.0+longitudinal_upper)*π/2)
+    longitudinal_angle = range(0, stop=(1.0+longitudinal_upper)*π/2, length=n_nodes_l+1)
     nodes = Node{3,T}[]
     # Add everything but apex and base
-    for θ ∈ coords_l[2:(end-1)], radius ∈ coords_r, φ ∈ coords_c[1:(end-1)]
+    for θ ∈ longitudinal_angle[2:(end-1)], radius_percent ∈ radii_in_percent, φ ∈ circumferential_angle[1:(end-1)]
+        # thickness_inner = radial_inner*longitudinal_percent + apex_inner*(1.0-longitudinal_percent)
+        # thickness_outer = radial_outer*longitudinal_percent + apex_outer*(1.0-longitudinal_percent)
+        # radius = radius_percent*thickness_outer + (1.0-radius_percent)*thickness_inner
+        radius = radial_inner*(1.0-radius_percent) + radial_outer*(radius_percent)
         # cylindrical -> carthesian
-        push!(nodes, Node((radius*cos(φ)*sin(θ), radius*sin(φ)*sin(θ), longitudinal_stretch*radius*cos(θ))))
+        z = θ < π/2 ? (apex_inner*(1.0-radius_percent) + apex_outer*(radius_percent))*cos(θ) : apex_outer*cos(θ)
+        push!(nodes, Node((radius*cos(φ)*sin(θ), radius*sin(φ)*sin(θ), z)))
     end
 
     # Add flat base
-    for θ ∈ coords_l[end], radius ∈ coords_r, φ ∈ coords_c[1:(end-1)]
+    for θ ∈ longitudinal_angle[end], radius_percent ∈ radii_in_percent, φ ∈ circumferential_angle[1:(end-1)]
+        radius = radial_inner*(1.0-radius_percent) + radial_outer*(radius_percent)
         # cylindrical -> carthesian
-        push!(nodes, Node((radius*cos(φ)*sin(θ), radius*sin(φ)*sin(θ), longitudinal_stretch*radial_outer*cos(θ))))
+        push!(nodes, Node((radius*cos(φ)*sin(θ), radius*sin(φ)*sin(θ), apex_outer*cos(θ))))
     end
 
     # Generate all cells but the apex
@@ -102,8 +111,9 @@ function generate_ideal_lv_mesh(ne_c::Int, ne_r::Int, ne_l::Int; radial_inner::T
     facesets["Base"]    = Set{FaceIndex}(boundary[(1:length(cell_array[:,:,end][:])) .+ offset]); offset += length(cell_array[:,:,end][:])
 
     # Add apex nodes
-    for radius ∈ coords_r
-        push!(nodes, Node((0.0, 0.0, longitudinal_stretch*radius)))
+    for radius_percent ∈ radii_in_percent
+        radius = apex_inner*(1.0-radius_percent) + apex_outer*(radius_percent)
+        push!(nodes, Node((0.0, 0.0, radius)))
     end
 
     # Add apex cells
@@ -130,18 +140,18 @@ function generate_ideal_lv_mesh_boxed(ne_c, ne_r, ne_l; radial_inner::T = Float6
     generator_offset = 5
 
     # Generate nodes
-    coords_c = range(0.0, stop=2*π, length=n_nodes_c+1)
-    coords_r = range(radial_inner, stop=radial_outer, length=n_nodes_r)
-    coords_l = range(0, stop=(1.0+longitudinal_upper)*π/2, length=n_nodes_l+generator_offset-1)
+    circumferential_angle = range(0.0, stop=2*π, length=n_nodes_c+1)
+    radial_coords = range(radial_inner, stop=radial_outer, length=n_nodes_r)
+    longitudinal_angle = range(0, stop=(1.0+longitudinal_upper)*π/2, length=n_nodes_l+generator_offset-1)
     nodes = Node{3,T}[]
     # Add everything but apex and base
-    for θ ∈ coords_l[generator_offset:(end-1)], radius ∈ coords_r, φ ∈ coords_c[1:(end-1)]
+    for θ ∈ longitudinal_angle[generator_offset:(end-1)], radius ∈ radial_coords, φ ∈ circumferential_angle[1:(end-1)]
         # cylindrical -> carthesian
         push!(nodes, Node((radius*cos(φ)*sin(θ), radius*sin(φ)*sin(θ), radius*cos(θ))))
     end
 
     # Add flat base
-    for θ ∈ coords_l[end], radius ∈ coords_r, φ ∈ coords_c[1:(end-1)]
+    for θ ∈ longitudinal_angle[end], radius ∈ radial_coords, φ ∈ circumferential_angle[1:(end-1)]
         # cylindrical -> carthesian
         push!(nodes, Node((radius*cos(φ)*sin(θ), radius*sin(φ)*sin(θ), radial_outer*cos(θ))))
     end
@@ -187,7 +197,7 @@ function generate_ideal_lv_mesh_boxed(ne_c, ne_r, ne_l; radial_inner::T = Float6
     # Making the connection continuous will be painful.
     coords_x = range(minx, stop=maxx, length=Int(ne_c/4)+1)
     coords_y = range(miny, stop=maxy, length=Int(ne_c/4)+1)
-    coords_z = coords_r#range(minz, stop=maxz, length=ne_r+1)
+    coords_z = radial_coords#range(minz, stop=maxz, length=ne_r+1)
     for z ∈ coords_z, y ∈ coords_y, x ∈ coords_x
         # rebox coordinate
         x = x/2.0
@@ -208,7 +218,7 @@ function generate_ideal_lv_mesh_boxed(ne_c, ne_r, ne_l; radial_inner::T = Float6
     return Grid(cells, nodes, facesets=facesets)
 end
 
-function compute_Δx(grid::Grid{dim, CT, DT}) where {dim, CT, DT}
+function compute_minΔx(grid::Grid{dim, CT, DT}) where {dim, CT, DT}
     Δx = DT[DT(Inf) for _ ∈ 1:getncells(grid)]
     for (cell_idx,cell) ∈ enumerate(getcells(grid)) # todo cell iterator
         for (node_idx,node1) ∈ enumerate(cell.nodes) # todo node accessor
@@ -218,4 +228,31 @@ function compute_Δx(grid::Grid{dim, CT, DT}) where {dim, CT, DT}
         end
     end
     return Δx
+end
+
+function compute_maxΔx(grid::Grid{dim, CT, DT}) where {dim, CT, DT}
+    Δx = DT[DT(0.0) for _ ∈ 1:getncells(grid)]
+    for (cell_idx,cell) ∈ enumerate(getcells(grid)) # todo cell iterator
+        for (node1, node2) ∈ edges(cell)
+            Δx[cell_idx] = max(Δx[cell_idx], norm(grid.nodes[node1].x - grid.nodes[node2].x))
+        end
+    end
+    return Δx
+end
+
+function compute_degeneracy(grid::Grid{dim, CT, DT}) where {dim, CT, DT}
+    ratio = DT[DT(0.0) for _ ∈ 1:getncells(grid)]
+    for (cell_idx,cell) ∈ enumerate(getcells(grid)) # todo cell iterator
+        Δxmin = DT(Inf)
+        Δxmax = zero(DT)
+        for (node_idx,node1) ∈ enumerate(cell.nodes) # todo node accessor
+            for node2 ∈ cell.nodes[node_idx+1:end] # nodo node accessor
+                Δ = norm(grid.nodes[node1].x - grid.nodes[node2].x)
+                Δxmin = min(Δxmin, Δ)
+                Δxmax = max(Δxmax, Δ)
+            end
+        end
+        ratio[cell_idx] = max(ratio[cell_idx], Δxmin/Δxmax)
+    end
+    return ratio
 end

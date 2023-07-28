@@ -6,6 +6,7 @@ using Reexport, UnPack, StaticArrays
 using JLD2
 
 import Ferrite: AbstractDofHandler, AbstractGrid, AbstractRefShape
+import Ferrite: vertices, edges, faces
 
 include("meshtools.jl")
 
