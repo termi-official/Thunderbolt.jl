@@ -11,6 +11,32 @@ import Thunderbolt: Ψ, U
 #     reference_fibers[qp], reference_sheets[qp], reference_normals[qp]
 # end
 
+# struct RitzGalerkinSpatialDiscretization <: SpatialDiscretization
+#     interpolation_collections::Dict{Symbol,InterpolationCollection}
+#     qrs::Dict{Symbol,QuadratureCollection}
+#     grid::Grid
+# end
+
+# struct ElementIntegralForm{M}
+#     model::M
+#     subdomain::String
+#     cvs::CellValueCollection
+# end
+
+# struct BoundaryIntegralForm{M}
+#     model::M
+#     subdomain::String
+#     fvs::FaceValueCollection
+# end
+
+# function discretize(problem, discretization)
+#     ???
+# end
+
+# struct DiscreteSteadyStateProblem
+#     element_integrals
+#     face_integrals
+# end
 
 # ----------------------------------------------
 

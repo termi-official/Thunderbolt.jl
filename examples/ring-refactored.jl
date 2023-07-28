@@ -1,6 +1,83 @@
 include("common-stuff.jl")
 using FerriteGmsh
 
+Base.@kwdef struct NewtonRaphsonSolver{T}
+    # Convergence tolerance
+    tol::T = 1e-8
+    # Maximum number of iterations
+    max_iter::Int = 100
+end
+
+struct NewtonRaphsonCache{JacType, ResidualType, T}
+    # Cache for the Jacobian matrix df(u)/du
+    J::JacType
+    # Cache for the right hand side f(u)
+    residual::ResidualType
+    # 
+    parameters::NewtonRaphsonSolver{T}
+    #linear_solver_cache
+end
+
+function setup_solver_caches(dh, solver::NewtonRaphsonSolver)
+    NewtonRaphsonCache(create_sparsity_pattern(dh), zeros(ndofs(dh)), solver)
+end
+
+mutable struct ThisProblemCache{DH,CH,CV,FV,MAT,MICRO,CAL,FACE,T}
+    # Wher to put this?
+    dh::DH
+    ch::CH
+    cv::CV
+    fv::FV
+    #
+    material_model::MAT
+    microstructure_model::MICRO
+    calcium_field::CAL
+    face_models::FACE
+    # Belongs to the solver.
+    u_prev::Vector{T}
+    t::T
+    Δt::T
+end
+
+function assemble_linearization!(K, residual, u, problem_cache::ThisProblemCache{DH,CH,CV,FV,MAT,MICRO,CAL,FACE,T}) where {DH,CH,CV,FV,MAT,MICRO,CAL,FACE,T}
+    assemble_global!(K, residual, problem_cache.dh, problem_cache.cv, problem_cache.fv, problem_cache.material_model, u, problem_cache.u_prev, problem_cache.microstructure_model, problem_cache.calcium_field, problem_cache.t, problem_cache.Δt, problem_cache.face_models)
+end
+
+function solve_inner_linear_system!(Δu, problem_cache, solver_cache::NewtonRaphsonCache)
+    Δu .= solver_cache.J \ solver_cache.residual
+end
+
+function solve!(u, problem_cache, solver_cache::NewtonRaphsonCache)
+    newton_itr = -1
+    Δu = zero(u)
+    while true
+        newton_itr += 1
+
+        assemble_linearization!(solver_cache.J, solver_cache.residual, u, problem_cache)
+
+        rhsnorm = norm(solver_cache.residual[Ferrite.free_dofs(problem_cache.ch)])
+        apply_zero!(solver_cache.J, solver_cache.residual, problem_cache.ch)
+
+        if rhsnorm < solver_cache.parameters.tol
+            break
+        elseif newton_itr > solver_cache.parameters.max_iter
+            @warn "Reached maximum Newton iterations. Aborting."
+            return false
+        end
+
+        try
+            solve_inner_linear_system!(Δu, problem_cache, solver_cache)
+        catch err
+            @warn "Linear solver failed" , err
+            return false
+        end
+
+        apply_zero!(Δu, problem_cache.ch)
+
+        u .-= Δu # Current guess
+    end
+    return true
+end
 
 function solve_test_ring(name_base, material_model, grid, coordinate_system, microstructure_model, face_models, calcium_field, ip_mech::Interpolation{ref_shape}, ip_geo::Interpolation{ref_shape}, intorder, Δt = 0.1) where {ref_shape}
     io = ParaViewWriter(name_base);
@@ -13,10 +90,11 @@ function solve_test_ring(name_base, material_model, grid, coordinate_system, mic
     qr_face = FaceQuadratureRule{ref_shape}(intorder)
     cv = CellValues(qr, ip_mech, ip_geo)
     fv = FaceValues(qr_face, ip_mech, ip_geo)
+
+    # Postprocessor
     qr_post = QuadratureRule{ref_shape}(intorder-1)
     cv_post = CellValues(qr_post, ip_mech, ip_geo)
-
-    # cv_cs = Thunderbolt.create_cellvalues(coordinate_system, qr, ip_geo)
+    microstructure_cache = setup_microstructure_cache(cv_post, microstructure_model)
 
     # DofHandler
     dh = DofHandler(grid)
@@ -33,7 +111,6 @@ function solve_test_ring(name_base, material_model, grid, coordinate_system, mic
     # add!(dbcs, dbc)
     # dbc = Dirichlet(:u, Set([1]), (x,t) -> [0.0, 0.0, 0.0], [1, 2, 3])
     # add!(dbcs, dbc)
-
     close!(dbcs)
 
     # Pre-allocation of vectors for the solution and Newton increments
@@ -47,50 +124,31 @@ function solve_test_ring(name_base, material_model, grid, coordinate_system, mic
     # min_vol = ref_vol
     # max_vol = ref_vol
 
-    # Create sparse matrix and residual vector
-    K = create_sparsity_pattern(dh)
-    f = zeros(_ndofs)
+    problem_cache = ThisProblemCache(
+        # Where to put this?
+        dh, dbcs, cv, fv,
+        # This belongs to the model
+        material_model, microstructure_model, calcium_field, face_models,
+        # Belongs to the solver.
+        zeros(_ndofs), 0.0, Δt
+    )
 
-    NEWTON_TOL = 1e-8
-    MAX_NEWTON_ITER = 100
+    # Create sparse matrix and residual vector
+    solver = NewtonRaphsonSolver()
+    solver_cache = setup_solver_caches(dh, solver)
 
     for t ∈ 0.0:Δt:T
+        problem_cache.t = t
         # Store last solution
-        uₜ₋₁ .= uₜ
+        problem_cache.u_prev .= uₜ
 
         # Update with new boundary conditions (if available)
         Ferrite.update!(dbcs, t)
         apply!(uₜ, dbcs)
 
-        # Perform Newton iterations
-        newton_itr = -1
-        while true
-            newton_itr += 1
-
-            assemble_global!(K, f, dh, cv, fv, material_model, uₜ, uₜ₋₁, microstructure_model, calcium_field, t, Δt, face_models)
-
-            rhsnorm = norm(f[Ferrite.free_dofs(dbcs)])
-            apply_zero!(K, f, dbcs)
-            @info t rhsnorm
-
-            if rhsnorm < NEWTON_TOL
-                break
-            elseif newton_itr > MAX_NEWTON_ITER
-                error("Reached maximum Newton iterations. Aborting.")
-            end
-
-            #@info det(K)
-            try
-                Δu = K \ f
-            catch
-                finalize!(io)
-                @warn "Failed Solve at " t
-                return uₜ
-            end
-
-            apply_zero!(Δu, dbcs)
-
-            uₜ .-= Δu # Current guess
+        if !solve!(uₜ, problem_cache, solver_cache)
+            @warn "Nonlinear solver failed.", norm(solver_cache.residual)
+            return nothing
         end
 
         # Compute some elementwise measures
@@ -109,11 +167,8 @@ function solve_test_ring(name_base, material_model, grid, coordinate_system, mic
         helixangledata = zero(Vector{Float64}(undef, getncells(grid)))
         helixanglerefdata = zero(Vector{Float64}(undef, getncells(grid)))
 
-        microstructure_cache = setup_microstructure_cache(cv_post, microstructure_model)
-
         for cell in CellIterator(dh)
             reinit!(cv_post, cell)
-            # reinit!(cv_cs, cell)
             global_dofs = celldofs(cell)
             uₑ = uₜ[global_dofs] # element dofs
 
@@ -240,6 +295,28 @@ order = 1
 ip_fiber = Lagrange{ref_shape, order}()
 ip_u = Lagrange{ref_shape, order}()^3
 ip_geo = Lagrange{ref_shape, order}()
+
+
+ring_grid = generate_ring_mesh(8,2,2)
+ring_cs = compute_midmyocardial_section_coordinate_system(ring_grid, ip_geo)
+solve_test_ring("Debug",
+    ActiveStressModel(
+        Guccione1991Passive(),
+        Guccione1993Active(10),
+        PelceSunLangeveld1995Model()
+    ), ring_grid, ring_cs,
+    create_simple_fiber_model(ring_cs, ip_fiber, ip_geo,
+        endo_helix_angle = deg2rad(0.0),
+        epi_helix_angle = deg2rad(0.0),
+        endo_transversal_angle = 0.0,
+        epi_transversal_angle = 0.0,
+        sheetlet_pseudo_angle = deg2rad(0)
+    ),
+    [NormalSpringBC(0.01, "Epicardium")],
+    CalciumHatField(), ip_u, ip_geo, 2*order
+)
+
+return
 
 ring_grid = generate_ring_mesh(50,10,10)
 filename = "MidVentricularSectionHexG50-10-10"
@@ -376,15 +453,15 @@ passive_model = HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 
 #     ip_u, ip_geo, 2*order
 # )
 
-solve_test_ring(filename*"_GHM-HO_AS1_RLRSQ75_Pelce_MoulinHelixAngle_SA45",
-    GeneralizedHillModel(
-        passive_model,
-        ActiveMaterialAdapter(NewActiveSpring()),
-        RLRSQActiveDeformationGradientModel(0.75),
-        PelceSunLangeveld1995Model()
-    ), ring_grid, ring_cs, create_simple_fiber_model(ring_cs, ip_fiber, ip_geo, endo_helix_angle = deg2rad(50.0), epi_helix_angle = deg2rad(-40.0), endo_transversal_angle = 0.0, epi_transversal_angle = 0.0, sheetlet_pseudo_angle = deg2rad(45)),
-    [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
-    ip_u, ip_geo, 2*order
-)
+# solve_test_ring(filename*"_GHM-HO_AS1_RLRSQ75_Pelce_MoulinHelixAngle_SA45",
+#     GeneralizedHillModel(
+#         passive_model,
+#         ActiveMaterialAdapter(NewActiveSpring()),
+#         RLRSQActiveDeformationGradientModel(0.75),
+#         PelceSunLangeveld1995Model()
+#     ), ring_grid, ring_cs, create_simple_fiber_model(ring_cs, ip_fiber, ip_geo, endo_helix_angle = deg2rad(50.0), epi_helix_angle = deg2rad(-40.0), endo_transversal_angle = 0.0, epi_transversal_angle = 0.0, sheetlet_pseudo_angle = deg2rad(45)),
+#     [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
+#     ip_u, ip_geo, 2*order
+# )
 
 end
