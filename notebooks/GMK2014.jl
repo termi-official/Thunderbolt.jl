@@ -139,9 +139,9 @@ end
 function compute_LV_coordinate_system(grid)
 	order = 2
 
-	ip = Lagrange{3, RefTetrahedron, order}()
-	qr = QuadratureRule{3, RefTetrahedron}(2*order)
-	cellvalues = CellScalarValues(qr, ip);
+	ip = Lagrange{RefTetrahedron, order}()
+	qr = QuadratureRule{RefTetrahedron}(2*order)
+	cellvalues = CellValues(qr, ip);
 
 	dh = DofHandler(grid)
 	push!(dh, :coordinates, 1)
@@ -259,7 +259,7 @@ function create_simple_pw_constant_fiber_model(coordinate_system)
 	f₀data = Vector{Vec{3}}(undef, getncells(dh.grid))
 	ip = dh.field_interpolations[1] #TODO refactor this. Pls.
 	qr = QuadratureRule{3,RefTetrahedron,Float64}([1.0], [Vec{3}((0.25, 0.25, 0.25))]) #TODO is this really we want to do?
-	cv = CellScalarValues(qr, ip)
+	cv = CellValues(qr, ip)
 	for (cellindex,cell) in enumerate(CellIterator(dh))
         reinit!(cv, cell)
 		dof_indices = celldofs(cell)
@@ -332,7 +332,7 @@ function create_simple_fiber_model(coordinate_system, ip_fiber; endo_angle = 80.
 	elementwise_data_s = zero(Array{Vec{dim}, 2}(undef, getncells(dh.grid), n_basefuns))
 
 	qr_fiber = generate_nodal_quadrature_rule(ip_fiber)
-	cv = CellScalarValues(qr_fiber, ip)
+	cv = CellValues(qr_fiber, ip)
 
 	for (cellindex,cell) in enumerate(CellIterator(dh))
         reinit!(cv, cell)
@@ -386,7 +386,7 @@ function create_simple_fiber_model(coordinate_system, ip_fiber; endo_angle = 80.
 end
 
 # ╔═╡ 97bc4a8f-1377-48cd-9d98-a28b1d464e8c
-fiber_model_new = create_simple_fiber_model(coordinate_system, Lagrange{3, RefTetrahedron, 1}(),endo_transversal_angle = -10.0, epi_transversal_angle = -30.0)
+fiber_model_new = create_simple_fiber_model(coordinate_system, Lagrange{RefTetrahedron, 1}(),endo_transversal_angle = -10.0, epi_transversal_angle = -30.0)
 
 # ╔═╡ 620c34e6-48b0-49cf-8b3f-818107d0bc94
 md"""
@@ -986,12 +986,12 @@ function solve(grid, fiber_model)
 	order = 2
 
     # Finite element base
-    ip = Lagrange{3, RefTetrahedron, order}()
-    ip_geo = Lagrange{3, RefTetrahedron, order}()
-    qr = QuadratureRule{3, RefTetrahedron}(2*order)
-    qr_face = QuadratureRule{2, RefTetrahedron}(2*order)
-    cv = CellVectorValues(qr, ip, ip_geo)
-    fv = FaceVectorValues(qr_face, ip, ip_geo)
+    ip = Lagrange{RefTetrahedron, order}()
+    ip_geo = Lagrange{RefTetrahedron, order}()
+    qr = QuadratureRule{RefTetrahedron}(2*order)
+    qr_face = FaceQuadratureRule{RefTetrahedron}(2*order)
+    cv = CellValues(qr, ip, ip_geo)
+    fv = FaceValues(qr_face, ip, ip_geo)
 
     # DofHandler
     dh = DofHandler(grid)
@@ -1256,8 +1256,8 @@ function solve_test()
     ip_geo = Lagrange{3, refgeo, 1}()
     qr = QuadratureRule{3, refgeo}(intorder)
     qr_face = QuadratureRule{2, refgeo}(intorder)
-    cv = CellVectorValues(qr, ip, ip_geo)
-    fv = FaceVectorValues(qr_face, ip, ip_geo)
+    cv = CellValues(qr, ip, ip_geo)
+    fv = FaceValues(qr_face, ip, ip_geo)
 
     # DofHandler
     dh = DofHandler(grid)
@@ -1467,8 +1467,8 @@ function solve_test_ring(pv_name_base, mp, grid, coordinate_system, fiber_model)
     ip_geo = Lagrange{3, refgeo, order}()
     qr = QuadratureRule{3, refgeo}(intorder)
     qr_face = QuadratureRule{2, refgeo}(intorder)
-    cv = CellVectorValues(qr, ip, ip_geo)
-    fv = FaceVectorValues(qr_face, ip, ip_geo)
+    cv = CellValues(qr, ip, ip_geo)
+    fv = FaceValues(qr_face, ip, ip_geo)
 
     # DofHandler
     dh = DofHandler(grid)
@@ -1661,7 +1661,7 @@ end
 function compute_midmyocardial_section_coordinate_system(grid)
 	ip = Lagrange{3, RefCube, 1}()
 	qr = QuadratureRule{3, RefCube}(2)
-	cellvalues = CellScalarValues(qr, ip);
+	cellvalues = CellValues(qr, ip);
 
 	dh = DofHandler(grid)
 	push!(dh, :coordinates, 1)
