@@ -8,7 +8,7 @@ Base.@kwdef struct NewtonRaphsonSolver{T}
     max_iter::Int = 100
 end
 
-struct NewtonRaphsonCache{JacType, ResidualType, T}
+struct NewtonRaphsonSolverCache{JacType, ResidualType, T}
     # Cache for the Jacobian matrix df(u)/du
     J::JacType
     # Cache for the right hand side f(u)
@@ -18,8 +18,53 @@ struct NewtonRaphsonCache{JacType, ResidualType, T}
     #linear_solver_cache
 end
 
-function setup_solver_caches(dh, solver::NewtonRaphsonSolver)
-    NewtonRaphsonCache(create_sparsity_pattern(dh), zeros(ndofs(dh)), solver)
+function setup_solver_caches(dh, solver::NewtonRaphsonSolver{T}) where {T}
+    NewtonRaphsonSolverCache(create_sparsity_pattern(dh), zeros(ndofs(dh)), solver)
+end
+
+struct PseudoTimeSolver{IS, T}
+    inner_solver::IS
+    Δt::T
+    t_end::T
+    u_prev::Vector{T}
+    postproc::Function
+end
+
+struct PseudoTimeSolverCache{IS, ISC, T}
+    inner_solver_cache::ISC
+    parameters::PseudoTimeSolver{IS, T}
+end
+
+function setup_solver_caches(dh, solver::PseudoTimeSolver{IS, T}) where {IS, T}
+    PseudoTimeSolverCache(setup_solver_caches(dh, solver.inner_solver), solver)
+end
+
+function solve!(u₀, problem_cache, solver_cache::PseudoTimeSolverCache{IS, ISC, T}) where {IS, ISC, T}
+    @unpack t_end, Δt, u_prev, postproc = solver_cache.parameters
+    uₜ   = u₀
+    uₜ₋₁ = copy(u₀)
+    for t ∈ 0.0:Δt:t_end
+        @info t
+
+        problem_cache.t = t
+        # Store last solution
+        uₜ₋₁ .= uₜ
+        problem_cache.u_prev .= uₜ₋₁
+
+        # Update with new boundary conditions (if available)
+        Ferrite.update!(problem_cache.ch, t)
+        apply!(uₜ, problem_cache.ch)
+        
+        # 
+        if !solve!(uₜ, problem_cache, solver_cache.inner_solver_cache)
+            @warn "Inner solver failed."
+            return false
+        end
+
+        postproc(uₜ, t)
+    end
+
+    return true
 end
 
 mutable struct ThisProblemCache{DH,CH,CV,FV,MAT,MICRO,CAL,FACE,T}
@@ -43,11 +88,11 @@ function assemble_linearization!(K, residual, u, problem_cache::ThisProblemCache
     assemble_global!(K, residual, problem_cache.dh, problem_cache.cv, problem_cache.fv, problem_cache.material_model, u, problem_cache.u_prev, problem_cache.microstructure_model, problem_cache.calcium_field, problem_cache.t, problem_cache.Δt, problem_cache.face_models)
 end
 
-function solve_inner_linear_system!(Δu, problem_cache, solver_cache::NewtonRaphsonCache)
+function solve_inner_linear_system!(Δu, problem_cache, solver_cache::NewtonRaphsonSolverCache)
     Δu .= solver_cache.J \ solver_cache.residual
 end
 
-function solve!(u, problem_cache, solver_cache::NewtonRaphsonCache)
+function solve!(u, problem_cache, solver_cache::NewtonRaphsonSolverCache{T}) where {T}
     newton_itr = -1
     Δu = zero(u)
     while true
@@ -91,11 +136,6 @@ function solve_test_ring(name_base, material_model, grid, coordinate_system, mic
     cv = CellValues(qr, ip_mech, ip_geo)
     fv = FaceValues(qr_face, ip_mech, ip_geo)
 
-    # Postprocessor
-    qr_post = QuadratureRule{ref_shape}(intorder-1)
-    cv_post = CellValues(qr_post, ip_mech, ip_geo)
-    microstructure_cache = setup_microstructure_cache(cv_post, microstructure_model)
-
     # DofHandler
     dh = DofHandler(grid)
     add!(dh, :u, ip_mech) # Add a displacement field
@@ -133,23 +173,11 @@ function solve_test_ring(name_base, material_model, grid, coordinate_system, mic
         zeros(_ndofs), 0.0, Δt
     )
 
-    # Create sparse matrix and residual vector
-    solver = NewtonRaphsonSolver()
-    solver_cache = setup_solver_caches(dh, solver)
-
-    for t ∈ 0.0:Δt:T
-        problem_cache.t = t
-        # Store last solution
-        problem_cache.u_prev .= uₜ
-
-        # Update with new boundary conditions (if available)
-        Ferrite.update!(dbcs, t)
-        apply!(uₜ, dbcs)
-
-        if !solve!(uₜ, problem_cache, solver_cache)
-            @warn "Nonlinear solver failed.", norm(solver_cache.residual)
-            return nothing
-        end
+    function standard_postproc(uₜ, t)
+        # Postprocessor
+        qr_post = QuadratureRule{ref_shape}(intorder-1)
+        cv_post = CellValues(qr_post, ip_mech, ip_geo)
+        microstructure_cache = setup_microstructure_cache(cv_post, microstructure_model)
 
         # Compute some elementwise measures
         E_ff = zeros(getncells(grid))
@@ -273,8 +301,11 @@ function solve_test_ring(name_base, material_model, grid, coordinate_system, mic
         # max_vol = max(max_vol, calculate_volume_deformed_mesh(uₜ,dh,cv));
     end
 
-    # println("Compression: ", (ref_vol/min_vol - 1.0)*100, "%")
-    # println("Expansion: ", (ref_vol/max_vol - 1.0)*100, "%")
+    # Create sparse matrix and residual vector
+    solver = PseudoTimeSolver(NewtonRaphsonSolver(), Δt, T, zeros(_ndofs), standard_postproc)
+    solver_cache = setup_solver_caches(dh, solver)
+
+    solve!(uₜ, problem_cache, solver_cache)
 
     finalize!(io)
 
@@ -298,6 +329,7 @@ ip_geo = Lagrange{ref_shape, order}()
 
 
 ring_grid = generate_ring_mesh(8,2,2)
+ring_grid = generate_ring_mesh(50,10,10)
 ring_cs = compute_midmyocardial_section_coordinate_system(ring_grid, ip_geo)
 solve_test_ring("Debug",
     ActiveStressModel(
