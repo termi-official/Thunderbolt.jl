@@ -68,7 +68,7 @@ function generate_ideal_lv_mesh(ne_c::Int, ne_r::Int, ne_l::Int; radial_inner::T
     # z axis expressed as the angle between the apicobasal vector and the current layer from apex (0.0) to base ((1.0+longitudinal_upper)*π/2)
     longitudinal_angle = range(0, stop=(1.0+longitudinal_upper)*π/2, length=n_nodes_l+1)
     nodes = Node{3,T}[]
-    # Add everything but apex and base
+    # Add nodes up to apex
     for θ ∈ longitudinal_angle[2:(end-1)], radius_percent ∈ radii_in_percent, φ ∈ circumferential_angle[1:(end-1)]
         # thickness_inner = radial_inner*longitudinal_percent + apex_inner*(1.0-longitudinal_percent)
         # thickness_outer = radial_outer*longitudinal_percent + apex_outer*(1.0-longitudinal_percent)
@@ -88,7 +88,7 @@ function generate_ideal_lv_mesh(ne_c::Int, ne_r::Int, ne_l::Int; radial_inner::T
 
     # Generate all cells but the apex
     node_array = reshape(collect(1:n_nodes), (n_nodes_c, n_nodes_r, n_nodes_l))
-    cells = Union{Hexahedron,Wedge,Triangle}[]
+    cells = Union{Hexahedron,Wedge}[]
     for k in 1:ne_l, j in 1:ne_r, i in 1:ne_c
         i_next = (i == ne_c) ? 1 : i + 1
         push!(cells, Hexahedron((node_array[i,j,k], node_array[i_next,j,k], node_array[i_next,j+1,k], node_array[i,j+1,k],
@@ -128,6 +128,236 @@ function generate_ideal_lv_mesh(ne_c::Int, ne_r::Int, ne_l::Int; radial_inner::T
 
     # return Grid(cells, nodes, nodesets=nodesets, facesets=facesets)
     return Grid(cells, nodes, facesets=facesets)
+end
+
+# abstract type AbstractSurface end
+# abstract type AbstractPath end
+# struct ConformingFace3D <: AbstractSurface
+#     cellidx_a::Int
+#     cellidx_b::Int
+#     defining_nodes::NTuple{3,Int}
+# end
+
+# struct SimpleEdge3D <: AbstractPath
+#     defining_nodes::NTuple{3,Int}
+# end
+"""
+SimpleMesh3D{C <: AbstractCell, T <: Real}
+
+A grid which also has information abouts its vertices, faces and edges.
+"""
+struct SimpleMesh3D{C <: AbstractCell, T <: Real} <: AbstractGrid{3}
+    grid::Grid{3, C, T}
+    mfaces::OrderedDict{NTuple{3,Int}, Int} # Maps "sortface"-representation to id
+    medges::OrderedDict{NTuple{2,Int}, Int} # Maps "sortedge"-representation to id
+    mvertices::OrderedDict{Int, Int} # Maps node to id
+    number_of_cells_by_type::Dict{DataType, Int}
+end
+
+global_edges(mgrid::SimpleMesh3D, cell) = [mgrid.medges[sedge] for sedge ∈ first.(sortedge.(edges(cell)))]
+global_faces(mgrid::SimpleMesh3D, cell) = [mgrid.mfaces[sface] for sface ∈ first.(sortface.(faces(cell)))]
+global_vertices(mgrid::SimpleMesh3D, cell) = [mgrid.mvertices[v] for v ∈ vertices(cell)]
+
+num_nodes(mgrid::SimpleMesh3D) = length(mgrid.grid.nodes)
+num_faces(mgrid::SimpleMesh3D) = length(mgrid.mfaces)
+num_edges(mgrid::SimpleMesh3D) = length(mgrid.medges)
+num_vertices(mgrid::SimpleMesh3D) = length(mgrid.mvertices)
+
+function materialize_grid(grid::Grid{3,C,T}) where {C, T}
+    mfaces = OrderedDict{NTuple{3,Int}, Int}()
+    medges = OrderedDict{NTuple{2,Int}, Int}()
+    mvertices = OrderedDict{Int, Int}()
+    next_face_idx = 1
+    next_edge_idx = 1
+    next_vertex_idx = 1
+    number_of_cells_by_type = Dict{DataType, Int}()
+    for cell ∈ getcells(grid)
+        cell_type = typeof(cell)
+        if haskey(number_of_cells_by_type, cell_type)
+            number_of_cells_by_type[cell_type] += 1
+        else
+            number_of_cells_by_type[cell_type] = 1
+        end
+
+        for v ∈ vertices(cell)
+            if !haskey(mvertices, v)
+                mvertices[v] = next_vertex_idx
+                next_vertex_idx += 1
+            end
+        end
+        for e ∈ first.(sortedge.(edges(cell)))
+            if !haskey(medges, e)
+                medges[e] = next_edge_idx
+                next_edge_idx += 1
+            end
+        end
+        for f ∈ first.(sortface.(faces(cell)))
+            if !haskey(mfaces, f)
+                mfaces[f] = next_face_idx
+                next_face_idx += 1
+            end
+        end
+    end
+    return SimpleMesh3D(grid, mfaces, medges, mvertices, number_of_cells_by_type)
+end
+
+function hexahedralize(grid::Grid{3, Hexahedron})
+    return grid
+end
+
+const LinearCellGeometry = Union{Hexahedron, Tetrahedron, Pyramid, Wedge, Triangle, Quadrilateral, Line}
+
+# TODO nonlinear version
+function create_center_node(grid::AbstractGrid{dim}, cell::LinearCellGeometry) where {dim}
+    center = zero(Vec{dim})
+    vs = vertices(cell)
+    for v ∈ vs
+        node = getnodes(grid, v)
+        center += node.x / length(vs)
+    end
+    return Node(center)
+end
+
+function create_edge_center_node(grid::AbstractGrid{dim}, cell::LinearCellGeometry, edge_idx::Int) where {dim}
+    center = zero(Vec{dim})
+    es = edges(cell)
+    for v ∈ es[edge_idx]
+        node = getnodes(grid, v)
+        center += node.x / length(es[edge_idx])
+    end
+    return Node(center)
+end
+
+function create_face_center_node(grid::AbstractGrid{dim}, cell::LinearCellGeometry, face_idx::Int) where {dim}
+    center = zero(Vec{dim})
+    fs = faces(cell)
+    for v ∈ fs[face_idx]
+        node = getnodes(grid, v)
+        center += node.x / length(fs[face_idx])
+    end
+    return Node(center)
+end
+
+function refine_cell_uniform(mgrid::SimpleMesh3D, cell::Hexahedron, global_edge_indices, global_face_indices)
+    # Compute offsets
+    new_edge_offset = num_nodes(mgrid)
+    new_face_offset = new_edge_offset+num_edges(mgrid)
+    # Compute indices
+    vnids = vertices(cell)
+    enids = new_edge_offset .+ global_edge_indices
+    fnids = new_face_offset .+ global_face_indices
+    cnid  = new_face_offset+num_faces(mgrid)+1
+    # Construct 8 finer cells
+    return [
+        Hexahedron((
+            vnids[1], enids[1], fnids[1], enids[4],
+            enids[9], fnids[2], cnid    , fnids[5] ,
+        )),
+        Hexahedron((
+            enids[1], vnids[2] , enids[2], fnids[1],
+            fnids[2], enids[10], fnids[3], cnid    ,
+        )),
+        Hexahedron((
+            enids[4], fnids[1], enids[3], vnids[4],
+            fnids[5], cnid    , fnids[4], enids[12],
+        )),
+        Hexahedron((
+            fnids[1], enids[2], vnids[3] , enids[3],
+            cnid    , fnids[3], enids[11], fnids[4],
+        )),
+        Hexahedron((
+            enids[9], fnids[2], cnid    , fnids[5],
+            vnids[5], enids[5], fnids[6], enids[8],
+        )),
+        Hexahedron((
+            fnids[2], enids[10], fnids[3], cnid   ,
+            enids[5], vnids[6] , enids[6], fnids[6],
+        )),
+        Hexahedron((
+            fnids[5], cnid    , fnids[4], enids[12],
+            enids[8], fnids[6], enids[7], vnids[8] ,
+        )),
+        Hexahedron((
+            cnid    , fnids[3], enids[11], fnids[4],
+            fnids[6], enids[6], vnids[7] , enids[7] 
+        )),
+    ]
+end
+
+# Hex into 8 hexahedra
+hexahedralize_cell(mgrid::SimpleMesh3D, cell::Hexahedron, global_edge_indices, global_face_indices) = refine_cell_uniform(mgrid, cell, global_edge_indices, global_face_indices)
+
+function hexahedralize_cell(mgrid::SimpleMesh3D, cell::Wedge, global_edge_indices, global_face_indices)
+    # Compute offsets
+    new_edge_offset = num_nodes(mgrid)
+    new_face_offset = new_edge_offset+num_edges(mgrid)
+    # Compute indices
+    vnids = vertices(cell)
+    enids = new_edge_offset .+ global_edge_indices
+    fnids = new_face_offset .+ global_face_indices
+    cnid  = new_face_offset+num_faces(mgrid)+1
+    # Construct 6 hexahedra
+    return [
+        # Bottom 3
+        Hexahedron((
+            vnids[1], enids[1], fnids[1], enids[2],
+            enids[3], fnids[2], cnid    , fnids[3],
+        )),
+        Hexahedron((
+            enids[1], vnids[2], enids[4], fnids[1],
+            fnids[2], enids[5], fnids[4], cnid    ,
+        )),
+        Hexahedron((
+            fnids[1], enids[4], vnids[3], enids[2],
+            cnid    , fnids[4], enids[6], fnids[3],
+        )),
+        # Top 3
+        Hexahedron((
+            enids[3], fnids[2], cnid    , fnids[3],
+            vnids[4], enids[7], fnids[5], enids[8],
+        )),
+        Hexahedron((
+            fnids[2], enids[5], fnids[4], cnid    ,
+            enids[7], vnids[5], enids[9], fnids[5],
+        )),
+        Hexahedron((
+            cnid    , fnids[4], enids[6], fnids[3],
+            fnids[5], enids[9], vnids[6], enids[8],
+        ))
+    ]
+end
+
+function hexahedralize(grid::Grid{3,C,T}) where {C,T}
+    mgrid = materialize_grid(grid) # Helper
+
+    cells = getcells(grid)
+
+    nfacenods = length(mgrid.mfaces)
+    new_face_nodes = Array{Node{3,T}}(undef, nfacenods) # We have to add 1 center node per face
+    nedgenodes = length(mgrid.medges)
+    new_edge_nodes = Array{Node{3,T}}(undef, nedgenodes) # We have to add 1 center node per edge
+    ncellnodes = length(cells)
+    new_cell_nodes = Array{Node{3,T}}(undef, ncellnodes) # We have to add 1 center node per volume
+
+    new_cells = Hexahedron[]
+
+    for (cellidx,cell) ∈ enumerate(cells)
+        # Cell center node
+        new_cell_nodes[cellidx] = create_center_node(grid, cell)
+        global_edge_indices = global_edges(mgrid, cell)
+        # Edge center nodes
+        for (edgeidx,gei) ∈ enumerate(global_edge_indices)
+            new_edge_nodes[gei] = create_edge_center_node(grid, cell, edgeidx)
+        end
+        # Face center nodes
+        global_face_indices = global_faces(mgrid, cell)
+        for (faceidx,gfi) ∈ enumerate(global_face_indices)
+            new_face_nodes[gfi] = create_face_center_node(grid, cell, faceidx)
+        end
+        append!(new_cells, hexahedralize_cell(mgrid, cell, global_edge_indices, global_face_indices))
+    end
+    # TODO boundary sets
+    return Grid(new_cells, [grid.nodes; new_edge_nodes; new_face_nodes; new_cell_nodes])
 end
 
 # Generates a hexahedral truncated ellipsoidal mesh by reparametrizing a hollow sphere (r=1.0 length units) where longitudinal_upper determines the truncation height.

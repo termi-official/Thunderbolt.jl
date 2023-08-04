@@ -1,12 +1,13 @@
 module Thunderbolt
 
 using Reexport, UnPack, StaticArrays
+using OrderedCollections
 @reexport using Ferrite
 
 using JLD2
 
-import Ferrite: AbstractDofHandler, AbstractGrid, AbstractRefShape
-import Ferrite: vertices, edges, faces
+import Ferrite: AbstractDofHandler, AbstractGrid, AbstractRefShape, AbstractCell
+import Ferrite: vertices, edges, faces, sortedge, sortface
 
 include("meshtools.jl")
 
