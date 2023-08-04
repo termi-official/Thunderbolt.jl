@@ -241,12 +241,12 @@ end
 function refine_cell_uniform(mgrid::SimpleMesh3D, cell::Hexahedron, global_edge_indices, global_face_indices)
     # Compute offsets
     new_edge_offset = num_nodes(mgrid)
-    new_face_offset = new_edge_offset+num_edges(mgrid)
+    new_face_offset = num_edges(mgrid) + new_edge_offset
     # Compute indices
     vnids = vertices(cell)
     enids = new_edge_offset .+ global_edge_indices
     fnids = new_face_offset .+ global_face_indices
-    cnid  = new_face_offset+num_faces(mgrid)+1
+    cnid  = new_face_offset  + num_faces(mgrid) + 1
     # Construct 8 finer cells
     return [
         Hexahedron((
@@ -295,7 +295,7 @@ function hexahedralize_cell(mgrid::SimpleMesh3D, cell::Wedge, global_edge_indice
     vnids = vertices(cell)
     enids = new_edge_offset .+ global_edge_indices
     fnids = new_face_offset .+ global_face_indices
-    cnid  = new_face_offset+num_faces(mgrid)+1
+    cnid  = new_face_offset  + num_faces(mgrid) + 1
     # Construct 6 hexahedra
     return [
         # Bottom 3
@@ -325,6 +325,39 @@ function hexahedralize_cell(mgrid::SimpleMesh3D, cell::Wedge, global_edge_indice
             fnids[5], enids[9], vnids[6], enids[8],
         ))
     ]
+end
+
+function uniform_refinement(grid::Grid{3,C,T}) where {C,T}
+    mgrid = SimpleMesh3D(grid) # Helper
+
+    cells = getcells(grid)
+
+    nfacenods = length(mgrid.mfaces)
+    new_face_nodes = Array{Node{3,T}}(undef, nfacenods) # We have to add 1 center node per face
+    nedgenodes = length(mgrid.medges)
+    new_edge_nodes = Array{Node{3,T}}(undef, nedgenodes) # We have to add 1 center node per edge
+    ncellnodes = length(cells)
+    new_cell_nodes = Array{Node{3,T}}(undef, ncellnodes) # We have to add 1 center node per volume
+
+    new_cells = AbstractCell[]
+
+    for (cellidx,cell) ∈ enumerate(cells)
+        # Cell center node
+        new_cell_nodes[cellidx] = create_center_node(grid, cell)
+        global_edge_indices = global_edges(mgrid, cell)
+        # Edge center nodes
+        for (edgeidx,gei) ∈ enumerate(global_edge_indices)
+            new_edge_nodes[gei] = create_edge_center_node(grid, cell, edgeidx)
+        end
+        # Face center nodes
+        global_face_indices = global_faces(mgrid, cell)
+        for (faceidx,gfi) ∈ enumerate(global_face_indices)
+            new_face_nodes[gfi] = create_face_center_node(grid, cell, faceidx)
+        end
+        append!(new_cells, refine_cell_uniform(mgrid, cell, global_edge_indices, global_face_indices))
+    end
+    # TODO boundary sets
+    return Grid(new_cells, [grid.nodes; new_edge_nodes; new_face_nodes; new_cell_nodes])
 end
 
 function hexahedralize(grid::Grid{3,C,T}) where {C,T}
