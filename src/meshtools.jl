@@ -163,7 +163,7 @@ num_faces(mgrid::SimpleMesh3D) = length(mgrid.mfaces)
 num_edges(mgrid::SimpleMesh3D) = length(mgrid.medges)
 num_vertices(mgrid::SimpleMesh3D) = length(mgrid.mvertices)
 
-function materialize_grid(grid::Grid{3,C,T}) where {C, T}
+function SimpleMesh3D(grid::Grid{3,C,T}) where {C, T}
     mfaces = OrderedDict{NTuple{3,Int}, Int}()
     medges = OrderedDict{NTuple{2,Int}, Int}()
     mvertices = OrderedDict{Int, Int}()
@@ -328,7 +328,7 @@ function hexahedralize_cell(mgrid::SimpleMesh3D, cell::Wedge, global_edge_indice
 end
 
 function hexahedralize(grid::Grid{3,C,T}) where {C,T}
-    mgrid = materialize_grid(grid) # Helper
+    mgrid = SimpleMesh3D(grid) # Helper
 
     cells = getcells(grid)
 
