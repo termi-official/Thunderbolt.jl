@@ -1,6 +1,8 @@
 include("common-stuff.jl")
 using FerriteGmsh
 
+import Ferrite: get_grid, find_field
+
 Base.@kwdef struct NewtonRaphsonSolver{T}
     # Convergence tolerance
     tol::T = 1e-8
@@ -13,7 +15,7 @@ struct NewtonRaphsonSolverCache{JacType, ResidualType, T}
     J::JacType
     # Cache for the right hand side f(u)
     residual::ResidualType
-    # 
+    #
     parameters::NewtonRaphsonSolver{T}
     #linear_solver_cache
 end
@@ -30,12 +32,12 @@ struct PseudoTimeSolver{IS, T, PFUN}
     postproc::PFUN
 end
 
-struct PseudoTimeSolverCache{IS, ISC, T}
+struct PseudoTimeSolverCache{IS, ISC, T, PFUN}
     inner_solver_cache::ISC
-    parameters::PseudoTimeSolver{IS, T}
+    parameters::PseudoTimeSolver{IS, T, PFUN}
 end
 
-function setup_solver_caches(dh, solver::PseudoTimeSolver{IS, T}) where {IS, T}
+function setup_solver_caches(dh, solver::PseudoTimeSolver{IS, T, PFUN}) where {IS, T, PFUN}
     PseudoTimeSolverCache(setup_solver_caches(dh, solver.inner_solver), solver)
 end
 
@@ -54,8 +56,7 @@ function solve!(u₀, problem_cache, solver_cache::PseudoTimeSolverCache{IS, ISC
         # Update with new boundary conditions (if available)
         Ferrite.update!(problem_cache.ch, t)
         apply!(uₜ, problem_cache.ch)
-        
-        # 
+
         if !solve!(uₜ, problem_cache, solver_cache.inner_solver_cache)
             @warn "Inner solver failed."
             return false
@@ -88,11 +89,11 @@ function assemble_linearization!(K, residual, u, problem_cache::ThisProblemCache
     assemble_global!(K, residual, problem_cache.dh, problem_cache.cv, problem_cache.fv, problem_cache.material_model, u, problem_cache.u_prev, problem_cache.microstructure_model, problem_cache.calcium_field, problem_cache.t, problem_cache.Δt, problem_cache.face_models)
 end
 
-function solve_inner_linear_system!(Δu, problem_cache, solver_cache::NewtonRaphsonSolverCache{T}) where {T}
+function solve_inner_linear_system!(Δu, problem_cache, solver_cache::NewtonRaphsonSolverCache{JacType, ResidualType, T}) where {JacType, ResidualType, T}
     Δu .= solver_cache.J \ solver_cache.residual
 end
 
-function solve!(u, problem_cache, solver_cache::NewtonRaphsonSolverCache{T}) where {T}
+function solve!(u, problem_cache, solver_cache::NewtonRaphsonSolverCache{JacType, ResidualType, T}) where {JacType, ResidualType, T}
     newton_itr = -1
     Δu = zero(u)
     while true
@@ -124,16 +125,89 @@ function solve!(u, problem_cache, solver_cache::NewtonRaphsonSolverCache{T}) whe
     return true
 end
 
-struct StandardFSNProcessor{IO, CV, MC}
+# mutable struct AverageCoordinateStrainProcessorCache{CC, SVT <: AbstractVector}
+#     coordinate_system_cache::CC
+#     E_cc::SVT
+#     E_ll::SVT
+#     E_rr::SVT
+# end
+
+# function prepare_postprocessor_cache!(cache::AverageCoordinateStrainProcessorCache{CC, SVT}, problem) where {CC, SVT <: AbstractVector}
+#     @unpack dh   = problem
+#     @unpack grid = dh
+#     _ncells = getncells(grid)
+#     cache.E_cc = zero(SVT(undef, _ncells))
+#     cache.E_ll = zero(SVT(undef, _ncells))
+#     cache.E_rr = zero(SVT(undef, _ncells))
+# end
+
+# mutable struct AverageCardiacMechanicalMicrostructuralPostProcessorCache{MC, SVT <: AbstractVector, VVT <: AbstractVector}
+#     microstructure_cache::MC
+#     E_ff:SVT
+#     frefdata::VVT
+#     fdata::VVT
+#     srefdata::VVT
+#     sdata::VVT
+#     nrefdata::VVT
+#     ndata::VVT
+#     helixangledata::SVT
+#     helixanglerefdata::SVT
+# end
+
+# function prepare_postprocessor_cache!(cache::AverageCardiacMechanicalMicrostructuralPostProcessorCache{MC, SVT, VVT}, problem, t, uₜ) where {MC, SVT <: AbstractVector, VVT <: AbstractVector}
+#     @unpack dh   = problem
+#     @unpack grid = dh
+#     @assert getdim(grid) == 3
+#     _ncells = getncells(grid)
+#     cache.E_ff = zero(SVT(undef,_ncells))
+#     cache.frefdata = zero(VVT(undef, _ncells))
+#     cache.srefdata = zero(VVT(undef, _ncells))
+#     cache.nrefdata = zero(VVT(undef, _ncells))
+#     cache.fdata = zero(VVT(undef, _ncells))
+#     cache.sdata = zero(VVT(undef, _ncells))
+#     cache.ndata = zero(VVT(undef, _ncells))
+#     helixangledata = zero(SVT(undef,_ncells))
+#     helixanglerefdata = zero(SVT(undef,_ncells))
+# end
+
+# mutable struct VolumePostProcessorCache{SVT <: AbstractVector}
+#     detF_per_cell::SVT
+# end
+
+# function prepare_postprocessor_cache!(cache::VolumePostProcessorCache{SVT}, problem, t, uₜ) where {SVT <: AbstractVector}
+#     @unpack dh = problem
+#     grid = getgrid(dh)
+#     _ncells = getncells(grid)
+#     cache.detF_per_cell = zero(SVT(undef, _ncells))
+# end
+
+# struct StandardIOPostProcessor{IO, CV, CL}
+#     io::IO
+#     cv::CV
+#     subdomains::Vector{Int}
+#     # cache_list::CL
+# end
+
+struct StandardMechanicalIOPostProcessor{IO, CV, MC}
     io::IO
     cv::CV
+    subdomains::Vector{Int}
+    # coordinate_system_cache::CC
     microstructure_cache::MC
 end
 
-function (postproc::StandardFSNProcessor{IO})(problem, uₜ, t) where {IO}
-    @unpack io, cv, microstructure_cache = postproc
+# function prepare_caches!(proc::StandardIOPostProcessor{IO, CV, CL}, problem, t, uₜ) where {IO, CV, CL}
+#     @unpack dh = problem
+#     Thunderbolt.store_timestep!(proc.io, t, dh, uₜ)
+#     for cache ∈ proc.cache_list
+#         prepare_postprocessor_cache!(cache, problem, t, uₜ)
+#     end
+# end
+
+function (postproc::StandardMechanicalIOPostProcessor{IO, CV, MC})(problem, uₜ, t) where {IO, CV, MC}
     @unpack dh = problem
-    grid = dh.grid
+    grid = get_grid(dh)
+    @unpack io, cv, subdomains, microstructure_cache = postproc
 
     # Compute some elementwise measures
     E_ff = zeros(getncells(grid))
@@ -151,90 +225,97 @@ function (postproc::StandardFSNProcessor{IO})(problem, uₜ, t) where {IO}
     helixangledata = zero(Vector{Float64}(undef, getncells(grid)))
     helixanglerefdata = zero(Vector{Float64}(undef, getncells(grid)))
 
-    for cell in CellIterator(dh)
-        reinit!(cv, cell)
-        global_dofs = celldofs(cell)
-        uₑ = uₜ[global_dofs] # element dofs
+    # Compute some elementwise measures
+    for sdh ∈ dh.subdofhandlers[postproc.subdomains]
+        field_idx = find_field(sdh, :deformation)
+        field_idx === nothing && continue 
+        for cell ∈ CellIterator(sdh)
+            reinit!(cv, cell)
+            global_dofs = celldofs(cell)
+            field_dofs  = dof_range(sdh, field_idx)
+            uₑ = uₜ[global_dofs] # element dofs
 
-        update_microstructure_cache!(microstructure_cache, t, cell, cv)
+            update_microstructure_cache!(microstructure_cache, t, cell, cv)
 
-        E_ff_cell = 0.0
-        E_cc_cell = 0.0
-        E_rr_cell = 0.0
-        E_ll_cell = 0.0
+            E_ff_cell = 0.0
+            E_cc_cell = 0.0
+            E_rr_cell = 0.0
+            E_ll_cell = 0.0
 
-        Jdata_cell = 0.0
-        frefdata_cell = Ferrite.Vec{3}((0.0, 0.0, 0.0))
-        srefdata_cell = Ferrite.Vec{3}((0.0, 0.0, 0.0))
-        fdata_cell = Ferrite.Vec{3}((0.0, 0.0, 0.0))
-        sdata_cell = Ferrite.Vec{3}((0.0, 0.0, 0.0))
-        helixangle_cell = 0.0
-        helixangleref_cell = 0.0
+            Jdata_cell = 0.0
 
-        nqp = getnquadpoints(cv)
-        for qp in 1:nqp
-            dΩ = getdetJdV(cv, qp)
+            frefdata_cell = Ferrite.Vec{3}((0.0, 0.0, 0.0))
+            srefdata_cell = Ferrite.Vec{3}((0.0, 0.0, 0.0))
+            fdata_cell = Ferrite.Vec{3}((0.0, 0.0, 0.0))
+            sdata_cell = Ferrite.Vec{3}((0.0, 0.0, 0.0))
+            helixangle_cell = 0.0
+            helixangleref_cell = 0.0
 
-            # Compute deformation gradient F
-            ∇u = function_gradient(cv, qp, uₑ)
-            F = one(∇u) + ∇u
+            nqp = getnquadpoints(cv)
+            for qp in 1:nqp
+                dΩ = getdetJdV(cv, qp)
 
-            C = tdot(F)
-            E = (C-one(C))/2.0
-            f₀,s₀,n₀ = directions(microstructure_cache, qp)
+                # Compute deformation gradient F
+                ∇u = function_gradient(cv, qp, uₑ)
+                F = one(∇u) + ∇u
 
-            E_ff_cell += f₀ ⋅ E ⋅ f₀
+                C = tdot(F)
+                E = (C-one(C))/2.0
+                f₀,s₀,n₀ = directions(microstructure_cache, qp)
 
-            f₀_current = F⋅f₀
-            f₀_current /= norm(f₀_current)
+                E_ff_cell += f₀ ⋅ E ⋅ f₀
 
-            s₀_current = F⋅s₀
-            s₀_current /= norm(s₀_current)
+                f₀_current = F⋅f₀
+                f₀_current /= norm(f₀_current)
 
-            coords = getcoordinates(cell)
-            x_global = spatial_coordinate(cv, qp, coords)
+                s₀_current = F⋅s₀
+                s₀_current /= norm(s₀_current)
 
-            # v_longitudinal = function_gradient(cv_cs, qp, coordinate_system.u_apicobasal[celldofs(cell)])
-            # v_radial = function_gradient(cv_cs, qp, coordinate_system.u_transmural[celldofs(cell)])
-            # v_circimferential = v_longitudinal × v_radial
-            # @TODO compute properly via coordinate system
-            v_longitudinal = Ferrite.Vec{3}((0.0, 0.0, 1.0))
-            v_radial = Ferrite.Vec{3}((x_global[1],x_global[2],0.0))
-            v_radial /= norm(v_radial)
-            v_circimferential = v_longitudinal × v_radial # Ferrite.Vec{3}((x_global[2],x_global[1],0.0))
-            v_circimferential /= norm(v_circimferential)
-            #
-            E_ll_cell += v_longitudinal ⋅ E ⋅ v_longitudinal
-            E_rr_cell += v_radial ⋅ E ⋅ v_radial
-            E_cc_cell += v_circimferential ⋅ E ⋅ v_circimferential
+                coords = getcoordinates(cell)
+                x_global = spatial_coordinate(cv, qp, coords)
 
-            Jdata_cell += det(F)
+                # v_longitudinal = function_gradient(cv_cs, qp, coordinate_system.u_apicobasal[celldofs(cell)])
+                # v_radial = function_gradient(cv_cs, qp, coordinate_system.u_transmural[celldofs(cell)])
+                # v_circimferential = v_longitudinal × v_radial
+                # @TODO compute properly via coordinate system
+                v_longitudinal = Ferrite.Vec{3}((0.0, 0.0, 1.0))
+                v_radial = Ferrite.Vec{3}((x_global[1],x_global[2],0.0))
+                v_radial /= norm(v_radial)
+                v_circimferential = v_longitudinal × v_radial # Ferrite.Vec{3}((x_global[2],x_global[1],0.0))
+                v_circimferential /= norm(v_circimferential)
+                #
+                E_ll_cell += v_longitudinal ⋅ E ⋅ v_longitudinal
+                E_rr_cell += v_radial ⋅ E ⋅ v_radial
+                E_cc_cell += v_circimferential ⋅ E ⋅ v_circimferential
 
-            frefdata_cell += f₀
-            srefdata_cell += s₀
+                Jdata_cell += det(F)
 
-            fdata_cell += f₀_current
-            sdata_cell += s₀_current
+                frefdata_cell += f₀
+                srefdata_cell += s₀
 
-            helixangle_cell += acos(clamp(f₀_current ⋅ v_circimferential, -1.0, 1.0)) * sign((v_circimferential × f₀_current) ⋅ v_radial)
-            helixangleref_cell += acos(clamp(f₀ ⋅ v_circimferential, -1.0, 1.0)) * sign((v_circimferential × f₀) ⋅ v_radial)
+                fdata_cell += f₀_current
+                sdata_cell += s₀_current
+
+                helixangle_cell += acos(clamp(f₀_current ⋅ v_circimferential, -1.0, 1.0)) * sign((v_circimferential × f₀_current) ⋅ v_radial)
+                helixangleref_cell += acos(clamp(f₀ ⋅ v_circimferential, -1.0, 1.0)) * sign((v_circimferential × f₀) ⋅ v_radial)
+            end
+
+            E_ff[Ferrite.cellid(cell)] = E_ff_cell / nqp
+            E_cc[Ferrite.cellid(cell)] = E_cc_cell / nqp
+            E_rr[Ferrite.cellid(cell)] = E_rr_cell / nqp
+            E_ll[Ferrite.cellid(cell)] = E_ll_cell / nqp
+            Jdata[Ferrite.cellid(cell)] = Jdata_cell / nqp
+            frefdata[Ferrite.cellid(cell)] = frefdata_cell / nqp
+            frefdata[Ferrite.cellid(cell)] /= norm(frefdata[Ferrite.cellid(cell)])
+            srefdata[Ferrite.cellid(cell)] = srefdata_cell / nqp
+            srefdata[Ferrite.cellid(cell)] /= norm(srefdata[Ferrite.cellid(cell)])
+            fdata[Ferrite.cellid(cell)] = fdata_cell / nqp
+            fdata[Ferrite.cellid(cell)] /= norm(fdata[Ferrite.cellid(cell)])
+            sdata[Ferrite.cellid(cell)] = sdata_cell / nqp
+            sdata[Ferrite.cellid(cell)] /= norm(sdata[Ferrite.cellid(cell)])
+            helixanglerefdata[Ferrite.cellid(cell)] = helixangleref_cell / nqp
+            helixangledata[Ferrite.cellid(cell)] = helixangle_cell / nqp
         end
-
-        E_ff[Ferrite.cellid(cell)] = E_ff_cell / nqp
-        E_cc[Ferrite.cellid(cell)] = E_cc_cell / nqp
-        E_rr[Ferrite.cellid(cell)] = E_rr_cell / nqp
-        E_ll[Ferrite.cellid(cell)] = E_ll_cell / nqp
-        Jdata[Ferrite.cellid(cell)] = Jdata_cell / nqp
-        frefdata[Ferrite.cellid(cell)] = frefdata_cell / nqp
-        frefdata[Ferrite.cellid(cell)] /= norm(frefdata[Ferrite.cellid(cell)])
-        srefdata[Ferrite.cellid(cell)] = srefdata_cell / nqp
-        srefdata[Ferrite.cellid(cell)] /= norm(srefdata[Ferrite.cellid(cell)])
-        fdata[Ferrite.cellid(cell)] = fdata_cell / nqp
-        fdata[Ferrite.cellid(cell)] /= norm(fdata[Ferrite.cellid(cell)])
-        sdata[Ferrite.cellid(cell)] = sdata_cell / nqp
-        sdata[Ferrite.cellid(cell)] /= norm(sdata[Ferrite.cellid(cell)])
-        helixanglerefdata[Ferrite.cellid(cell)] = helixangleref_cell / nqp
-        helixangledata[Ferrite.cellid(cell)] = helixangle_cell / nqp
     end
 
     # Save the solution
@@ -257,11 +338,10 @@ function (postproc::StandardFSNProcessor{IO})(problem, uₜ, t) where {IO}
     # max_vol = max(max_vol, calculate_volume_deformed_mesh(uₜ,dh,cv));
 end
 
-function solve_test_ring(name_base, material_model, grid, coordinate_system, microstructure_model, face_models, calcium_field, ip_mech::Interpolation{ref_shape}, ip_geo::Interpolation{ref_shape}, intorder, Δt = 0.1) where {ref_shape}
+# function solve_test_ring(name_base, material_model, grid, coordinate_system, microstructure_model, face_models, calcium_field, ip_mech, ip_geo, intorder::Int, Δt = 0.1, T = 2.0)
+function solve_test_ring(name_base, material_model, grid, coordinate_system, microstructure_model, face_models::FM, calcium_field, ip_mech::IPM, ip_geo::IPG, intorder::Int, Δt = 0.1, T = 2.0) where {ref_shape, IPM <: Interpolation{ref_shape}, IPG <: Interpolation{ref_shape}, FM}
     io = ParaViewWriter(name_base);
     # io = JLD2Writer(name_base);
-
-    T = 2.0
 
     # Finite element base
     qr = QuadratureRule{ref_shape}(intorder)
@@ -271,18 +351,18 @@ function solve_test_ring(name_base, material_model, grid, coordinate_system, mic
 
     # DofHandler
     dh = DofHandler(grid)
-    add!(dh, :u, ip_mech) # Add a displacement field
+    add!(dh, :deformation, ip_mech) # Add a displacement field
     close!(dh)
 
     dbcs = ConstraintHandler(dh)
     # Clamp three sides
-    dbc = Dirichlet(:u, getfaceset(grid, "Myocardium"), (x,t) -> [0.0], [3])
+    dbc = Dirichlet(:deformation, getfaceset(grid, "Myocardium"), (x,t) -> [0.0], [3])
     add!(dbcs, dbc)
-    # dbc = Dirichlet(:u, Set([first(getfaceset(grid, "Base"))]), (x,t) -> [0.0], [3])
+    # dbc = Dirichlet(:deformation, Set([first(getfaceset(grid, "Base"))]), (x,t) -> [0.0], [3])
     # add!(dbcs, dbc)
-    # dbc = Dirichlet(:u, getfaceset(grid, "Base"), (x,t) -> [0.0], [3])
+    # dbc = Dirichlet(:deformation, getfaceset(grid, "Base"), (x,t) -> [0.0], [3])
     # add!(dbcs, dbc)
-    # dbc = Dirichlet(:u, Set([1]), (x,t) -> [0.0, 0.0, 0.0], [1, 2, 3])
+    # dbc = Dirichlet(:deformation, Set([1]), (x,t) -> [0.0, 0.0, 0.0], [1, 2, 3])
     # add!(dbcs, dbc)
     close!(dbcs)
 
@@ -305,7 +385,7 @@ function solve_test_ring(name_base, material_model, grid, coordinate_system, mic
     # Postprocessor
     cv_post = CellValues(QuadratureRule{ref_shape}(intorder-1), ip_mech, ip_geo)
     microstructure_cache = setup_microstructure_cache(cv_post, microstructure_model)
-    standard_postproc = StandardFSNProcessor(io, cv_post, microstructure_cache)
+    standard_postproc = StandardMechanicalIOPostProcessor(io, cv_post, [1], microstructure_cache)
 
     # Create sparse matrix and residual vector
     solver = PseudoTimeSolver(NewtonRaphsonSolver(), Δt, T, zeros(_ndofs), standard_postproc)
@@ -324,7 +404,7 @@ end
 #     # ("MidVentricularSectionHex.msh", RefCube, 1),
 #     # ("MidVentricularSectionQuadHex.msh", RefCube, 2) # We have to update FerriteGmsh first, because the hex27 translator is missing. See https://github.com/Ferrite-FEM/FerriteGmsh.jl/pull/29
 # ]
-begin
+function run_simulations()
 
 ref_shape = RefHexahedron
 order = 1
@@ -501,3 +581,5 @@ passive_model = HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 
 # )
 
 end
+
+run_simulations()
