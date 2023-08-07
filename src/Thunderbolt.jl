@@ -21,6 +21,7 @@ include("mechanics/contraction.jl")
 include("mechanics/active.jl")
 
 include("drivers.jl")
+include("solver.jl")
 
 include("io.jl")
 

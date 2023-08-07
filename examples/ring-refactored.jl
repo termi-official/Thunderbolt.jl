@@ -3,71 +3,6 @@ using FerriteGmsh
 
 import Ferrite: get_grid, find_field
 
-Base.@kwdef struct NewtonRaphsonSolver{T}
-    # Convergence tolerance
-    tol::T = 1e-8
-    # Maximum number of iterations
-    max_iter::Int = 100
-end
-
-struct NewtonRaphsonSolverCache{JacType, ResidualType, T}
-    # Cache for the Jacobian matrix df(u)/du
-    J::JacType
-    # Cache for the right hand side f(u)
-    residual::ResidualType
-    #
-    parameters::NewtonRaphsonSolver{T}
-    #linear_solver_cache
-end
-
-function setup_solver_caches(dh, solver::NewtonRaphsonSolver{T}) where {T}
-    NewtonRaphsonSolverCache(create_sparsity_pattern(dh), zeros(ndofs(dh)), solver)
-end
-
-struct PseudoTimeSolver{IS, T, PFUN}
-    inner_solver::IS
-    Δt::T
-    t_end::T
-    u_prev::Vector{T}
-    postproc::PFUN
-end
-
-struct PseudoTimeSolverCache{IS, ISC, T, PFUN}
-    inner_solver_cache::ISC
-    parameters::PseudoTimeSolver{IS, T, PFUN}
-end
-
-function setup_solver_caches(dh, solver::PseudoTimeSolver{IS, T, PFUN}) where {IS, T, PFUN}
-    PseudoTimeSolverCache(setup_solver_caches(dh, solver.inner_solver), solver)
-end
-
-function solve!(u₀, problem_cache, solver_cache::PseudoTimeSolverCache{IS, ISC, T}) where {IS, ISC, T}
-    @unpack t_end, Δt, u_prev, postproc = solver_cache.parameters
-    uₜ   = u₀
-    uₜ₋₁ = copy(u₀)
-    for t ∈ 0.0:Δt:t_end
-        @info t
-
-        problem_cache.t = t
-        # Store last solution
-        uₜ₋₁ .= uₜ
-        problem_cache.u_prev .= uₜ₋₁
-
-        # Update with new boundary conditions (if available)
-        Ferrite.update!(problem_cache.ch, t)
-        apply!(uₜ, problem_cache.ch)
-
-        if !solve!(uₜ, problem_cache, solver_cache.inner_solver_cache)
-            @warn "Inner solver failed."
-            return false
-        end
-
-        postproc(problem_cache, uₜ, t)
-    end
-
-    return true
-end
-
 mutable struct ThisProblemCache{DH,CH,CV,FV,MAT,MICRO,CAL,FACE,T}
     # Wher to put this?
     dh::DH
@@ -85,44 +20,9 @@ mutable struct ThisProblemCache{DH,CH,CV,FV,MAT,MICRO,CAL,FACE,T}
     Δt::T
 end
 
-function assemble_linearization!(K, residual, u, problem_cache::ThisProblemCache{DH,CH,CV,FV,MAT,MICRO,CAL,FACE,T}) where {DH,CH,CV,FV,MAT,MICRO,CAL,FACE,T}
+# We simply unpack and assemble here
+function Thunderbolt.assemble_linearization!(K, residual, u, problem_cache::ThisProblemCache{DH,CH,CV,FV,MAT,MICRO,CAL,FACE,T}) where {DH,CH,CV,FV,MAT,MICRO,CAL,FACE,T}
     assemble_global!(K, residual, problem_cache.dh, problem_cache.cv, problem_cache.fv, problem_cache.material_model, u, problem_cache.u_prev, problem_cache.microstructure_model, problem_cache.calcium_field, problem_cache.t, problem_cache.Δt, problem_cache.face_models)
-end
-
-function solve_inner_linear_system!(Δu, problem_cache, solver_cache::NewtonRaphsonSolverCache{JacType, ResidualType, T}) where {JacType, ResidualType, T}
-    Δu .= solver_cache.J \ solver_cache.residual
-end
-
-function solve!(u, problem_cache, solver_cache::NewtonRaphsonSolverCache{JacType, ResidualType, T}) where {JacType, ResidualType, T}
-    newton_itr = -1
-    Δu = zero(u)
-    while true
-        newton_itr += 1
-
-        assemble_linearization!(solver_cache.J, solver_cache.residual, u, problem_cache)
-
-        rhsnorm = norm(solver_cache.residual[Ferrite.free_dofs(problem_cache.ch)])
-        apply_zero!(solver_cache.J, solver_cache.residual, problem_cache.ch)
-
-        if rhsnorm < solver_cache.parameters.tol
-            break
-        elseif newton_itr > solver_cache.parameters.max_iter
-            @warn "Reached maximum Newton iterations. Aborting."
-            return false
-        end
-
-        try
-            solve_inner_linear_system!(Δu, problem_cache, solver_cache)
-        catch err
-            @warn "Linear solver failed" , err
-            return false
-        end
-
-        apply_zero!(Δu, problem_cache.ch)
-
-        u .-= Δu # Current guess
-    end
-    return true
 end
 
 # mutable struct AverageCoordinateStrainProcessorCache{CC, SVT <: AbstractVector}
@@ -388,7 +288,7 @@ function solve_test_ring(name_base, material_model, grid, coordinate_system, mic
     standard_postproc = StandardMechanicalIOPostProcessor(io, cv_post, [1], microstructure_cache)
 
     # Create sparse matrix and residual vector
-    solver = PseudoTimeSolver(NewtonRaphsonSolver(), Δt, T, zeros(_ndofs), standard_postproc)
+    solver = LoadDrivenSolver(NewtonRaphsonSolver(), Δt, 0.0, T, zeros(_ndofs), standard_postproc)
     solver_cache = setup_solver_caches(dh, solver)
 
     solve!(uₜ, problem_cache, solver_cache)

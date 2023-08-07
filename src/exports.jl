@@ -39,6 +39,11 @@ export
     compute_midmyocardial_section_coordinate_system,
     getcoordinateinterpolation,
     vtk_coordinate_system,
+    # Solver
+    setup_solver_caches,
+    solve!,
+    NewtonRaphsonSolver,
+    LoadDrivenSolver,
     # Utils
     calculate_volume_deformed_mesh,
     value,
