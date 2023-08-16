@@ -61,7 +61,7 @@ Create a rotating fiber field by deducing the circumferential direction from api
 
 !!! note Sheetlet angle construction is broken (i.e. does not preserve input angle). FIXME!
 """
-function create_simple_fiber_model(coordinate_system, ip_fiber::Interpolation{ref_shape}, ip_geo; endo_helix_angle = deg2rad(80.0), epi_helix_angle = deg2rad(-65.0), endo_transversal_angle = 0.0, epi_transversal_angle = 0.0, sheetlet_pseudo_angle = 0.0, make_orthogonal=true) where {dim, ref_shape <: AbstractRefShape{dim}}
+function create_simple_fiber_model(coordinate_system, ip_fiber::ScalarInterpolation{ref_shape}, ip_geo::ScalarInterpolation{ref_shape}; endo_helix_angle = deg2rad(80.0), epi_helix_angle = deg2rad(-65.0), endo_transversal_angle = 0.0, epi_transversal_angle = 0.0, sheetlet_pseudo_angle = 0.0, make_orthogonal=true) where {dim, ref_shape <: AbstractRefShape{dim}}
     @unpack dh = coordinate_system
 
     n_basefuns = getnbasefunctions(ip_fiber)
