@@ -5,8 +5,11 @@ using TimerOutputs, BenchmarkTools
 
 using Krylov
 
+import LinearAlgebra: mul!
+
+using SparseArrays: AbstractSparseMatrixCSC #,AbstractSparseMatrixCSR?
 using SparseMatricesCSR, ThreadedSparseCSR
-ThreadedSparseCSR.multithread_matmul(PolyesterThreads())
+# ThreadedSparseCSR.multithread_matmul(PolyesterThreads())
 
 ######################################################
 Base.@kwdef struct ParametrizedFHNModel{T} <: AbstractIonicModel
@@ -45,103 +48,176 @@ end
 end
 
 ######################################################
+struct ImplicitEulerHeatSolver
+end
 
-epmodel = MonodomainModel(
-    x->1.0,
-    x->1.0,
-    x->SymmetricTensor{2,2,Float64}((4.5e-5, 0, 2.0e-5)),
-    NoStimulationProtocol(),
-    FHNModel()
-)
+mutable struct ImplicitEulerHeatSolverCache{SolutionType, MassMatrixType, DiffusionMatrixType, SystemMatrixType, LinSolverType, RHSType}
+    # Current solution buffer
+    uₙ::SolutionType
+    # Last solution buffer
+    uₙ₋₁::SolutionType
+    # Mass matrix
+    M::MassMatrixType
+    # Diffusion matrix
+    K::DiffusionMatrixType
+    # Buffer for (M - Δt K)
+    A::SystemMatrixType
+    # Linear solver for (M - Δtₙ₋₁ K) uₙ = M uₙ₋₁
+    linsolver::LinSolverType
+    # Buffer for right hand side
+    b::RHSType
+    # Last time step length as a check if we have to reassemble K
+    Δt_last::Float64
+end
 
-# TODO where to put this setup?
-grid = generate_grid(Quadrilateral, (256, 256), Vec{2}((0.0,0.0)), Vec{2}((2.5,2.5)))
-# addnodeset!(grid, "ground", x-> x[2] == -0 && x[1] == -0)
-dim = 2
-ip = Lagrange{dim, RefCube, 1}()
-qr = QuadratureRule{dim, RefCube}(2)
-cellvalues = CellValues(qr, ip);
+@doc raw"""
+    AssembledMassOperator{MT, CV}
 
-dh = DofHandler(grid)
-push!(dh, :ϕₘ, 1)
-# push!(dh, :ϕₑ, 1)
-# push!(dh, :s, 1)
-close!(dh);
+Assembles the matrix associated to the bilinearform ``a(u,v) = -\int v(x) u(x) dx`` for ``u,v`` from the same function space.
+"""
+struct AssembledMassOperator{MT, CV}
+    M::MT
+    cv::CV
+end
+mul!(b, M::AssembledMassOperator{MT, CV}, uₙ₋₁) where {MT, CV} = mul!(b, M.M, uₙ₋₁)
 
-# Initial condition
-# TODO apply_analytical!
-u₀ = zeros(ndofs(dh));
-s₀ = zeros(ndofs(dh),num_states(epmodel.ion));
-for cell in CellIterator(dh)
-    _celldofs = celldofs(cell)
-    ϕₘ_celldofs = _celldofs[dof_range(dh, :ϕₘ)]
-    for (i, coordinate) in enumerate(getcoordinates(cell))
-        if coordinate[1] <= 1.25 && coordinate[2] <= 1.25
-            u₀[ϕₘ_celldofs[i]] = 1.0
+function setup_mass_operator!(bifi::AssembledMassOperator{MT, CV}, dh::DH) where {MT, CV, DH}
+    @unpack M, cv = bifi
+
+    assembler_M = start_assemble(M)
+
+    n_basefuncs = getnbasefunctions(cv)
+    Mₑ = zeros(n_basefuncs, n_basefuncs)
+
+    # TODO kernel
+    @inbounds for cell in CellIterator(dh)
+        fill!(Mₑ, 0)
+
+        reinit!(cv, cell)
+
+        for q_point in 1:getnquadpoints(cv)
+            dΩ = getdetJdV(cv, q_point)
+            for i in 1:n_basefuncs
+                Nᵢ = shape_value(cv, q_point, i)
+                for j in 1:n_basefuncs
+                    Nⱼ = shape_value(cv, q_point, j)
+                    Mₑ[i,j] += Nᵢ * Nⱼ * dΩ 
+                end
+            end
         end
-        if coordinate[2] >= 1.25
-            s₀[ϕₘ_celldofs[i],1] = 0.1
-        end
+
+        assemble!(assembler_M, celldofs(cell), Mₑ)
     end
 end
 
-######################################################
-struct ImplicitEulerHeatSolver end
+@doc raw"""
+    AssembledDiffusionOperator{MT, DT, CV}
 
-mutable struct ImplicitEulerHeatSolverCache{MassMatrixType, DiffusionMatrixType, SystemMatrixType, LinSolverType, RHSType}
-    M::MassMatrixType
-    K::DiffusionMatrixType
-    A::SystemMatrixType
-    linsolver::LinSolverType
-    b::RHSType
+Assembles the matrix associated to the bilinearform ``a(u,v) = -\int \nabla v(x) \cdot D(x) \nabla u(x) dx`` for a given diffusion tensor ``D(x)`` and ``u,v`` from the same function space.
+"""
+struct AssembledDiffusionOperator{MT, DT, CV}
+    K::MT
+    coefficient::DT
+    cv::CV
 end
+mul!(b, K::AssembledDiffusionOperator{MT, DT, CV}, uₙ₋₁) where {MT, DT, CV} = mul!(b, K.K, uₙ₋₁)
 
-function assemble_global!(cellvalues::CellValues{dim}, K::SparseMatrixCSC, M::SparseMatrixCSC, dh::DofHandler, model::MonodomainModel) where {dim}
-    n_basefuncs = getnbasefunctions(cellvalues)
+function setup_diffusion_operator!(bifi::AssembledDiffusionOperator{MT, CV}, dh::DH) where {MT, CV, DH}
+    @unpack K, coefficient, cv = bifi
+
+    n_basefuncs = getnbasefunctions(cv)
     Kₑ = zeros(n_basefuncs, n_basefuncs)
-    Mₑ = zeros(n_basefuncs, n_basefuncs)
 
     assembler_K = start_assemble(K)
-    assembler_M = start_assemble(M)
 
+    # TODO kernel
     @inbounds for cell in CellIterator(dh)
         fill!(Kₑ, 0)
-        fill!(Mₑ, 0)
-        #get the coordinates of the current cell
-        coords = getcoordinates(cell)
 
-        reinit!(cellvalues, cell)
+        reinit!(cv, cell)
 
-        for q_point in 1:getnquadpoints(cellvalues)
-            #get the spatial coordinates of the current gauss point
-            x = spatial_coordinate(cellvalues, q_point, coords)
+        for q_point in 1:getnquadpoints(cv)
+            # TODO coefficient via AssembledDiffusionOperator::coefficient
+            D_loc = 0.001 # evaluate(coefficient, q_point)
             #based on the gauss point coordinates, we get the spatial dependent
             #material parameters
-            κ_loc = model.κ(x)
-            Cₘ_loc = model.Cₘ(x)
-            χ_loc = model.χ(x)
-            dΩ = getdetJdV(cellvalues, q_point)
+            dΩ = getdetJdV(cv, q_point)
             for i in 1:n_basefuncs
-                Nᵢ = shape_value(cellvalues, q_point, i)
-                ∇Nᵢ = shape_gradient(cellvalues, q_point, i)
+                ∇Nᵢ = shape_gradient(cv, q_point, i)
                 for j in 1:n_basefuncs
-                    Nⱼ = shape_value(cellvalues, q_point, j)
-                    ∇Nⱼ = shape_gradient(cellvalues, q_point, j)
-                    Kₑ[i,j] -= ((κ_loc ⋅ ∇Nᵢ) ⋅ ∇Nⱼ) * dΩ
-                    Mₑ[i,j] += Cₘ_loc * χ_loc * Nᵢ * Nⱼ * dΩ 
+                    ∇Nⱼ = shape_gradient(cv, q_point, j)
+                    Kₑ[i,j] -= ((D_loc * ∇Nᵢ) ⋅ ∇Nⱼ) * dΩ
                 end
             end
         end
 
         assemble!(assembler_K, celldofs(cell), Kₑ)
-        assemble!(assembler_M, celldofs(cell), Mₑ)
     end
 end
 
-function solve!(uₙ, uₙ₋₁, t, Δt, cache::ImplicitEulerHeatSolverCache)
-    mul!(cache.b, cache.M, uₙ₋₁)
-    Krylov.cg!(cache.linsolver, cache.A, cache.b, uₙ₋₁)
-    uₙ .= cache.linsolver.x
+# Helper to get A into the right form
+function implicit_euler_heat_solver_update_system_matrix!(cache::ImplicitEulerHeatSolverCache{SolutionType, MassMatrixType, DiffusionMatrixType, SystemMatrixType, LinSolverType, RHSType}, Δt) where {SolutionType, MassMatrixType, DiffusionMatrixType, SystemMatrixType, LinSolverType, RHSType}
+    cache.A = SystemMatrixType(cache.M.M - Δt*cache.K.K) # TODO FIXME make me generic
+    cache.Δt_last = Δt
+end
+
+# Optimized version for CSR matrices
+#TODO where is AbstractSparseMatrixCSR ?
+function implicit_euler_heat_solver_update_system_matrix!(cache::ImplicitEulerHeatSolverCache{SolutionType, SMT1, SMT2, SMT2, LinSolverType, RHSType}, Δt) where {SolutionType, SMT1 <: SparseMatrixCSR, SMT2 <: AbstractSparseMatrixCSC, LinSolverType, RHSType}
+    cache.A = SparseMatrixCSR(transpose(cache.M.M - Δt*cache.K.K)) # TODO FIXME make me generic
+end
+
+# Performs a backward Euler step
+function perform_step!(problem, cache::ImplicitEulerHeatSolverCache{SolutionType, MassMatrixType, DiffusionMatrixType, SystemMatrixType, LinSolverType, RHSType}, t, Δt) where {SolutionType, MassMatrixType, DiffusionMatrixType, SystemMatrixType, LinSolverType, RHSType}
+    @unpack Δt_last, b, M, A, uₙ, uₙ₋₁, linsolver = cache
+    # Remember last solution
+    uₙ₋₁ .= uₙ
+    # Update matrix if time step length has changed
+    Δt ≈ Δt_last || implicit_euler_heat_solver_update_system_matrix!(cache, Δt)
+    # Prepare right hand side b = M uₙ₋₁
+    mul!(b, M, uₙ₋₁)
+    # Solve linear problem
+    # TODO abstraction layer and way to pass the solver/preconditioner pair (LinearSolve.jl?)
+    Krylov.cg!(linsolver, A, b, uₙ₋₁)
+    uₙ .= linsolver.x
+end
+
+# TODO decouple the concept ImplicitEuler from TransientHeatProblem again
+function setup_solver_caches(problem #= ::TransientHeatProblem =#, solver::ImplicitEulerHeatSolver)
+    @unpack dh = problem
+    @assert length(dh.field_names) == 1 # TODO relax this assumption, maybe.
+    ip = dh.subdofhandlers[1].field_interpolations[1]
+    order = Ferrite.getorder(ip)
+    cv = CellValues(
+        QuadratureRule{RefQuadrilateral}(2*order), # TODO how to pass this one down here?
+        ip
+    )
+    cache = ImplicitEulerHeatSolverCache(
+        zeros(ndofs(dh)),
+        zeros(ndofs(dh)),
+        # TODO How to choose the exact operator types here?
+        #      Maybe via some parameter in ImplicitEulerHeatSolver?
+        AssembledMassOperator(
+            create_sparsity_pattern(dh),
+            cv
+        ),
+        AssembledDiffusionOperator(
+            create_sparsity_pattern(dh),
+            nothing,
+            cv
+        ),
+        create_sparsity_pattern(dh),
+        # TODO this via LinearSolvers.jl
+        CgSolver(ndofs(dh), ndofs(dh), Vector{Float64}),
+        zeros(ndofs(dh)),
+        0.0
+    )
+
+    # TODO where does this belong?
+    setup_mass_operator!(cache.M, dh)
+    setup_diffusion_operator!(cache.K, dh)
+    
+    return cache
 end
 
 ######################################################
@@ -149,16 +225,20 @@ end
 abstract type AbstractCellSolver end
 abstract type AbstractCellSolverCache end
 
-struct ForwardEulerCellSolver <: AbstractCellSolver end
-
-struct ForwardEulerCellSolverCache{T} <: AbstractCellSolverCache
-    du::Vector{T}
+struct ForwardEulerCellSolver <: AbstractCellSolver
 end
 
-function solve!(uₙ::T1, sₙ::T2, cell_model::ION, t::Float64, Δt::Float64, solver_cache::ForwardEulerCellSolverCache{T3}) where {T1, T2, T3, ION <: AbstractIonicModel}
+mutable struct ForwardEulerCellSolverCache{VT} <: AbstractCellSolverCache
+    du::VT
+    uₙ::VT
+    sₙ::VT
+end
+
+function perform_step!(cell_model::ION, t::Float64, Δt::Float64, solver_cache::ForwardEulerCellSolverCache{VT}) where {VT, ION <: AbstractIonicModel}
     # Eval buffer
-    @unpack du = solver_cache
-    
+    @unpack du, uₙ, sₙ = solver_cache
+
+    # TODO formulate as a kernel for GPU
     for i ∈ 1:length(uₙ)
         @inbounds φₘ_cell = uₙ[i]
         @inbounds s_cell  = @view sₙ[i,:]
@@ -175,20 +255,33 @@ function solve!(uₙ::T1, sₙ::T2, cell_model::ION, t::Float64, Δt::Float64, s
     end
 end
 
+# TODO decouple the concept ForwardEuler from "CellProblem"
+function setup_solver_caches(problem, solver::ForwardEulerCellSolver)
+    @unpack npoints = problem # TODO what is a good abstraction layer over this?
+    return ForwardEulerCellSolverCache(
+        zeros(npoints),
+        zeros(npoints),
+        zeros(npoints)
+    )
+end
+
 Base.@kwdef struct AdaptiveForwardEulerReactionSubCellSolver{T} <: AbstractCellSolver
     substeps::Int = 10
     reaction_threshold::T = 0.1
 end
 
-struct AdaptiveForwardEulerReactionSubCellSolverCache{T} <: AbstractCellSolverCache
-    du::Vector{T}
+struct AdaptiveForwardEulerReactionSubCellSolverCache{VT, T} <: AbstractCellSolverCache
+    uₙ::VT
+    sₙ::VT
+    du::VT
     substeps::Int
     reaction_threshold::T
 end
 
-function solve!(uₙ::T1, sₙ::T2, cell_model::ION, t::Float64, Δt::Float64, cache::AdaptiveForwardEulerReactionSubCellSolverCache{T3}) where {T1, T2, T3, ION <: AbstractIonicModel}
-    @unpack du = cache
+function perform_step!(cell_model::ION, t::Float64, Δt::Float64, cache::AdaptiveForwardEulerReactionSubCellSolverCache{VT,T}) where {VT, T, ION <: AbstractIonicModel}
+    @unpack uₙ, sₙ, du = cache
 
+    # TODO formulate as a kernel for GPU
     for i ∈ 1:length(uₙ)
         @inbounds φₘ_cell = uₙ[i]
         @inbounds s_cell  = @view sₙ[i,:]
@@ -233,26 +326,26 @@ function solve!(uₙ::T1, sₙ::T2, cell_model::ION, t::Float64, Δt::Float64, c
     end
 end
 
-Base.@kwdef struct ThreadedCellSolver{SolverType<:AbstractCellSolver} <: AbstractCellSolver
-    cells_per_thread::Int = 64
-end
+# Base.@kwdef struct ThreadedCellSolver{SolverType<:AbstractCellSolver} <: AbstractCellSolver
+#     cells_per_thread::Int = 64
+# end
 
-Base.@kwdef struct ThreadedCellSolverCache{CacheType<:AbstractCellSolverCache} <: AbstractCellSolverCache
-    scratch::Vector{CacheType}
-    cells_per_thread::Int = 64
-end
+# Base.@kwdef struct ThreadedCellSolverCache{CacheType<:AbstractCellSolverCache} <: AbstractCellSolverCache
+#     scratch::Vector{CacheType}
+#     cells_per_thread::Int = 64
+# end
 
-function solve!(uₙ::T1, sₙ::T2, cell_model::ION, t::Float64, Δt::Float64, cache::ThreadedCellSolverCache{CacheType}) where {T1, T2, CacheType, ION <: AbstractIonicModel}
-    for tid ∈ 1:cache.cells_per_thread:length(uₙ)
-        tcache = cache.scratch[Threads.threadid()]
-        last_cell_in_thread = min((tid+cells_per_thread),length(uₙ))
-        tuₙ = @view uₙ[tid:last_cell_in_thread]
-        tsₙ = @view sₙ[tid:last_cell_in_thread]
-        Threads.@threads for tid ∈ 1:cells_per_thread:length(uₙ)
-            solve!(tuₙ, tsₙ, cell_model, t, Δt, tcache)
-        end
-    end
-end
+# function perform_step!(uₙ::T1, sₙ::T2, cell_model::ION, t::Float64, Δt::Float64, cache::ThreadedCellSolverCache{CacheType}) where {T1, T2, CacheType, ION <: AbstractIonicModel}
+#     for tid ∈ 1:cache.cells_per_thread:length(uₙ)
+#         tcache = cache.scratch[Threads.threadid()]
+#         last_cell_in_thread = min((tid+cells_per_thread),length(uₙ))
+#         tuₙ = @view uₙ[tid:last_cell_in_thread]
+#         tsₙ = @view sₙ[tid:last_cell_in_thread]
+#         Threads.@threads for tid ∈ 1:cells_per_thread:length(uₙ)
+#             perform_step!(tuₙ, tsₙ, cell_model, t, Δt, tcache)
+#         end
+#     end
+# end
 
 ######################################################
 
@@ -264,21 +357,30 @@ function WriteVTK.vtk_grid(filename::AbstractString, grid::Grid{dim,C,T}; compre
 end
 
 ######################################################
-struct TransientHeatProblem{DTF, ST}
+struct TransientHeatProblem{DTF, ST, DH}
     diffusion_tensor_field::DTF
     source_term::ST
+    dh::DH
 end
 
 struct PointwiseODEProblem{ODEDT}
+    npoints::Int
     ode_decider::ODEDT
 end
+
+struct PointwiseHomogeneousODEProblem{ODET}
+    npoints::Int
+    ode::ODET
+end
+
+perform_step!(problem::PointwiseHomogeneousODEProblem{ODET}, cache::CT, t::Float64, Δt::Float64) where {ODET, CT} = perform_step!(problem.ode, t, Δt, cache)
 
 struct SplitProblem{APT, BPT}
     A::APT
     B::BPT
 end
 
-struct LTGOSSolver{AST,BST} <: AbstractSolver
+struct LTGOSSolver{AST,BST}
     A_solver::AST
     B_solver::BST
 end
@@ -288,50 +390,193 @@ struct LTGOSSolverCache{ASCT, BSCT}
     B_solver_cache::BSCT
 end
 
+"""
+    transfer_fields!(A, A_cache, B, B_cache)
+
+The entry point to prepare the field evaluation for the time step of problem B, given the solution of problem A.
+The default behavior assumes that nothing has to be done, because both problems use the same unknown vectors for the shared parts.
+"""
+transfer_fields!(A, A_cache, B, B_cache)
+
+transfer_fields!(A, A_cache::ImplicitEulerHeatSolverCache, B, B_cache::ForwardEulerCellSolverCache) = nothing
+transfer_fields!(A, A_cache::ForwardEulerCellSolverCache, B, B_cache::ImplicitEulerHeatSolverCache) = nothing
+
 function setup_solver_caches(problem::SplitProblem{APT, BPT}, solver::LTGOSSolver{AST,BST}) where {APT,BPT,AST,BST}
     return LTGOSSolverCache(
         setup_solver_caches(problem.A, solver.A_solver),
-        setup_solver_caches(problem.A, solver.B_solver),
+        setup_solver_caches(problem.B, solver.B_solver),
     )
+end
+
+function setup_solver_caches(problem::SplitProblem{APT, BPT}, solver::LTGOSSolver{ImplicitEulerHeatSolver,BST}) where {APT,BPT,BST}
+    cache = LTGOSSolverCache(
+        setup_solver_caches(problem.A, solver.A_solver),
+        setup_solver_caches(problem.B, solver.B_solver),
+    )
+    cache.B_solver_cache.uₙ = cache.A_solver_cache.uₙ
+    return cache
+end
+
+# Lie-Trotter-Godunov step to advance the problem split into A and B from a given initial condition
+function perform_step!(problem::SplitProblem{APT, BPT}, cache::LTGOSSolverCache{ASCT, BSCT}, t, Δt) where {APT, BPT, ASCT, BSCT}
+    # We start by setting the initial condition for the step of problem A from the solution in B.
+    transfer_fields!(problem.B, cache.B_solver_cache, problem.A, cache.A_solver_cache)
+    # Then the step for A is executed
+    perform_step!(problem.A, cache.A_solver_cache, t, Δt)
+    # This sets the initial condition for problem B
+    transfer_fields!(problem.A, cache.A_solver_cache, problem.B, cache.B_solver_cache)
+    # Then the step for B is executed
+    perform_step!(problem.B, cache.B_solver_cache, t, Δt)
+    # This concludes the time step
+end
+
+"""
+    solve(problem, solver, Δt=0.1, callback=nothing)
+
+Main entry point for solvers in Thunderbolt.jl. The design is inspired by 
+DifferentialEquations.jl. We try to upstream as much content as possible to 
+make it available for packages.
+"""
+function solve(problem, solver, Δt₀, (t₀, T), initial_condition::Function, callback::CALLBACK = (t,p,c) -> nothing) where {CALLBACK}
+    cache = setup_solver_caches(problem, solver)
+
+    setup_initial_condition!(problem, cache, initial_condition)
+    
+    Δt = Δt₀
+    t = t₀
+    while t < T
+        @info t
+        t += Δt
+        @timeit "solver" perform_step!(problem, cache, t, Δt)
+
+        # TODO Δt adaption
+
+        callback(t, problem, cache)
+    end
+    
+    @timeit "solver" perform_step!(problem, cache, T, T-t)
+    callback(t, problem, cache)
 end
 
 ######################################################
-function solve(;Δt=0.1, T=3.0, storeskip = 50, heatsolver = ImplicitEulerHeatSolver(), cellsolver = ForwardEulerCellSolver())
-    heatsolvercache = ImplicitEulerHeatSolverCache(
-        create_sparsity_pattern(dh),
-        create_sparsity_pattern(dh),
-        SparseMatrixCSR(transpose(create_sparsity_pattern(dh))),
-        CgSolver(length(u₀), length(u₀), Vector{Float64}),
-        zeros(ndofs(dh))
+struct GalerkinDiscretization 
+    # TODO interpolation collection instead of single interpolation
+    interpolations::Dict{Symbol, Interpolation}
+end
+
+struct ReactionDiffusionSplit{MODEL}
+    model::MODEL
+end
+
+"""
+    semidiscretize(model, discretization, mesh)
+
+Transform a space-time model into a pure time-dependent problem.
+"""
+function semidiscretize(split::ReactionDiffusionSplit{MonodomainModel{A,B,C,D,E}}, ::GalerkinDiscretization, grid::Grid) where {A,B,C,D,E}
+    epmodel = split.model
+
+    # TODO get these from the interpolation collection in GalerkinDiscretization
+    ip = Lagrange{RefQuadrilateral, 1}()
+    dh = DofHandler(grid)
+    push!(dh, :ϕₘ, ip)
+    close!(dh);
+
+    #
+    semidiscrete_problem = SplitProblem(
+        TransientHeatProblem(
+            x -> epmodel.κ(x)/(epmodel.Cₘ(x)*epmodel.χ),
+            epmodel.stim,
+            dh
+        ),
+        PointwiseHomogeneousODEProblem(
+            # TODO epmodel.Cₘ(x) and coordinates
+            ndofs(dh),
+            epmodel.ion
+        )
     )
 
-    @unpack M, K, linsolver = heatsolvercache
-    @timeit "assembly" assemble_global!(cellvalues, K, M, dh, epmodel)
-
-    heatsolvercache.A = SparseMatrixCSR(transpose(M - Δt*K))
-
-    cellsolvercache = ForwardEulerCellSolverCache(zeros(num_states(epmodel.ion)+1))
-
-    uₙ₋₁ = u₀
-    uₙ = zeros(ndofs(dh))
-    sₙ = s₀
-
-    io = JLD2Writer("monodomain")
-
-    @timeit "solver" for (i,t) ∈ enumerate(0.0:Δt:T)
-        @info t
-
-        @timeit "io" if (i-1) % storeskip == 0
-            store_timestep!(io, t, dh, uₙ₋₁)
-        end
-
-        @timeit "heat" solve!(uₙ, uₙ₋₁, t, Δt, heatsolvercache)
-        @timeit "cell" solve!(uₙ, sₙ, epmodel.ion, t, Δt, cellsolvercache)
-
-        uₙ₋₁ .= uₙ
-    end
-
-    finalize!(io)
-
-    @info "Done."
+    return semidiscrete_problem
 end
+
+# TODO what exactly is the job here? How do we know where to write and what to iterate?
+function setup_initial_condition!(problem::SplitProblem, cache, initial_condition)
+    # TODO cleaner implementation. We need to extract this from the types or via dispatch.
+    u₀, s₀ = spiral_wave_initializer(problem)
+    cache.B_solver_cache.uₙ .= u₀ # Note that the vectors in the caches are connected
+    cache.B_solver_cache.sₙ .= s₀
+    return nothing
+end
+
+function spiral_wave_initializer(problem::SplitProblem)
+    # TODO cleaner implementation. We need to extract this from the types or via dispatch.
+    dh = problem.A.dh
+    ionic_model = problem.B.ode
+    u₀ = zeros(ndofs(dh));
+    s₀ = zeros(ndofs(dh), num_states(ionic_model));
+    for cell in CellIterator(dh)
+        _celldofs = celldofs(cell)
+        ϕₘ_celldofs = _celldofs[dof_range(dh, :ϕₘ)]
+        # TODO get coordinate via coordinate_system
+        coordinates = getcoordinates(cell)
+        for (i, (x₁, x₂)) in enumerate(coordinates)
+            if x₁ <= 1.25 && x₂ <= 1.25
+                u₀[ϕₘ_celldofs[i]] = 1.0
+            end
+            if x₂ >= 1.25
+                s₀[ϕₘ_celldofs[i],1] = 0.1
+            end
+        end
+    end
+    return u₀, s₀
+end
+
+model = MonodomainModel(
+    x->1.0,
+    x->1.0,
+    x->SymmetricTensor{2,2,Float64}((4.5e-5, 0, 2.0e-5)), # TODO coefficient API
+    NoStimulationProtocol(),
+    FHNModel()
+)
+
+# TODO make Mesh = Grid+Topology+CoordinateSystem
+generate_mesh(args...) = generate_grid(args)
+mesh = generate_grid(Quadrilateral, (2^6, 2^6), Vec{2}((0.0,0.0)), Vec{2}((2.5,2.5)))
+
+problem = semidiscretize(
+    ReactionDiffusionSplit(model),
+    GalerkinDiscretization(Dict(:φₘ => Lagrange{RefQuadrilateral, 1}())),
+    mesh
+)
+
+# TODO add guidance with helpers like
+#   const QuGarfinkel1999Solver = SMOSSolver{AdaptiveForwardEulerReactionSubCellSolver, ImplicitEulerHeatSolver}
+
+solver = LTGOSSolver(
+    ImplicitEulerHeatSolver(),
+    ForwardEulerCellSolver()
+)
+
+mutable struct IOCallback{IO}
+    io::IO
+end
+
+function (iocb::IOCallback{ParaViewWriter{PVD}})(t, p, c) where {PVD}
+    store_timestep!(iocb.io, t, p.A.dh.grid)
+    Thunderbolt.store_timestep_field!(iocb.io, t, p.A.dh, c.A_solver_cache.uₙ, :φₘ)
+    Thunderbolt.store_timestep_field!(iocb.io, t, p.A.dh, c.B_solver_cache.sₙ[1:length(c.A_solver_cache.uₙ)], :s)
+    Thunderbolt.finalize_timestep!(iocb.io, t)
+end
+
+iocb = IOCallback(ParaViewWriter("test"))
+
+# Idea: We want to solve a semidiscrete problem, with a given compatible solver, on a time interval, with a given initial condition
+# TODO iterator syntax
+solve(
+    problem,
+    solver,
+    1.0,
+    (0.0, 1000.0),
+    spiral_wave_initializer,
+    iocb
+)
