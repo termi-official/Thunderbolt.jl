@@ -48,6 +48,8 @@ function setup_solver_caches(dh, solver::NewtonRaphsonSolver{T}) where {T}
     NewtonRaphsonSolverCache(create_sparsity_pattern(dh), zeros(ndofs(dh)), solver)
 end
 
+eliminate_constraints_from_linearization!(solver_cache, problem_cache) = apply_zero!(solver_cache.J, solver_cache.residual, problem_cache.ch)
+
 function solve!(u, problem_cache, solver_cache::NewtonRaphsonSolverCache{JacType, ResidualType, T}) where {JacType, ResidualType, T}
     newton_itr = -1
     Δu = zero(u)
@@ -56,10 +58,10 @@ function solve!(u, problem_cache, solver_cache::NewtonRaphsonSolverCache{JacType
 
         assemble_linearization!(solver_cache.J, solver_cache.residual, u, problem_cache)
 
-        rhsnorm = norm(solver_cache.residual[Ferrite.free_dofs(problem_cache.ch)])
-        apply_zero!(solver_cache.J, solver_cache.residual, problem_cache.ch)
+        eliminate_constraints_from_linearization!(solver_cache, problem_cache)
 
-        if rhsnorm < solver_cache.parameters.tol
+        residualnorm = norm(solver_cache.residual[Ferrite.free_dofs(problem_cache.ch)])
+        if residualnorm < solver_cache.parameters.tol
             break
         elseif newton_itr > solver_cache.parameters.max_iter
             @warn "Reached maximum Newton iterations. Aborting."
@@ -67,9 +69,9 @@ function solve!(u, problem_cache, solver_cache::NewtonRaphsonSolverCache{JacType
         end
 
         try
-            solve_inner_linear_system!(Δu, problem_cache, solver_cache)
+            solve_inner_linear_system!(Δu, solver_cache)
         catch err
-            @warn "Linear solver failed" , err
+            @warn "Linear solver failed: " , err
             return false
         end
 
@@ -80,7 +82,7 @@ function solve!(u, problem_cache, solver_cache::NewtonRaphsonSolverCache{JacType
     return true
 end
 
-function solve_inner_linear_system!(Δu, problem_cache, solver_cache::NewtonRaphsonSolverCache{JacType, ResidualType, T}) where {JacType, ResidualType, T}
+function solve_inner_linear_system!(Δu, solver_cache::NewtonRaphsonSolverCache{JacType, ResidualType, T}) where {JacType, ResidualType, T}
     Δu .= solver_cache.J \ solver_cache.residual
 end
 

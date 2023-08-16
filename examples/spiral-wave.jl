@@ -87,6 +87,7 @@ end
 
 ######################################################
 struct ImplicitEulerHeatSolver end
+
 mutable struct ImplicitEulerHeatSolverCache{MassMatrixType, DiffusionMatrixType, SystemMatrixType, LinSolverType, RHSType}
     M::MassMatrixType
     K::DiffusionMatrixType
@@ -263,12 +264,38 @@ function WriteVTK.vtk_grid(filename::AbstractString, grid::Grid{dim,C,T}; compre
 end
 
 ######################################################
-# struct GodunovSolver <: AbstractSolver
-# end
+struct TransientHeatProblem{DTF, ST}
+    diffusion_tensor_field::DTF
+    source_term::ST
+end
+
+struct PointwiseODEProblem{ODEDT}
+    ode_decider::ODEDT
+end
+
+struct SplitProblem{APT, BPT}
+    A::APT
+    B::BPT
+end
+
+struct LTGOSSolver{AST,BST} <: AbstractSolver
+    A_solver::AST
+    B_solver::BST
+end
+
+struct LTGOSSolverCache{ASCT, BSCT}
+    A_solver_cache::ASCT
+    B_solver_cache::BSCT
+end
+
+function setup_solver_caches(problem::SplitProblem{APT, BPT}, solver::LTGOSSolver{AST,BST}) where {APT,BPT,AST,BST}
+    return LTGOSSolverCache(
+        setup_solver_caches(problem.A, solver.A_solver),
+        setup_solver_caches(problem.A, solver.B_solver),
+    )
+end
 
 ######################################################
-
-
 function solve(;Δt=0.1, T=3.0, storeskip = 50, heatsolver = ImplicitEulerHeatSolver(), cellsolver = ForwardEulerCellSolver())
     heatsolvercache = ImplicitEulerHeatSolverCache(
         create_sparsity_pattern(dh),
