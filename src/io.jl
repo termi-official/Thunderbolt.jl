@@ -8,12 +8,20 @@ end
 
 ParaViewWriter(filename::String) = ParaViewWriter(filename, paraview_collection("$filename.pvd"), nothing)
 
-function store_timestep!(io::ParaViewWriter, t, dh, u)
+function store_timestep!(io::ParaViewWriter, t, grid)
     if io.current_file === nothing
         mkpath(io.filename)
-        io.current_file = vtk_grid(io.filename * "/$t.vtu", dh)
+        io.current_file = vtk_grid(io.filename * "/$t.vtu", grid)
     end
-    vtk_point_data(io.current_file, dh, u)
+end
+
+function store_timestep_field!(io::ParaViewWriter, t, dh, u, sym::Symbol)
+    # TODO extract symbol only
+    vtk_point_data(io.current_file, dh, u, String(sym))
+end
+
+function store_timestep_field!(io::ParaViewWriter, t, dh, u, name::String)
+    vtk_point_data(io.current_file, dh, u, name)
 end
 
 function store_timestep_celldata!(io::ParaViewWriter, t, u, coeff_name::String)
@@ -28,6 +36,7 @@ function finalize_timestep!(io::ParaViewWriter, t)
     vtk_save(io.current_file)
     io.pvd[t] = io.current_file
     io.current_file = nothing
+    WriteVTK.save_file(io.pvd.xdoc, io.pvd.path)
 end
 
 function finalize!(io::ParaViewWriter)
@@ -43,8 +52,8 @@ end
 
 JLD2Writer(filename::String, overwrite::Bool=true) = JLD2Writer(filename, jldopen("$filename.jld2", overwrite ? "a+" : "w"; compress = true))
 
-function store_timestep!(io::JLD2Writer, t, dh, u)
-    t ≈ 0.0 && (io.fd["dh"] = dh)
+function store_timestep!(io::JLD2Writer, t, grid)
+    t ≈ 0.0 && (io.fd["grid"] = grid)
     io.fd["timesteps/$t/solution"] = u
 end
 
