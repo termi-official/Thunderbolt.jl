@@ -35,6 +35,7 @@ export
     directions,
     # Coordinate system
     LVCoordinateSystem,
+    CartesianCoordinateSystem,
     compute_LV_coordinate_system,
     compute_midmyocardial_section_coordinate_system,
     getcoordinateinterpolation,

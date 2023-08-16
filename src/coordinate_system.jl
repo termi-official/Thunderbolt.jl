@@ -9,6 +9,8 @@ struct LVCoordinateSystem
     u_apicobasal::Vector{Float64}
 end
 
+struct CartesianCoordinateSystem end
+
 """
 """
 getcoordinateinterpolation(cs::LVCoordinateSystem) = Ferrite.getfieldinterpolation(cs.dh, (1,1))
@@ -78,7 +80,7 @@ function compute_LV_coordinate_system(grid::AbstractGrid, ip_geo::Interpolation{
 
     # Apicobasal coordinate
     #TODO refactor check for node set existence
-    if !haskey(getnodesets(grid), "Apex") #TODO this is just a hotfix, assuming that z points towards the apex
+    if !haskey(grid.nodesets, "Apex") #TODO this is just a hotfix, assuming that z points towards the apex
         apex_node_index = 1
         nodes = getnodes(grid)
         for (i,node) ∈ enumerate(nodes)
