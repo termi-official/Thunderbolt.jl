@@ -8,7 +8,7 @@ using Krylov
 import LinearAlgebra: mul!
 
 using SparseArrays: AbstractSparseMatrixCSC #,AbstractSparseMatrixCSR?
-using SparseMatricesCSR, ThreadedSparseCSR
+using SparseMatricesCSR #, ThreadedSparseCSR
 # ThreadedSparseCSR.multithread_matmul(PolyesterThreads())
 
 ######################################################
@@ -171,7 +171,7 @@ end
 function perform_step!(problem, cache::ImplicitEulerHeatSolverCache{SolutionType, MassMatrixType, DiffusionMatrixType, SystemMatrixType, LinSolverType, RHSType}, t, Δt) where {SolutionType, MassMatrixType, DiffusionMatrixType, SystemMatrixType, LinSolverType, RHSType}
     @unpack Δt_last, b, M, A, uₙ, uₙ₋₁, linsolver = cache
     # Remember last solution
-    uₙ₋₁ .= uₙ
+    @inbounds uₙ₋₁ .= uₙ
     # Update matrix if time step length has changed
     Δt ≈ Δt_last || implicit_euler_heat_solver_update_system_matrix!(cache, Δt)
     # Prepare right hand side b = M uₙ₋₁
@@ -179,7 +179,7 @@ function perform_step!(problem, cache::ImplicitEulerHeatSolverCache{SolutionType
     # Solve linear problem
     # TODO abstraction layer and way to pass the solver/preconditioner pair (LinearSolve.jl?)
     Krylov.cg!(linsolver, A, b, uₙ₋₁)
-    uₙ .= linsolver.x
+    @inbounds uₙ .= linsolver.x
 end
 
 # TODO decouple the concept ImplicitEuler from TransientHeatProblem again
@@ -228,10 +228,10 @@ abstract type AbstractCellSolverCache end
 struct ForwardEulerCellSolver <: AbstractCellSolver
 end
 
-mutable struct ForwardEulerCellSolverCache{VT} <: AbstractCellSolverCache
+mutable struct ForwardEulerCellSolverCache{VT, MT} <: AbstractCellSolverCache
     du::VT
     uₙ::VT
-    sₙ::VT
+    sₙ::MT
 end
 
 function perform_step!(cell_model::ION, t::Float64, Δt::Float64, solver_cache::ForwardEulerCellSolverCache{VT}) where {VT, ION <: AbstractIonicModel}
@@ -243,12 +243,12 @@ function perform_step!(cell_model::ION, t::Float64, Δt::Float64, solver_cache::
         @inbounds φₘ_cell = uₙ[i]
         @inbounds s_cell  = @view sₙ[i,:]
 
-        #TODO get x and Cₘ
+        # #TODO get x and Cₘ
         cell_rhs!(du, φₘ_cell, s_cell, nothing, t, cell_model)
 
         @inbounds uₙ[i] = φₘ_cell + Δt*du[1]
 
-        # Non-allocating assignment
+        # # Non-allocating assignment
         @inbounds for j ∈ 1:num_states(cell_model)
             sₙ[i,j] = s_cell[j] + Δt*du[j+1]
         end
@@ -259,9 +259,9 @@ end
 function setup_solver_caches(problem, solver::ForwardEulerCellSolver)
     @unpack npoints = problem # TODO what is a good abstraction layer over this?
     return ForwardEulerCellSolverCache(
+        zeros(1+num_states(problem.ode)),
         zeros(npoints),
-        zeros(npoints),
-        zeros(npoints)
+        zeros(npoints, num_states(problem.ode))
     )
 end
 
@@ -428,6 +428,7 @@ function perform_step!(problem::SplitProblem{APT, BPT}, cache::LTGOSSolverCache{
     # Then the step for B is executed
     perform_step!(problem.B, cache.B_solver_cache, t, Δt)
     # This concludes the time step
+    return nothing
 end
 
 """
@@ -453,7 +454,7 @@ function solve(problem, solver, Δt₀, (t₀, T), initial_condition::Function, 
 
         callback(t, problem, cache)
     end
-    
+
     @timeit "solver" perform_step!(problem, cache, T, T-t)
     callback(t, problem, cache)
 end
