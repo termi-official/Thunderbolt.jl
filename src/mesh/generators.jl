@@ -132,3 +132,6 @@ function generate_ideal_lv_mesh(num_elements_circumferential::Int, num_elements_
     # return Grid(cells, nodes, nodesets=nodesets, facesets=facesets)
     return Grid(cells, nodes, facesets=facesets)
 end
+
+# TODO think about making Mesh = Grid+Topology+CoordinateSystem
+generate_mesh(args...) = to_mesh(generate_grid(args...))
