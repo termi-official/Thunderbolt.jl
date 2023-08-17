@@ -390,6 +390,9 @@ struct LTGOSSolverCache{ASCT, BSCT}
     B_solver_cache::BSCT
 end
 
+# TODO add guidance with helpers like
+#   const QuGarfinkel1999Solver = SMOSSolver{AdaptiveForwardEulerReactionSubCellSolver, ImplicitEulerHeatSolver}
+
 """
     transfer_fields!(A, A_cache, B, B_cache)
 
@@ -458,15 +461,28 @@ function solve(problem, solver, Δt₀, (t₀, T), initial_condition::Function, 
     @timeit "solver" perform_step!(problem, cache, T, T-t)
     callback(t, problem, cache)
 end
+#####################################################
 
-######################################################
-struct GalerkinDiscretization
-    # TODO interpolation collection instead of single interpolation
-    interpolations::Dict{Symbol, Interpolation}
+mutable struct IOCallback{IO}
+    io::IO
 end
 
-struct ReactionDiffusionSplit{MODEL}
-    model::MODEL
+function (iocb::IOCallback{ParaViewWriter{PVD}})(t, p, c) where {PVD}
+    store_timestep!(iocb.io, t, p.A.dh.grid)
+    Thunderbolt.store_timestep_field!(iocb.io, t, p.A.dh, c.A_solver_cache.uₙ, :φₘ)
+    Thunderbolt.store_timestep_field!(iocb.io, t, p.A.dh, c.B_solver_cache.sₙ[1:length(c.A_solver_cache.uₙ)], :s)
+    Thunderbolt.finalize_timestep!(iocb.io, t)
+end
+
+#####################################################
+
+# TODO what exactly is the job here? How do we know where to write and what to iterate?
+function setup_initial_condition!(problem::SplitProblem, cache, initial_condition)
+    # TODO cleaner implementation. We need to extract this from the types or via dispatch.
+    u₀, s₀ = spiral_wave_initializer(problem)
+    cache.B_solver_cache.uₙ .= u₀ # Note that the vectors in the caches are connected
+    cache.B_solver_cache.sₙ .= s₀
+    return nothing
 end
 
 """
@@ -500,13 +516,17 @@ function semidiscretize(split::ReactionDiffusionSplit{MonodomainModel{A,B,C,D,E}
     return semidiscrete_problem
 end
 
-# TODO what exactly is the job here? How do we know where to write and what to iterate?
-function setup_initial_condition!(problem::SplitProblem, cache, initial_condition)
-    # TODO cleaner implementation. We need to extract this from the types or via dispatch.
-    u₀, s₀ = spiral_wave_initializer(problem)
-    cache.B_solver_cache.uₙ .= u₀ # Note that the vectors in the caches are connected
-    cache.B_solver_cache.sₙ .= s₀
-    return nothing
+# TODO make Mesh = Grid+Topology+CoordinateSystem
+generate_mesh(args...) = generate_grid(args)
+
+######################################################
+struct GalerkinDiscretization
+    # TODO interpolation collection instead of single interpolation
+    interpolations::Dict{Symbol, Interpolation}
+end
+
+struct ReactionDiffusionSplit{MODEL}
+    model::MODEL
 end
 
 function spiral_wave_initializer(problem::SplitProblem)
@@ -540,8 +560,6 @@ model = MonodomainModel(
     FHNModel()
 )
 
-# TODO make Mesh = Grid+Topology+CoordinateSystem
-generate_mesh(args...) = generate_grid(args)
 mesh = generate_mesh(Quadrilateral, (2^6, 2^6), Vec{2}((0.0,0.0)), Vec{2}((2.5,2.5)))
 
 problem = semidiscretize(
@@ -550,24 +568,10 @@ problem = semidiscretize(
     mesh
 )
 
-# TODO add guidance with helpers like
-#   const QuGarfinkel1999Solver = SMOSSolver{AdaptiveForwardEulerReactionSubCellSolver, ImplicitEulerHeatSolver}
-
 solver = LTGOSSolver(
     ImplicitEulerHeatSolver(),
     ForwardEulerCellSolver()
 )
-
-mutable struct IOCallback{IO}
-    io::IO
-end
-
-function (iocb::IOCallback{ParaViewWriter{PVD}})(t, p, c) where {PVD}
-    store_timestep!(iocb.io, t, p.A.dh.grid)
-    Thunderbolt.store_timestep_field!(iocb.io, t, p.A.dh, c.A_solver_cache.uₙ, :φₘ)
-    Thunderbolt.store_timestep_field!(iocb.io, t, p.A.dh, c.B_solver_cache.sₙ[1:length(c.A_solver_cache.uₙ)], :s)
-    Thunderbolt.finalize_timestep!(iocb.io, t)
-end
 
 iocb = IOCallback(ParaViewWriter("test"))
 
