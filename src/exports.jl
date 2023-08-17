@@ -1,5 +1,6 @@
 export
     # Mesh generators
+    generate_mesh,
     generate_ring_mesh,
     # Passive material models
     NullEnergyModel,
