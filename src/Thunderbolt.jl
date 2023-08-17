@@ -21,8 +21,8 @@ include("modeling/electrophysiology.jl")
 include("modeling/mechanics/energies.jl")
 include("modeling/mechanics/contraction.jl")
 include("modeling/mechanics/active.jl")
+include("modeling/mechanics/drivers.jl") # TODO better name. This is basically the quadrature point routine.
 
-include("drivers.jl")
 include("solver.jl")
 
 include("io.jl")
