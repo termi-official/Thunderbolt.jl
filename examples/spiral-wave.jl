@@ -357,6 +357,10 @@ function WriteVTK.vtk_grid(filename::AbstractString, grid::Grid{dim,C,T}; compre
 end
 
 ######################################################
+struct ReactionDiffusionSplit{MODEL}
+    model::MODEL
+end
+
 struct TransientHeatProblem{DTF, ST, DH}
     diffusion_tensor_field::DTF
     source_term::ST
@@ -475,7 +479,6 @@ function (iocb::IOCallback{ParaViewWriter{PVD}})(t, p, c) where {PVD}
 end
 
 #####################################################
-
 # TODO what exactly is the job here? How do we know where to write and what to iterate?
 function setup_initial_condition!(problem::SplitProblem, cache, initial_condition)
     # TODO cleaner implementation. We need to extract this from the types or via dispatch.
@@ -485,12 +488,17 @@ function setup_initial_condition!(problem::SplitProblem, cache, initial_conditio
     return nothing
 end
 
+struct GalerkinDiscretization
+    # TODO interpolation collection instead of single interpolation
+    interpolations::Dict{Symbol, Interpolation}
+end
+
 """
     semidiscretize(model, discretization, mesh)
 
 Transform a space-time model into a pure time-dependent problem.
 """
-function semidiscretize(split::ReactionDiffusionSplit{MonodomainModel{A,B,C,D,E}}, ::GalerkinDiscretization, grid::Grid) where {A,B,C,D,E}
+function semidiscretize(split::ReactionDiffusionSplit{MonodomainModel{A,B,C,D,E}}, ::GalerkinDiscretization, grid::Thunderbolt.AbstractGrid) where {A,B,C,D,E}
     epmodel = split.model
 
     # TODO get these from the interpolation collection in GalerkinDiscretization
@@ -516,19 +524,7 @@ function semidiscretize(split::ReactionDiffusionSplit{MonodomainModel{A,B,C,D,E}
     return semidiscrete_problem
 end
 
-# TODO make Mesh = Grid+Topology+CoordinateSystem
-generate_mesh(args...) = generate_grid(args)
-
 ######################################################
-struct GalerkinDiscretization
-    # TODO interpolation collection instead of single interpolation
-    interpolations::Dict{Symbol, Interpolation}
-end
-
-struct ReactionDiffusionSplit{MODEL}
-    model::MODEL
-end
-
 function spiral_wave_initializer(problem::SplitProblem)
     # TODO cleaner implementation. We need to extract this from the types or via dispatch.
     dh = problem.A.dh
