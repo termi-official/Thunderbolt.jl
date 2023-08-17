@@ -1,13 +1,21 @@
-# Generates a hexahedral ring in the form of a large cylinder subtracted by a smaller cylinder.
-function generate_ring_mesh(ne_c, ne_r, ne_l; radial_inner::T = Float64(0.75), radial_outer::T = Float64(1.0), longitudinal_lower::T = Float64(-0.2), longitudinal_upper::T = Float64(0.2), apicobasal_tilt::T=Float64(0.0)) where {T}
+"""
+    generate_ring_mesh(num_elements_circumferential::Int, num_elements_radial::Int, num_elements_logintudinal::Int; inner_radius::T = Float64(0.75), outer_radius::T = Float64(1.0), longitudinal_lower::T = Float64(-0.2), longitudinal_upper::T = Float64(0.2), apicobasal_tilt::T=Float64(0.0)) where {T}
+
+Generates an idealized full-hexahedral ring. Geometrically it is the substraction of a small cylinder ``C_i`` of a large cylinder ``C_o``.
+The number of elements for the cylindrical system can be controlled by the first three input parameters.
+The remaining parameters control the spatial dimensions and the ring shape.
+"""
+function generate_ring_mesh(num_elements_circumferential::Int, num_elements_radial::Int, num_elements_logintudinal::Int; inner_radius::T = Float64(0.75), outer_radius::T = Float64(1.0), longitudinal_lower::T = Float64(-0.2), longitudinal_upper::T = Float64(0.2), apicobasal_tilt::T=Float64(0.0)) where {T}
     # Generate a rectangle in cylindrical coordinates and transform coordinates back to carthesian.
-    ne_tot = ne_c*ne_r*ne_l;
-    n_nodes_c = ne_c; n_nodes_r = ne_r+1; n_nodes_l = ne_l+1;
+    ne_tot = num_elements_circumferential*num_elements_radial*num_elements_logintudinal;
+    n_nodes_c = num_elements_circumferential;
+    n_nodes_r = num_elements_radial+1;
+    n_nodes_l = num_elements_logintudinal+1;
     n_nodes = n_nodes_c * n_nodes_r * n_nodes_l;
 
     # Generate nodes
     circumferential_angle = range(0.0, stop=2*π, length=n_nodes_c+1)
-    radial_coords = range(radial_inner, stop=radial_outer, length=n_nodes_r)
+    radial_coords = range(inner_radius, stop=outer_radius, length=n_nodes_r)
     longitudinal_angle = range(longitudinal_upper, stop=longitudinal_lower, length=n_nodes_l)
     nodes = Node{3,T}[]
     for k in 1:n_nodes_l, j in 1:n_nodes_r, i in 1:n_nodes_c
@@ -19,22 +27,20 @@ function generate_ring_mesh(ne_c, ne_r, ne_l; radial_inner::T = Float64(0.75), r
     # Generate cells
     node_array = reshape(collect(1:n_nodes), (n_nodes_c, n_nodes_r, n_nodes_l))
     cells = Hexahedron[]
-    for k in 1:ne_l, j in 1:ne_r, i in 1:ne_c
-        i_next = (i == ne_c) ? 1 : i + 1
+    for k in 1:num_elements_logintudinal, j in 1:num_elements_radial, i in 1:num_elements_circumferential
+        i_next = (i == num_elements_circumferential) ? 1 : i + 1
         push!(cells, Hexahedron((node_array[i,j,k], node_array[i_next,j,k], node_array[i_next,j+1,k], node_array[i,j+1,k],
                                  node_array[i,j,k+1], node_array[i_next,j,k+1], node_array[i_next,j+1,k+1], node_array[i,j+1,k+1])))
     end
 
     # Cell faces
-    cell_array = reshape(collect(1:ne_tot),(ne_c, ne_r, ne_l))
+    cell_array = reshape(collect(1:ne_tot),(num_elements_circumferential, num_elements_radial, num_elements_logintudinal))
     boundary = FaceIndex[[FaceIndex(cl, 1) for cl in cell_array[:,:,1][:]];
                             [FaceIndex(cl, 2) for cl in cell_array[:,1,:][:]];
                             #[FaceIndex(cl, 3) for cl in cell_array[end,:,:][:]];
                             [FaceIndex(cl, 4) for cl in cell_array[:,end,:][:]];
                             #[FaceIndex(cl, 5) for cl in cell_array[1,:,:][:]];
                             [FaceIndex(cl, 6) for cl in cell_array[:,:,end][:]]]
-
-    # boundary_matrix = boundaries_to_sparse(boundary)
 
     # Cell face sets
     offset = 0
@@ -47,17 +53,16 @@ function generate_ring_mesh(ne_c, ne_r, ne_l; radial_inner::T = Float64(0.75), r
     return Grid(cells, nodes, facesets=facesets)
 end
 
-# Generates a hexahedral truncated ellipsoidal mesh by reparametrizing a hollow sphere (r=1.0 length units) where longitudinal_upper determines the truncation height.
 """
     generate_ideal_lv_mesh(num_elements_circumferential::Int, num_elements_radial::Int, num_elements_logintudinally::Int; inner_chamber_radius = 0.7, outer_wall_radius = 1.0, longitudinal_cutoff_lower::T = Float64(-1.0), longitudinal_cutoff_upper::T = Float64(0.2), longitudinal_stretch::T = Float64(1.2))
 
 Generate an idealized left ventricle as a truncated ellipsoid.
-The number of elements per axis are controlled by the 3 parameters.
+The number of elements per axis are controlled by the first three parameters.
 """
-function generate_ideal_lv_mesh(ne_c::Int, ne_r::Int, ne_l::Int; radial_inner::T = Float64(0.7), radial_outer::T = Float64(1.0), longitudinal_upper::T = Float64(0.2), apex_inner::T = Float64(1.3), apex_outer::T = Float64(1.5)) where {T}
+function generate_ideal_lv_mesh(num_elements_circumferential::Int, num_elements_radial::Int, num_elements_logintudinal::Int; inner_radius::T = Float64(0.7), outer_radius::T = Float64(1.0), longitudinal_upper::T = Float64(0.2), apex_inner::T = Float64(1.3), apex_outer::T = Float64(1.5)) where {T}
     # Generate a rectangle in cylindrical coordinates and transform coordinates back to carthesian.
-    ne_tot = ne_c*ne_r*ne_l;
-    n_nodes_c = ne_c; n_nodes_r = ne_r+1; n_nodes_l = ne_l+1;
+    ne_tot = num_elements_circumferential*num_elements_radial*num_elements_logintudinal;
+    n_nodes_c = num_elements_circumferential; n_nodes_r = num_elements_radial+1; n_nodes_l = num_elements_logintudinal+1;
     n_nodes = n_nodes_c * n_nodes_r * n_nodes_l;
 
     # Generate nodes
@@ -70,10 +75,10 @@ function generate_ideal_lv_mesh(ne_c::Int, ne_r::Int, ne_l::Int; radial_inner::T
     nodes = Node{3,T}[]
     # Add nodes up to apex
     for θ ∈ longitudinal_angle[2:(end-1)], radius_percent ∈ radii_in_percent, φ ∈ circumferential_angle[1:(end-1)]
-        # thickness_inner = radial_inner*longitudinal_percent + apex_inner*(1.0-longitudinal_percent)
-        # thickness_outer = radial_outer*longitudinal_percent + apex_outer*(1.0-longitudinal_percent)
+        # thickness_inner = inner_radius*longitudinal_percent + apex_inner*(1.0-longitudinal_percent)
+        # thickness_outer = outer_radius*longitudinal_percent + apex_outer*(1.0-longitudinal_percent)
         # radius = radius_percent*thickness_outer + (1.0-radius_percent)*thickness_inner
-        radius = radial_inner*(1.0-radius_percent) + radial_outer*(radius_percent)
+        radius = inner_radius*(1.0-radius_percent) + outer_radius*(radius_percent)
         # cylindrical -> carthesian
         z = θ < π/2 ? (apex_inner*(1.0-radius_percent) + apex_outer*(radius_percent))*cos(θ) : apex_outer*cos(θ)
         push!(nodes, Node((radius*cos(φ)*sin(θ), radius*sin(φ)*sin(θ), z)))
@@ -81,7 +86,7 @@ function generate_ideal_lv_mesh(ne_c::Int, ne_r::Int, ne_l::Int; radial_inner::T
 
     # Add flat base
     for θ ∈ longitudinal_angle[end], radius_percent ∈ radii_in_percent, φ ∈ circumferential_angle[1:(end-1)]
-        radius = radial_inner*(1.0-radius_percent) + radial_outer*(radius_percent)
+        radius = inner_radius*(1.0-radius_percent) + outer_radius*(radius_percent)
         # cylindrical -> carthesian
         push!(nodes, Node((radius*cos(φ)*sin(θ), radius*sin(φ)*sin(θ), apex_outer*cos(θ))))
     end
@@ -89,19 +94,17 @@ function generate_ideal_lv_mesh(ne_c::Int, ne_r::Int, ne_l::Int; radial_inner::T
     # Generate all cells but the apex
     node_array = reshape(collect(1:n_nodes), (n_nodes_c, n_nodes_r, n_nodes_l))
     cells = Union{Hexahedron,Wedge}[]
-    for k in 1:ne_l, j in 1:ne_r, i in 1:ne_c
-        i_next = (i == ne_c) ? 1 : i + 1
+    for k in 1:num_elements_logintudinal, j in 1:num_elements_radial, i in 1:num_elements_circumferential
+        i_next = (i == num_elements_circumferential) ? 1 : i + 1
         push!(cells, Hexahedron((node_array[i,j,k], node_array[i_next,j,k], node_array[i_next,j+1,k], node_array[i,j+1,k],
                                  node_array[i,j,k+1], node_array[i_next,j,k+1], node_array[i_next,j+1,k+1], node_array[i,j+1,k+1])))
     end
 
     # Cell faces
-    cell_array = reshape(collect(1:ne_tot),(ne_c, ne_r, ne_l))
+    cell_array = reshape(collect(1:ne_tot),(num_elements_circumferential, num_elements_radial, num_elements_logintudinal))
     boundary = FaceIndex[[FaceIndex(cl, 2) for cl in cell_array[:,1,:][:]];
                           [FaceIndex(cl, 4) for cl in cell_array[:,end,:][:]];
                           [FaceIndex(cl, 6) for cl in cell_array[:,:,end][:]]]
-
-    # boundary_matrix = boundaries_to_sparse(boundary)
 
     # Cell face sets
     offset = 0
@@ -117,9 +120,9 @@ function generate_ideal_lv_mesh(ne_c::Int, ne_r::Int, ne_l::Int; radial_inner::T
     end
 
     # Add apex cells
-    for j ∈ 1:ne_r, i ∈ 1:ne_c
-        i_next = (i == ne_c) ? 1 : i + 1
-        singular_index = length(nodes)-ne_r+j-1
+    for j ∈ 1:num_elements_radial, i ∈ 1:num_elements_circumferential
+        i_next = (i == num_elements_circumferential) ? 1 : i + 1
+        singular_index = length(nodes)-num_elements_radial+j-1
         push!(cells, Wedge((
             singular_index , node_array[i,j,1], node_array[i_next,j,1],
             singular_index+1, node_array[i,j+1,1], node_array[i_next,j+1,1],
@@ -130,82 +133,9 @@ function generate_ideal_lv_mesh(ne_c::Int, ne_r::Int, ne_l::Int; radial_inner::T
     return Grid(cells, nodes, facesets=facesets)
 end
 
-# abstract type AbstractSurface end
-# abstract type AbstractPath end
-# struct ConformingFace3D <: AbstractSurface
-#     cellidx_a::Int
-#     cellidx_b::Int
-#     defining_nodes::NTuple{3,Int}
-# end
-
-# struct SimpleEdge3D <: AbstractPath
-#     defining_nodes::NTuple{3,Int}
-# end
-"""
-SimpleMesh3D{C <: AbstractCell, T <: Real}
-
-A grid which also has information abouts its vertices, faces and edges.
-"""
-struct SimpleMesh3D{C <: AbstractCell, T <: Real} <: AbstractGrid{3}
-    grid::Grid{3, C, T}
-    mfaces::OrderedDict{NTuple{3,Int}, Int} # Maps "sortface"-representation to id
-    medges::OrderedDict{NTuple{2,Int}, Int} # Maps "sortedge"-representation to id
-    mvertices::OrderedDict{Int, Int} # Maps node to id
-    number_of_cells_by_type::Dict{DataType, Int}
-end
-
-global_edges(mgrid::SimpleMesh3D, cell) = [mgrid.medges[sedge] for sedge ∈ first.(sortedge.(edges(cell)))]
-global_faces(mgrid::SimpleMesh3D, cell) = [mgrid.mfaces[sface] for sface ∈ first.(sortface.(faces(cell)))]
-global_vertices(mgrid::SimpleMesh3D, cell) = [mgrid.mvertices[v] for v ∈ vertices(cell)]
-
-num_nodes(mgrid::SimpleMesh3D) = length(mgrid.grid.nodes)
-num_faces(mgrid::SimpleMesh3D) = length(mgrid.mfaces)
-num_edges(mgrid::SimpleMesh3D) = length(mgrid.medges)
-num_vertices(mgrid::SimpleMesh3D) = length(mgrid.mvertices)
-
-function SimpleMesh3D(grid::Grid{3,C,T}) where {C, T}
-    mfaces = OrderedDict{NTuple{3,Int}, Int}()
-    medges = OrderedDict{NTuple{2,Int}, Int}()
-    mvertices = OrderedDict{Int, Int}()
-    next_face_idx = 1
-    next_edge_idx = 1
-    next_vertex_idx = 1
-    number_of_cells_by_type = Dict{DataType, Int}()
-    for cell ∈ getcells(grid)
-        cell_type = typeof(cell)
-        if haskey(number_of_cells_by_type, cell_type)
-            number_of_cells_by_type[cell_type] += 1
-        else
-            number_of_cells_by_type[cell_type] = 1
-        end
-
-        for v ∈ vertices(cell)
-            if !haskey(mvertices, v)
-                mvertices[v] = next_vertex_idx
-                next_vertex_idx += 1
-            end
-        end
-        for e ∈ first.(sortedge.(edges(cell)))
-            if !haskey(medges, e)
-                medges[e] = next_edge_idx
-                next_edge_idx += 1
-            end
-        end
-        for f ∈ first.(sortface.(faces(cell)))
-            if !haskey(mfaces, f)
-                mfaces[f] = next_face_idx
-                next_face_idx += 1
-            end
-        end
-    end
-    return SimpleMesh3D(grid, mfaces, medges, mvertices, number_of_cells_by_type)
-end
-
 function hexahedralize(grid::Grid{3, Hexahedron})
     return grid
 end
-
-const LinearCellGeometry = Union{Hexahedron, Tetrahedron, Pyramid, Wedge, Triangle, Quadrilateral, Line}
 
 # TODO nonlinear version
 function create_center_node(grid::AbstractGrid{dim}, cell::LinearCellGeometry) where {dim}
@@ -238,7 +168,7 @@ function create_face_center_node(grid::AbstractGrid{dim}, cell::LinearCellGeomet
     return Node(center)
 end
 
-function refine_cell_uniform(mgrid::SimpleMesh3D, cell::Hexahedron, cell_idx::Int, global_edge_indices, global_face_indices)
+function refinum_elements_circumferentialell_uniform(mgrid::SimpleMesh3D, cell::Hexahedron, cell_idx::Int, global_edge_indices, global_face_indices)
     # Compute offsets
     new_edge_offset = num_nodes(mgrid)
     new_face_offset = num_edges(mgrid) + new_edge_offset
@@ -285,7 +215,7 @@ function refine_cell_uniform(mgrid::SimpleMesh3D, cell::Hexahedron, cell_idx::In
 end
 
 # Hex into 8 hexahedra
-hexahedralize_cell(mgrid::SimpleMesh3D, cell::Hexahedron, cell_idx::Int, global_edge_indices, global_face_indices) = refine_cell_uniform(mgrid, cell, cell_idx, global_edge_indices, global_face_indices)
+hexahedralize_cell(mgrid::SimpleMesh3D, cell::Hexahedron, cell_idx::Int, global_edge_indices, global_face_indices) = refinum_elements_circumferentialell_uniform(mgrid, cell, cell_idx, global_edge_indices, global_face_indices)
 
 function hexahedralize_cell(mgrid::SimpleMesh3D, cell::Wedge, cell_idx::Int, global_edge_indices, global_face_indices)
     # Compute offsets
@@ -353,7 +283,7 @@ function uniform_refinement(grid::Grid{3,C,T}) where {C,T}
         for (faceidx,gfi) ∈ enumerate(global_face_indices)
             new_face_nodes[gfi] = create_face_center_node(grid, cell, faceidx)
         end
-        append!(new_cells, refine_cell_uniform(mgrid, cell, cellidx, global_edge_indices, global_face_indices))
+        append!(new_cells, refinum_elements_circumferentialell_uniform(mgrid, cell, cellidx, global_edge_indices, global_face_indices))
     end
     # TODO boundary sets
     return Grid(new_cells, [grid.nodes; new_edge_nodes; new_face_nodes; new_cell_nodes])
@@ -393,17 +323,17 @@ function hexahedralize(grid::Grid{3,C,T}) where {C,T}
 end
 
 # Generates a hexahedral truncated ellipsoidal mesh by reparametrizing a hollow sphere (r=1.0 length units) where longitudinal_upper determines the truncation height.
-function generate_ideal_lv_mesh_boxed(ne_c, ne_r, ne_l; radial_inner::T = Float64(0.75), radial_outer::T = Float64(1.0), longitudinal_lower::T = Float64(-1.0), longitudinal_upper::T = Float64(0.2)) where {T}
+function generate_ideal_lv_mesh_boxed(num_elements_circumferential, num_elements_radial, num_elements_logintudinal; inner_radius::T = Float64(0.75), outer_radius::T = Float64(1.0), longitudinal_lower::T = Float64(-1.0), longitudinal_upper::T = Float64(0.2)) where {T}
     # Generate a rectangle in cylindrical coordinates and transform coordinates back to carthesian.
-    ne_tot = ne_c*ne_r*ne_l;
-    n_nodes_c = ne_c; n_nodes_r = ne_r+1; n_nodes_l = ne_l+1;
+    ne_tot = num_elements_circumferential*num_elements_radial*num_elements_logintudinal;
+    n_nodes_c = num_elements_circumferential; n_nodes_r = num_elements_radial+1; n_nodes_l = num_elements_logintudinal+1;
     n_nodes = n_nodes_c * n_nodes_r * n_nodes_l;
 
     generator_offset = 5
 
     # Generate nodes
     circumferential_angle = range(0.0, stop=2*π, length=n_nodes_c+1)
-    radial_coords = range(radial_inner, stop=radial_outer, length=n_nodes_r)
+    radial_coords = range(inner_radius, stop=outer_radius, length=n_nodes_r)
     longitudinal_angle = range(0, stop=(1.0+longitudinal_upper)*π/2, length=n_nodes_l+generator_offset-1)
     nodes = Node{3,T}[]
     # Add everything but apex and base
@@ -415,25 +345,23 @@ function generate_ideal_lv_mesh_boxed(ne_c, ne_r, ne_l; radial_inner::T = Float6
     # Add flat base
     for θ ∈ longitudinal_angle[end], radius ∈ radial_coords, φ ∈ circumferential_angle[1:(end-1)]
         # cylindrical -> carthesian
-        push!(nodes, Node((radius*cos(φ)*sin(θ), radius*sin(φ)*sin(θ), radial_outer*cos(θ))))
+        push!(nodes, Node((radius*cos(φ)*sin(θ), radius*sin(φ)*sin(θ), outer_radius*cos(θ))))
     end
 
     # Generate all cells but the apex
     node_array = reshape(collect(1:n_nodes), (n_nodes_c, n_nodes_r, n_nodes_l))
     cells = Hexahedron[]
-    for k in 1:ne_l, j in 1:ne_r, i in 1:ne_c
-        i_next = (i == ne_c) ? 1 : i + 1
+    for k in 1:num_elements_logintudinal, j in 1:num_elements_radial, i in 1:num_elements_circumferential
+        i_next = (i == num_elements_circumferential) ? 1 : i + 1
         push!(cells, Hexahedron((node_array[i,j,k], node_array[i_next,j,k], node_array[i_next,j+1,k], node_array[i,j+1,k],
                                  node_array[i,j,k+1], node_array[i_next,j,k+1], node_array[i_next,j+1,k+1], node_array[i,j+1,k+1])))
     end
 
     # Cell faces
-    cell_array = reshape(collect(1:ne_tot),(ne_c, ne_r, ne_l))
+    cell_array = reshape(collect(1:ne_tot),(num_elements_circumferential, num_elements_radial, num_elements_logintudinal))
     boundary = FaceIndex[[FaceIndex(cl, 2) for cl in cell_array[:,1,:][:]];
                           [FaceIndex(cl, 4) for cl in cell_array[:,end,:][:]];
                           [FaceIndex(cl, 6) for cl in cell_array[:,:,end][:]]]
-
-    # boundary_matrix = boundaries_to_sparse(boundary)
 
     # Cell face sets
     offset = 0
@@ -457,9 +385,9 @@ function generate_ideal_lv_mesh_boxed(ne_c, ne_r, ne_l; radial_inner::T = Float6
     end
 
     # Making the connection continuous will be painful.
-    coords_x = range(minx, stop=maxx, length=Int(ne_c/4)+1)
-    coords_y = range(miny, stop=maxy, length=Int(ne_c/4)+1)
-    coords_z = radial_coords#range(minz, stop=maxz, length=ne_r+1)
+    coords_x = range(minx, stop=maxx, length=Int(num_elements_circumferential/4)+1)
+    coords_y = range(miny, stop=maxy, length=Int(num_elements_circumferential/4)+1)
+    coords_z = radial_coords#range(minz, stop=maxz, length=num_elements_radial+1)
     for z ∈ coords_z, y ∈ coords_y, x ∈ coords_x
         # rebox coordinate
         x = x/2.0
@@ -472,7 +400,7 @@ function generate_ideal_lv_mesh_boxed(ne_c, ne_r, ne_l; radial_inner::T = Float6
     n_nodes = length(coords_x)*length(coords_y)*length(coords_z)
     node_array_apex = reshape(collect(1:n_nodes), (length(coords_x), length(coords_y), length(coords_z)))
     node_array_apex .+= apex_node_offset
-    for k in 1:(ne_r), j in 1:(Int(ne_c/4)), i in 1:(Int(ne_c/4))
+    for k in 1:(num_elements_radial), j in 1:(Int(num_elements_circumferential/4)), i in 1:(Int(num_elements_circumferential/4))
         push!(cells, Hexahedron((node_array_apex[i,j,k], node_array_apex[i+1,j,k], node_array_apex[i+1,j+1,k], node_array_apex[i,j+1,k],
                                  node_array_apex[i,j,k+1], node_array_apex[i+1,j,k+1], node_array_apex[i+1,j+1,k+1], node_array_apex[i,j+1,k+1])))
     end
