@@ -101,7 +101,7 @@ function setup_mass_operator!(bifi::AssembledMassOperator{MT, CV}, dh::DH) where
                 Nᵢ = shape_value(cv, q_point, i)
                 for j in 1:n_basefuncs
                     Nⱼ = shape_value(cv, q_point, j)
-                    Mₑ[i,j] += Nᵢ * Nⱼ * dΩ 
+                    Mₑ[i,j] += Nᵢ * Nⱼ * dΩ
                 end
             end
         end
@@ -216,7 +216,7 @@ function setup_solver_caches(problem #= ::TransientHeatProblem =#, solver::Impli
     # TODO where does this belong?
     setup_mass_operator!(cache.M, dh)
     setup_diffusion_operator!(cache.K, dh)
-    
+
     return cache
 end
 
@@ -434,15 +434,15 @@ end
 """
     solve(problem, solver, Δt=0.1, callback=nothing)
 
-Main entry point for solvers in Thunderbolt.jl. The design is inspired by 
-DifferentialEquations.jl. We try to upstream as much content as possible to 
+Main entry point for solvers in Thunderbolt.jl. The design is inspired by
+DifferentialEquations.jl. We try to upstream as much content as possible to
 make it available for packages.
 """
 function solve(problem, solver, Δt₀, (t₀, T), initial_condition::Function, callback::CALLBACK = (t,p,c) -> nothing) where {CALLBACK}
     cache = setup_solver_caches(problem, solver)
 
     setup_initial_condition!(problem, cache, initial_condition)
-    
+
     Δt = Δt₀
     t = t₀
     while t < T
@@ -460,7 +460,7 @@ function solve(problem, solver, Δt₀, (t₀, T), initial_condition::Function, 
 end
 
 ######################################################
-struct GalerkinDiscretization 
+struct GalerkinDiscretization
     # TODO interpolation collection instead of single interpolation
     interpolations::Dict{Symbol, Interpolation}
 end
@@ -542,7 +542,7 @@ model = MonodomainModel(
 
 # TODO make Mesh = Grid+Topology+CoordinateSystem
 generate_mesh(args...) = generate_grid(args)
-mesh = generate_grid(Quadrilateral, (2^6, 2^6), Vec{2}((0.0,0.0)), Vec{2}((2.5,2.5)))
+mesh = generate_mesh(Quadrilateral, (2^6, 2^6), Vec{2}((0.0,0.0)), Vec{2}((2.5,2.5)))
 
 problem = semidiscretize(
     ReactionDiffusionSplit(model),
