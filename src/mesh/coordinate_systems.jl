@@ -1,15 +1,16 @@
+
+struct CartesianCoordinateSystem end
+
 """
 Simple Coordinate System.
 
-!!! note TODO circumferential coordinate
+!!! note TODO implement circumferential coordinate
 """
 struct LVCoordinateSystem
     dh::AbstractDofHandler
     u_transmural::Vector{Float64}
     u_apicobasal::Vector{Float64}
 end
-
-struct CartesianCoordinateSystem end
 
 """
 """

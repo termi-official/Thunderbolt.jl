@@ -10,10 +10,10 @@ import Ferrite: AbstractDofHandler, AbstractGrid, AbstractRefShape, AbstractCell
 import Ferrite: vertices, edges, faces, sortedge, sortface
 
 include("mesh/meshes.jl")
+include("mesh/coordinate_systems.jl")
 include("mesh/tools.jl")
 include("mesh/generators.jl")
 
-include("coordinate_system.jl")
 include("microstructure.jl")
 
 include("electrophysiology.jl")
