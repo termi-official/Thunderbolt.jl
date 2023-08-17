@@ -14,13 +14,13 @@ include("mesh/coordinate_systems.jl")
 include("mesh/tools.jl")
 include("mesh/generators.jl")
 
-include("microstructure.jl")
+include("modeling/microstructure.jl")
 
-include("electrophysiology.jl")
+include("modeling/electrophysiology.jl")
 
-include("mechanics/energies.jl")
-include("mechanics/contraction.jl")
-include("mechanics/active.jl")
+include("modeling/mechanics/energies.jl")
+include("modeling/mechanics/contraction.jl")
+include("modeling/mechanics/active.jl")
 
 include("drivers.jl")
 include("solver.jl")
