@@ -7,7 +7,7 @@ end
 
 """
 """
-function value(coeff::FieldCoefficient{TA,IP}, cell_id::Int, ξ::Vec{dim}, t::Float64=0.0) where {dim,TA,IP}
+function evaluate_coefficient(coeff::FieldCoefficient{TA,IP}, cell_id::Int, ξ::Vec{dim}, t::Float64=0.0) where {dim,TA,IP}
     @unpack elementwise_data, ip = coeff
 
     n_base_funcs = Ferrite.getnbasefunctions(ip)
@@ -21,15 +21,26 @@ end
 
 """
 """
-struct ConstantFieldCoefficient{T}
+struct ConstantCoefficient{T}
     val::T
 end
 
 """
 """
-value(coeff::ConstantFieldCoefficient{T}, cell_id::Int, ξ::Vec{dim}, t::Float64=0.0) where {dim,T} = coeff.val
+evaluate_coefficient(coeff::ConstantCoefficient{T}, cell_id::Int, ξ::Vec{dim}, t::Float64=0.0) where {dim,T} = coeff.val
 
 
+struct AnisotropicPlanarMicrostructureModel{FiberCoefficientType, SheetletCoefficientType}
+    fiber_coefficient::FiberCoefficientType
+    sheetlet_coefficient::SheetletCoefficientType
+end
+
+function directions(fsn::AnisotropicPlanarMicrostructureModel, cell_id::Int, ξ::Vec{dim}, t = 0.0) where {dim}
+    f₀ = evaluate_coefficient(fsn.fiber_coefficient, cell_id, ξ, t)
+    s₀ = evaluate_coefficient(fsn.sheetlet_coefficient, cell_id, ξ, t)
+
+    f₀, s₀
+end
 
 struct OrthotropicMicrostructureModel{FiberCoefficientType, SheetletCoefficientType, NormalCoefficientType}
     fiber_coefficient::FiberCoefficientType
@@ -38,13 +49,12 @@ struct OrthotropicMicrostructureModel{FiberCoefficientType, SheetletCoefficientT
 end
 
 function directions(fsn::OrthotropicMicrostructureModel, cell_id::Int, ξ::Vec{dim}, t = 0.0) where {dim}
-    f₀ = value(fsn.fiber_coefficient, cell_id, ξ, t)
-    s₀ = value(fsn.sheetlet_coefficient, cell_id, ξ, t)
-    n₀ = value(fsn.normal_coefficient, cell_id, ξ, t)
+    f₀ = evaluate_coefficient(fsn.fiber_coefficient, cell_id, ξ, t)
+    s₀ = evaluate_coefficient(fsn.sheetlet_coefficient, cell_id, ξ, t)
+    n₀ = evaluate_coefficient(fsn.normal_coefficient, cell_id, ξ, t)
 
     f₀, s₀, n₀
 end
-
 
 """
 """
@@ -130,4 +140,27 @@ function create_simple_fiber_model(coordinate_system, ip_fiber::ScalarInterpolat
         FieldCoefficient(elementwise_data_s, ip_fiber),
         FieldCoefficient(elementwise_data_n, ip_fiber)
     )     
+end
+
+# TODO where to move this? Technically this is assembly infrastructure
+mutable struct LazyMicrostructureCache{MM, VT}
+    const microstructure_model::MM
+    const x_ref::Vector{VT}
+    cellid::Int
+end
+
+function directions(cache::LazyMicrostructureCache{MM}, qp::Int) where {MM}
+    return directions(cache.microstructure_model, cache.cellid, cache.x_ref[qp])
+end
+
+function setup_microstructure_cache(cv, model::AnisotropicPlanarMicrostructureModel{FiberCoefficientType, SheetletCoefficientType}) where {FiberCoefficientType, SheetletCoefficientType}
+    return LazyMicrostructureCache(model, cv.qr.points, -1)
+end
+
+function setup_microstructure_cache(cv, model::OrthotropicMicrostructureModel{FiberCoefficientType, SheetletCoefficientType, NormalCoefficientType}) where {FiberCoefficientType, SheetletCoefficientType, NormalCoefficientType}
+    return LazyMicrostructureCache(model, cv.qr.points, -1)
+end
+
+function update_microstructure_cache!(cache::LazyMicrostructureCache{MM}, time::Float64, cell::CellCacheType, cv::CV) where {CellCacheType, CV, MM}
+    cache.cellid = cellid(cell)
 end

@@ -110,6 +110,30 @@ function setup_mass_operator!(bifi::AssembledMassOperator{MT, CV}, dh::DH) where
     end
 end
 
+using StaticArrays
+struct PlanarDiffusionTensorCoefficient{MSC}
+    microstructure_cache::MSC
+    conductivities::SVector{2}
+end
+
+function Thunderbolt.evaluate_coefficient(coeff::PlanarDiffusionTensorCoefficient{MSC}, cell_id::Int, ξ::Vec{rdim}, t::Float64=0.0) where {MSC, rdim}
+    f₀, s₀ = directions(coeff.microstructure_cache, cell_id, ξ, t)
+    return coeff.conductivities[1] * f₀ ⊗ f₀ + coeff.conductivities[2] * s₀ ⊗ s₀
+end
+
+struct ConductivityToDiffusivityCoefficient{DTC, CC, STVC}
+    conductivity_tensor_coefficient::DTC
+    capacitance_coefficient::CC
+    χ_coefficient::STVC
+end
+
+function Thunderbolt.evaluate_coefficient(coeff::ConductivityToDiffusivityCoefficient{DTC, CC, STVC}, cell_id::Int, ξ::Vec{rdim}, t::Float64=0.0) where {DTC, CC, STVC, rdim}
+    κ = evaluate_coefficient(coeff.conductivity_tensor_coefficient, cell_id, ξ)
+    Cₘ = evaluate_coefficient(coeff.capacitance_coefficient, cell_id, ξ)
+    χ = evaluate_coefficient(coeff.χ_coefficient, cell_id, ξ)
+    return κ/(Cₘ*χ)
+end
+
 @doc raw"""
     AssembledDiffusionOperator{MT, DT, CV}
 
@@ -117,13 +141,13 @@ Assembles the matrix associated to the bilinearform ``a(u,v) = -\int \nabla v(x)
 """
 struct AssembledDiffusionOperator{MT, DT, CV}
     K::MT
-    coefficient::DT
+    diffusion_coefficient::DT
     cv::CV
 end
 mul!(b, K::AssembledDiffusionOperator{MT, DT, CV}, uₙ₋₁) where {MT, DT, CV} = mul!(b, K.K, uₙ₋₁)
 
 function setup_diffusion_operator!(bifi::AssembledDiffusionOperator{MT, CV}, dh::DH) where {MT, CV, DH}
-    @unpack K, coefficient, cv = bifi
+    @unpack K, diffusion_coefficient, cv = bifi
 
     n_basefuncs = getnbasefunctions(cv)
     Kₑ = zeros(n_basefuncs, n_basefuncs)
@@ -137,8 +161,8 @@ function setup_diffusion_operator!(bifi::AssembledDiffusionOperator{MT, CV}, dh:
         reinit!(cv, cell)
 
         for q_point in 1:getnquadpoints(cv)
-            # TODO coefficient via AssembledDiffusionOperator::coefficient
-            D_loc = 0.001 # evaluate(coefficient, q_point)
+            ξ = cv.qr.points[q_point]
+            D_loc = evaluate_coefficient(diffusion_coefficient, cellid(cell), ξ)
             #based on the gauss point coordinates, we get the spatial dependent
             #material parameters
             dΩ = getdetJdV(cv, q_point)
@@ -146,7 +170,7 @@ function setup_diffusion_operator!(bifi::AssembledDiffusionOperator{MT, CV}, dh:
                 ∇Nᵢ = shape_gradient(cv, q_point, i)
                 for j in 1:n_basefuncs
                     ∇Nⱼ = shape_gradient(cv, q_point, j)
-                    Kₑ[i,j] -= ((D_loc * ∇Nᵢ) ⋅ ∇Nⱼ) * dΩ
+                    Kₑ[i,j] -= ((D_loc ⋅ ∇Nᵢ) ⋅ ∇Nⱼ) * dΩ
                 end
             end
         end
@@ -203,7 +227,7 @@ function setup_solver_caches(problem #= ::TransientHeatProblem =#, solver::Impli
         ),
         AssembledDiffusionOperator(
             create_sparsity_pattern(dh),
-            nothing,
+            problem.diffusion_tensor_field,
             cv
         ),
         create_sparsity_pattern(dh),
@@ -510,7 +534,7 @@ function semidiscretize(split::ReactionDiffusionSplit{MonodomainModel{A,B,C,D,E}
     #
     semidiscrete_problem = SplitProblem(
         TransientHeatProblem(
-            x -> epmodel.κ(x)/(epmodel.Cₘ(x)*epmodel.χ),
+            ConductivityToDiffusivityCoefficient(epmodel.κ, epmodel.Cₘ, epmodel.χ),
             epmodel.stim,
             dh
         ),
@@ -549,9 +573,9 @@ function spiral_wave_initializer(problem::SplitProblem)
 end
 
 model = MonodomainModel(
-    x->1.0,
-    x->1.0,
-    x->SymmetricTensor{2,2,Float64}((4.5e-5, 0, 2.0e-5)), # TODO coefficient API
+    ConstantCoefficient(1.0),
+    ConstantCoefficient(1.0),
+    ConstantCoefficient(SymmetricTensor{2,2,Float64}((4.5e-5, 0, 2.0e-5))),
     NoStimulationProtocol(),
     FHNModel()
 )

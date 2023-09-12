@@ -219,7 +219,8 @@ function (postproc::StandardMechanicalIOPostProcessor{IO, CV, MC})(problem, uₜ
     end
 
     # Save the solution
-    Thunderbolt.store_timestep!(io, t, dh, uₜ)
+    Thunderbolt.store_timestep!(io, t, dh)
+    Thunderbolt.store_timestep_field!(io, t, dh, uₜ, :displacement)
     Thunderbolt.store_timestep_celldata!(io, t, hcat(frefdata...),"Reference Fiber Data")
     Thunderbolt.store_timestep_celldata!(io, t, hcat(fdata...),"Current Fiber Data")
     Thunderbolt.store_timestep_celldata!(io, t, hcat(srefdata...),"Reference Sheet Data")

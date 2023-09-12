@@ -40,24 +40,6 @@ import Thunderbolt: Ψ, U
 
 # ----------------------------------------------
 
-mutable struct LazyMicrostructureCache{MM, VT}
-    const microstructure_model::MM
-    const x_ref::Vector{VT}
-    cellid::Int
-end
-
-function Thunderbolt.directions(cache::LazyMicrostructureCache{MM}, qp::Int) where {MM}
-    return directions(cache.microstructure_model, cache.cellid, cache.x_ref[qp])
-end
-
-function setup_microstructure_cache(cv, model::OrthotropicMicrostructureModel{FiberCoefficientType, SheetletCoefficientType, NormalCoefficientType}) where {FiberCoefficientType, SheetletCoefficientType, NormalCoefficientType}
-    return LazyMicrostructureCache(model, cv.qr.points, -1)
-end
-
-function update_microstructure_cache!(cache::LazyMicrostructureCache{MM}, time::Float64, cell::CellCacheType, cv::CV) where {CellCacheType, CV, MM}
-    cache.cellid = cellid(cell)
-end
-
 
 # ----------------------------------------------
 
@@ -77,7 +59,7 @@ end
 function update_contraction_model_cache!(cache::PelceSunLangeveld1995Cache, time::Float64, cell::CellCacheType, cv::CV, calcium_field::CF) where {CellCacheType, CV, CF}
     for qp ∈ 1:getnquadpoints(cv)
         x_ref = cv.qr.points[qp]
-        cache.calcium_values[qp] = value(calcium_field, Ferrite.cellid(cell), x_ref, time)
+        cache.calcium_values[qp] = evaluate_coefficient(calcium_field, Ferrite.cellid(cell), x_ref, time)
     end
 end
 
@@ -454,7 +436,7 @@ struct CalciumHatField end
 
 """
 """
-value(coeff::CalciumHatField, cell_id::Int, ξ::Vec{dim}, t::Float64=0.0) where {dim} = t < 1.0 ? t : 2.0-t
+Thunderbolt.evaluate_coefficient(coeff::CalciumHatField, cell_id::Int, ξ::Vec{dim}, t::Float64=0.0) where {dim} = t < 1.0 ? t : 2.0-t
 
 """
 Parameterization from Vallespin paper.

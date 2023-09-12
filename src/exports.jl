@@ -31,9 +31,14 @@ export
     NoStimulationProtocol,
     # Microstructure
     OrthotropicMicrostructureModel,
-    ConstantFieldCoefficient,
-    create_simple_fiber_model,
     directions,
+    FieldCoefficient,
+    ConstantCoefficient,
+    evaluate_coefficient,
+    create_simple_fiber_model,
+    update_microstructure_cache!,
+    setup_microstructure_cache,
+    LazyCoefficientCache,
     # Coordinate system
     LVCoordinateSystem,
     CartesianCoordinateSystem,
