@@ -478,16 +478,19 @@ function solve(problem, solver, Δt₀, (t₀, T), initial_condition::Function, 
     t = t₀
     while t < T
         @info t
-        t += Δt
         @timeit "solver" perform_step!(problem, cache, t, Δt)
 
-        # TODO Δt adaption
-
         callback(t, problem, cache)
+        
+                # TODO Δt adaption
+                t += Δt
     end
 
+    @info T
     @timeit "solver" perform_step!(problem, cache, T, T-t)
     callback(t, problem, cache)
+    
+    return nothing
 end
 #####################################################
 
@@ -522,7 +525,7 @@ end
 
 Transform a space-time model into a pure time-dependent problem.
 """
-function semidiscretize(split::ReactionDiffusionSplit{MonodomainModel{A,B,C,D,E}}, ::GalerkinDiscretization, grid::Thunderbolt.AbstractGrid) where {A,B,C,D,E}
+function semidiscretize(split::ReactionDiffusionSplit{MonodomainModel{A,B,C,D,E}}, discretization::GalerkinDiscretization, grid::Thunderbolt.AbstractGrid) where {A,B,C,D,E}
     epmodel = split.model
 
     # TODO get these from the interpolation collection in GalerkinDiscretization
