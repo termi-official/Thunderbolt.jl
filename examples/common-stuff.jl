@@ -11,12 +11,6 @@ import Thunderbolt: Ψ, U
 #     reference_fibers[qp], reference_sheets[qp], reference_normals[qp]
 # end
 
-# struct RitzGalerkinSpatialDiscretization <: SpatialDiscretization
-#     interpolation_collections::Dict{Symbol,InterpolationCollection}
-#     qrs::Dict{Symbol,QuadratureCollection}
-#     grid::Grid
-# end
-
 # struct ElementIntegralForm{M}
 #     model::M
 #     subdomain::String
@@ -27,10 +21,6 @@ import Thunderbolt: Ψ, U
 #     model::M
 #     subdomain::String
 #     fvs::FaceValueCollection
-# end
-
-# function discretize(problem, discretization)
-#     ???
 # end
 
 # struct DiscreteSteadyStateProblem
@@ -283,7 +273,7 @@ end
 
 
 """
-TODO rewrite on per field basis.
+TODO rewrite on per subdomain basis.
 """
 function assemble_global!(K::SparseMatrixCSC, f::Vector, dh::DH, cv::CV, fv::FV, material_model::MM, uₜ::Vector, uₜ₋₁::Vector, microstructure_model::MSM, calcium_field::CF, t::Float64, Δt::Float64, face_models::FM) where {DH, CV, FV, MM, MSM, CF, FM}
     n = ndofs_per_cell(dh)
@@ -302,12 +292,15 @@ function assemble_global!(K::SparseMatrixCSC, f::Vector, dh::DH, cv::CV, fv::FV,
 
     # Loop over all cells in the grid
     # @timeit "assemble" for cell in CellIterator(dh)
+    # TODO for subdofhandler in dh.subdofhandlers
+    displacement_dofrange = Ferrite.dof_range(dh, :displacement)
     for cell in CellIterator(dh)
         global_dofs = celldofs(cell)
+        displacement_dofs = displacement_dofrange[displacement_dofrange]
 
         # TODO refactor
-        uₑ = uₜ[global_dofs] # element dofs
-        uₑ_prev = uₜ₋₁[global_dofs] # element dofs
+        uₑ = uₜ[displacement_dofs] # element dofs
+        uₑ_prev = uₜ₋₁[displacement_dofs] # element dofs
         vₑ = (uₑ - uₑ_prev)/Δt # velocity approximation
 
         # Reinitialize cell values, and reset output arrays

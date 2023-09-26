@@ -127,7 +127,7 @@ function (postproc::StandardMechanicalIOPostProcessor{IO, CV, MC})(problem, uₜ
 
     # Compute some elementwise measures
     for sdh ∈ dh.subdofhandlers[postproc.subdomains]
-        field_idx = find_field(sdh, :deformation)
+        field_idx = find_field(sdh, :displacement)
         field_idx === nothing && continue 
         for cell ∈ CellIterator(sdh)
             reinit!(cv, cell)
@@ -252,18 +252,18 @@ function solve_test_ring(name_base, material_model, grid, coordinate_system, mic
 
     # DofHandler
     dh = DofHandler(grid)
-    add!(dh, :deformation, ip_mech) # Add a displacement field
+    add!(dh, :displacement, ip_mech) # Add a displacement field
     close!(dh)
 
     dbcs = ConstraintHandler(dh)
     # Clamp three sides
-    dbc = Dirichlet(:deformation, getfaceset(grid, "Myocardium"), (x,t) -> [0.0], [3])
+    dbc = Dirichlet(:displacement, getfaceset(grid, "Myocardium"), (x,t) -> [0.0], [3])
     add!(dbcs, dbc)
-    # dbc = Dirichlet(:deformation, Set([first(getfaceset(grid, "Base"))]), (x,t) -> [0.0], [3])
+    # dbc = Dirichlet(:displacement, Set([first(getfaceset(grid, "Base"))]), (x,t) -> [0.0], [3])
     # add!(dbcs, dbc)
-    # dbc = Dirichlet(:deformation, getfaceset(grid, "Base"), (x,t) -> [0.0], [3])
+    # dbc = Dirichlet(:displacement, getfaceset(grid, "Base"), (x,t) -> [0.0], [3])
     # add!(dbcs, dbc)
-    # dbc = Dirichlet(:deformation, Set([1]), (x,t) -> [0.0, 0.0, 0.0], [1, 2, 3])
+    # dbc = Dirichlet(:displacement, Set([1]), (x,t) -> [0.0, 0.0, 0.0], [1, 2, 3])
     # add!(dbcs, dbc)
     close!(dbcs)
 
@@ -297,6 +297,45 @@ function solve_test_ring(name_base, material_model, grid, coordinate_system, mic
     finalize!(io)
 
     return uₜ
+end
+
+"""
+    QuasiStaticNonlinearProblem{M <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler}
+
+A discrete problem with time dependent terms and no time derivatives w.r.t. any solution variable.
+Abstractly written we want to solve the problem F(u, t) = 0 on some time interval [t₁, t₂].
+"""
+struct QuasiStaticNonlinearProblem{M <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler}
+    model::M
+    dh::DH
+end
+
+"""
+    QuasiStaticDAEProblem{M <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler}
+
+A problem with time dependent terms and time derivatives only w.r.t. internal solution variable.
+"""
+struct QuasiStaticDAEProblem{M <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler}
+    model::M
+    dh::DH
+end
+
+function Thunderbolt.semidiscretize(qsmodel::QuasiStaticModel, discretization::FiniteElementDiscretization, grid::Thunderbolt.AbstractGrid)
+    ets = elementtypes(grid)
+    @assert length(ets) == 1
+
+    ip = getinterpolation(discretization.interpolations[:displacement], ets[1])
+    dh = DofHandler(grid)
+    push!(dh, :displacement, ip)
+    close!(dh);
+
+    #
+    semidiscrete_problem = QuasiStaticNonlinearProblem(
+        qsmodel,
+        dh
+    )
+
+    return semidiscrete_problem
 end
 
 # for (filename, ref_shape, order) ∈ [

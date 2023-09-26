@@ -53,6 +53,9 @@ export
     compute_midmyocardial_section_coordinate_system,
     getcoordinateinterpolation,
     vtk_coordinate_system,
+    # Discretization
+    semidiscretize,
+    FiniteElementDiscretization,
     # Solver
     setup_solver_caches,
     solve!,

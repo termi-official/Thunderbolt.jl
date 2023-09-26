@@ -82,7 +82,7 @@ end
 struct ElastodynamicsModel{RHSModel <: QuasiStaticModel, CoefficienType}
     rhs::RHSModel
     ρ::CoefficienType
-    # TODO refactor into cache
+    # TODO refactor into solver cache
     vₜ₋₁::Vector
 end
 
