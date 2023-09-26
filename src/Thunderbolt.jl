@@ -9,6 +9,8 @@ using JLD2
 import Ferrite: AbstractDofHandler, AbstractGrid, AbstractRefShape, AbstractCell
 import Ferrite: vertices, edges, faces, sortedge, sortface
 
+include("collections.jl")
+
 include("mesh/meshes.jl")
 include("mesh/coordinate_systems.jl")
 include("mesh/tools.jl")

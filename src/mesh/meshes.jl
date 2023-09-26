@@ -35,6 +35,9 @@ num_faces(mgrid::SimpleMesh3D) = length(mgrid.mfaces)
 num_edges(mgrid::SimpleMesh3D) = length(mgrid.medges)
 num_vertices(mgrid::SimpleMesh3D) = length(mgrid.mvertices)
 
+elementtypes(::SimpleMesh3D{Tetrahedron}) = @SVector [Tetrahedron]
+elementtypes(::SimpleMesh3D{Hexahedron}) = @SVector [Hexahedron]
+
 function to_mesh(grid::Grid{3,C,T}) where {C, T}
     mfaces = OrderedDict{NTuple{3,Int}, Int}()
     medges = OrderedDict{NTuple{2,Int}, Int}()
@@ -123,6 +126,9 @@ global_vertices(mgrid::SimpleMesh2D, cell) = [mgrid.mvertices[v] for v ∈ verti
 num_nodes(mgrid::SimpleMesh2D) = length(mgrid.grid.nodes)
 num_faces(mgrid::SimpleMesh2D) = length(mgrid.mfaces)
 num_vertices(mgrid::SimpleMesh2D) = length(mgrid.mvertices)
+
+elementtypes(::SimpleMesh2D{Triangle}) = @SVector [Triangle]
+elementtypes(::SimpleMesh2D{Quadrilateral}) = @SVector [Quadrilateral]
 
 # Ferrite compat layer for the mesh
 @inline Ferrite.getncells(mesh::Union{SimpleMesh2D,SimpleMesh3D}) = Ferrite.getncells(mesh.grid)

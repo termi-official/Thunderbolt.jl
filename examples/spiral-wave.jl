@@ -516,8 +516,7 @@ function setup_initial_condition!(problem::SplitProblem, cache, initial_conditio
 end
 
 struct GalerkinDiscretization
-    # TODO interpolation collection instead of single interpolation
-    interpolations::Dict{Symbol, Interpolation}
+    interpolations::Dict{Symbol, Thunderbolt.InterpolationCollection}
 end
 
 """
@@ -525,11 +524,16 @@ end
 
 Transform a space-time model into a pure time-dependent problem.
 """
+semidiscretize
+
 function semidiscretize(split::ReactionDiffusionSplit{MonodomainModel{A,B,C,D,E}}, discretization::GalerkinDiscretization, grid::Thunderbolt.AbstractGrid) where {A,B,C,D,E}
     epmodel = split.model
 
+    ets = elementtypes(grid)
+    @assert length(ets) == 1
+
     # TODO get these from the interpolation collection in GalerkinDiscretization
-    ip = Lagrange{RefQuadrilateral, 1}()
+    ip = getinterpolation(discretization.interpolations[:φₘ], ets[1])
     dh = DofHandler(grid)
     push!(dh, :ϕₘ, ip)
     close!(dh);

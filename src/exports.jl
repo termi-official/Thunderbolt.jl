@@ -1,4 +1,11 @@
 export
+    # Collections
+    LagrangeCollection,
+    getinterpolation,
+    QuadratureRuleCollection,
+    getquadraturerule,
+    CellValueCollection,
+    FaceValueCollection,
     # Mesh generators
     generate_mesh,
     generate_ring_mesh,
@@ -53,6 +60,7 @@ export
     LoadDrivenSolver,
     # Utils
     calculate_volume_deformed_mesh,
+    elementtypes,
     value,
     # IO
     ParaViewWriter,
