@@ -463,34 +463,34 @@ function perform_step!(problem::SplitProblem{APT, BPT}, cache::LTGOSSolverCache{
 end
 
 """
-    solve(problem, solver, Δt=0.1, callback=nothing)
+    solve(problem, solver, Δt, time_span, initial_condition, [callback])
 
 Main entry point for solvers in Thunderbolt.jl. The design is inspired by
 DifferentialEquations.jl. We try to upstream as much content as possible to
 make it available for packages.
 """
-function solve(problem, solver, Δt₀, (t₀, T), initial_condition::Function, callback::CALLBACK = (t,p,c) -> nothing) where {CALLBACK}
-    cache = setup_solver_caches(problem, solver)
+function solve(problem, solver, Δt₀, (t₀, T), initial_condition, callback::CALLBACK = (t,p,c) -> nothing) where {CALLBACK}
+    solver_cache = setup_solver_caches(problem, solver)
 
-    setup_initial_condition!(problem, cache, initial_condition)
+    setup_initial_condition!(problem, solver_cache, initial_condition)
 
     Δt = Δt₀
     t = t₀
     while t < T
         @info t
-        @timeit "solver" perform_step!(problem, cache, t, Δt)
+        @timeit "solver" perform_step!(problem, solver_cache, t, Δt)
 
-        callback(t, problem, cache)
-        
-                # TODO Δt adaption
-                t += Δt
+        callback(t, problem, solver_cache)
+
+        # TODO Δt adaption
+        t += Δt
     end
 
     @info T
-    @timeit "solver" perform_step!(problem, cache, T, T-t)
-    callback(t, problem, cache)
-    
-    return nothing
+    @timeit "solver" perform_step!(problem, solver_cache, T, T-t)
+    callback(t, problem, solver_cache)
+
+    return true
 end
 #####################################################
 
@@ -498,10 +498,10 @@ mutable struct IOCallback{IO}
     io::IO
 end
 
-function (iocb::IOCallback{ParaViewWriter{PVD}})(t, p, c) where {PVD}
-    store_timestep!(iocb.io, t, p.A.dh.grid)
-    Thunderbolt.store_timestep_field!(iocb.io, t, p.A.dh, c.A_solver_cache.uₙ, :φₘ)
-    Thunderbolt.store_timestep_field!(iocb.io, t, p.A.dh, c.B_solver_cache.sₙ[1:length(c.A_solver_cache.uₙ)], :s)
+function (iocb::IOCallback{ParaViewWriter{PVD}})(t, problem::SplitProblem, solver_cache) where {PVD}
+    store_timestep!(iocb.io, t, problem.A.dh.grid)
+    Thunderbolt.store_timestep_field!(iocb.io, t, problem.A.dh, solver_cache.A_solver_cache.uₙ, :φₘ)
+    Thunderbolt.store_timestep_field!(iocb.io, t, problem.A.dh, solver_cache.B_solver_cache.sₙ[1:length(c.A_solver_cache.uₙ)], :s)
     Thunderbolt.finalize_timestep!(iocb.io, t)
 end
 
@@ -509,7 +509,7 @@ end
 # TODO what exactly is the job here? How do we know where to write and what to iterate?
 function setup_initial_condition!(problem::SplitProblem, cache, initial_condition)
     # TODO cleaner implementation. We need to extract this from the types or via dispatch.
-    u₀, s₀ = spiral_wave_initializer(problem)
+    u₀, s₀ = initial_condition(problem)
     cache.B_solver_cache.uₙ .= u₀ # Note that the vectors in the caches are connected
     cache.B_solver_cache.sₙ .= s₀
     return nothing
@@ -588,8 +588,6 @@ solver = LTGOSSolver(
     ForwardEulerCellSolver()
 )
 
-iocb = IOCallback(ParaViewWriter("test"))
-
 # Idea: We want to solve a semidiscrete problem, with a given compatible solver, on a time interval, with a given initial condition
 # TODO iterator syntax
 solve(
@@ -598,5 +596,5 @@ solve(
     1.0,
     (0.0, 1000.0),
     spiral_wave_initializer,
-    iocb
+    IOCallback(ParaViewWriter("test"))
 )
