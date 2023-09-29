@@ -13,6 +13,9 @@
 
 const LinearCellGeometry = Union{Hexahedron, Tetrahedron, Pyramid, Wedge, Triangle, Quadrilateral, Line}
 
+elementtypes(grid::Grid{3,Hexahedron}) = @SVector [Hexahedron]
+elementtypes(grid::Grid{3,Tetrahedron}) = @SVector [Tetrahedron]
+
 """
     SimpleMesh3D{C <: AbstractCell, T <: Real} <: AbstractGrid{3}
 

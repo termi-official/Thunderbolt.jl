@@ -1,24 +1,24 @@
 """
-    assemble_linearization!(Jᵤ, residual, u, problem_cache)
+    assemble_linearization!(Jᵤ, residual, u, problem)
 
 Setup the linearized operator `Jᵤ(u) := dᵤF(u)` and its residual `F(u)` in 
 preparation to solve for the increment `Δu` with the linear problem `J(u) Δu = F(u)`.
 """
-assemble_linearization!(Jᵤ, residual, u, problem_cache) = error("Not overloaded")
+assemble_linearization!(Jᵤ, residual, u, problem) = error("Not overloaded")
 
 """
-    assemble_linearization!(Jᵤ, u, problem_cache)
+    assemble_linearization!(Jᵤ, u, problem)
 
 Setup the linearized operator `Jᵤ(u)``.
 """
-assemble_linearization!(Jᵤ, u, problem_cache) = error("Not overloaded")
+assemble_linearization!(Jᵤ, u, problem) = error("Not overloaded")
 
 """
-    assemble_residual!(residual, u, problem_cache)
+    assemble_residual!(residual, u, problem)
 
 Evaluate the residual `F(u)` of the problem.
 """
-assemble_residual!(residual, u, problem_cache) = error("Not overloaded")
+assemble_residual!(residual, u, problem) = error("Not overloaded")
 
 """
     NewtonRaphsonSolver{T}
@@ -44,23 +44,25 @@ mutable struct NewtonRaphsonSolverCache{JacType, ResidualType, T}
     #linear_solver_cache
 end
 
-function setup_solver_caches(dh, solver::NewtonRaphsonSolver{T}) where {T}
+function setup_solver_caches(problem, solver::NewtonRaphsonSolver{T}) where {T}
+    @unpack dh = problem
     NewtonRaphsonSolverCache(create_sparsity_pattern(dh), zeros(ndofs(dh)), solver)
 end
 
-eliminate_constraints_from_linearization!(solver_cache, problem_cache) = apply_zero!(solver_cache.J, solver_cache.residual, problem_cache.ch)
+eliminate_constraints_from_linearization!(solver_cache, problem) = apply_zero!(solver_cache.J, solver_cache.residual, problem.ch)
 
-function solve!(u, problem_cache, solver_cache::NewtonRaphsonSolverCache{JacType, ResidualType, T}) where {JacType, ResidualType, T}
+function solve!(u, problem, solver_cache::NewtonRaphsonSolverCache{JacType, ResidualType, T}) where {JacType, ResidualType, T}
     newton_itr = -1
     Δu = zero(u)
     while true
         newton_itr += 1
 
-        assemble_linearization!(solver_cache.J, solver_cache.residual, u, problem_cache)
+        assemble_linearization!(solver_cache.J, solver_cache.residual, u, problem)
 
-        eliminate_constraints_from_linearization!(solver_cache, problem_cache)
+        eliminate_constraints_from_linearization!(solver_cache, problem)
 
-        residualnorm = norm(solver_cache.residual[Ferrite.free_dofs(problem_cache.ch)])
+        residualnorm = norm(solver_cache.residual[Ferrite.free_dofs(problem.ch)])
+        @show residualnorm
         if residualnorm < solver_cache.parameters.tol
             break
         elseif newton_itr > solver_cache.parameters.max_iter
@@ -75,7 +77,7 @@ function solve!(u, problem_cache, solver_cache::NewtonRaphsonSolverCache{JacType
             return false
         end
 
-        apply_zero!(Δu, problem_cache.ch)
+        apply_zero!(Δu, problem.ch)
 
         u .-= Δu # Current guess
     end
@@ -92,48 +94,79 @@ end
 Solve the nonlinear problem `F(u,t)=0` with given time increments `Δt`on some interval `[t_begin, t_end]`
 where `t` is some pseudo-time parameter.
 """
-mutable struct LoadDrivenSolver{IS, T, PFUN}
+mutable struct LoadDrivenSolver{IS}
     inner_solver::IS
-    Δt::T
-    t_begin::T
-    t_end::T
-    u_prev::Vector{T}
-    postproc::PFUN # Takes (problem, u, t) and postprocesses it (includes IO operations) 
 end
 
-struct LoadDrivenSolverCache{IS, ISC, T, PFUN}
+mutable struct LoadDrivenSolverCache{ISC, T}
     inner_solver_cache::ISC
-    parameters::LoadDrivenSolver{IS, T, PFUN}
+    uₜ::Vector{T}
+    uₜ₋₁::Vector{T}
 end
 
-function setup_solver_caches(dh, solver::LoadDrivenSolver{IS, T, PFUN}) where {IS, T, PFUN}
-    LoadDrivenSolverCache(setup_solver_caches(dh, solver.inner_solver), solver)
+function setup_solver_caches(problem, solver::LoadDrivenSolver{IS}) where {IS}
+    LoadDrivenSolverCache(
+        setup_solver_caches(problem, solver.inner_solver),
+        zeros(ndofs(problem.dh)),
+        zeros(ndofs(problem.dh)),
+    )
 end
 
-function solve!(u₀, problem_cache, solver_cache::LoadDrivenSolverCache{IS, ISC, T}) where {IS, ISC, T}
-    @unpack t_end, Δt, u_prev, postproc = solver_cache.parameters
-    uₜ   = u₀
-    uₜ₋₁ = copy(u₀)
-    for t ∈ 0.0:Δt:t_end
-        @info t
+function setup_initial_condition!(problem, solver_cache::LoadDrivenSolverCache, initial_condition)
+    # TODO cleaner implementation. We need to extract this from the types or via dispatch.
+    solver_cache.uₜ = zeros(ndofs(problem.dh))
+    solver_cache.uₜ₋₁ = zeros(ndofs(problem.dh))
+    return nothing
+end
 
-        problem_cache.t = t
-        # Store last solution
-        uₜ₋₁ .= uₜ
-        problem_cache.u_prev .= uₜ₋₁
+function perform_step!(problem, solver_cache::LoadDrivenSolverCache, t, Δt)
+    solver_cache.uₜ₋₁ .= solver_cache.uₜ
 
-        # Update with new boundary conditions (if available)
-        Ferrite.update!(problem_cache.ch, t)
-        apply!(uₜ, problem_cache.ch)
+    # TODO remove these lines
+    problem.t = t
+    problem.Δt = Δt
+    problem.u_prev .= solver_cache.uₜ₋₁
 
-        if !solve!(uₜ, problem_cache, solver_cache.inner_solver_cache)
-            @warn "Inner solver failed."
-            return false
-        end
+    Ferrite.update!(problem.ch, t)
+    apply!(solver_cache.uₜ, problem.ch)
 
-        postproc(problem_cache, uₜ, t)
+    if !solve!(solver_cache.uₜ, problem, solver_cache.inner_solver_cache)
+        @warn "Inner solver failed."
+        return false
     end
 
+    return true
+end
+
+function solve(problem, solver::LoadDrivenSolver, Δt₀, (t₀, T), initial_condition, callback::CALLBACK = (t,p,c) -> nothing) where {CALLBACK}
+    solver_cache = setup_solver_caches(problem, solver)
+
+    setup_initial_condition!(problem, solver_cache, initial_condition)
+
+    Δt = Δt₀
+    t = t₀
+    while t < T
+        @info t, Δt
+        # @timeit "solver" begin 
+            if !perform_step!(problem, solver_cache, t, Δt)
+                #return false
+            end
+        # end
+
+        callback(t, problem, solver_cache)
+
+        # TODO Δt adaption
+        t += Δt
+    end
+
+    @info T
+    # @timeit "solver" perform_step!(problem, solver_cache, T, T-t)
+    if !perform_step!(problem, solver_cache, t, T-t)
+        return false
+    end
+
+    callback(t, problem, solver_cache)
+    
     return true
 end
 

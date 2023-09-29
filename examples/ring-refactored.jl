@@ -3,7 +3,7 @@ using FerriteGmsh
 
 import Ferrite: get_grid, find_field
 
-mutable struct ThisProblemCache{DH,CH,CV,FV,MAT,MICRO,CAL,FACE,T}
+mutable struct LoadDrivenQuasiStaticProblem{DH,CH,CV,FV,MAT,MICRO,CAL,FACE,T}
     # Wher to put this?
     dh::DH
     ch::CH
@@ -21,8 +21,8 @@ mutable struct ThisProblemCache{DH,CH,CV,FV,MAT,MICRO,CAL,FACE,T}
 end
 
 # We simply unpack and assemble here
-function Thunderbolt.assemble_linearization!(K, residual, u, problem_cache::ThisProblemCache{DH,CH,CV,FV,MAT,MICRO,CAL,FACE,T}) where {DH,CH,CV,FV,MAT,MICRO,CAL,FACE,T}
-    assemble_global!(K, residual, problem_cache.dh, problem_cache.cv, problem_cache.fv, problem_cache.material_model, u, problem_cache.u_prev, problem_cache.microstructure_model, problem_cache.calcium_field, problem_cache.t, problem_cache.Δt, problem_cache.face_models)
+function Thunderbolt.assemble_linearization!(K, residual, u, problem::LoadDrivenQuasiStaticProblem{DH,CH,CV,FV,MAT,MICRO,CAL,FACE,T}) where {DH,CH,CV,FV,MAT,MICRO,CAL,FACE,T}
+    assemble_global!(K, residual, problem.dh, problem.cv, problem.fv, problem.material_model, u, problem.u_prev, problem.microstructure_model, problem.calcium_field, problem.t, problem.Δt, problem.face_models)
 end
 
 # mutable struct AverageCoordinateStrainProcessorCache{CC, SVT <: AbstractVector}
@@ -96,15 +96,7 @@ struct StandardMechanicalIOPostProcessor{IO, CV, MC}
     microstructure_cache::MC
 end
 
-# function prepare_caches!(proc::StandardIOPostProcessor{IO, CV, CL}, problem, t, uₜ) where {IO, CV, CL}
-#     @unpack dh = problem
-#     Thunderbolt.store_timestep!(proc.io, t, dh, uₜ)
-#     for cache ∈ proc.cache_list
-#         prepare_postprocessor_cache!(cache, problem, t, uₜ)
-#     end
-# end
-
-function (postproc::StandardMechanicalIOPostProcessor{IO, CV, MC})(problem, uₜ, t) where {IO, CV, MC}
+function (postproc::StandardMechanicalIOPostProcessor{IO, CV, MC})(t, problem, solver_cache) where {IO, CV, MC}
     @unpack dh = problem
     grid = get_grid(dh)
     @unpack io, cv, subdomains, microstructure_cache = postproc
@@ -133,7 +125,7 @@ function (postproc::StandardMechanicalIOPostProcessor{IO, CV, MC})(problem, uₜ
             reinit!(cv, cell)
             global_dofs = celldofs(cell)
             field_dofs  = dof_range(sdh, field_idx)
-            uₑ = uₜ[global_dofs] # element dofs
+            uₑ = solver_cache.uₜ[global_dofs] # element dofs
 
             update_microstructure_cache!(microstructure_cache, t, cell, cv)
 
@@ -219,8 +211,8 @@ function (postproc::StandardMechanicalIOPostProcessor{IO, CV, MC})(problem, uₜ
     end
 
     # Save the solution
-    Thunderbolt.store_timestep!(io, t, dh)
-    Thunderbolt.store_timestep_field!(io, t, dh, uₜ, :displacement)
+    Thunderbolt.store_timestep!(io, t, dh.grid)
+    Thunderbolt.store_timestep_field!(io, t, dh, solver_cache.uₜ, :displacement)
     Thunderbolt.store_timestep_celldata!(io, t, hcat(frefdata...),"Reference Fiber Data")
     Thunderbolt.store_timestep_celldata!(io, t, hcat(fdata...),"Current Fiber Data")
     Thunderbolt.store_timestep_celldata!(io, t, hcat(srefdata...),"Reference Sheet Data")
@@ -240,47 +232,18 @@ function (postproc::StandardMechanicalIOPostProcessor{IO, CV, MC})(problem, uₜ
 end
 
 # function solve_test_ring(name_base, material_model, grid, coordinate_system, microstructure_model, face_models, calcium_field, ip_mech, ip_geo, intorder::Int, Δt = 0.1, T = 2.0)
-function solve_test_ring(name_base, material_model, grid, coordinate_system, microstructure_model, face_models::FM, calcium_field, ip_mech::IPM, ip_geo::IPG, intorder::Int, Δt = 0.1, T = 2.0) where {ref_shape, IPM <: Interpolation{ref_shape}, IPG <: Interpolation{ref_shape}, FM}
+function solve_test_ring(name_base, material_model, grid, microstructure_model, face_models::FM, calcium_field, ip_mech::IPM, ip_geo::IPG, intorder::Int, Δt = 0.1, T = 2.0) where {ref_shape, IPM <: Interpolation{ref_shape}, IPG <: Interpolation{ref_shape}, FM}
     io = ParaViewWriter(name_base);
     # io = JLD2Writer(name_base);
 
-    # Finite element base
-    qr = QuadratureRule{ref_shape}(intorder)
-    qr_face = FaceQuadratureRule{ref_shape}(intorder)
-    cv = CellValues(qr, ip_mech, ip_geo)
-    fv = FaceValues(qr_face, ip_mech, ip_geo)
-
-    # DofHandler
-    dh = DofHandler(grid)
-    add!(dh, :displacement, ip_mech) # Add a displacement field
-    close!(dh)
-
-    dbcs = ConstraintHandler(dh)
-    # Clamp three sides
-    dbc = Dirichlet(:displacement, getfaceset(grid, "Myocardium"), (x,t) -> [0.0], [3])
-    add!(dbcs, dbc)
-    # dbc = Dirichlet(:displacement, Set([first(getfaceset(grid, "Base"))]), (x,t) -> [0.0], [3])
-    # add!(dbcs, dbc)
-    # dbc = Dirichlet(:displacement, getfaceset(grid, "Base"), (x,t) -> [0.0], [3])
-    # add!(dbcs, dbc)
-    # dbc = Dirichlet(:displacement, Set([1]), (x,t) -> [0.0, 0.0, 0.0], [1, 2, 3])
-    # add!(dbcs, dbc)
-    close!(dbcs)
-
-    # Pre-allocation of vectors for the solution and Newton increments
-    _ndofs = ndofs(dh)
-
-    uₜ   = zeros(_ndofs)
-    uₜ₋₁ = zeros(_ndofs)
-    Δu   = zeros(_ndofs)
-
-    problem_cache = ThisProblemCache(
-        # Where to put this?
-        dh, dbcs, cv, fv,
-        # This belongs to the model
-        material_model, microstructure_model, calcium_field, face_models,
-        # Belongs to the solver.
-        zeros(_ndofs), 0.0, Δt
+    problem = semidiscretize(
+        (material_model, calcium_field, face_models, microstructure_model),
+        FiniteElementDiscretization(
+            Dict(:displacement => LagrangeCollection{1}()^3),
+            # [Dirichlet(:displacement, getfaceset(grid, "Myocardium"), (x,t) -> [0.0], [1])],
+            [Dirichlet(:displacement, getfaceset(grid, "left"), (x,t) -> [0.0], [1]),Dirichlet(:displacement, getfaceset(grid, "front"), (x,t) -> [0.0], [2]),Dirichlet(:displacement, getfaceset(grid, "bottom"), (x,t) -> [0.0], [3]), Dirichlet(:displacement, Set([1]), (x,t) -> [0.0, 0.0, 0.0], [1, 2, 3])],
+        ),
+        grid
     )
 
     # Postprocessor
@@ -289,16 +252,19 @@ function solve_test_ring(name_base, material_model, grid, coordinate_system, mic
     standard_postproc = StandardMechanicalIOPostProcessor(io, cv_post, [1], microstructure_cache)
 
     # Create sparse matrix and residual vector
-    solver = LoadDrivenSolver(NewtonRaphsonSolver(), Δt, 0.0, T, zeros(_ndofs), standard_postproc)
-    solver_cache = setup_solver_caches(dh, solver)
+    solver = LoadDrivenSolver(NewtonRaphsonSolver(;max_iter=10))
 
-    solve!(uₜ, problem_cache, solver_cache)
-
-    finalize!(io)
-
-    return uₜ
+    Thunderbolt.solve(
+        problem,
+        solver,
+        Δt, 
+        (0.0, T),
+        nothing,
+        standard_postproc
+    )
 end
 
+import Thunderbolt: QuasiStaticModel
 """
     QuasiStaticNonlinearProblem{M <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler}
 
@@ -320,19 +286,45 @@ struct QuasiStaticDAEProblem{M <: QuasiStaticModel, DH <: Ferrite.AbstractDofHan
     dh::DH
 end
 
-function Thunderbolt.semidiscretize(qsmodel::QuasiStaticModel, discretization::FiniteElementDiscretization, grid::Thunderbolt.AbstractGrid)
+# TODO better model struct
+function Thunderbolt.semidiscretize(model::Tuple{QuasiStaticModel,CM,FM,MM}, discretization::FiniteElementDiscretization, grid::Thunderbolt.AbstractGrid) where {CM, FM, MM}
     ets = elementtypes(grid)
     @assert length(ets) == 1
 
-    ip = getinterpolation(discretization.interpolations[:displacement], ets[1])
+    ip = getinterpolation(discretization.interpolations[:displacement], getcells(grid, 1))
+    ip_geo = Ferrite.default_geometric_interpolation(ip) # TODO get interpolation from cell
     dh = DofHandler(grid)
     push!(dh, :displacement, ip)
     close!(dh);
 
+    ch = ConstraintHandler(dh)
+    for dbc ∈ discretization.dbcs
+        add!(ch, dbc)
+    end
+    close!(ch)
+
+    # TODO how to deal with this?
+    intorder = 2*Ferrite.getorder(ip)
+    ref_shape = Ferrite.getrefshape(ip)
+    qr = QuadratureRule{ref_shape}(intorder)
+    qr_face = FaceQuadratureRule{ref_shape}(intorder)
+    cv = CellValues(qr, ip, ip_geo)
+    fv = FaceValues(qr_face, ip, ip_geo)
+
     #
-    semidiscrete_problem = QuasiStaticNonlinearProblem(
-        qsmodel,
-        dh
+    semidiscrete_problem = LoadDrivenQuasiStaticProblem(
+        dh,
+        ch,
+        cv,
+        fv,
+        model[1],
+        model[4],
+        model[2],
+        model[3],
+        # Belongs to the solver.
+        zeros(ndofs(dh)),
+        0.0,
+        0.0,
     )
 
     return semidiscrete_problem
@@ -353,23 +345,32 @@ ip_fiber = Lagrange{ref_shape, order}()
 ip_u = Lagrange{ref_shape, order}()^3
 ip_geo = Lagrange{ref_shape, order}()
 
-ring_grid = generate_ring_mesh(8,2,2)
-ring_cs = compute_midmyocardial_section_coordinate_system(ring_grid, ip_geo)
+# ring_grid = generate_ring_mesh(20,4,4)
+# ring_cs = compute_midmyocardial_section_coordinate_system(ring_grid, ip_geo)
+# fsn_model = create_simple_fiber_model(ring_cs, ip_fiber, ip_geo,
+#         endo_helix_angle = deg2rad(0.0),
+#         epi_helix_angle = deg2rad(0.0),
+#         endo_transversal_angle = 0.0,
+#         epi_transversal_angle = 0.0,
+#         sheetlet_pseudo_angle = deg2rad(0)
+#     )
+ring_grid = generate_grid(Hexahedron, (10, 10, 2), Ferrite.Vec{3}((0.0,0.0,0.0)), Ferrite.Vec{3}((1.0, 1.0, 0.2)))
+fsn_model = OrthotropicMicrostructureModel(
+    ConstantCoefficient(Ferrite.Vec{3}((1.0, 0.0, 0.0))),
+    ConstantCoefficient(Ferrite.Vec{3}((0.0, 1.0, 0.0))),
+    ConstantCoefficient(Ferrite.Vec{3}((0.0, 0.0, 1.0)))
+)
 solve_test_ring("Debug",
     ActiveStressModel(
         Guccione1991Passive(),
-        Guccione1993Active(10),
+        # Guccione1993Active(0.1),
+        SimpleActiveStress(),
         PelceSunLangeveld1995Model()
-    ), ring_grid, ring_cs,
-    create_simple_fiber_model(ring_cs, ip_fiber, ip_geo,
-        endo_helix_angle = deg2rad(0.0),
-        epi_helix_angle = deg2rad(0.0),
-        endo_transversal_angle = 0.0,
-        epi_transversal_angle = 0.0,
-        sheetlet_pseudo_angle = deg2rad(0)
-    ),
-    [NormalSpringBC(0.01, "Epicardium")],
-    CalciumHatField(), ip_u, ip_geo, 2*order
+    ), ring_grid, 
+    fsn_model,
+    [],
+    CalciumHatField(), ip_u, ip_geo, 2*order,
+    0.1
 )
 
 return
