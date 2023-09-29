@@ -521,7 +521,7 @@ function Thunderbolt.semidiscretize(split::ReactionDiffusionSplit{MonodomainMode
     ets = elementtypes(grid)
     @assert length(ets) == 1
 
-    ip = getinterpolation(discretization.interpolations[:φₘ], ets[1])
+    ip = getinterpolation(discretization.interpolations[:φₘ], getcells(grid, 1))
     dh = DofHandler(grid)
     push!(dh, :ϕₘ, ip)
     close!(dh);
@@ -579,7 +579,7 @@ mesh = generate_mesh(Quadrilateral, (2^6, 2^6), Vec{2}((0.0,0.0)), Vec{2}((2.5,2
 
 problem = semidiscretize(
     ReactionDiffusionSplit(model),
-    FiniteElementDiscretization(Dict(:φₘ => Lagrange{RefQuadrilateral, 1}())),
+    FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}())),
     mesh
 )
 

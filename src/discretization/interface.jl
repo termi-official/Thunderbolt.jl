@@ -4,3 +4,5 @@
 Transform a space-time model into a pure time-dependent problem.
 """
 semidiscretize
+
+semidiscretize() = error("Not implemented yet.")

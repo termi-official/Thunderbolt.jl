@@ -25,11 +25,11 @@ abstract type VectorInterpolationCollection <: InterpolationCollection end
 
 A collection of fixed-order Lagrange interpolations across different cell types.
 """
-struct LagrangeCollection{order <: Int} <: ScalarInterpolationCollection
+struct LagrangeCollection{order} <: ScalarInterpolationCollection
 end
 
-getinterpolation(lc::LagrangeCollection{order}, cell::AbstractCell{ref_shape}) where {order, ref_shape} = Lagrange{ref_shape, order}()
-getinterpolation(lc::LagrangeCollection{order}, ::Type{ref_shape}) where {order, ref_shape} = Lagrange{ref_shape, order}()
+getinterpolation(lc::LagrangeCollection{order}, cell::AbstractCell{ref_shape}) where {order, ref_shape <: Ferrite.AbstractRefShape} = Lagrange{ref_shape, order}()
+getinterpolation(lc::LagrangeCollection{order}, ::Type{ref_shape}) where {order, ref_shape <: Ferrite.AbstractRefShape} = Lagrange{ref_shape, order}()
 
 
 """
@@ -37,12 +37,17 @@ getinterpolation(lc::LagrangeCollection{order}, ::Type{ref_shape}) where {order,
 
 A collection of fixed-order vectorized Lagrange interpolations across different cell types.
 """
-struct VectorizedInterpolationCollection{vdim <:Int, IPC <: ScalarInterpolationCollection} <: InterpolationCollection
+struct VectorizedInterpolationCollection{vdim, IPC <: ScalarInterpolationCollection} <: InterpolationCollection
     base::IPC
+    function VectorizedInterpolationCollection{vdim}(ip::SIPC) where {vdim, SIPC <: ScalarInterpolationCollection}
+        return new{vdim, SIPC}(ip)
+    end
 end
 
-getinterpolation(lc::VectorizedInterpolationCollection{vdim, IPC}, cell::AbstractCell{ref_shape}) where {vdim, IPC, ref_shape} = getinterpolation(base, cell)^vdim
-getinterpolation(lc::VectorizedInterpolationCollection{vdim, IPC}, type::Type{ref_shape}) where {vdim, IPC, ref_shape} = getinterpolation(base, type)^vdim
+Base.:(^)(ip::ScalarInterpolationCollection, vdim::Int) = VectorizedInterpolationCollection{vdim}(ip)
+
+getinterpolation(lc::VectorizedInterpolationCollection{vdim, IPC}, cell::AbstractCell{ref_shape}) where {vdim, IPC, ref_shape <: Ferrite.AbstractRefShape} = getinterpolation(base, cell)^vdim
+getinterpolation(lc::VectorizedInterpolationCollection{vdim, IPC}, type::Type{ref_shape}) where {vdim, IPC, ref_shape <: Ferrite.AbstractRefShape} = getinterpolation(base, type)^vdim
 
 
 """
