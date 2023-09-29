@@ -120,12 +120,12 @@ function setup_initial_condition!(problem, solver_cache::LoadDrivenSolverCache, 
 end
 
 function perform_step!(problem, solver_cache::LoadDrivenSolverCache, t, Δt)
-    solver_cache.uₜ₋₁ .= solver_cache.uₜ
-
     # TODO remove these lines
     problem.t = t
     problem.Δt = Δt
     problem.u_prev .= solver_cache.uₜ₋₁
+
+    solver_cache.uₜ₋₁ .= solver_cache.uₜ
 
     Ferrite.update!(problem.ch, t)
     apply!(solver_cache.uₜ, problem.ch)

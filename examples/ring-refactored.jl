@@ -240,8 +240,8 @@ function solve_test_ring(name_base, material_model, grid, microstructure_model, 
         (material_model, calcium_field, face_models, microstructure_model),
         FiniteElementDiscretization(
             Dict(:displacement => LagrangeCollection{1}()^3),
-            # [Dirichlet(:displacement, getfaceset(grid, "Myocardium"), (x,t) -> [0.0], [1])],
-            [Dirichlet(:displacement, getfaceset(grid, "left"), (x,t) -> [0.0], [1]),Dirichlet(:displacement, getfaceset(grid, "front"), (x,t) -> [0.0], [2]),Dirichlet(:displacement, getfaceset(grid, "bottom"), (x,t) -> [0.0], [3]), Dirichlet(:displacement, Set([1]), (x,t) -> [0.0, 0.0, 0.0], [1, 2, 3])],
+            [Dirichlet(:displacement, getfaceset(grid, "Myocardium"), (x,t) -> [0.0], [3])],
+            # [Dirichlet(:displacement, getfaceset(grid, "left"), (x,t) -> [0.0], [1]),Dirichlet(:displacement, getfaceset(grid, "front"), (x,t) -> [0.0], [2]),Dirichlet(:displacement, getfaceset(grid, "bottom"), (x,t) -> [0.0], [3]), Dirichlet(:displacement, Set([1]), (x,t) -> [0.0, 0.0, 0.0], [1, 2, 3])],
         ),
         grid
     )
@@ -252,7 +252,7 @@ function solve_test_ring(name_base, material_model, grid, microstructure_model, 
     standard_postproc = StandardMechanicalIOPostProcessor(io, cv_post, [1], microstructure_cache)
 
     # Create sparse matrix and residual vector
-    solver = LoadDrivenSolver(NewtonRaphsonSolver(;max_iter=10))
+    solver = LoadDrivenSolver(NewtonRaphsonSolver(;max_iter=100))
 
     Thunderbolt.solve(
         problem,
@@ -345,32 +345,31 @@ ip_fiber = Lagrange{ref_shape, order}()
 ip_u = Lagrange{ref_shape, order}()^3
 ip_geo = Lagrange{ref_shape, order}()
 
-# ring_grid = generate_ring_mesh(20,4,4)
-# ring_cs = compute_midmyocardial_section_coordinate_system(ring_grid, ip_geo)
-# fsn_model = create_simple_fiber_model(ring_cs, ip_fiber, ip_geo,
-#         endo_helix_angle = deg2rad(0.0),
-#         epi_helix_angle = deg2rad(0.0),
-#         endo_transversal_angle = 0.0,
-#         epi_transversal_angle = 0.0,
-#         sheetlet_pseudo_angle = deg2rad(0)
-#     )
-ring_grid = generate_grid(Hexahedron, (10, 10, 2), Ferrite.Vec{3}((0.0,0.0,0.0)), Ferrite.Vec{3}((1.0, 1.0, 0.2)))
-fsn_model = OrthotropicMicrostructureModel(
-    ConstantCoefficient(Ferrite.Vec{3}((1.0, 0.0, 0.0))),
-    ConstantCoefficient(Ferrite.Vec{3}((0.0, 1.0, 0.0))),
-    ConstantCoefficient(Ferrite.Vec{3}((0.0, 0.0, 1.0)))
-)
+ring_grid = generate_ring_mesh(20,4,4)
+ring_cs = compute_midmyocardial_section_coordinate_system(ring_grid, ip_geo)
+fsn_model = create_simple_fiber_model(ring_cs, ip_fiber, ip_geo,
+        endo_helix_angle = deg2rad(0.0),
+        epi_helix_angle = deg2rad(0.0),
+        endo_transversal_angle = 0.0,
+        epi_transversal_angle = 0.0,
+        sheetlet_pseudo_angle = deg2rad(0)
+    )
+# ring_grid = generate_grid(Hexahedron, (10, 10, 2), Ferrite.Vec{3}((0.0,0.0,0.0)), Ferrite.Vec{3}((1.0, 1.0, 0.2)))
+# fsn_model = OrthotropicMicrostructureModel(
+#     ConstantCoefficient(Ferrite.Vec{3}((1.0, 0.0, 0.0))),
+#     ConstantCoefficient(Ferrite.Vec{3}((0.0, 1.0, 0.0))),
+#     ConstantCoefficient(Ferrite.Vec{3}((0.0, 0.0, 1.0)))
+# )
 solve_test_ring("Debug",
     ActiveStressModel(
         Guccione1991Passive(),
-        # Guccione1993Active(0.1),
-        SimpleActiveStress(),
+        Guccione1993Active(1.0),
         PelceSunLangeveld1995Model()
     ), ring_grid, 
     fsn_model,
-    [],
+    [NormalSpringBC(0.01, "Epicardium")],
     CalciumHatField(), ip_u, ip_geo, 2*order,
-    0.1
+    0.025
 )
 
 return
