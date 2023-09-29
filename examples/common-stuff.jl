@@ -296,7 +296,7 @@ function assemble_global!(K::SparseMatrixCSC, f::Vector, dh::DH, cv::CV, fv::FV,
     displacement_dofrange = Ferrite.dof_range(dh, :displacement)
     for cell in CellIterator(dh)
         global_dofs = celldofs(cell)
-        displacement_dofs = displacement_dofrange[displacement_dofrange]
+        displacement_dofs = global_dofs[displacement_dofrange]
 
         # TODO refactor
         uₑ = uₜ[displacement_dofs] # element dofs
