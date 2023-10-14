@@ -68,3 +68,11 @@ Returns a new `v₁` which is orthogonal to `v₂`.
 @inline function orthogonalize(v₁::Vec{dim,T}, v₂::Vec{dim,T})::Vec{dim,T} where {dim, T} 
     return v₁ - (v₁ ⋅ v₂)*v₂
 end
+
+"""
+"""
+function generate_nodal_quadrature_rule(ip::Interpolation{ref_shape, order}) where {ref_shape, order}
+    n_base = Ferrite.getnbasefunctions(ip)
+    positions = Ferrite.reference_coordinates(ip)
+    return QuadratureRule{ref_shape, Float64}(ones(length(positions)), positions)
+end

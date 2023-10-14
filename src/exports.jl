@@ -1,4 +1,8 @@
 export
+    solve,
+    # Coefficients
+    ConstantCoefficient,
+    FieldCoefficient,
     # Collections
     LagrangeCollection,
     getinterpolation,
@@ -61,6 +65,10 @@ export
     solve!,
     NewtonRaphsonSolver,
     LoadDrivenSolver,
+    ImplicitEulerSolver,
+    ForwardEulerCellSolver,
+    LTGOSSolver,
+    ReactionDiffusionSplit,
     # Utils
     calculate_volume_deformed_mesh,
     elementtypes,

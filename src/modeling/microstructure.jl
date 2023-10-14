@@ -1,35 +1,3 @@
-"""
-"""
-struct FieldCoefficient{TA,IP<:Interpolation}
-    elementwise_data::TA #3d array (element_idx, base_fun_idx, dim)
-    ip::IP
-end
-
-"""
-"""
-function evaluate_coefficient(coeff::FieldCoefficient{TA,IP}, cell_id::Int, ξ::Vec{dim}, t::Float64=0.0) where {dim,TA,IP}
-    @unpack elementwise_data, ip = coeff
-
-    n_base_funcs = Ferrite.getnbasefunctions(ip)
-    val = zero(Vec{dim, Float64})
-
-    @inbounds for i in 1:n_base_funcs
-        val += Ferrite.value(ip, i, ξ) * elementwise_data[cell_id, i]
-    end
-    return val / norm(val)
-end
-
-"""
-"""
-struct ConstantCoefficient{T}
-    val::T
-end
-
-"""
-"""
-evaluate_coefficient(coeff::ConstantCoefficient{T}, cell_id::Int, ξ::Vec{dim}, t::Float64=0.0) where {dim,T} = coeff.val
-
-
 struct AnisotropicPlanarMicrostructureModel{FiberCoefficientType, SheetletCoefficientType}
     fiber_coefficient::FiberCoefficientType
     sheetlet_coefficient::SheetletCoefficientType
@@ -54,14 +22,6 @@ function directions(fsn::OrthotropicMicrostructureModel, cell_id::Int, ξ::Vec{d
     n₀ = evaluate_coefficient(fsn.normal_coefficient, cell_id, ξ, t)
 
     f₀, s₀, n₀
-end
-
-"""
-"""
-function generate_nodal_quadrature_rule(ip::Interpolation{ref_shape, order}) where {ref_shape, order}
-    n_base = Ferrite.getnbasefunctions(ip)
-    positions = Ferrite.reference_coordinates(ip)
-    return QuadratureRule{ref_shape, Float64}(ones(length(positions)), positions)
 end
 
 """

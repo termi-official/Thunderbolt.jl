@@ -187,36 +187,29 @@ struct MonodomainModel{F1,F2,F3,STIM<:TransmembraneStimulationProtocol,ION<:Abst
     ion::ION
 end
 
-# mutable struct MonodomainOSElementCache
-#     """
-#     Vector of 
-#     """
-#     φₘ_element::AbstractVector
-    
-# end
+coordinate(cv::CellValues, q_point::Int) = Vec((0.0,))#spatial_coordinate(cv, q_point)
 
-# function assemble_system()
+# @doc raw"""
+#     AssembledDiffusionOperator{MT, DT, CV}
 
-# end
-
+# Assembles the matrix associated to the bilinearform ``a(u,v) = -\int \nabla v(x) \cdot D(x) \nabla u(x) dx`` for a given diffusion tensor ``D(x)`` and ``u,v`` from the same function space.
+# """
 """
     Represents the bilinearform <ϕ,ψ> = -∫ D∇ϕ ⋅ ∇ψ dΩ .
 """
-struct DiffusionOperator
+struct BilinearDiffusionIntegrator
     D
-    cv_trial
-    cv_test
     coordinate_system
 end
 
-function assemble_element!(Kₑ, operator::DiffusionOperator)
-    @unpack coordinate_system, cellvalues = operator
+function assemble_element!(Kₑ, integrator::BilinearDiffusionIntegrator, cellvalues)
+    n_basefuncs = getnbasefunctions(cellvalues)
     for q_point in 1:getnquadpoints(cellvalues)
         #get the spatial coordinates of the current gauss point
-        x = coordinate(coordinate_system, q_point)
+        x = coordinate(integrator.coordinate_system, q_point)
         #based on the gauss point coordinates, we get the spatial dependent
         #material parameters
-        D_loc = operator.D(x)
+        D_loc = integrator.D(x)
         dΩ = getdetJdV(cellvalues, q_point)
         for i in 1:n_basefuncs
             ∇Nᵢ = shape_gradient(cellvalues, q_point, i)
@@ -228,71 +221,71 @@ function assemble_element!(Kₑ, operator::DiffusionOperator)
     end
 end
 
+# @doc raw"""
+#     AssembledMassOperator{MT, CV}
+
+# Assembles the matrix associated to the bilinearform ``a(u,v) = -\int v(x) u(x) dx`` for ``u,v`` from the same function space.
+# """
 """
     Represents the bilinearform <ϕ,ψ> = ∫ ρϕ ⋅ ψ dΩ .
 """
-struct MassOperator
+struct BilinearMassIntegrator
     ρ
-    cv_trial
-    cv_test
     coordinate_system
 end
 
-function assemble_element!(Mₑ, operator::MassOperator)
-    @unpack coordinate_system, cv_trial, cv_test = operator
+function assemble_element!(Mₑ, integrator::BilinearMassIntegrator, cellvalues)
+    n_basefuncs = getnbasefunctions(cellvalues)
     for q_point in 1:getnquadpoints(cellvalues)
         #get the spatial coordinates of the current gauss point
-        x = coordinate(coordinate_system, q_point)
+        x = coordinate(integrator.coordinate_system, q_point)
         #based on the gauss point coordinates, we get the spatial dependent
         #material parameters
-        ρ = operator.ρ(x)
-        dΩ = getdetJdV(cv_trial, q_point)
+        ρ = integrator.ρ(x)
+        dΩ = getdetJdV(cellvalues, q_point)
         for i in 1:n_basefuncs
-            Nᵢ = shape_value(cv_trial, q_point, i)
+            Nᵢ = shape_value(cellvalues, q_point, i)
             for j in 1:n_basefuncs
-                Nⱼ = shape_value(cv_test, q_point, j)
+                Nⱼ = shape_value(cellvalues, q_point, j)
                 Mₑ[i,j] += ρ * Nᵢ * Nⱼ * dΩ 
             end
         end
     end
 end
 
-# """
-# Solver for the heat portion of the Monodomain problem.
-# """
-# struct ImplicitEulerHeatSolver <: AbstractEPSolver
-# end
 
-# """
-# """
-# struct ImplicitEulerHeatSolverCache <: AbstractEPSolverCache
-#     dh::DofHandler
-#     transmembranevoltage::Symbol
-#     ch::ConstraintHandler
-#     K::MatrixType
-#     M::MatrixType
-#     A::MatrixType
-# end
+######################################################
+Base.@kwdef struct ParametrizedFHNModel{T} <: AbstractIonicModel
+    a::T = T(0.1)
+    b::T = T(0.5)
+    c::T = T(1.0)
+    d::T = T(0.0)
+    e::T = T(0.01)
+end;
 
-# """
-# """
-# struct LTGMonodomainSolver
-#     heatsolver
-#     cellsolver
-# end
+const FHNModel = ParametrizedFHNModel{Float64};
 
-# """
-# """
-# struct LTG_RDMonodomainSolverCache{HC,CC}
-#     heatcache::HC
-#     cellcache::CC
-# end
+num_states(::ParametrizedFHNModel{T}) where{T} = 1
+default_initial_state(::ParametrizedFHNModel{T}) where {T} = [0.0, 0.0]
 
-# """
-# """
-# struct LTGOSCache{OperatorType} <: AbstractEPSolver
-# end
+function cell_rhs!(du::TD,φₘ::TV,s::TS,x::TX,t::TT,cell_parameters::TP) where {TD,TV,TS,TX,TT,TP <: AbstractIonicModel}
+    dφₘ = @view du[1:1]
+    reaction_rhs!(dφₘ,φₘ,s,x,t,cell_parameters)
 
-# # function solve(solver::LTGOSSolver, model::AbstractEPModel, u₀, s₀, tspan=(0.0,100.0))
-    
-# # end
+    ds = @view du[2:end]
+    state_rhs!(ds,φₘ,s,x,t,cell_parameters)
+
+    return nothing
+end
+
+@inline function reaction_rhs!(dφₘ::TD,φₘ::TV,s::TS,x::TX,t::TT,cell_parameters::FHNModel) where {TD<:SubArray,TV,TS,TX,TT}
+    @unpack a = cell_parameters
+    dφₘ .= φₘ*(1-φₘ)*(φₘ-a) -s[1]
+    return nothing
+end
+
+@inline function state_rhs!(ds::TD,φₘ::TV,s::TS,x::TX,t::TT,cell_parameters::FHNModel) where {TD<:SubArray,TV,TS,TX,TT}
+    @unpack b,c,d,e = cell_parameters
+    ds .= e*(b*φₘ - c*s[1] - d)
+    return nothing
+end
