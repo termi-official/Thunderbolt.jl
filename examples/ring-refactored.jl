@@ -4,7 +4,7 @@ using FerriteGmsh
 import Ferrite: get_grid, find_field
 
 mutable struct LoadDrivenQuasiStaticProblem{DH,CH,CV,FV,MAT,MICRO,CAL,FACE}
-    # Wher to put this?
+    # Where to put this?
     dh::DH
     ch::CH
     cv::CV
@@ -89,7 +89,7 @@ function Thunderbolt.update_linearization!(J, residual, u, problem::ProblemType,
         displacement_dofs = global_dofs[displacement_dofrange]
 
         # TODO refactor
-        uₑ = u[displacement_dofs] # element dofs
+        uₑ = @view u[displacement_dofs] # element dofs
 
         # Reinitialize cell values, and reset output arrays
         reinit!(cv, cell)
@@ -147,7 +147,7 @@ function Thunderbolt.update_linearization!(J, residual, u, problem::ProblemType,
         displacement_dofs = global_dofs[displacement_dofrange]
 
         # TODO refactor
-        uₑ = u[displacement_dofs] # element dofs
+        uₑ = @view u[displacement_dofs] # element dofs
 
         # Reinitialize cell values, and reset output arrays
         reinit!(cv, cell)
