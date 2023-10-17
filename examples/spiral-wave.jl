@@ -75,7 +75,7 @@ problem = semidiscretize(
 )
 
 solver = LTGOSSolver(
-    ImplicitEulerSolver(),
+    BackwardEulerSolver(),
     ForwardEulerCellSolver()
 )
 

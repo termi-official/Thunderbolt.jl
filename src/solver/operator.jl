@@ -1,33 +1,86 @@
-abstract type AbstractBilinearOperator end
+abstract type AbstractNonlinearOperator end
 
-struct AssembledBilinearOperator{MT,IT,CVT,SDH} <: AbstractBilinearOperator
-    A::MT
-    integrator::IT
-    cv::CVT
-    sdh::SDH
+struct AssembledNonlinearOperator{MatrixType, CacheType, DHType <: AbstractDofHandler} <: AbstractNonlinearOperator
+    J::MatrixType
+    element_cache::CacheType
+    dh::DHType
 end
 
-function update_operator!(bifo::AssembledBilinearOperator)
-    @unpack A, cv, integrator, sdh  = bifo
+function update_linearlization!(bifo::AssembledNonlinearOperator, u::Vector)
+    @unpack J, element_cache, dh  = bifo
 
     assembler = start_assemble(A)
 
-    n_basefuncs = getnbasefunctions(cv)
-    Aₑ = zeros(n_basefuncs, n_basefuncs)
+    ndofs = ndofs_per_cell(dh)
+    Jₑ = zeros(ndofs, ndofs)
 
-    @inbounds for cell in CellIterator(sdh)
+    @inbounds for cell in CellIterator(dh)
+        fill!(Jₑ, 0)
+        update_element_cache!(element_cache, cell)
+        assemble_element!(Jₑ, u, element_cache)
+        assemble!(assembler, celldofs(cell), Jₑ)
+    end
+
+    #finish_assemble(assembler)
+end
+
+function update_linearlization!(bifo::AssembledNonlinearOperator, u::Vector, residual::Vector)
+    @unpack J, element_cache, dh  = bifo
+
+    assembler = start_assemble(J, residual)
+
+    ndofs = ndofs_per_cell(dh)
+    Jₑ = zeros(ndofs, ndofs)
+    rₑ = zeros(ndofs)
+
+    @inbounds for cell in CellIterator(dh)
+        fill!(Jₑ, 0)
+        fill!(rₑ, 0)
+        update_element_cache!(element_cache, cell)
+        assemble_element!(Jₑ, rₑ, u, element_cache)
+        assemble!(assembler, celldofs(cell), Jₑ, rₑ)
+    end
+
+    #finish_assemble(assembler)
+end
+
+"""
+    mul!(out, bifo::AssembledNonlinearOperator, in)
+
+Apply the action of the linearization of the contained nonlinear form to the vector `in`.
+"""
+mul!(out, bifo::AssembledNonlinearOperator, in) = mul!(out, bifo.J, in)
+
+Base.eltype(biop::AssembledNonlinearOperator) = eltype(biop.A)
+Base.size(biop::AssembledNonlinearOperator, axis) = sisze(biop.A, axis)
+
+
+abstract type AbstractBilinearOperator <: AbstractNonlinearOperator end
+
+struct AssembledBilinearOperator{MatrixType, CacheType, DHType <: AbstractDofHandler} <: AbstractBilinearOperator
+    A::MatrixType
+    element_cache::CacheType
+    dh::DHType
+end
+
+function update_operator!(bifo::AssembledBilinearOperator)
+    @unpack A, element_cache, dh  = bifo
+
+    assembler = start_assemble(A)
+
+    ndofs = ndofs_per_cell(dh)
+    Aₑ = zeros(ndofs, ndofs)
+
+    @inbounds for cell in CellIterator(dh)
         fill!(Aₑ, 0)
-        reinit!(cv, cell)
-        assemble_element!(Aₑ, integrator, cv)
+        update_element_cache!(element_cache, cell)
+        assemble_element!(Aₑ, element_cache)
         assemble!(assembler, celldofs(cell), Aₑ)
     end
+
+    #finish_assemble(assembler)
 end
 
-LinearAlgebra.mul!(out, bifo::AssembledBilinearOperator, in) = mul!(out, bifo.A, in)
-
-struct BilinearMassForm
-end
-
-struct BilinearDiffusionForm{DTT}
-    diffusion_tensor_field::DTT
-end
+mul!(out, biop::AssembledBilinearOperator, in) = mul!(out, biop.A, in)
+Base.eltype(biop::AssembledBilinearOperator) = eltype(biop.A)
+Base.size(biop::AssembledBilinearOperator, axis) = sisze(biop.A, axis)

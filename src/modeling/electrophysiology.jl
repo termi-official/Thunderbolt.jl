@@ -187,29 +187,39 @@ struct MonodomainModel{F1,F2,F3,STIM<:TransmembraneStimulationProtocol,ION<:Abst
     ion::ION
 end
 
-coordinate(cv::CellValues, q_point::Int) = Vec((0.0,))#spatial_coordinate(cv, q_point)
-
 # @doc raw"""
 #     AssembledDiffusionOperator{MT, DT, CV}
 
 # Assembles the matrix associated to the bilinearform ``a(u,v) = -\int \nabla v(x) \cdot D(x) \nabla u(x) dx`` for a given diffusion tensor ``D(x)`` and ``u,v`` from the same function space.
 # """
 """
-    Represents the bilinearform <ϕ,ψ> = -∫ D∇ϕ ⋅ ∇ψ dΩ .
+    Represents the integrand of the bilinear form <ϕ,ψ> = -∫ D∇ϕ ⋅ ∇ψ dΩ .
 """
-struct BilinearDiffusionIntegrator
-    D
-    coordinate_system
+struct BilinearDiffusionIntegrator{CoefficientType}
+    D::CoefficientType
+    # coordinate_system
 end
 
-function assemble_element!(Kₑ, integrator::BilinearDiffusionIntegrator, cellvalues)
+struct BilinearDiffusionElementCache{IT <: BilinearDiffusionIntegrator, TT <: Tensor{2}, CV}
+    integrator::IT
+    Dq::Vector{TT}
+    cellvalues::CV
+end
+
+function update_element_cache!(element_cache::CACHE, cell::CELL) where {CACHE <: BilinearDiffusionElementCache, CELL}
+    reinit!(element_cache.cellvalues, cell)
+    for (qᵢ, ξ) ∈ enumerate(element_cache.cellvalues.qr.points)
+        element_cache.Dq[qᵢ] = evaluate_coefficient(element_cache.integrator.D, cellid(cell), ξ)
+    end
+end
+
+function assemble_element!(Kₑ, cache::CACHE) where {CACHE <: BilinearDiffusionElementCache}
+    @unpack Dq, cellvalues = cache
     n_basefuncs = getnbasefunctions(cellvalues)
     for q_point in 1:getnquadpoints(cellvalues)
-        #get the spatial coordinates of the current gauss point
-        x = coordinate(integrator.coordinate_system, q_point)
-        #based on the gauss point coordinates, we get the spatial dependent
-        #material parameters
-        D_loc = integrator.D(x)
+        # TODO
+        # D_loc = evaluate_coefficient(...)
+        D_loc = Dq[q_point]
         dΩ = getdetJdV(cellvalues, q_point)
         for i in 1:n_basefuncs
             ∇Nᵢ = shape_gradient(cellvalues, q_point, i)
@@ -227,21 +237,33 @@ end
 # Assembles the matrix associated to the bilinearform ``a(u,v) = -\int v(x) u(x) dx`` for ``u,v`` from the same function space.
 # """
 """
-    Represents the bilinearform <ϕ,ψ> = ∫ ρϕ ⋅ ψ dΩ .
+    Represents the integrand of the bilinear form <ϕ,ψ> = ∫ ρϕ ⋅ ψ dΩ .
 """
-struct BilinearMassIntegrator
-    ρ
-    coordinate_system
+struct BilinearMassIntegrator{CoefficientType}
+    ρ::CoefficientType
+    # coordinate_system
 end
 
-function assemble_element!(Mₑ, integrator::BilinearMassIntegrator, cellvalues)
+struct BilinearMassElementCache{IT <: BilinearMassIntegrator, T, CV}
+    integrator::IT
+    ρq::Vector{T}
+    cellvalues::CV
+end
+
+function update_element_cache!(element_cache::CACHE, cell::CELL) where {CACHE <: BilinearMassElementCache, CELL}
+    reinit!(element_cache.cellvalues, cell)
+    for (qᵢ, ξ) ∈ enumerate(element_cache.cellvalues.qr.points)
+        element_cache.ρq[qᵢ] = evaluate_coefficient(element_cache.integrator.ρ, cellid(cell), ξ)
+    end
+end
+
+
+function assemble_element!(Mₑ, cache::CACHE) where {CACHE <: BilinearMassElementCache}
+    @unpack cellvalues = cache
     n_basefuncs = getnbasefunctions(cellvalues)
     for q_point in 1:getnquadpoints(cellvalues)
-        #get the spatial coordinates of the current gauss point
-        x = coordinate(integrator.coordinate_system, q_point)
-        #based on the gauss point coordinates, we get the spatial dependent
-        #material parameters
-        ρ = integrator.ρ(x)
+        # TODO evaluate_coefficient(...) ?
+        ρ = 1.0 #ρq[q_point]
         dΩ = getdetJdV(cellvalues, q_point)
         for i in 1:n_basefuncs
             Nᵢ = shape_value(cellvalues, q_point, i)
@@ -252,7 +274,6 @@ function assemble_element!(Mₑ, integrator::BilinearMassIntegrator, cellvalues)
         end
     end
 end
-
 
 ######################################################
 Base.@kwdef struct ParametrizedFHNModel{T} <: AbstractIonicModel

@@ -48,7 +48,7 @@ function perform_step!(problem::SplitProblem{APT, BPT}, cache::LTGOSSolverCache{
     return true
 end
 
-function setup_solver_caches(problem::SplitProblem{APT, BPT}, solver::LTGOSSolver{ImplicitEulerSolver,BST}) where {APT <: TransientHeatProblem,BPT,BST}
+function setup_solver_caches(problem::SplitProblem{APT, BPT}, solver::LTGOSSolver{BackwardEulerSolver,BST}) where {APT <: TransientHeatProblem,BPT,BST}
     cache = LTGOSSolverCache(
         setup_solver_caches(problem.A, solver.A_solver),
         setup_solver_caches(problem.B, solver.B_solver),
@@ -57,7 +57,7 @@ function setup_solver_caches(problem::SplitProblem{APT, BPT}, solver::LTGOSSolve
     return cache
 end
 
-function setup_solver_caches(problem::SplitProblem{APT, BPT}, solver::LTGOSSolver{ImplicitEulerSolver,BST}) where {APT,BPT <: TransientHeatProblem,BST}
+function setup_solver_caches(problem::SplitProblem{APT, BPT}, solver::LTGOSSolver{BackwardEulerSolver,BST}) where {APT,BPT <: TransientHeatProblem,BST}
     cache = LTGOSSolverCache(
         setup_solver_caches(problem.A, solver.A_solver),
         setup_solver_caches(problem.B, solver.B_solver),
@@ -78,5 +78,25 @@ The default behavior assumes that nothing has to be done, because both problems 
 """
 transfer_fields!(A, A_cache, B, B_cache)
 
-transfer_fields!(A, A_cache::ImplicitEulerSolverCache, B, B_cache::ForwardEulerCellSolverCache) = nothing
-transfer_fields!(A, A_cache::ForwardEulerCellSolverCache, B, B_cache::ImplicitEulerSolverCache) = nothing
+transfer_fields!(A, A_cache::BackwardEulerSolverCache, B, B_cache::ForwardEulerCellSolverCache) = nothing
+transfer_fields!(A, A_cache::ForwardEulerCellSolverCache, B, B_cache::BackwardEulerSolverCache) = nothing
+
+
+
+
+
+
+
+
+
+############# WHERE TO PUT ME?
+# TODO what exactly is the job here? How do we know where to write and what to iterate?
+function setup_initial_condition!(problem::SplitProblem{<:Any, <:AbstractPointwiseProblem}, cache, initial_condition)
+    # TODO cleaner implementation. We need to extract this from the types or via dispatch.
+    u₀, s₀ = initial_condition(problem)
+    cache.B_solver_cache.uₙ .= u₀ # Note that the vectors in the caches are connected
+    cache.B_solver_cache.sₙ .= s₀
+    return nothing
+end
+
+perform_step!(problem::PointwiseODEProblem{ODET}, cache::CT, t::Float64, Δt::Float64) where {ODET, CT} = perform_step!(problem.ode, t, Δt, cache)

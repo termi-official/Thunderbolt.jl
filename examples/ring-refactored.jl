@@ -21,8 +21,64 @@ mutable struct LoadDrivenQuasiStaticProblem{DH,CH,CV,FV,MAT,MICRO,CAL,FACE,T}
 end
 
 # We simply unpack and assemble here
-function Thunderbolt.assemble_linearization!(K, residual, u, problem::LoadDrivenQuasiStaticProblem{DH,CH,CV,FV,MAT,MICRO,CAL,FACE,T}) where {DH,CH,CV,FV,MAT,MICRO,CAL,FACE,T}
-    assemble_global!(K, residual, problem.dh, problem.cv, problem.fv, problem.material_model, u, problem.u_prev, problem.microstructure_model, problem.calcium_field, problem.t, problem.Δt, problem.face_models)
+function Thunderbolt.update_linearization!(J, residual, u, problem::ProblemType) where { ProblemType <: LoadDrivenQuasiStaticProblem}
+    @unpack dh, cv, fv, material_model, u_prev, microstructure_model, calcium_field, t, Δt, face_models = problem
+
+    n = ndofs_per_cell(dh)
+    Jₑ = zeros(n, n)
+    residualₑ = zeros(n)
+
+    # start_assemble resets J and f
+    assembler = start_assemble(J, residual)
+
+    microstructure_cache = Thunderbolt.setup_microstructure_cache(cv, microstructure_model)
+    # TODO this should be outside of this routine, because the contraction might be stateful! But where/how? Maybe all caches should be factored out...?
+    contraction_cache = Thunderbolt.setup_contraction_model_cache(cv, material_model.contraction_model, calcium_field)
+    element_cache = Thunderbolt.CardiacMechanicalElementCache(material_model, microstructure_cache, nothing, contraction_cache, cv)
+
+    face_caches = ntuple(i->Thunderbolt.setup_face_cache(face_models[i], fv), length(face_models))
+
+    # Loop over all cells in the grid
+    # @timeit "assemble" for cell in CellIterator(dh)
+    # TODO for subdofhandler in dh.subdofhandlers
+    displacement_dofrange = Ferrite.dof_range(dh, :displacement)
+    for cell in CellIterator(dh)
+        global_dofs = celldofs(cell)
+        displacement_dofs = global_dofs[displacement_dofrange]
+
+        # TODO refactor
+        uₑ = u[displacement_dofs] # element dofs
+        # uₑ_prev = uₜ₋₁[displacement_dofs] # element dofs
+        # vₑ = (uₑ - uₑ_prev)/Δt # velocity approximation
+
+        # Reinitialize cell values, and reset output arrays
+        reinit!(cv, cell)
+        fill!(Jₑ, 0.0)
+        fill!(residualₑ, 0.0)
+
+        # Update remaining caches specific to the element and models
+        Thunderbolt.update_element_cache!(element_cache, calcium_field, t, cell)
+
+        # Assemble matrix and residuals
+        Thunderbolt.assemble_element!(Jₑ, residualₑ, uₑ, element_cache)
+
+        for local_face_index ∈ 1:nfaces(cell)
+            face_is_initialized = false
+            for face_cache ∈ face_caches
+                if (cellid(cell), local_face_index) ∈ getfaceset(cell.grid, Thunderbolt.getboundaryname(face_cache))
+                    if !face_is_initialized
+                        face_is_initialized = true
+                        reinit!(fv, cell, local_face_index)
+                    end
+                    Thunderbolt.update_face_cache(cell, face_cache)
+
+                    Thunderbolt.assemble_face!(Jₑ, residualₑ, uₑ, face_cache)
+                end
+            end
+        end
+
+        assemble!(assembler, global_dofs, residualₑ, Jₑ)
+    end
 end
 
 # mutable struct AverageCoordinateStrainProcessorCache{CC, SVT <: AbstractVector}

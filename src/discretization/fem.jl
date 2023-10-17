@@ -19,7 +19,7 @@ struct FiniteElementDiscretization
 end
 
 
-function semidiscretize(split::ReactionDiffusionSplit{MonodomainModel{A,B,C,D,E}}, discretization::FiniteElementDiscretization, grid::AbstractGrid) where {A,B,C,D,E}
+function semidiscretize(split::ReactionDiffusionSplit{<:MonodomainModel}, discretization::FiniteElementDiscretization, grid::AbstractGrid)
     epmodel = split.model
 
     ets = elementtypes(grid)
