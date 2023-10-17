@@ -82,8 +82,6 @@ end
 struct ElastodynamicsModel{RHSModel <: QuasiStaticModel, CoefficienType}
     rhs::RHSModel
     ρ::CoefficienType
-    # TODO refactor into solver cache
-    vₜ₋₁::Vector
 end
 
 """
@@ -103,7 +101,7 @@ function update_element_cache!(cache::CardiacMechanicalElementCache{MP, MSCache,
     update_contraction_model_cache!(cache.contraction_model_cache, time, cell, cache.cv)
 end
 
-function assemble_element!(Kₑ::Matrix, residualₑ::Vector, uₑ::Vector, cache::CardiacMechanicalElementCache, time)
+function assemble_element!(Kₑ::Matrix, residualₑ, uₑ, cache::CardiacMechanicalElementCache, time)
     @unpack mp, microstructure_cache, contraction_model_cache, cv = cache
     ndofs = getnbasefunctions(cv)
 

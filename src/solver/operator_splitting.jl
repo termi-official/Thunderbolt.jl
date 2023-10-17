@@ -29,8 +29,8 @@ end
 
 function setup_solver_caches(problem::SplitProblem{APT, BPT}, solver::LTGOSSolver{AST,BST}, t₀) where {APT,BPT,AST,BST}
     return LTGOSSolverCache(
-        setup_solver_caches(problem.A, solver.A_solver),
-        setup_solver_caches(problem.B, solver.B_solver),
+        setup_solver_caches(problem.A, solver.A_solver, t₀),
+        setup_solver_caches(problem.B, solver.B_solver, t₀),
     )
 end
 

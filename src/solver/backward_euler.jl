@@ -62,7 +62,8 @@ function setup_solver_caches(problem::TransientHeatProblem, solver::BackwardEule
     sdim = Ferrite.getdim(dh.grid)
     qr = QuadratureRule{refshape}(2*order) # TODO how to pass this one down here?
     cv = CellValues(qr, ip)
-    
+
+    # TODO abstraction layer around AssembledBilinearOperator
     mass_operator = AssembledBilinearOperator(
         create_sparsity_pattern(dh),
         BilinearMassElementCache(
@@ -75,6 +76,7 @@ function setup_solver_caches(problem::TransientHeatProblem, solver::BackwardEule
         dh,
     )
 
+    # TODO abstraction layer around AssembledBilinearOperator
     diffusion_operator = AssembledBilinearOperator(
         create_sparsity_pattern(dh),
         BilinearDiffusionElementCache(

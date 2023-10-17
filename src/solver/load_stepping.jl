@@ -14,21 +14,14 @@ mutable struct LoadDrivenSolverCache{ISC, T}
     uₜ₋₁::Vector{T}
 end
 
-struct TimeFrozenProblem{InnerProblemType}
-    inner_problem::InnerProblemType
-    t::Float64
-end
-
-update_linearization!(Jᵤ, residual, u, problem::PT) where {PT <: TimeFrozenProblem} = update_linearization!(Jᵤ, residual, u, problem.inner_problem, problem.t) 
-eliminate_constraints_from_linearization!(solver_cache,problem::PT) where {PT <: TimeFrozenProblem} = eliminate_constraints_from_linearization!(solver_cache, problem.inner_problem)
-residual_norm(solver_cache::NewtonRaphsonSolverCache, problem::PT) where {PT <: TimeFrozenProblem} = residual_norm(solver_cache, problem.inner_problem)
-eliminate_constraints_from_increment!(Δu, solver_cache, problem::PT) where {PT <: TimeFrozenProblem} = eliminate_constraints_from_increment!(Δu, solver_cache, problem.inner_problem)
-
+# TODO revisiv if t₀ is really the right thing here to pass
 function setup_solver_caches(problem, solver::LoadDrivenSolver{IS}, t₀) where {IS}
+    inner_solver_cache = setup_solver_caches(problem, solver.inner_solver, t₀)
+    @unpack dh = problem
     LoadDrivenSolverCache(
-        setup_solver_caches(problem, solver.inner_solver, t₀),
-        zeros(ndofs(problem.dh)),
-        zeros(ndofs(problem.dh)),
+        inner_solver_cache,
+        Vector{Float64}(undef, ndofs(dh)),
+        Vector{Float64}(undef, ndofs(dh)),
     )
 end
 
@@ -45,7 +38,7 @@ function perform_step!(problem, solver_cache::LoadDrivenSolverCache, t, Δt)
     Ferrite.update!(problem.ch, t)
     apply!(solver_cache.uₜ, problem.ch)
 
-    if !solve!(solver_cache.uₜ, TimeFrozenProblem(problem, t), solver_cache.inner_solver_cache)
+    if !solve!(solver_cache.uₜ, problem, solver_cache.inner_solver_cache, t) # TODO remove ,,t'' here. But how?
         @warn "Inner solver failed."
         return false
     end

@@ -3,12 +3,10 @@ using FerriteGmsh
 
 import Ferrite: get_grid, find_field
 
-mutable struct LoadDrivenQuasiStaticProblem{DH,CH,CV,FV,MAT,MICRO,CAL,FACE}
+mutable struct LoadDrivenQuasiStaticProblem{DH,CH,MAT,MICRO,CAL,FACE}
     # Where to put this?
     dh::DH
     ch::CH
-    cv::CV
-    fv::FV
     #
     material_model::MAT
     microstructure_model::MICRO
@@ -39,20 +37,10 @@ function Thunderbolt.semidiscretize(model::MODEL, discretization::FiniteElementD
     end
     close!(ch)
 
-    # TODO how to deal with this?
-    intorder = 2*Ferrite.getorder(ip)
-    ref_shape = Ferrite.getrefshape(ip)
-    qr = QuadratureRule{ref_shape}(intorder)
-    qr_face = FaceQuadratureRule{ref_shape}(intorder)
-    cv = CellValues(qr, ip, ip_geo)
-    fv = FaceValues(qr_face, ip, ip_geo)
-
-    #
+    # TODO QuasiStaticNonlinearProblem without calcium_field and microstructure_model
     semidiscrete_problem = LoadDrivenQuasiStaticProblem(
         dh,
         ch,
-        cv,
-        fv,
         model.mechanical_model,
         model.microstructure_model,
         model.calcium_field,
@@ -60,123 +48,6 @@ function Thunderbolt.semidiscretize(model::MODEL, discretization::FiniteElementD
     )
 
     return semidiscrete_problem
-end
-
-# We simply unpack and assemble here
-function Thunderbolt.update_linearization!(J, residual, u, problem::ProblemType, t) where { ProblemType <: LoadDrivenQuasiStaticProblem}
-    @unpack dh, cv, fv, material_model, microstructure_model, calcium_field, face_models = problem
-
-    n = ndofs_per_cell(dh)
-    Jₑ = zeros(n, n)
-    residualₑ = zeros(n)
-
-    # start_assemble resets J and f
-    assembler = start_assemble(J, residual)
-
-    microstructure_cache = Thunderbolt.setup_microstructure_cache(cv, microstructure_model)
-    # TODO this should be outside of this routine, because the contraction might be stateful! But where/how? Maybe all caches should be factored out...?
-    contraction_cache = Thunderbolt.setup_contraction_model_cache(cv, material_model.contraction_model, calcium_field)
-    element_cache = Thunderbolt.CardiacMechanicalElementCache(material_model, microstructure_cache, nothing, contraction_cache, cv)
-
-    face_caches = ntuple(i->Thunderbolt.setup_face_cache(face_models[i], fv, t), length(face_models))
-
-    # Loop over all cells in the grid
-    # @timeit "assemble" for cell in CellIterator(dh)
-    # TODO for subdofhandler in dh.subdofhandlers
-    displacement_dofrange = Ferrite.dof_range(dh, :displacement)
-    for cell in CellIterator(dh)
-        global_dofs = celldofs(cell)
-        displacement_dofs = global_dofs[displacement_dofrange]
-
-        # TODO refactor
-        uₑ = @view u[displacement_dofs] # element dofs
-
-        # Reinitialize cell values, and reset output arrays
-        reinit!(cv, cell)
-        fill!(Jₑ, 0.0)
-        fill!(residualₑ, 0.0)
-
-        # Update remaining caches specific to the element and models
-        Thunderbolt.update_element_cache!(element_cache, cell, t)
-
-        # Assemble matrix and residuals
-        Thunderbolt.assemble_element!(Jₑ, residualₑ, uₑ, element_cache, t)
-
-        for local_face_index ∈ 1:nfaces(cell)
-            face_is_initialized = false
-            for face_cache ∈ face_caches
-                if (cellid(cell), local_face_index) ∈ getfaceset(cell.grid, Thunderbolt.getboundaryname(face_cache))
-                    if !face_is_initialized
-                        face_is_initialized = true
-                        reinit!(fv, cell, local_face_index)
-                    end
-                    Thunderbolt.update_face_cache(cell, face_cache, t)
-
-                    Thunderbolt.assemble_face!(Jₑ, residualₑ, uₑ, face_cache, t)
-                end
-            end
-        end
-
-        assemble!(assembler, global_dofs, residualₑ, Jₑ)
-    end
-end
-
-function Thunderbolt.update_linearization!(J, residual, u, problem::ProblemType, t) where { ProblemType <: LoadDrivenQuasiStaticProblem}
-    @unpack dh, cv, fv, material_model, microstructure_model, calcium_field, face_models = problem
-
-    n = ndofs_per_cell(dh)
-    Jₑ = zeros(n, n)
-    residualₑ = zeros(n)
-
-    # start_assemble resets J and f
-    assembler = start_assemble(J, residual)
-
-    microstructure_cache = Thunderbolt.setup_microstructure_cache(cv, microstructure_model)
-    # TODO this should be outside of this routine, because the contraction might be stateful! But where/how? Maybe all caches should be factored out...?
-    contraction_cache = Thunderbolt.setup_contraction_model_cache(cv, material_model.contraction_model, calcium_field)
-    element_cache = Thunderbolt.CardiacMechanicalElementCache(material_model, microstructure_cache, nothing, contraction_cache, cv)
-
-    face_caches = ntuple(i->Thunderbolt.setup_face_cache(face_models[i], fv, t), length(face_models))
-
-    # Loop over all cells in the grid
-    # @timeit "assemble" for cell in CellIterator(dh)
-    # TODO for subdofhandler in dh.subdofhandlers
-    displacement_dofrange = Ferrite.dof_range(dh, :displacement)
-    for cell in CellIterator(dh)
-        global_dofs = celldofs(cell)
-        displacement_dofs = global_dofs[displacement_dofrange]
-
-        # TODO refactor
-        uₑ = @view u[displacement_dofs] # element dofs
-
-        # Reinitialize cell values, and reset output arrays
-        reinit!(cv, cell)
-        fill!(Jₑ, 0.0)
-        fill!(residualₑ, 0.0)
-
-        # Update remaining caches specific to the element and models
-        Thunderbolt.update_element_cache!(element_cache, cell, t)
-
-        # Assemble matrix and residuals
-        Thunderbolt.assemble_element!(Jₑ, residualₑ, uₑ, element_cache, t)
-
-        for local_face_index ∈ 1:nfaces(cell)
-            face_is_initialized = false
-            for face_cache ∈ face_caches
-                if (cellid(cell), local_face_index) ∈ getfaceset(cell.grid, Thunderbolt.getboundaryname(face_cache))
-                    if !face_is_initialized
-                        face_is_initialized = true
-                        reinit!(fv, cell, local_face_index)
-                    end
-                    Thunderbolt.update_face_cache(cell, face_cache, t)
-
-                    Thunderbolt.assemble_face!(Jₑ, residualₑ, uₑ, face_cache, t)
-                end
-            end
-        end
-
-        assemble!(assembler, global_dofs, residualₑ, Jₑ)
-    end
 end
 
 # mutable struct AverageCoordinateStrainProcessorCache{CC, SVT <: AbstractVector}
@@ -242,6 +113,7 @@ end
 #     # cache_list::CL
 # end
 
+# TODO refactor this one into the framework code and put a nice abstraction layer around it
 struct StandardMechanicalIOPostProcessor{IO, CV, MC}
     io::IO
     cv::CV
@@ -418,71 +290,6 @@ function solve_test_ring(name_base, material_model, grid, microstructure_model, 
     )
 end
 
-import Thunderbolt: QuasiStaticModel
-"""
-    QuasiStaticNonlinearProblem{M <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler}
-
-A discrete problem with time dependent terms and no time derivatives w.r.t. any solution variable.
-Abstractly written we want to solve the problem F(u, t) = 0 on some time interval [t₁, t₂].
-"""
-struct QuasiStaticNonlinearProblem{M <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler}
-    model::M
-    dh::DH
-end
-
-"""
-    QuasiStaticDAEProblem{M <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler}
-
-A problem with time dependent terms and time derivatives only w.r.t. internal solution variable.
-"""
-struct QuasiStaticDAEProblem{M <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler}
-    model::M
-    dh::DH
-end
-
-# TODO better model struct
-# function Thunderbolt.semidiscretize(model::Tuple{QuasiStaticModel,CM,FM,MM}, discretization::FiniteElementDiscretization, grid::Thunderbolt.AbstractGrid) where {CM, FM, MM}
-#     ets = elementtypes(grid)
-#     @assert length(ets) == 1
-
-#     ip = getinterpolation(discretization.interpolations[:displacement], getcells(grid, 1))
-#     ip_geo = Ferrite.default_geometric_interpolation(ip) # TODO get interpolation from cell
-#     dh = DofHandler(grid)
-#     push!(dh, :displacement, ip)
-#     close!(dh);
-
-#     ch = ConstraintHandler(dh)
-#     for dbc ∈ discretization.dbcs
-#         add!(ch, dbc)
-#     end
-#     close!(ch)
-
-#     # TODO how to deal with this?
-#     intorder = 2*Ferrite.getorder(ip)
-#     ref_shape = Ferrite.getrefshape(ip)
-#     qr = QuadratureRule{ref_shape}(intorder)
-#     qr_face = FaceQuadratureRule{ref_shape}(intorder)
-#     cv = CellValues(qr, ip, ip_geo)
-#     fv = FaceValues(qr_face, ip, ip_geo)
-
-#     #
-#     semidiscrete_problem = LoadDrivenQuasiStaticProblem(
-#         dh,
-#         ch,
-#         cv,
-#         fv,
-#         model[1],
-#         model[4],
-#         model[2],
-#         model[3],
-#         # Belongs to the solver.
-#         #zeros(ndofs(dh)),
-#         #0.0,
-#         #0.0,
-#     )
-
-#     return semidiscrete_problem
-# end
 
 # for (filename, ref_shape, order) ∈ [
 #     # ("MidVentricularSectionQuadTet.msh", RefTetrahedron, 2),
