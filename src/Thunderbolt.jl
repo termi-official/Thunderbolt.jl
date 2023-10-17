@@ -37,6 +37,7 @@ include("modeling/mechanics/drivers.jl") # TODO better name. This is basically t
 
 include("modeling/problems.jl")
 
+include("solver/interface.jl")
 include("solver/operator.jl")
 include("solver/newton_raphson.jl")
 include("solver/load_stepping.jl")

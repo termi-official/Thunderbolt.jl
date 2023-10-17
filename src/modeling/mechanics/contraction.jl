@@ -18,7 +18,8 @@ end
 
 """
 """
-struct PelceSunLangeveld1995Cache
+struct PelceSunLangeveld1995Cache{CF}
+    calcium_field::CF
     """
     Calcium concentration evaluated at the quadrature points.
     """
@@ -30,15 +31,17 @@ function state(cache::PelceSunLangeveld1995Cache, qp::Int)
 end
 
 function setup_contraction_model_cache(cv::CV, contraction_model::PelceSunLangeveld1995Model, cf::CF) where {CV, CF}
-    return PelceSunLangeveld1995Cache(Vector{Float64}(undef, getnquadpoints(cv)))
+    return PelceSunLangeveld1995Cache(cf, Vector{Float64}(undef, getnquadpoints(cv)))
 end
 
-function update_contraction_model_cache!(cache::PelceSunLangeveld1995Cache, time::Float64, cell::CellCacheType, cv::CV, calcium_field::CF) where {CellCacheType, CV, CF}
+function update_contraction_model_cache!(cache::PelceSunLangeveld1995Cache{CF}, time::Float64, cell::CellCacheType, cv::CV) where {CellCacheType, CV, CF}
     for qp ∈ 1:getnquadpoints(cv)
         x_ref = cv.qr.points[qp]
-        cache.calcium_values_qp[qp] = evaluate_coefficient(calcium_field, Ferrite.cellid(cell), x_ref, time)
+        cache.calcium_values_qp[qp] = evaluate_coefficient(cache.calcium_field, Ferrite.cellid(cell), x_ref, time)
     end
 end
+
+𝓝(Ca, mp::PelceSunLangeveld1995Model{CF}) where CF = Ca
 
 """
 """
@@ -47,4 +50,8 @@ Base.@kwdef struct ConstantStretchModel{TD} <: SteadyStateSarcomereModel
 end
 compute_λᵃ(Ca, mp::ConstantStretchModel) = mp.λ
 
-𝓝(Ca, mp::PelceSunLangeveld1995Model) = Ca
+struct ConstantStretchCache
+end
+update_contraction_model_cache!(cache::ConstantStretchCache, time::Float64, cell::CellCacheType, cv::CV) where {CellCacheType, CV} = nothing
+
+𝓝(Ca, mp::ConstantStretchModel{TD}) where TD = Ca

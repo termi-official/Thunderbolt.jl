@@ -35,7 +35,7 @@ function (iocb::IOCallback{ParaViewWriter{PVD}})(t, problem::Thunderbolt.SplitPr
 end
 
 ######################################################
-function spiral_wave_initializer(problem::Thunderbolt.SplitProblem)
+function spiral_wave_initializer(problem::Thunderbolt.SplitProblem, t₀)
     # TODO cleaner implementation. We need to extract this from the types or via dispatch.
     dh = problem.A.dh
     ionic_model = problem.B.ode

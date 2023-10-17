@@ -97,14 +97,13 @@ struct CardiacMechanicalElementCache{MP, MSCache, CFCache, CMCache, CV}
     cv::CV
 end
 
-function update_element_cache!(cache::CardiacMechanicalElementCache{MP, MSCache, CMCache, CV}, calcium_field::CF, time::Float64, cell::CellCacheType) where {CellCacheType, MP, MSCache, CMCache, CV, CF}
+function update_element_cache!(cache::CardiacMechanicalElementCache{MP, MSCache, CMCache, CV}, cell::CellCacheType, time::Float64) where {CellCacheType, MP, MSCache, CMCache, CV}
     reinit!(cache.cv, cell)
     update_microstructure_cache!(cache.microstructure_cache, time, cell, cache.cv)
-    update_contraction_model_cache!(cache.contraction_model_cache, time, cell, cache.cv, calcium_field)
+    update_contraction_model_cache!(cache.contraction_model_cache, time, cell, cache.cv)
 end
 
-function assemble_element!(Kₑ::Matrix, residualₑ::Vector, uₑ::Vector, cache::CardiacMechanicalElementCache)
-    # @unpack mp, microstructure_cache, coordinate_system_cache, cv, contraction_model_cache = cache
+function assemble_element!(Kₑ::Matrix, residualₑ::Vector, uₑ::Vector, cache::CardiacMechanicalElementCache, time)
     @unpack mp, microstructure_cache, contraction_model_cache, cv = cache
     ndofs = getnbasefunctions(cv)
 

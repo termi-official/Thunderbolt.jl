@@ -36,6 +36,7 @@ end
 # end
 
 # Performs a backward Euler step
+# TODO check if operator is time dependent and update
 function perform_step!(problem, cache::BackwardEulerSolverCache{SolutionType, MassMatrixType, DiffusionMatrixType, SystemMatrixType, LinSolverType, RHSType}, t, Δt) where {SolutionType, MassMatrixType, DiffusionMatrixType, SystemMatrixType, LinSolverType, RHSType}
     @unpack Δt_last, b, M, A, uₙ, uₙ₋₁, linsolver = cache
     # Remember last solution
@@ -52,7 +53,7 @@ function perform_step!(problem, cache::BackwardEulerSolverCache{SolutionType, Ma
     return true
 end
 
-function setup_solver_caches(problem::TransientHeatProblem, solver::BackwardEulerSolver)
+function setup_solver_caches(problem::TransientHeatProblem, solver::BackwardEulerSolver, t₀)
     @unpack dh = problem
     @assert length(dh.field_names) == 1 # TODO relax this assumption, maybe.
     ip = dh.subdofhandlers[1].field_interpolations[1]
@@ -85,7 +86,7 @@ function setup_solver_caches(problem::TransientHeatProblem, solver::BackwardEule
         ),
         dh,
     )
-    
+
     cache = BackwardEulerSolverCache(
         zeros(ndofs(dh)),
         zeros(ndofs(dh)),
@@ -104,9 +105,8 @@ function setup_solver_caches(problem::TransientHeatProblem, solver::BackwardEule
         0.0
     )
 
-    # The problem is linear, so we only need to update the operators once.
-    update_operator!(cache.M)
-    update_operator!(cache.J)
-
+    update_operator!(cache.M, t₀)
+    update_operator!(cache.J, t₀)
+    
     return cache
 end

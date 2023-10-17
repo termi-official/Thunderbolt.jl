@@ -44,7 +44,7 @@ mutable struct NewtonRaphsonSolverCache{JacType, ResidualType, T}
     #linear_solver_cache
 end
 
-function setup_solver_caches(problem, solver::NewtonRaphsonSolver{T}) where {T}
+function setup_solver_caches(problem, solver::NewtonRaphsonSolver{T}, t₀) where {T}
     @unpack dh = problem
     # TODO operators instead of directly storing the matrix!
     NewtonRaphsonSolverCache(create_sparsity_pattern(dh), zeros(ndofs(dh)), solver)

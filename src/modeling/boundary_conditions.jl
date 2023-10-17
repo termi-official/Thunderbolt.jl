@@ -29,7 +29,6 @@ end
 
 struct SimpleFaceCache{MP, FV}
 mp::MP
-# time::Float64
 # microstructure_model::MM
 # coordinate_system::CS
 fv::FV
@@ -37,11 +36,9 @@ end
 
 getboundaryname(face_cache::FC) where {FC} = face_cache.mp.boundary_name
 
-function setup_face_cache(bcd::BCD, fv::FV) where {BCD, FV}
-SimpleFaceCache(bcd, fv)
-end
+setup_face_cache(bcd::BCD, fv::FV, time) where {BCD, FV} = SimpleFaceCache(bcd, fv)
 
-function assemble_face!(Kₑ::Matrix, residualₑ::Vector, uₑ::Vector, cache::SimpleFaceCache{RobinBC,FV}) where {FV}
+function assemble_face!(Kₑ::Matrix, residualₑ::Vector, uₑ::Vector, cache::SimpleFaceCache{RobinBC,FV}, time) where {FV}
 @unpack mp, fv = cache
 @unpack α = mp
 
@@ -67,7 +64,7 @@ for qp in 1:getnquadpoints(fv)
 end
 end
 
-function assemble_face!(Kₑ::Matrix, residualₑ::Vector, uₑ::Vector, cache::SimpleFaceCache{NormalSpringBC,FV}) where {FV}
+function assemble_face!(Kₑ::Matrix, residualₑ::Vector, uₑ::Vector, cache::SimpleFaceCache{NormalSpringBC,FV}, time) where {FV}
 @unpack mp, fv = cache
 @unpack kₛ = mp
 
@@ -93,7 +90,7 @@ for qp in 1:getnquadpoints(fv)
 end
 end
 
-function assemble_face!(Kₑ::Matrix, residualₑ::Vector, uₑ::Vector, cache::SimpleFaceCache{BendingSpringBC,FV}) where {FV}
+function assemble_face!(Kₑ::Matrix, residualₑ::Vector, uₑ::Vector, cache::SimpleFaceCache{BendingSpringBC,FV}, time) where {FV}
 @unpack mp, fv = cache
 @unpack kᵇ = mp
 
@@ -122,7 +119,7 @@ for qp in 1:getnquadpoints(fv)
 end
 end
 
-function assemble_face!(Kₑ::Matrix, residualₑ::Vector, uₑ::Vector, cache::SimpleFaceCache{ConstantPressureBC,FV}) where {FV}
+function assemble_face!(Kₑ::Matrix, residualₑ::Vector, uₑ::Vector, cache::SimpleFaceCache{ConstantPressureBC,FV}, time) where {FV}
 @unpack mp, fv = cache
 @unpack p = mp
 
@@ -157,5 +154,5 @@ for qp in 1:getnquadpoints(fv)
 end
 end
 
-function update_face_cache(cell::CC, face_cache::SimpleFaceCache{MP}) where {CC, MP}
+function update_face_cache(cell::CC, face_cache::SimpleFaceCache{MP}, time) where {CC, MP}
 end

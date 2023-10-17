@@ -206,14 +206,14 @@ struct BilinearDiffusionElementCache{IT <: BilinearDiffusionIntegrator, TT <: Te
     cellvalues::CV
 end
 
-function update_element_cache!(element_cache::CACHE, cell::CELL) where {CACHE <: BilinearDiffusionElementCache, CELL}
+function update_element_cache!(element_cache::CACHE, cell::CELL, time) where {CACHE <: BilinearDiffusionElementCache, CELL}
     reinit!(element_cache.cellvalues, cell)
     for (qᵢ, ξ) ∈ enumerate(element_cache.cellvalues.qr.points)
         element_cache.Dq[qᵢ] = evaluate_coefficient(element_cache.integrator.D, cellid(cell), ξ)
     end
 end
 
-function assemble_element!(Kₑ, cache::CACHE) where {CACHE <: BilinearDiffusionElementCache}
+function assemble_element!(Kₑ, cache::CACHE, time) where {CACHE <: BilinearDiffusionElementCache}
     @unpack Dq, cellvalues = cache
     n_basefuncs = getnbasefunctions(cellvalues)
     for q_point in 1:getnquadpoints(cellvalues)
@@ -250,15 +250,14 @@ struct BilinearMassElementCache{IT <: BilinearMassIntegrator, T, CV}
     cellvalues::CV
 end
 
-function update_element_cache!(element_cache::CACHE, cell::CELL) where {CACHE <: BilinearMassElementCache, CELL}
+function update_element_cache!(element_cache::CACHE, cell::CELL, time) where {CACHE <: BilinearMassElementCache, CELL}
     reinit!(element_cache.cellvalues, cell)
     for (qᵢ, ξ) ∈ enumerate(element_cache.cellvalues.qr.points)
-        element_cache.ρq[qᵢ] = evaluate_coefficient(element_cache.integrator.ρ, cellid(cell), ξ)
+        element_cache.ρq[qᵢ] = evaluate_coefficient(element_cache.integrator.ρ, cellid(cell), ξ, time)
     end
 end
 
-
-function assemble_element!(Mₑ, cache::CACHE) where {CACHE <: BilinearMassElementCache}
+function assemble_element!(Mₑ, cache::CACHE, time) where {CACHE <: BilinearMassElementCache}
     @unpack cellvalues = cache
     n_basefuncs = getnbasefunctions(cellvalues)
     for q_point in 1:getnquadpoints(cellvalues)

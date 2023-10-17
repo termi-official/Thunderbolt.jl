@@ -36,7 +36,7 @@ function Thunderbolt.update_linearization!(J, residual, u, problem::ProblemType)
     contraction_cache = Thunderbolt.setup_contraction_model_cache(cv, material_model.contraction_model, calcium_field)
     element_cache = Thunderbolt.CardiacMechanicalElementCache(material_model, microstructure_cache, nothing, contraction_cache, cv)
 
-    face_caches = ntuple(i->Thunderbolt.setup_face_cache(face_models[i], fv), length(face_models))
+    face_caches = ntuple(i->Thunderbolt.setup_face_cache(face_models[i], fv, t), length(face_models))
 
     # Loop over all cells in the grid
     # @timeit "assemble" for cell in CellIterator(dh)
@@ -57,10 +57,10 @@ function Thunderbolt.update_linearization!(J, residual, u, problem::ProblemType)
         fill!(residualₑ, 0.0)
 
         # Update remaining caches specific to the element and models
-        Thunderbolt.update_element_cache!(element_cache, calcium_field, t, cell)
+        Thunderbolt.update_element_cache!(element_cache, cell, t)
 
         # Assemble matrix and residuals
-        Thunderbolt.assemble_element!(Jₑ, residualₑ, uₑ, element_cache)
+        Thunderbolt.assemble_element!(Jₑ, residualₑ, uₑ, element_cache, t)
 
         for local_face_index ∈ 1:nfaces(cell)
             face_is_initialized = false
@@ -70,9 +70,9 @@ function Thunderbolt.update_linearization!(J, residual, u, problem::ProblemType)
                         face_is_initialized = true
                         reinit!(fv, cell, local_face_index)
                     end
-                    Thunderbolt.update_face_cache(cell, face_cache)
+                    Thunderbolt.update_face_cache(cell, face_cache, t)
 
-                    Thunderbolt.assemble_face!(Jₑ, residualₑ, uₑ, face_cache)
+                    Thunderbolt.assemble_face!(Jₑ, residualₑ, uₑ, face_cache, t)
                 end
             end
         end

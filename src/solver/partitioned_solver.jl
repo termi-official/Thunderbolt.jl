@@ -34,7 +34,7 @@ function perform_step!(cell_model::ION, t::Float64, Δt::Float64, solver_cache::
 end
 
 # TODO decouple the concept ForwardEuler from "CellProblem"
-function setup_solver_caches(problem, solver::ForwardEulerCellSolver)
+function setup_solver_caches(problem, solver::ForwardEulerCellSolver, t₀)
     @unpack npoints = problem # TODO what is a good abstraction layer over this?
     return ForwardEulerCellSolverCache(
         zeros(1+num_states(problem.ode)),

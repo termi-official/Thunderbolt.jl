@@ -6,7 +6,7 @@ struct AssembledNonlinearOperator{MatrixType, CacheType, DHType <: AbstractDofHa
     dh::DHType
 end
 
-function update_linearlization!(bifo::AssembledNonlinearOperator, u::Vector)
+function update_linearlization!(bifo::AssembledNonlinearOperator, u::Vector, time)
     @unpack J, element_cache, dh  = bifo
 
     assembler = start_assemble(A)
@@ -16,15 +16,15 @@ function update_linearlization!(bifo::AssembledNonlinearOperator, u::Vector)
 
     @inbounds for cell in CellIterator(dh)
         fill!(Jₑ, 0)
-        update_element_cache!(element_cache, cell)
-        assemble_element!(Jₑ, u, element_cache)
+        update_element_cache!(element_cache, cell, time)
+        assemble_element!(Jₑ, u, element_cache, time)
         assemble!(assembler, celldofs(cell), Jₑ)
     end
 
     #finish_assemble(assembler)
 end
 
-function update_linearlization!(bifo::AssembledNonlinearOperator, u::Vector, residual::Vector)
+function update_linearlization!(bifo::AssembledNonlinearOperator, u::Vector, residual::Vector, time)
     @unpack J, element_cache, dh  = bifo
 
     assembler = start_assemble(J, residual)
@@ -36,8 +36,8 @@ function update_linearlization!(bifo::AssembledNonlinearOperator, u::Vector, res
     @inbounds for cell in CellIterator(dh)
         fill!(Jₑ, 0)
         fill!(rₑ, 0)
-        update_element_cache!(element_cache, cell)
-        assemble_element!(Jₑ, rₑ, u, element_cache)
+        update_element_cache!(element_cache, cell, time)
+        assemble_element!(Jₑ, rₑ, u, element_cache, time)
         assemble!(assembler, celldofs(cell), Jₑ, rₑ)
     end
 
@@ -63,7 +63,7 @@ struct AssembledBilinearOperator{MatrixType, CacheType, DHType <: AbstractDofHan
     dh::DHType
 end
 
-function update_operator!(bifo::AssembledBilinearOperator)
+function update_operator!(bifo::AssembledBilinearOperator, time)
     @unpack A, element_cache, dh  = bifo
 
     assembler = start_assemble(A)
@@ -73,8 +73,8 @@ function update_operator!(bifo::AssembledBilinearOperator)
 
     @inbounds for cell in CellIterator(dh)
         fill!(Aₑ, 0)
-        update_element_cache!(element_cache, cell)
-        assemble_element!(Aₑ, element_cache)
+        update_element_cache!(element_cache, cell, time)
+        assemble_element!(Aₑ, element_cache, time)
         assemble!(assembler, celldofs(cell), Aₑ)
     end
 
