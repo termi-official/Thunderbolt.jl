@@ -51,6 +51,8 @@ function setup_solver_caches(problem, solver::NewtonRaphsonSolver{T}, t₀) wher
 end
 
 eliminate_constraints_from_linearization!(solver_cache, problem) = apply_zero!(solver_cache.J, solver_cache.residual, problem.ch)
+eliminate_constraints_from_increment!(Δu, solver_cache, problem) = apply_zero!(Δu, problem.ch)
+residual_norm(solver_cache::NewtonRaphsonSolverCache, problem) = norm(solver_cache.residual[Ferrite.free_dofs(problem.ch)])
 
 function solve!(u, problem, solver_cache::NewtonRaphsonSolverCache{JacType, ResidualType, T}) where {JacType, ResidualType, T}
     newton_itr = -1
@@ -62,7 +64,7 @@ function solve!(u, problem, solver_cache::NewtonRaphsonSolverCache{JacType, Resi
 
         eliminate_constraints_from_linearization!(solver_cache, problem)
 
-        residualnorm = norm(solver_cache.residual[Ferrite.free_dofs(problem.ch)])
+        residualnorm = residual_norm(solver_cache, problem)
         if residualnorm < solver_cache.parameters.tol
             break
         elseif newton_itr > solver_cache.parameters.max_iter
@@ -77,7 +79,7 @@ function solve!(u, problem, solver_cache::NewtonRaphsonSolverCache{JacType, Resi
             return false
         end
 
-        apply_zero!(Δu, problem.ch)
+        eliminate_constraints_from_increment!(Δu, solver_cache, problem)
 
         u .-= Δu # Current guess
     end
