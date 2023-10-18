@@ -117,3 +117,93 @@ end
 mul!(out, op::AssembledBilinearOperator, in) = mul!(out, op.A, in)
 Base.eltype(op::AssembledBilinearOperator) = eltype(op.A)
 Base.size(op::AssembledBilinearOperator, axis) = sisze(op.A, axis)
+
+abstract type AbstractLinearOperator end
+
+"""
+    LinearNullOperator <: AbstractLinearOperator
+
+Literally the null vector.
+"""
+struct LinearNullOperator{T,S} <: AbstractLinearOperator
+end
+Base.eltype(op::LinearNullOperator{T,S}) where {T,S} = T
+Base.size(op::LinearNullOperator{T,S}) where {T,S} = S
+
+update_operator!(op::LinearNullOperator, time) = nothing
+add!(b::Vector, op::LinearNullOperator) = nothing
+needs_update(op::LinearNullOperator, t) = false
+
+
+struct LinearOperator{VectorType, CacheType, DHType <: AbstractDofHandler} <: AbstractLinearOperator
+    b::VectorType
+    element_cache::CacheType
+    dh::DHType
+end
+
+function update_operator!(op::LinearOperator, time)
+    @unpack b, element_cache, dh  = op
+
+    # assembler = start_assemble(b)
+
+    ndofs = ndofs_per_cell(dh)
+    bₑ = zeros(ndofs)
+    fill!(b, 0.0)
+    @inbounds for cell in CellIterator(dh)
+        fill!(bₑ, 0)
+        assemble_element!(bₑ, element_cache, cell, time)
+        # assemble!(assembler, celldofs(cell), bₑ)
+        b[celldofs(cell)] .+= bₑ
+    end
+
+    #finish_assemble(assembler)
+end
+
+add!(b::Vector, op::LinearOperator) = b .+= op.b
+Base.eltype(op::LinearOperator) = eltype(op.b)
+Base.size(op::LinearOperator) = sisze(op.b)
+
+# TODO where to put these?
+create_linear_operator(dh, ::NoStimulationProtocol) = LinearNullOperator{Float64, ndofs(dh)}()
+function create_linear_operator(dh, protocol::AnalyticalTransmembraneStimulationProtocol)
+    ip = dh.subdofhandlers[1].field_interpolations[1]
+    ip_g = Ferrite.default_interpolation(typeof(getcells(Ferrite.get_grid(dh), 1)))
+    qr = QuadratureRule{Ferrite.getrefshape(ip_g)}(Ferrite.getorder(ip_g)+1)
+    cv = CellValues(qr, ip, ip_g) # TODO replace with something more lightweight
+    return LinearOperator(
+        zeros(ndofs(dh)),
+        AnalyticalCoefficientElementCache(
+            protocol.f,
+            protocol.nonzero_intervals,
+            cv
+        ),
+        dh
+    )
+end
+struct AnalyticalCoefficientElementCache{F <: AnalyticalCoefficient, T, CV}
+    f::F
+    nonzero_intervals::Vector{SVector{2,T}}
+    cv::CV
+end
+
+function assemble_element!(bₑ, element_cache::AnalyticalCoefficientElementCache, cell, time)
+    @unpack f, cv = element_cache
+    reinit!(cv, cell)
+    coords = getcoordinates(cell)
+    for qp ∈ 1:getnquadpoints(cv)
+        x = spatial_coordinate(cv, qp, coords)
+        fx = f.f(x,time)
+        dΩ = getdetJdV(cv, qp)
+        for j ∈ 1:getnbasefunctions(cv)
+            δu = shape_value(cv, qp, j)
+            bₑ[j] += fx * δu * dΩ
+        end
+    end
+end
+
+function needs_update(op::LinearOperator{<:Any, <: AnalyticalCoefficientElementCache}, t)
+    for nonzero_interval ∈ op.element_cache.nonzero_intervals
+        nonzero_interval[1] ≤ t ≤ nonzero_interval[2] && return true
+    end
+    return false
+end

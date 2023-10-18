@@ -4,7 +4,8 @@
 struct BackwardEulerSolver
 end
 
-mutable struct BackwardEulerSolverCache{SolutionType, MassMatrixType, DiffusionMatrixType, SystemMatrixType, LinSolverType, RHSType}
+# TODO decouple from heat problem.
+mutable struct BackwardEulerSolverCache{SolutionType, MassMatrixType, DiffusionMatrixType, SystemMatrixType, SourceTermType, LinSolverType, RHSType}
     # Current solution buffer
     uₙ::SolutionType
     # Last solution buffer
@@ -15,6 +16,8 @@ mutable struct BackwardEulerSolverCache{SolutionType, MassMatrixType, DiffusionM
     J::DiffusionMatrixType
     # Buffer for (M - Δt J)
     A::SystemMatrixType
+    # Helper for possible source terms
+    source_term::SourceTermType
     # Linear solver for (M - Δtₙ₋₁ J) uₙ = M uₙ₋₁
     linsolver::LinSolverType
     # Buffer for right hand side
@@ -35,9 +38,13 @@ end
 #     cache.A = SparseMatrixCSR(transpose(cache.M.M - Δt*cache.J.K)) # TODO FIXME make me generic
 # end
 
+function implicit_euler_heat_update_source_term!(cache::BackwardEulerSolverCache, t)
+    update_operator!(cache.source_term, t)
+end
+
 # Performs a backward Euler step
 # TODO check if operator is time dependent and update
-function perform_step!(problem, cache::BackwardEulerSolverCache{SolutionType, MassMatrixType, DiffusionMatrixType, SystemMatrixType, LinSolverType, RHSType}, t, Δt) where {SolutionType, MassMatrixType, DiffusionMatrixType, SystemMatrixType, LinSolverType, RHSType}
+function perform_step!(problem::TransientHeatProblem, cache::BackwardEulerSolverCache{SolutionType, MassMatrixType, DiffusionMatrixType, SystemMatrixType, LinSolverType, RHSType}, t, Δt) where {SolutionType, MassMatrixType, DiffusionMatrixType, SystemMatrixType, LinSolverType, RHSType}
     @unpack Δt_last, b, M, A, uₙ, uₙ₋₁, linsolver = cache
     # Remember last solution
     @inbounds uₙ₋₁ .= uₙ
@@ -45,6 +52,10 @@ function perform_step!(problem, cache::BackwardEulerSolverCache{SolutionType, Ma
     Δt ≈ Δt_last || implicit_euler_heat_solver_update_system_matrix!(cache, Δt)
     # Prepare right hand side b = M uₙ₋₁
     mul!(b, M, uₙ₋₁)
+    # TODO How to remove these two lines here?
+    # Update source term
+    implicit_euler_heat_update_source_term!(cache, t)
+    add!(b, cache.source_term)
     # Solve linear problem
     # TODO abstraction layer and way to pass the solver/preconditioner pair (LinearSolve.jl?)
     Krylov.cg!(linsolver, A, b, uₙ₋₁)
@@ -97,6 +108,7 @@ function setup_solver_caches(problem::TransientHeatProblem, solver::BackwardEule
         mass_operator,
         diffusion_operator,
         create_sparsity_pattern(dh),
+        create_linear_operator(dh, problem.source_term),
         # TODO this via LinearSolvers.jl?
         CgSolver(
             ndofs(dh),

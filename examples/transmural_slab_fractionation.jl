@@ -35,11 +35,11 @@ function steady_state_initializer(problem::Thunderbolt.SplitProblem, t₀)
         _celldofs = celldofs(cell)
         ϕₘ_celldofs = _celldofs[dof_range(dh, :ϕₘ)]
         coordinates = getcoordinates(cell)
-        for (i, (x₁, x₂)) in enumerate(coordinates)
-            if x₁ <= 1.25 && x₂ <= 1.25
-                u₀[ϕₘ_celldofs[i]] = 50.0
-            end
-        end
+        # for (i, (x₁, x₂)) in enumerate(coordinates)
+        #     if x₁ <= 1.25 && x₂ <= 1.25
+        #         u₀[ϕₘ_celldofs[i]] = 50.0
+        #     end
+        # end
     end
     return u₀, s₀
 end
@@ -55,11 +55,19 @@ function varying_tensor_field(x,t)
     return λ₁ * f₀ ⊗ f₀ + λ₂ * s₀ ⊗ s₀ + λ₃ * n₀ ⊗ n₀
 end
 
+function stimulation_field(x,t)
+    return 2.5*max(1.0-norm(x),0.0)*max(1.0-t,0.0)
+end
+
+ip_geo = Lagrange{RefHexahedron,1}()^3
 model = MonodomainModel(
     ConstantCoefficient(1.0),
     ConstantCoefficient(1.0),
-    AnalyticalCoefficient(varying_tensor_field, Lagrange{RefHexahedron,1}()^3),
-    NoStimulationProtocol(),
+    AnalyticalCoefficient(varying_tensor_field, ip_geo),
+    Thunderbolt.AnalyticalTransmembraneStimulationProtocol(
+        AnalyticalCoefficient(stimulation_field, ip_geo),
+        [SVector((0.0, 1.0))]
+    ),
     Thunderbolt.PCG2019()
 )
 
@@ -75,7 +83,6 @@ solver = LTGOSSolver(
     BackwardEulerSolver(),
     Thunderbolt.ThreadedForwardEulerCellSolver(64)
 )
-
 
 # Idea: We want to solve a semidiscrete problem, with a given compatible solver, on a time interval, with a given initial condition
 # TODO iterator syntax

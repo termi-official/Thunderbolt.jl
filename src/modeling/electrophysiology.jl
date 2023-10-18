@@ -130,6 +130,11 @@ abstract type TransmembraneStimulationProtocol <: AbstractStimulationProtocol en
 
 struct NoStimulationProtocol <: TransmembraneStimulationProtocol end
 
+struct AnalyticalTransmembraneStimulationProtocol{F <: AnalyticalCoefficient, T} <: TransmembraneStimulationProtocol
+    f::F
+    nonzero_intervals::Vector{SVector{2,T}} # helper to speed up rhs
+end
+
 """
 The original model formulation (TODO citation) with the structure
 
