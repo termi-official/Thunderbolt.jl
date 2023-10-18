@@ -3,9 +3,9 @@ struct AnisotropicPlanarMicrostructureModel{FiberCoefficientType, SheetletCoeffi
     sheetlet_coefficient::SheetletCoefficientType
 end
 
-function directions(fsn::AnisotropicPlanarMicrostructureModel, cell_id::Int, ξ::Vec{dim}, t = 0.0) where {dim}
-    f₀ = evaluate_coefficient(fsn.fiber_coefficient, cell_id, ξ, t)
-    s₀ = evaluate_coefficient(fsn.sheetlet_coefficient, cell_id, ξ, t)
+function directions(fsn::AnisotropicPlanarMicrostructureModel, cell_cache, ξ::Vec{dim}, t = 0.0) where {dim}
+    f₀ = evaluate_coefficient(fsn.fiber_coefficient, cell_cache, ξ, t)
+    s₀ = evaluate_coefficient(fsn.sheetlet_coefficient, cell_cache, ξ, t)
 
     f₀, s₀
 end
@@ -16,10 +16,10 @@ struct OrthotropicMicrostructureModel{FiberCoefficientType, SheetletCoefficientT
     normal_coefficient::NormalCoefficientType
 end
 
-function directions(fsn::OrthotropicMicrostructureModel, cell_id::Int, ξ::Vec{dim}, t = 0.0) where {dim}
-    f₀ = evaluate_coefficient(fsn.fiber_coefficient, cell_id, ξ, t)
-    s₀ = evaluate_coefficient(fsn.sheetlet_coefficient, cell_id, ξ, t)
-    n₀ = evaluate_coefficient(fsn.normal_coefficient, cell_id, ξ, t)
+function directions(fsn::OrthotropicMicrostructureModel, cell_cache, ξ::Vec{dim}, t = 0.0) where {dim}
+    f₀ = evaluate_coefficient(fsn.fiber_coefficient, cell_cache, ξ, t)
+    s₀ = evaluate_coefficient(fsn.sheetlet_coefficient, cell_cache, ξ, t)
+    n₀ = evaluate_coefficient(fsn.normal_coefficient, cell_cache, ξ, t)
 
     f₀, s₀, n₀
 end
@@ -103,24 +103,24 @@ function create_simple_fiber_model(coordinate_system, ip_component::ScalarInterp
 end
 
 # TODO where to move this? Technically this is assembly infrastructure
-mutable struct LazyMicrostructureCache{MM, VT}
+mutable struct LazyMicrostructureCache{MM, VT, CT}
     const microstructure_model::MM
     const x_ref::Vector{VT}
-    cellid::Int
+    cell_cache::CT
 end
 
 function directions(cache::LazyMicrostructureCache{MM}, qp::Int) where {MM}
-    return directions(cache.microstructure_model, cache.cellid, cache.x_ref[qp])
+    return directions(cache.microstructure_model, cache.cell_cache, cache.x_ref[qp])
 end
 
-function setup_microstructure_cache(cv, model::AnisotropicPlanarMicrostructureModel{FiberCoefficientType, SheetletCoefficientType}) where {FiberCoefficientType, SheetletCoefficientType}
-    return LazyMicrostructureCache(model, cv.qr.points, -1)
+function setup_microstructure_cache(cv, model::AnisotropicPlanarMicrostructureModel, cell_cache::CellCache)
+    return LazyMicrostructureCache(model, cv.qr.points, cell_cache)
 end
 
-function setup_microstructure_cache(cv, model::OrthotropicMicrostructureModel{FiberCoefficientType, SheetletCoefficientType, NormalCoefficientType}) where {FiberCoefficientType, SheetletCoefficientType, NormalCoefficientType}
-    return LazyMicrostructureCache(model, cv.qr.points, -1)
+function setup_microstructure_cache(cv, model::OrthotropicMicrostructureModel, cell_cache::CellCache)
+    return LazyMicrostructureCache(model, cv.qr.points, cell_cache)
 end
 
-function update_microstructure_cache!(cache::LazyMicrostructureCache{MM}, time::Float64, cell::CellCacheType, cv::CV) where {CellCacheType, CV, MM}
-    cache.cellid = cellid(cell)
+function update_microstructure_cache!(cache::LazyMicrostructureCache{MM}, time::Float64, cell_cache::CellCacheType, cv::CV) where {CellCacheType, CV, MM}
+    cache.cell_cache = cell_cache # this looks bad :/
 end

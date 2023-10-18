@@ -58,7 +58,7 @@ function setup_solver_caches(problem, solver::NewtonRaphsonSolver{T}, t₀) wher
     fv = FaceValues(qr_face, ip, ip_geo)
 
     # TODO abstraction layer around this! E.g. setup_element_cache(problem, solver)
-    microstructure_cache = Thunderbolt.setup_microstructure_cache(cv, microstructure_model)
+    microstructure_cache = Thunderbolt.setup_microstructure_cache(cv, microstructure_model, CellCache(dh)) # HOTFIX CTOR
     contraction_cache = Thunderbolt.setup_contraction_model_cache(cv, constitutive_model.contraction_model, calcium_field)
     element_cache = CardiacMechanicalElementCache(
         constitutive_model,

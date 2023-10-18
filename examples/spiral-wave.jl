@@ -18,8 +18,8 @@ struct PlanarDiffusionTensorCoefficient{MSC}
     conductivities::SVector{2}
 end
 
-function Thunderbolt.evaluate_coefficient(coeff::PlanarDiffusionTensorCoefficient{MSC}, cell_id::Int, ξ::Vec{rdim}, t::Float64=0.0) where {MSC, rdim}
-    f₀, s₀ = directions(coeff.microstructure_cache, cell_id, ξ, t)
+function Thunderbolt.evaluate_coefficient(coeff::PlanarDiffusionTensorCoefficient{MSC}, cell_cache, ξ::Vec{rdim}, t::Float64=0.0) where {MSC, rdim}
+    f₀, s₀ = directions(coeff.microstructure_cache, cell_cache, ξ, t)
     return coeff.conductivities[1] * f₀ ⊗ f₀ + coeff.conductivities[2] * s₀ ⊗ s₀
 end
 

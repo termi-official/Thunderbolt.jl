@@ -264,7 +264,7 @@ function solve_test_ring(name_base, material_model, grid, microstructure_model, 
 
     # Postprocessor
     cv_post = CellValues(QuadratureRule{ref_shape}(intorder-1), ip_mech, ip_geo)
-    microstructure_cache = setup_microstructure_cache(cv_post, microstructure_model)
+    microstructure_cache = setup_microstructure_cache(cv_post, microstructure_model, CellCache(problem.dh.subdofhandlers[1])) # HOTFIX CTOR
     standard_postproc = StandardMechanicalIOPostProcessor(io, cv_post, [1], microstructure_cache)
 
     # Create sparse matrix and residual vector

@@ -121,7 +121,7 @@ struct CalciumHatField end
 
 """
 """
-Thunderbolt.evaluate_coefficient(coeff::CalciumHatField, cell_id::Int, ξ::Vec{dim}, t::Float64=0.0) where {dim} = t < 1.0 ? t : 2.0-t
+Thunderbolt.evaluate_coefficient(coeff::CalciumHatField, cell_cache, ξ::Vec{dim}, t::Float64=0.0) where {dim} = t < 1.0 ? t : 2.0-t
 
 """
 Parameterization from Vallespin paper.
