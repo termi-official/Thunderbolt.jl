@@ -3,17 +3,6 @@ using FerriteGmsh
 
 import Ferrite: get_grid, find_field
 
-mutable struct LoadDrivenQuasiStaticProblem{DH,CH,MAT,MICRO,CAL,FACE}
-    # Where to put this?
-    dh::DH
-    ch::CH
-    #
-    material_model::MAT
-    microstructure_model::MICRO
-    calcium_field::CAL
-    face_models::FACE
-end
-
 struct SimpleChamberContractionModel{MM, CF, FM, MM2}
     mechanical_model::MM
     calcium_field::CF
@@ -38,13 +27,14 @@ function Thunderbolt.semidiscretize(model::MODEL, discretization::FiniteElementD
     close!(ch)
 
     # TODO QuasiStaticNonlinearProblem without calcium_field and microstructure_model
-    semidiscrete_problem = LoadDrivenQuasiStaticProblem(
+    semidiscrete_problem = Thunderbolt.QuasiStaticNonlinearProblem(
         dh,
         ch,
         model.mechanical_model,
+        model.face_models,
+        # TODO put this into the constitutive model
         model.microstructure_model,
         model.calcium_field,
-        model.face_models
     )
 
     return semidiscrete_problem
