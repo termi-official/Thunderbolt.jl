@@ -48,10 +48,10 @@ struct AnalyticalCoefficient{F, IPG}
     ip_g::IPG #TODO remove this
 end
 
-function Thunderbolt.evaluate_coefficient(coeff::AnalyticalCoefficient{F, sdim}, cell_cache, ξ::Vec{rdim, T}, t::T=T(0.0)) where {F, sdim, rdim, T}
+function Thunderbolt.evaluate_coefficient(coeff::AnalyticalCoefficient{F, <: VectorizedInterpolation{sdim}}, cell_cache, ξ::Vec{rdim, T}, t::T=T(0.0)) where {F, sdim, rdim, T}
     x = zero(Vec{sdim, T})
-    for i in 1:getnbasefunctions(coeff.ip_g)
-        x += shape_value(coeff.ip_g, ξ, i) * cell_cache.coords[i]
+    for i in 1:getnbasefunctions(coeff.ip_g.ip)
+        x += shape_value(coeff.ip_g.ip, ξ, i) * cell_cache.coords[i]
     end
     return coeff.f(x, t)
 end

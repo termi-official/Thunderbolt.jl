@@ -56,6 +56,7 @@ export
     # Coefficients
     ConstantCoefficient,
     FieldCoefficient,
+    AnalyticalCoefficient,
     CalciumHatField,
     # Collections
     LagrangeCollection,

@@ -45,19 +45,25 @@ Base.@kwdef struct ParametrizedPCG2019Model{T} <: AbstractIonicModel
     E_Ca::T = 50.0  # [mV]
 end
 
-function cell_rhs_fast!(du,φ,s,t,p::P) where {P <: ParametrizedPCG2019Model}
+const PCG2019 = ParametrizedPCG2019Model{Float64};
+
+function cell_rhs_fast!(du,φ,state,x,t,p::ParametrizedPCG2019Model{T}) where T
     sigmoid(φ, E_Y, k_Y, sign) = 1.0 / (1.0 + exp(sign * (φ - E_Y) / k_Y))
-
+    
+    C_m = T(1.0) # TODO pass!
+    
     @unpack g_Na, g_K1, g_to, g_CaL, g_Kr, g_Ks = p
-    @unpack E_K, E_h, E_m = p
-    @unpack      k_h, k_m = p
+    @unpack E_K, E_Na, E_Ca, E_r, E_d, E_z, E_y, E_h, E_m = p
+    @unpack                  k_r, k_d, k_z, k_y, k_h, k_m = p
 
-    h  = s[1]
-    m  = s[2]
-    f  = s[3]
-    s  = s[4]
-    xs = s[5]
-    xr = s[6]
+    @unpack τ_h0, δ_h, τ_m = p
+    
+    h  = state[1]
+    m  = state[2]
+    f  = state[3]
+    s  = state[4]
+    xs = state[5]
+    xr = state[6]
 
     # Instantaneous gates
     r∞ = sigmoid(φ, E_r, k_r, -1.0)
@@ -73,7 +79,7 @@ function cell_rhs_fast!(du,φ,s,t,p::P) where {P <: ParametrizedPCG2019Model}
     I_Kr  = g_Kr * xr * y∞ * (φ - E_K)
     I_Ks  = g_Ks * xs * (φ - E_K)
 
-    I_total = I_Na + I_K1 + I_to + I_CaL + I_Kr + I_Ks + I_stim(t)
+    I_total = I_Na + I_K1 + I_to + I_CaL + I_Kr + I_Ks
 
     du[1] = -I_total/C_m
 
@@ -85,17 +91,17 @@ function cell_rhs_fast!(du,φ,s,t,p::P) where {P <: ParametrizedPCG2019Model}
     du[3] = (m∞-m)/τ_m
 end
 
-function cell_rhs_slow!(du,φ,s,t,p::ParametrizedPCG2019Model)
+function cell_rhs_slow!(du,φ,state,x,t,p::ParametrizedPCG2019Model)
     sigmoid(φ, E_Y, k_Y, sign) = 1.0 / (1.0 + exp(sign * (φ - E_Y) / k_Y))
 
-    @unpack E_K, E_h, E_m, E_s, E_xs, E_xr = p
-    @unpack      k_h, k_m, k_s, k_xs, k_xr = p
+    @unpack E_f, E_s, E_xs, E_xr = p
+    @unpack k_f, k_s, k_xs, k_xr = p
     @unpack τ_f, τ_s, τ_xs, τ_xr = p
 
-    f  = s[3]
-    s  = s[4]
-    xs = s[5]
-    xr = s[6]
+    f  = state[3]
+    s  = state[4]
+    xs = state[5]
+    xr = state[6]
 
     f∞ = sigmoid(φ, E_f, k_f, 1.0)
     du[4] = (f∞-f)/τ_f
@@ -110,6 +116,12 @@ function cell_rhs_slow!(du,φ,s,t,p::ParametrizedPCG2019Model)
     du[7] = (xr∞-xr)/τ_xr
 end
 
+function cell_rhs!(du::TD,φₘ::TV,s::TS,x::TX,t::TT,cell_parameters::TP) where {TD,TV,TS,TX,TT,TP <: ParametrizedPCG2019Model}
+    cell_rhs_fast!(du,φₘ,s,x,t,cell_parameters)
+    cell_rhs_slow!(du,φₘ,s,x,t,cell_parameters)
+    return nothing
+end
+
 function pcg2019_rhs!(du,u,p,t)
     pcg2019_rhs_fast!(du,u,p,t)
     pcg2019_rhs_slow!(du,u,p,t)
@@ -119,8 +131,8 @@ num_states(::ParametrizedPCG2019Model) = 6
 function default_initial_state(p::ParametrizedPCG2019Model{T}) where {T}
     sigmoid(φ, E_Y, k_Y, sign) = 1.0 / (1.0 + exp(sign * (φ - E_Y) / k_Y))
 
-    @unpack E_K, E_h, E_m, E_s, E_xs, E_xr = p
-    @unpack      k_h, k_m, k_s, k_xs, k_xr = p
+    @unpack E_K, E_h, E_m, E_f, E_s, E_xs, E_xr = p
+    @unpack      k_h, k_m, k_f, k_s, k_xs, k_xr = p
 
     u₀ = zeros(T, 7)
     u₀[1] = E_K

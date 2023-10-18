@@ -57,7 +57,7 @@ function setup_solver_caches(problem::SplitProblem{APT, BPT}, solver::LTGOSSolve
     return cache
 end
 
-function setup_solver_caches(problem::SplitProblem{APT, BPT}, solver::LTGOSSolver{BackwardEulerSolver,BST}, t₀) where {APT,BPT <: TransientHeatProblem,BST}
+function setup_solver_caches(problem::SplitProblem{APT, BPT}, solver::LTGOSSolver{AST,BackwardEulerSolver}, t₀) where {APT,BPT <: TransientHeatProblem,AST}
     cache = LTGOSSolverCache(
         setup_solver_caches(problem.A, solver.A_solver, t₀),
         setup_solver_caches(problem.B, solver.B_solver, t₀),
@@ -80,6 +80,8 @@ transfer_fields!(A, A_cache, B, B_cache)
 
 transfer_fields!(A, A_cache::BackwardEulerSolverCache, B, B_cache::ForwardEulerCellSolverCache) = nothing
 transfer_fields!(A, A_cache::ForwardEulerCellSolverCache, B, B_cache::BackwardEulerSolverCache) = nothing
+transfer_fields!(A, A_cache::BackwardEulerSolverCache, B, B_cache::ThreadedForwardEulerCellSolverCache) = nothing
+transfer_fields!(A, A_cache::ThreadedForwardEulerCellSolverCache, B, B_cache::BackwardEulerSolverCache) = nothing
 
 # TODO what exactly is the job here? How do we know where to write and what to iterate?
 function setup_initial_condition!(problem::SplitProblem{<:Any, <:AbstractPointwiseProblem}, cache, initial_condition, time)
