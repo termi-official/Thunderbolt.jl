@@ -24,6 +24,36 @@ function directions(fsn::OrthotropicMicrostructureModel, cell_cache, ξ::Vec{dim
     f₀, s₀, n₀
 end
 
+function streeter_type_fsn(transmural_direction, circumferential_direction, apicobasal_direction, helix_angle, transversal_angle, sheetlet_pseudo_angle, make_orthogonal=true)
+    # First we construct the helix rotation ...
+    f₀ = rotate_around(circumferential_direction, transmural_direction, helix_angle)
+    f₀ /= norm(f₀)
+    # ... followed by the transversal_angle ...
+    f₀ = rotate_around(f₀, apicobasal_direction, transversal_angle)
+    f₀ /= norm(f₀)
+
+    # Then we construct the the orthogonal sheetlet vector ...
+    s₀ = rotate_around(circumferential_direction, transmural_direction, helix_angle+π/2.0)
+    s₀ /= norm(f₀)
+    # FIXME this does not preserve the sheetlet angle
+    s₀ = unproject(s₀, -transmural_direction, sheetlet_pseudo_angle)
+    if make_orthogonal
+        s₀ = orthogonalize(s₀/norm(s₀), f₀)
+    end
+    # TODO replace above with an implementation of the following pseudocode
+    # 1. Compute plane via P = I - f₀ ⊗ f₀
+    # 2. Eigen decomposition E of P
+    # 3. Compute a generalized eigenvector s' from the non-zero eigenvalue (with ||s'||=1) from E such that <f₀,s'> minimal
+    # 4. Compute s₀ by rotating s' around f₀ such that cos(sheetlet angle) = <s',f₀>
+    s₀ /= norm(s₀)
+
+    # Compute normal :)
+    n₀ = f₀ × s₀
+    n₀ /= norm(n₀)
+
+    return f₀, s₀, n₀
+end
+
 """
     create_simple_fiber_model(coordinate_system, ip_component::Interpolation{ref_shape}, ip_geo; endo_helix_angle = deg2rad(80.0), epi_helix_angle = deg2rad(-65.0), endo_transversal_angle = 0.0, epi_transversal_angle = 0.0, sheetlet_angle = 0.0) where {dim}
 
@@ -59,39 +89,13 @@ function create_simple_fiber_model(coordinate_system, ip_component::ScalarInterp
             transmural  = function_value(cv, qp, coordinate_system.u_transmural[dof_indices])
 
             # linear interpolation of rotation angle
-            # TODO pass functions or similar for these!
             helix_angle       = (1-transmural) * endo_helix_angle + (transmural) * epi_helix_angle
             transversal_angle = (1-transmural) * endo_transversal_angle + (transmural) * epi_transversal_angle
 
-            # First we construct the helix rotation ...
-            f₀ = rotate_around(circumferential_direction, transmural_direction, helix_angle)
-            f₀ /= norm(f₀)
-            # ... followed by the transversal_angle ...
-            f₀ = rotate_around(f₀, apicobasal_direction, transversal_angle)
-            f₀ /= norm(f₀)
-            # ... and store it.
+            f₀, s₀, n₀ = streeter_type_fsn(transmural_direction, circumferential_direction, apicobasal_direction, helix_angle, transversal_angle, sheetlet_pseudo_angle, make_orthogonal)
             elementwise_data_f[cellindex, qp] = f₀
-
-            # Then we construct the the orthogonal sheetlet vector ...
-            s₀ = rotate_around(circumferential_direction, transmural_direction, helix_angle+π/2.0)
-            s₀ /= norm(f₀)
-            # FIXME this does not preserve the sheetlet angle
-            s₀ = unproject(s₀, -transmural_direction, sheetlet_pseudo_angle)
-            if make_orthogonal
-                s₀ = orthogonalize(s₀/norm(s₀), f₀)
-            end
-            # TODO replace above with an implementation of the following pseudocode
-            # 1. Compute plane via P = I - f₀ ⊗ f₀
-            # 2. Eigen decomposition E of P
-            # 3. Compute a generalized eigenvector s' from the non-zero eigenvalue (with ||s'||=1) from E such that <f₀,s'> minimal
-            # 4. Compute s₀ by rotating s' around f₀ such that cos(sheetlet angle) = <s',f₀>
-            s₀ /= norm(s₀)
             elementwise_data_s[cellindex, qp] = s₀
-
-            # Compute normal :)
-            n₀ = f₀ × s₀
             elementwise_data_n[cellindex, qp] = n₀
-            elementwise_data_n[cellindex, qp] /= norm(n₀)
         end
     end
 
@@ -99,7 +103,7 @@ function create_simple_fiber_model(coordinate_system, ip_component::ScalarInterp
         FieldCoefficient(elementwise_data_f, ip_component),
         FieldCoefficient(elementwise_data_s, ip_component),
         FieldCoefficient(elementwise_data_n, ip_component)
-    )     
+    )
 end
 
 # TODO where to move this? Technically this is assembly infrastructure
