@@ -116,6 +116,9 @@ function Thunderbolt.Ψ(F, f₀, s₀, n₀, mp::NewHolzapfelOgden2009Model)
 end
 
 """
+In 'A transmurally heterogeneous orthotropic activation model for ventricular contraction and its numerical validation' it is suggested that uniform activtaion is fine.
+
+TODO citation.
 """
 struct CalciumHatField end
 
@@ -124,7 +127,7 @@ struct CalciumHatField end
 Thunderbolt.evaluate_coefficient(coeff::CalciumHatField, cell_cache, ξ::Vec{dim}, t::Float64=0.0) where {dim} = t < 1.0 ? t : 2.0-t
 
 """
-Parameterization from Vallespin paper.
+Parameterization from Vallespin 2023 paper.
 
 TODO citations
 """
