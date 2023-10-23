@@ -26,8 +26,8 @@ struct PelceSunLangeveld1995Cache{CF}
     calcium_values_qp::Vector{Float64}
 end
 
-function state(cache::PelceSunLangeveld1995Cache, qp::Int)
-    return cache.calcium_values_qp[qp]
+function state(cache::PelceSunLangeveld1995Cache, qp::QuadraturePoint)
+    return cache.calcium_values_qp[qp.i]
 end
 
 function setup_contraction_model_cache(cv::CV, contraction_model::PelceSunLangeveld1995Model, cf::CF) where {CV, CF}
@@ -35,9 +35,10 @@ function setup_contraction_model_cache(cv::CV, contraction_model::PelceSunLangev
 end
 
 function update_contraction_model_cache!(cache::PelceSunLangeveld1995Cache{CF}, time::Float64, cell::CellCacheType, cv::CV) where {CellCacheType, CV, CF}
-    for qp ∈ 1:getnquadpoints(cv)
-        x_ref = cv.qr.points[qp]
-        cache.calcium_values_qp[qp] = evaluate_coefficient(cache.calcium_field, Ferrite.cellid(cell), x_ref, time)
+    for qpᵢ ∈ 1:getnquadpoints(cv)
+        ξ = cv.qr.points[qpᵢ]
+        qp = QuadraturePoint(qpᵢ, ξ)
+        cache.calcium_values_qp[qp.i] = evaluate_coefficient(cache.calcium_field, Ferrite.cellid(cell), qp, time)
     end
 end
 

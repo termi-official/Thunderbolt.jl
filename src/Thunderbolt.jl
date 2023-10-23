@@ -130,6 +130,7 @@ export
     calculate_volume_deformed_mesh,
     elementtypes,
     value,
+    QuadraturePoint,
     # IO
     ParaViewWriter,
     JLD2Writer,

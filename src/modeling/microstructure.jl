@@ -3,9 +3,9 @@ struct AnisotropicPlanarMicrostructureModel{FiberCoefficientType, SheetletCoeffi
     sheetlet_coefficient::SheetletCoefficientType
 end
 
-function directions(fsn::AnisotropicPlanarMicrostructureModel, cell_cache, ξ::Vec{dim}, t = 0.0) where {dim}
-    f₀ = evaluate_coefficient(fsn.fiber_coefficient, cell_cache, ξ, t)
-    s₀ = evaluate_coefficient(fsn.sheetlet_coefficient, cell_cache, ξ, t)
+function directions(fsn::AnisotropicPlanarMicrostructureModel, cell_cache, qp::QuadraturePoint{2}, t = 0.0)
+    f₀ = evaluate_coefficient(fsn.fiber_coefficient, cell_cache, qp, t)
+    s₀ = evaluate_coefficient(fsn.sheetlet_coefficient, cell_cache, qp, t)
 
     f₀, s₀
 end
@@ -16,10 +16,10 @@ struct OrthotropicMicrostructureModel{FiberCoefficientType, SheetletCoefficientT
     normal_coefficient::NormalCoefficientType
 end
 
-function directions(fsn::OrthotropicMicrostructureModel, cell_cache, ξ::Vec{dim}, t = 0.0) where {dim}
-    f₀ = evaluate_coefficient(fsn.fiber_coefficient, cell_cache, ξ, t)
-    s₀ = evaluate_coefficient(fsn.sheetlet_coefficient, cell_cache, ξ, t)
-    n₀ = evaluate_coefficient(fsn.normal_coefficient, cell_cache, ξ, t)
+function directions(fsn::OrthotropicMicrostructureModel, cell_cache, qp::QuadraturePoint{3}, t = 0.0)
+    f₀ = evaluate_coefficient(fsn.fiber_coefficient, cell_cache, qp, t)
+    s₀ = evaluate_coefficient(fsn.sheetlet_coefficient, cell_cache, qp, t)
+    n₀ = evaluate_coefficient(fsn.normal_coefficient, cell_cache, qp, t)
 
     f₀, s₀, n₀
 end
@@ -113,8 +113,8 @@ mutable struct LazyMicrostructureCache{MM, VT, CT}
     cell_cache::CT
 end
 
-function directions(cache::LazyMicrostructureCache{MM}, qp::Int) where {MM}
-    return directions(cache.microstructure_model, cache.cell_cache, cache.x_ref[qp])
+function directions(cache::LazyMicrostructureCache, qp::QuadraturePoint)
+    return directions(cache.microstructure_model, cache.cell_cache, qp)
 end
 
 function setup_microstructure_cache(cv, model::AnisotropicPlanarMicrostructureModel, cell_cache::CellCache)
@@ -125,6 +125,6 @@ function setup_microstructure_cache(cv, model::OrthotropicMicrostructureModel, c
     return LazyMicrostructureCache(model, cv.qr.points, cell_cache)
 end
 
-function update_microstructure_cache!(cache::LazyMicrostructureCache{MM}, time::Float64, cell_cache::CellCacheType, cv::CV) where {CellCacheType, CV, MM}
+function update_microstructure_cache!(cache::LazyMicrostructureCache, time, cell_cache, cv)
     cache.cell_cache = cell_cache # this looks bad :/
 end

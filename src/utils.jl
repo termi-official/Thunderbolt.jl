@@ -76,3 +76,8 @@ function generate_nodal_quadrature_rule(ip::Interpolation{ref_shape, order}) whe
     positions = Ferrite.reference_coordinates(ip)
     return QuadratureRule{ref_shape, Float64}(ones(length(positions)), positions)
 end
+
+struct QuadraturePoint{dim, T}
+    i::Int
+    ξ::Vec{dim, T}
+end

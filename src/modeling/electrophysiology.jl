@@ -218,7 +218,8 @@ function assemble_element!(Kₑ, cell, element_cache::CACHE, time) where {CACHE 
 
     for q_point in 1:getnquadpoints(cellvalues)
         ξ = cellvalues.qr.points[q_point]
-        D_loc = evaluate_coefficient(element_cache.integrator.D, cell, ξ, time)
+        qp = QuadraturePoint(q_point, ξ)
+        D_loc = evaluate_coefficient(element_cache.integrator.D, cell, qp, time)
         dΩ = getdetJdV(cellvalues, q_point)
         for i in 1:n_basefuncs
             ∇Nᵢ = shape_gradient(cellvalues, q_point, i)
@@ -255,7 +256,8 @@ function assemble_element!(Mₑ, cell, element_cache::CACHE, time) where {CACHE 
     n_basefuncs = getnbasefunctions(cellvalues)
     for q_point in 1:getnquadpoints(cellvalues)
         ξ = cellvalues.qr.points[q_point]
-        ρ = evaluate_coefficient(element_cache.integrator.ρ, cell, ξ, time)
+        qp = QuadraturePoint(q_point, ξ)
+        ρ = evaluate_coefficient(element_cache.integrator.ρ, cell, qp, time)
         dΩ = getdetJdV(cellvalues, q_point)
         for i in 1:n_basefuncs
             Nᵢ = shape_value(cellvalues, q_point, i)

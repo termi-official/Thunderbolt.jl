@@ -103,29 +103,30 @@ function assemble_element!(Kₑ::Matrix, residualₑ, uₑ, cell, element_cache:
     update_microstructure_cache!(microstructure_cache, time, cell, cv)
     update_contraction_model_cache!(contraction_model_cache, time, cell, cv)
 
-    @inbounds for qp in 1:getnquadpoints(cv)
-        dΩ = getdetJdV(cv, qp)
+    @inbounds for qpᵢ in 1:getnquadpoints(cv)
+        ξ = cv.qr.points[qpᵢ]
+        qp = QuadraturePoint(qpᵢ, ξ)
+        dΩ = getdetJdV(cv, qpᵢ)
 
         # Compute deformation gradient F
-        ∇u = function_gradient(cv, qp, uₑ)
+        ∇u = function_gradient(cv, qpᵢ, uₑ)
         F = one(∇u) + ∇u
 
         # Compute stress and tangent
-        f₀, s₀, n₀ = directions(microstructure_cache, qp) # TODO this can be treated as a coefficient inside the constitutive_driver call
+        f₀, s₀, n₀ = directions(microstructure_cache, qp) # TODO this can be treated as a coefficient inside the constitutive_driver call?
         contraction_state = state(contraction_model_cache, qp)
-        # x = coordinate(coordinate_system_cache, qp)
         P, ∂P∂F = constitutive_driver(F, f₀, s₀, n₀, contraction_state, mp)
 
         # Loop over test functions
         for i in 1:ndofs
-            ∇δui = shape_gradient(cv, qp, i)
+            ∇δui = shape_gradient(cv, qpᵢ, i)
 
             # Add contribution to the residual from this test function
             residualₑ[i] += ∇δui ⊡ P * dΩ
 
             ∇δui∂P∂F = ∇δui ⊡ ∂P∂F # Hoisted computation
             for j in 1:ndofs
-                ∇δuj = shape_gradient(cv, qp, j)
+                ∇δuj = shape_gradient(cv, qpᵢ, j)
                 # Add contribution to the tangent
                 Kₑ[i, j] += ( ∇δui∂P∂F ⊡ ∇δuj ) * dΩ
             end
