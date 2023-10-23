@@ -301,8 +301,8 @@ ring_grid = generate_ring_mesh(8,2,2)
 ring_cs = compute_midmyocardial_section_coordinate_system(ring_grid, ip_geo)
 solve_test_ring("Debug",
     ActiveStressModel(
-        Guccione1991Passive(),
-        Guccione1993Active(10.0),
+        Guccione1991PassiveModel(),
+        Guccione1993ActiveModel(10.0),
         PelceSunLangeveld1995Model()
     ), ring_grid, 
     create_simple_fiber_model(ring_cs, ip_fiber, ip_geo,
@@ -417,8 +417,8 @@ passive_model = HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 
 
 # solve_test_ring(filename*"Vallespin2023-Reproducer",
 #     ActiveStressModel(
-#         Guccione1991Passive(),
-#         Guccione1993Active(150.0),
+#         Guccione1991PassiveModel(),
+#         Guccione1993ActiveModel(150.0),
 #         PelceSunLangeveld1995Model()
 #     ), ring_grid, ring_cs, ring_fm,
 #     [NormalSpringBC(0.01, "Epicardium")],
@@ -428,8 +428,8 @@ passive_model = HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 
 
 # solve_test_ring(filename*"Vallespin2023-Ring",
 #     ActiveStressModel(
-#         Guccione1991Passive(),
-#         Guccione1993Active(10),
+#         Guccione1991PassiveModel(),
+#         Guccione1993ActiveModel(10),
 #         PelceSunLangeveld1995Model()
 #     ), ring_grid, ring_cs,
 #     create_simple_fiber_model(ring_cs, ip_fiber, ip_geo,

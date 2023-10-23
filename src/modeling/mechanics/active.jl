@@ -69,3 +69,9 @@ end
 
 ∂(sas::PiersantiActiveStress, Caᵢ, F::Tensor{2, dim}, f₀::Vec{dim}, s₀::Vec{dim}, n₀::Vec{dim}) where {dim} = sas.Tmax * Caᵢ * (sas.pf*(F ⋅ f₀) ⊗ f₀ / norm(F ⋅ f₀) + sas.ps*(F ⋅ s₀) ⊗ s₀ / norm(F ⋅ s₀) + sas.pn * (F ⋅ n₀) ⊗ n₀ / norm(F ⋅ n₀))
 
+
+Base.@kwdef struct Guccione1993ActiveModel
+    Tₘₐₓ::Float64 = 100.0
+end
+
+∂(sas::Guccione1993ActiveModel, Caᵢ, F::Tensor{2, dim}, f₀::Vec{dim}, s₀::Vec{dim}, n₀::Vec{dim}) where {dim} = sas.Tₘₐₓ * Caᵢ * (F ⋅ f₀ ) ⊗ f₀

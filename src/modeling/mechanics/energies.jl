@@ -193,6 +193,48 @@ function Ψ(F, f₀, s₀, n₀, mp::LinearSpringModel)
     return η / 2.0 * (I₄ - 1)^2.0
 end
 
+"""
+Parameterization from Vallespin 2023 paper.
+
+TODO citations
+"""
+Base.@kwdef struct Guccione1991PassiveModel{CPT}
+    C₀::Float64  =   0.1
+    Bᶠᶠ::Float64 =  29.8
+    Bˢˢ::Float64 =  14.9
+    Bⁿⁿ::Float64 =  14.9
+    Bⁿˢ::Float64 =   9.3
+    Bᶠˢ::Float64 =  19.2
+    Bᶠⁿ::Float64 =  14.4
+    mpU::CPT = SimpleCompressionPenalty(50.0)
+end
+
+function Thunderbolt.Ψ(F, f₀, s₀, n₀, mp::Guccione1991PassiveModel{CPT}) where {CPT}
+    @unpack C₀, Bᶠᶠ, Bˢˢ, Bⁿⁿ, Bⁿˢ, Bᶠˢ, Bᶠⁿ, mpU = mp
+
+    C  = tdot(F)
+    I₃ = det(C)
+    J  = det(F)
+
+    E  = (C-one(F))/2.0
+
+    Eᶠᶠ = f₀ ⋅ E ⋅ f₀
+    Eˢˢ = s₀ ⋅ E ⋅ s₀
+    Eⁿⁿ = n₀ ⋅ E ⋅ n₀
+
+    Eᶠˢ = f₀ ⋅ E ⋅ s₀
+    Eˢᶠ = s₀ ⋅ E ⋅ f₀ 
+
+    Eˢⁿ = s₀ ⋅ E ⋅ n₀
+    Eⁿˢ = n₀ ⋅ E ⋅ s₀
+
+    Eᶠⁿ = f₀ ⋅ E ⋅ n₀
+    Eⁿᶠ = n₀ ⋅ E ⋅ f₀
+
+    Q = Bᶠᶠ*Eᶠᶠ^2 + Bˢˢ*Eˢˢ^2 + Bⁿⁿ*Eⁿⁿ^2 + Bⁿˢ*(Eⁿˢ^2+Eˢⁿ^2) + Bᶠˢ*(Eᶠˢ^2+Eˢᶠ^2) + Bᶠⁿ*(Eᶠⁿ^2+Eⁿᶠ^2)
+
+    return C₀*exp(Q)/2.0 + Thunderbolt.U(I₃, mpU)
+end
 
 # """
 # """

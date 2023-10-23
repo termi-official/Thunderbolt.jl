@@ -80,6 +80,8 @@ export
     LinYinPassiveModel,
     LinYinActiveModel,
     HumphreyStrumpfYinModel,
+    Guccione1991PassiveModel,
+    Guccione1993ActiveModel,
     LinearSpringModel,
     # Contraction model
     ConstantStretchModel,
