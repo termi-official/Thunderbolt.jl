@@ -33,7 +33,7 @@ function create_face_center_node(grid::AbstractGrid{dim}, cell::LinearCellGeomet
     return Node(center)
 end
 
-function refinum_elements_circumferentialell_uniform(mgrid::SimpleMesh3D, cell::Hexahedron, cell_idx::Int, global_edge_indices, global_face_indices)
+function refine_element_uniform(mgrid::SimpleMesh3D, cell::Hexahedron, cell_idx::Int, global_edge_indices, global_face_indices)
     # Compute offsets
     new_edge_offset = num_nodes(mgrid)
     new_face_offset = num_edges(mgrid) + new_edge_offset
@@ -80,7 +80,7 @@ function refinum_elements_circumferentialell_uniform(mgrid::SimpleMesh3D, cell::
 end
 
 # Hex into 8 hexahedra
-hexahedralize_cell(mgrid::SimpleMesh3D, cell::Hexahedron, cell_idx::Int, global_edge_indices, global_face_indices) = refinum_elements_circumferentialell_uniform(mgrid, cell, cell_idx, global_edge_indices, global_face_indices)
+hexahedralize_cell(mgrid::SimpleMesh3D, cell::Hexahedron, cell_idx::Int, global_edge_indices, global_face_indices) = refine_element_uniform(mgrid, cell, cell_idx, global_edge_indices, global_face_indices)
 
 function hexahedralize_cell(mgrid::SimpleMesh3D, cell::Wedge, cell_idx::Int, global_edge_indices, global_face_indices)
     # Compute offsets
@@ -122,7 +122,7 @@ function hexahedralize_cell(mgrid::SimpleMesh3D, cell::Wedge, cell_idx::Int, glo
 end
 
 function uniform_refinement(grid::Grid{3,C,T}) where {C,T}
-    mgrid = SimpleMesh3D(grid) # Helper
+    mgrid = to_mesh(grid) # Helper
 
     cells = getcells(grid)
 
@@ -148,14 +148,14 @@ function uniform_refinement(grid::Grid{3,C,T}) where {C,T}
         for (faceidx,gfi) ∈ enumerate(global_face_indices)
             new_face_nodes[gfi] = create_face_center_node(grid, cell, faceidx)
         end
-        append!(new_cells, refinum_elements_circumferentialell_uniform(mgrid, cell, cellidx, global_edge_indices, global_face_indices))
+        append!(new_cells, refine_element_uniform(mgrid, cell, cellidx, global_edge_indices, global_face_indices))
     end
     # TODO boundary sets
     return Grid(new_cells, [grid.nodes; new_edge_nodes; new_face_nodes; new_cell_nodes])
 end
 
 function hexahedralize(grid::Grid{3,C,T}) where {C,T}
-    mgrid = SimpleMesh3D(grid) # Helper
+    mgrid = to_mesh(grid) # Helper
 
     cells = getcells(grid)
 
