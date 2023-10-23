@@ -205,26 +205,20 @@ struct BilinearDiffusionIntegrator{CoefficientType}
     # coordinate_system
 end
 
-struct BilinearDiffusionElementCache{IT <: BilinearDiffusionIntegrator, TT <: Tensor{2}, CV}
+struct BilinearDiffusionElementCache{IT <: BilinearDiffusionIntegrator, CV}
     integrator::IT
-    Dq::Vector{TT}
     cellvalues::CV
 end
 
-function update_element_cache!(element_cache::CACHE, cell::CELL, time) where {CACHE <: BilinearDiffusionElementCache, CELL}
-    reinit!(element_cache.cellvalues, cell)
-    for (qᵢ, ξ) ∈ enumerate(element_cache.cellvalues.qr.points)
-        element_cache.Dq[qᵢ] = evaluate_coefficient(element_cache.integrator.D, cell, ξ)
-    end
-end
-
-function assemble_element!(Kₑ, cache::CACHE, time) where {CACHE <: BilinearDiffusionElementCache}
-    @unpack Dq, cellvalues = cache
+function assemble_element!(Kₑ, cell, element_cache::CACHE, time) where {CACHE <: BilinearDiffusionElementCache}
+    @unpack cellvalues = element_cache
     n_basefuncs = getnbasefunctions(cellvalues)
+
+    reinit!(cellvalues, cell)
+
     for q_point in 1:getnquadpoints(cellvalues)
-        # TODO
-        # D_loc = evaluate_coefficient(...)
-        D_loc = Dq[q_point]
+        ξ = cellvalues.qr.points[q_point]
+        D_loc = evaluate_coefficient(element_cache.integrator.D, cell, ξ, time)
         dΩ = getdetJdV(cellvalues, q_point)
         for i in 1:n_basefuncs
             ∇Nᵢ = shape_gradient(cellvalues, q_point, i)
@@ -255,19 +249,13 @@ struct BilinearMassElementCache{IT <: BilinearMassIntegrator, T, CV}
     cellvalues::CV
 end
 
-function update_element_cache!(element_cache::CACHE, cell::CELL, time) where {CACHE <: BilinearMassElementCache, CELL}
+function assemble_element!(Mₑ, cell, element_cache::CACHE, time) where {CACHE <: BilinearMassElementCache}
+    @unpack cellvalues = element_cache
     reinit!(element_cache.cellvalues, cell)
-    for (qᵢ, ξ) ∈ enumerate(element_cache.cellvalues.qr.points)
-        element_cache.ρq[qᵢ] = evaluate_coefficient(element_cache.integrator.ρ, cell, ξ, time)
-    end
-end
-
-function assemble_element!(Mₑ, cache::CACHE, time) where {CACHE <: BilinearMassElementCache}
-    @unpack cellvalues = cache
     n_basefuncs = getnbasefunctions(cellvalues)
     for q_point in 1:getnquadpoints(cellvalues)
-        # TODO evaluate_coefficient(...) ?
-        ρ = 1.0 #ρq[q_point]
+        ξ = cellvalues.qr.points[q_point]
+        ρ = evaluate_coefficient(element_cache.integrator.ρ, cell, ξ, time)
         dΩ = getdetJdV(cellvalues, q_point)
         for i in 1:n_basefuncs
             Nᵢ = shape_value(cellvalues, q_point, i)

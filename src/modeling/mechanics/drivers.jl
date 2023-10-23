@@ -95,15 +95,13 @@ struct CardiacMechanicalElementCache{MP, MSCache, CFCache, CMCache, CV}
     cv::CV
 end
 
-function update_element_cache!(cache::CardiacMechanicalElementCache{MP, MSCache, CMCache, CV}, cell::CellCacheType, time::Float64) where {CellCacheType, MP, MSCache, CMCache, CV}
-    reinit!(cache.cv, cell)
-    update_microstructure_cache!(cache.microstructure_cache, time, cell, cache.cv)
-    update_contraction_model_cache!(cache.contraction_model_cache, time, cell, cache.cv)
-end
-
-function assemble_element!(Kₑ::Matrix, residualₑ, uₑ, cache::CardiacMechanicalElementCache, time)
-    @unpack mp, microstructure_cache, contraction_model_cache, cv = cache
+function assemble_element!(Kₑ::Matrix, residualₑ, uₑ, cell, element_cache::CardiacMechanicalElementCache, time)
+    @unpack mp, microstructure_cache, contraction_model_cache, cv = element_cache
     ndofs = getnbasefunctions(cv)
+
+    reinit!(cv, cell)
+    update_microstructure_cache!(microstructure_cache, time, cell, cv)
+    update_contraction_model_cache!(contraction_model_cache, time, cell, cv)
 
     @inbounds for qp in 1:getnquadpoints(cv)
         dΩ = getdetJdV(cv, qp)
@@ -113,7 +111,7 @@ function assemble_element!(Kₑ::Matrix, residualₑ, uₑ, cache::CardiacMechan
         F = one(∇u) + ∇u
 
         # Compute stress and tangent
-        f₀, s₀, n₀ = directions(microstructure_cache, qp)
+        f₀, s₀, n₀ = directions(microstructure_cache, qp) # TODO this can be treated as a coefficient inside the constitutive_driver call
         contraction_state = state(contraction_model_cache, qp)
         # x = coordinate(coordinate_system_cache, qp)
         P, ∂P∂F = constitutive_driver(F, f₀, s₀, n₀, contraction_state, mp)

@@ -18,20 +18,15 @@ function update_linearization!(op::AssembledNonlinearOperator, u::Vector, time)
     @inbounds for cell in CellIterator(dh)
         fill!(Jₑ, 0)
         uₑ = @view u[celldofs(cell)]
-        update_element_cache!(element_cache, cell, time)
-        assemble_element!(Jₑ, uₑ, element_cache, time)
+        # TODO instead of "cell" pass object with geometry information only
+        assemble_element!(Jₑ, uₑ, cell, element_cache, time)
         # TODO maybe it makes sense to merge this into the element routine in a modular fasion?
         for local_face_index ∈ 1:nfaces(cell)
-            face_is_initialized = false
             for face_cache ∈ face_caches
                 if (cellid(cell), local_face_index) ∈ getfaceset(cell.grid, getboundaryname(face_cache))
-                    if !face_is_initialized
-                        face_is_initialized = true
-                        reinit!(face_cache.fv, cell, local_face_index)
-                    end
-                    update_face_cache(cell, face_cache, time)
-
-                    assemble_face!(Jₑ, uₑ, face_cache, time)
+                    # TODO fix "(cell, local_face_index)" 
+                    assemble_face!(Jₑ, uₑ, (cell, local_face_index), face_cache, time)
+                    break # only one integrator per face allowed!
                 end
             end
         end
@@ -54,20 +49,15 @@ function update_linearization!(op::AssembledNonlinearOperator, u::Vector, residu
         fill!(Jₑ, 0)
         fill!(rₑ, 0)
         uₑ = @view u[celldofs(cell)]
-        update_element_cache!(element_cache, cell, time)
-        assemble_element!(Jₑ, rₑ, uₑ, element_cache, time)
+        # TODO instead of "cell" pass object with geometry information only
+        assemble_element!(Jₑ, rₑ, uₑ, cell, element_cache, time)
         # TODO maybe it makes sense to merge this into the element routine in a modular fasion?
         for local_face_index ∈ 1:nfaces(cell)
-            face_is_initialized = false
             for face_cache ∈ face_caches
                 if (cellid(cell), local_face_index) ∈ getfaceset(cell.grid, getboundaryname(face_cache))
-                    if !face_is_initialized
-                        face_is_initialized = true
-                        reinit!(face_cache.fv, cell, local_face_index)
-                    end
-                    update_face_cache(cell, face_cache, time)
-
-                    assemble_face!(Jₑ, rₑ, uₑ, face_cache, time)
+                    # TODO fix "(cell, local_face_index)" 
+                    assemble_face!(Jₑ, rₑ, uₑ, (cell, local_face_index), face_cache, time)
+                    break # only one integrator per face allowed!
                 end
             end
         end
@@ -106,8 +96,8 @@ function update_operator!(op::AssembledBilinearOperator, time)
 
     @inbounds for cell in CellIterator(dh)
         fill!(Aₑ, 0)
-        update_element_cache!(element_cache, cell, time)
-        assemble_element!(Aₑ, element_cache, time)
+        # TODO instead of "cell" pass object with geometry information only
+        assemble_element!(Aₑ, cell, element_cache, time)
         assemble!(assembler, celldofs(cell), Aₑ)
     end
 
@@ -151,7 +141,7 @@ function update_operator!(op::LinearOperator, time)
     fill!(b, 0.0)
     @inbounds for cell in CellIterator(dh)
         fill!(bₑ, 0)
-        assemble_element!(bₑ, element_cache, cell, time)
+        assemble_element!(bₑ, cell, element_cache, time)
         # assemble!(assembler, celldofs(cell), bₑ)
         b[celldofs(cell)] .+= bₑ
     end
@@ -186,7 +176,7 @@ struct AnalyticalCoefficientElementCache{F <: AnalyticalCoefficient, T, CV}
     cv::CV
 end
 
-function assemble_element!(bₑ, element_cache::AnalyticalCoefficientElementCache, cell, time)
+function assemble_element!(bₑ, cell, element_cache::AnalyticalCoefficientElementCache, time)
     @unpack f, cv = element_cache
     reinit!(cv, cell)
     coords = getcoordinates(cell)

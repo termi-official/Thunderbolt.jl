@@ -22,7 +22,7 @@ function Thunderbolt.semidiscretize(model::MODEL, discretization::FiniteElementD
 
     ch = ConstraintHandler(dh)
     for dbc ∈ discretization.dbcs
-        add!(ch, dbc)
+        Ferrite.add!(ch, dbc)
     end
     close!(ch)
 

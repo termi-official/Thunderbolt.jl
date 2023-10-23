@@ -34,7 +34,7 @@ function compute_LV_coordinate_system(grid::AbstractGrid, ip_geo::Interpolation{
     cellvalues = CellValues(qr, ip, ip_geo);
 
     dh = DofHandler(grid)
-    add!(dh, :coordinates, ip)
+    Ferrite.add!(dh, :coordinates, ip)
     Ferrite.close!(dh)
 
     # Assemble Laplacian
@@ -67,9 +67,9 @@ function compute_LV_coordinate_system(grid::AbstractGrid, ip_geo::Interpolation{
     # Transmural coordinate
     ch = ConstraintHandler(dh);
     dbc = Dirichlet(:coordinates, getfaceset(grid, "Endocardium"), (x, t) -> 0)
-    add!(ch, dbc);
+    Ferrite.add!(ch, dbc);
     dbc = Dirichlet(:coordinates, getfaceset(grid, "Epicardium"), (x, t) -> 1)
-    add!(ch, dbc);
+    Ferrite.add!(ch, dbc);
     close!(ch)
     update!(ch, 0.0);
 
@@ -94,9 +94,9 @@ function compute_LV_coordinate_system(grid::AbstractGrid, ip_geo::Interpolation{
 
     ch = ConstraintHandler(dh);
     dbc = Dirichlet(:coordinates, getfaceset(grid, "Base"), (x, t) -> 0)
-    add!(ch, dbc);
+    Ferrite.add!(ch, dbc);
     dbc = Dirichlet(:coordinates, getnodeset(grid, "Apex"), (x, t) -> 1)
-    add!(ch, dbc);
+    Ferrite.add!(ch, dbc);
     close!(ch)
     update!(ch, 0.0);
 
@@ -117,7 +117,7 @@ function compute_midmyocardial_section_coordinate_system(grid::AbstractGrid,ip_g
     cellvalues = CellValues(qr, ip, ip_geo);
 
     dh = DofHandler(grid)
-    add!(dh, :coordinates, ip)
+    Ferrite.add!(dh, :coordinates, ip)
     Ferrite.close!(dh);
 
     # Assemble Laplacian
@@ -150,9 +150,9 @@ function compute_midmyocardial_section_coordinate_system(grid::AbstractGrid,ip_g
     # Transmural coordinate
     ch = ConstraintHandler(dh);
     dbc = Dirichlet(:coordinates, getfaceset(grid, "Endocardium"), (x, t) -> 0)
-    add!(ch, dbc);
+    Ferrite.add!(ch, dbc);
     dbc = Dirichlet(:coordinates, getfaceset(grid, "Epicardium"), (x, t) -> 1)
-    add!(ch, dbc);
+    Ferrite.add!(ch, dbc);
     close!(ch)
     update!(ch, 0.0);
 
@@ -164,9 +164,9 @@ function compute_midmyocardial_section_coordinate_system(grid::AbstractGrid,ip_g
 
     ch = ConstraintHandler(dh);
     dbc = Dirichlet(:coordinates, getfaceset(grid, "Base"), (x, t) -> 0)
-    add!(ch, dbc);
+    Ferrite.add!(ch, dbc);
     dbc = Dirichlet(:coordinates, getfaceset(grid, "Myocardium"), (x, t) -> 0.15)
-    add!(ch, dbc);
+    Ferrite.add!(ch, dbc);
     close!(ch)
     update!(ch, 0.0);
 

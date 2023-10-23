@@ -25,13 +25,19 @@ end
 
 mutable struct IOCallback{IO}
     io::IO
+    counter::Int
 end
 
+IOCallback(io) = IOCallback(io, -1)
+
 function (iocb::IOCallback{ParaViewWriter{PVD}})(t, problem::Thunderbolt.SplitProblem, solver_cache) where {PVD}
+    iocb.counter += 1
+    (iocb.counter % 10) == 0 || return nothing
     store_timestep!(iocb.io, t, problem.A.dh.grid)
     Thunderbolt.store_timestep_field!(iocb.io, t, problem.A.dh, solver_cache.A_solver_cache.uₙ, :φₘ)
     Thunderbolt.store_timestep_field!(iocb.io, t, problem.A.dh, solver_cache.B_solver_cache.sₙ[1:length(solver_cache.A_solver_cache.uₙ)], :s)
     Thunderbolt.finalize_timestep!(iocb.io, t)
+    return nothing
 end
 
 ######################################################
@@ -66,7 +72,7 @@ model = MonodomainModel(
     Thunderbolt.FHNModel()
 )
 
-mesh = generate_mesh(Quadrilateral, (2^6, 2^6), Vec{2}((0.0,0.0)), Vec{2}((2.5,2.5)))
+mesh = generate_mesh(Quadrilateral, (2^7, 2^7), Vec{2}((0.0,0.0)), Vec{2}((2.5,2.5)))
 
 problem = semidiscretize(
     ReactionDiffusionSplit(model),

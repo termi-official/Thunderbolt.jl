@@ -92,9 +92,8 @@ function setup_solver_caches(problem::TransientHeatProblem, solver::BackwardEule
         create_sparsity_pattern(dh),
         BilinearDiffusionElementCache(
             BilinearDiffusionIntegrator(
-                problem.diffusion_tensor_field
+                problem.diffusion_tensor_field,
             ),
-            zeros(Tensor{2,sdim}, getnquadpoints(qr)),
             cv,
         ),
         dh,

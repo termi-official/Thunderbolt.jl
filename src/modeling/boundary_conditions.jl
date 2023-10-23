@@ -7,14 +7,14 @@ RobinBC
 ```
 """
 struct RobinBC
-α::Float64
-boundary_name::String
+    α::Float64
+    boundary_name::String
 end
 
 #TODO Energy-based interface?
 struct NormalSpringBC
-kₛ::Float64
-boundary_name::String
+    kₛ::Float64
+    boundary_name::String
 end
 
 struct BendingSpringBC
@@ -38,9 +38,11 @@ getboundaryname(face_cache::FC) where {FC} = face_cache.mp.boundary_name
 
 setup_face_cache(bcd::BCD, fv::FV, time) where {BCD, FV} = SimpleFaceCache(bcd, fv)
 
-function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, cache::SimpleFaceCache{RobinBC,FV}, time) where {FV}
+function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, face, cache::SimpleFaceCache{RobinBC,FV}, time) where {FV}
 @unpack mp, fv = cache
 @unpack α = mp
+
+reinit!(fv, face[1], face[2])
 
 ndofs_face = getnbasefunctions(fv)
 for qp in 1:getnquadpoints(fv)
@@ -64,9 +66,11 @@ for qp in 1:getnquadpoints(fv)
 end
 end
 
-function assemble_face!(Kₑ::Matrix, uₑ, cache::SimpleFaceCache{RobinBC,FV}, time) where {FV}
+function assemble_face!(Kₑ::Matrix, uₑ, face, cache::SimpleFaceCache{RobinBC,FV}, time) where {FV}
     @unpack mp, fv = cache
     @unpack α = mp
+
+    reinit!(fv, face[1], face[2])
 
     ndofs_face = getnbasefunctions(fv)
     for qp in 1:getnquadpoints(fv)
@@ -89,9 +93,11 @@ function assemble_face!(Kₑ::Matrix, uₑ, cache::SimpleFaceCache{RobinBC,FV}, 
     end
 end
 
-function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, cache::SimpleFaceCache{NormalSpringBC,FV}, time) where {FV}
+function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, face, cache::SimpleFaceCache{NormalSpringBC,FV}, time) where {FV}
 @unpack mp, fv = cache
 @unpack kₛ = mp
+
+reinit!(fv, face[1], face[2])
 
 ndofs_face = getnbasefunctions(fv)
 for qp in 1:getnquadpoints(fv)
@@ -115,10 +121,12 @@ for qp in 1:getnquadpoints(fv)
 end
 end
 
-function assemble_face!(Kₑ::Matrix, uₑ, cache::SimpleFaceCache{NormalSpringBC,FV}, time) where {FV}
+function assemble_face!(Kₑ::Matrix, uₑ, face, cache::SimpleFaceCache{NormalSpringBC,FV}, time) where {FV}
     @unpack mp, fv = cache
     @unpack kₛ = mp
-    
+
+    reinit!(fv, face[1], face[2])
+
     ndofs_face = getnbasefunctions(fv)
     for qp in 1:getnquadpoints(fv)
         dΓ = getdetJdV(fv, qp)
@@ -140,9 +148,11 @@ function assemble_face!(Kₑ::Matrix, uₑ, cache::SimpleFaceCache{NormalSpringB
     end
 end
 
-function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, cache::SimpleFaceCache{BendingSpringBC,FV}, time) where {FV}
+function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, face, cache::SimpleFaceCache{BendingSpringBC,FV}, time) where {FV}
 @unpack mp, fv = cache
 @unpack kᵇ = mp
+
+reinit!(fv, face[1], face[2])
 
 ndofs_face = getnbasefunctions(fv)
 for qp in 1:getnquadpoints(fv)
@@ -170,10 +180,12 @@ end
 end
 
 
-function assemble_face!(Kₑ::Matrix, uₑ, cache::SimpleFaceCache{BendingSpringBC,FV}, time) where {FV}
+function assemble_face!(Kₑ::Matrix, uₑ, face, cache::SimpleFaceCache{BendingSpringBC,FV}, time) where {FV}
     @unpack mp, fv = cache
     @unpack kᵇ = mp
-    
+
+    reinit!(fv, face[1], face[2])
+
     ndofs_face = getnbasefunctions(fv)
     for qp in 1:getnquadpoints(fv)
         dΓ = getdetJdV(fv, qp)
@@ -198,9 +210,11 @@ function assemble_face!(Kₑ::Matrix, uₑ, cache::SimpleFaceCache{BendingSpring
     end
 end
 
-function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, cache::SimpleFaceCache{ConstantPressureBC,FV}, time) where {FV}
+function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, face, cache::SimpleFaceCache{ConstantPressureBC,FV}, time) where {FV}
 @unpack mp, fv = cache
 @unpack p = mp
+
+reinit!(fv, face[1], face[2])
 
 ndofs_face = getnbasefunctions(fv)
 for qp in 1:getnquadpoints(fv)
@@ -234,10 +248,12 @@ end
 end
 
 
-function assemble_face!(Kₑ::Matrix, uₑ, cache::SimpleFaceCache{ConstantPressureBC,FV}, time) where {FV}
+function assemble_face!(Kₑ::Matrix, uₑ, face, cache::SimpleFaceCache{ConstantPressureBC,FV}, time) where {FV}
     @unpack mp, fv = cache
     @unpack p = mp
-    
+
+    reinit!(fv, face[1], face[2])
+
     ndofs_face = getnbasefunctions(fv)
     for qp in 1:getnquadpoints(fv)
         dΓ = getdetJdV(fv, qp)
@@ -266,7 +282,4 @@ function assemble_face!(Kₑ::Matrix, uₑ, cache::SimpleFaceCache{ConstantPress
             end
         end
     end
-end
-
-function update_face_cache(cell::CC, face_cache::SimpleFaceCache{MP}, time) where {CC, MP}
 end
