@@ -57,7 +57,6 @@ export
     ConstantCoefficient,
     FieldCoefficient,
     AnalyticalCoefficient,
-    CalciumHatField,
     # Collections
     LagrangeCollection,
     getinterpolation,
@@ -108,7 +107,6 @@ export
     create_simple_fiber_model,
     update_microstructure_cache!,
     setup_microstructure_cache,
-    LazyCoefficientCache,
     # Coordinate system
     LVCoordinateSystem,
     CartesianCoordinateSystem,
@@ -131,7 +129,6 @@ export
     # Utils
     calculate_volume_deformed_mesh,
     elementtypes,
-    value,
     QuadraturePoint,
     # IO
     ParaViewWriter,
