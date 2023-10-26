@@ -27,7 +27,7 @@ struct LTGOSSolverCache{ASCT, BSCT}
     B_solver_cache::BSCT
 end
 
-function setup_solver_caches(problem::SplitProblem{APT, BPT}, solver::LTGOSSolver{AST,BST}, t₀) where {APT,BPT,AST,BST}
+function setup_solver_caches(problem::SplitProblem, solver::LTGOSSolver, t₀)
     return LTGOSSolverCache(
         setup_solver_caches(problem.A, solver.A_solver, t₀),
         setup_solver_caches(problem.B, solver.B_solver, t₀),
@@ -35,7 +35,7 @@ function setup_solver_caches(problem::SplitProblem{APT, BPT}, solver::LTGOSSolve
 end
 
 # Lie-Trotter-Godunov step to advance the problem split into A and B from a given initial condition
-function perform_step!(problem::SplitProblem{APT, BPT}, cache::LTGOSSolverCache{ASCT, BSCT}, t, Δt) where {APT, BPT, ASCT, BSCT}
+function perform_step!(problem::SplitProblem, cache::LTGOSSolverCache, t, Δt)
     # We start by setting the initial condition for the step of problem A from the solution in B.
     transfer_fields!(problem.B, cache.B_solver_cache, problem.A, cache.A_solver_cache)
     # Then the step for A is executed
@@ -48,7 +48,7 @@ function perform_step!(problem::SplitProblem{APT, BPT}, cache::LTGOSSolverCache{
     return true
 end
 
-function setup_solver_caches(problem::SplitProblem{APT, BPT}, solver::LTGOSSolver{BackwardEulerSolver,BST}, t₀) where {APT <: TransientHeatProblem,BPT,BST}
+function setup_solver_caches(problem::SplitProblem, solver::LTGOSSolver{<:BackwardEulerSolver,<:AbstractPointwiseSolver}, t₀)
     cache = LTGOSSolverCache(
         setup_solver_caches(problem.A, solver.A_solver, t₀),
         setup_solver_caches(problem.B, solver.B_solver, t₀),
@@ -57,7 +57,7 @@ function setup_solver_caches(problem::SplitProblem{APT, BPT}, solver::LTGOSSolve
     return cache
 end
 
-function setup_solver_caches(problem::SplitProblem{APT, BPT}, solver::LTGOSSolver{AST,BackwardEulerSolver}, t₀) where {APT,BPT <: TransientHeatProblem,AST}
+function setup_solver_caches(problem::SplitProblem, solver::LTGOSSolver{<:AbstractPointwiseSolver,<:BackwardEulerSolver}, t₀)
     cache = LTGOSSolverCache(
         setup_solver_caches(problem.A, solver.A_solver, t₀),
         setup_solver_caches(problem.B, solver.B_solver, t₀),
@@ -65,10 +65,6 @@ function setup_solver_caches(problem::SplitProblem{APT, BPT}, solver::LTGOSSolve
     cache.B_solver_cache.uₙ = cache.A_solver_cache.uₙ
     return cache
 end
-
-# TODO add guidance with helpers like
-#   const QuGarfinkel1999Solver = SMOSSolver{AdaptiveForwardEulerReactionSubCellSolver, ImplicitEulerHeatSolver}
-
 
 """
     transfer_fields!(A, A_cache, B, B_cache)
@@ -78,10 +74,8 @@ The default behavior assumes that nothing has to be done, because both problems 
 """
 transfer_fields!(A, A_cache, B, B_cache)
 
-transfer_fields!(A, A_cache::BackwardEulerSolverCache, B, B_cache::ForwardEulerCellSolverCache) = nothing
-transfer_fields!(A, A_cache::ForwardEulerCellSolverCache, B, B_cache::BackwardEulerSolverCache) = nothing
-transfer_fields!(A, A_cache::BackwardEulerSolverCache, B, B_cache::ThreadedForwardEulerCellSolverCache) = nothing
-transfer_fields!(A, A_cache::ThreadedForwardEulerCellSolverCache, B, B_cache::BackwardEulerSolverCache) = nothing
+transfer_fields!(A, A_cache::BackwardEulerSolverCache, B, B_cache::AbstractPointwiseSolverCache) = nothing
+transfer_fields!(A, A_cache::AbstractPointwiseSolverCache, B, B_cache::BackwardEulerSolverCache) = nothing
 
 # TODO what exactly is the job here? How do we know where to write and what to iterate?
 function setup_initial_condition!(problem::SplitProblem{<:Any, <:AbstractPointwiseProblem}, cache, initial_condition, time)
@@ -92,4 +86,10 @@ function setup_initial_condition!(problem::SplitProblem{<:Any, <:AbstractPointwi
     return nothing
 end
 
-perform_step!(problem::PointwiseODEProblem{ODET}, cache::CT, t::Float64, Δt::Float64) where {ODET, CT} = perform_step!(problem.ode, t, Δt, cache)
+perform_step!(problem::PointwiseODEProblem, cache::AbstractPointwiseSolverCache, t, Δt) = perform_step!(problem.ode, t, Δt, cache)
+
+
+
+# TODO add guidance with helpers like
+#   const QuGarfinkel1999Solver = SMOSSolver{AdaptiveForwardEulerReactionSubCellSolver, ImplicitEulerHeatSolver}
+
