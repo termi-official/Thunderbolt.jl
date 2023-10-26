@@ -8,7 +8,7 @@ using Aqua
         # undefined_exports=true,
         # project_extras=true,
         # stale_deps=(ignore=[:SomePackage],),
-        # deps_compat=(ignore=[:SomeOtherPackage],),
+        deps_compat=false,
         # piracy=false,
     )
     Aqua.test_ambiguities(Thunderbolt) # see https://github.com/JuliaTesting/Aqua.jl/issues/77
