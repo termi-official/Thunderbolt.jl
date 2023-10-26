@@ -1,6 +1,6 @@
 name = "Thunderbolt"
 uuid = "909927c2-98d5-4a67-bba9-79f03a9ad49b"
-version = "0.0.1"
+version = "0.0.1-DEV"
 
 [deps]
 BlockArrays = "8e7c35d0-a365-5155-bbbb-fb81a777f24e"
@@ -17,10 +17,14 @@ StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 Tensors = "48a634ad-e948-5137-8d70-aa71f2a747f4"
 UnPack = "3a884ed6-31ef-47d7-9d2a-63182c4928ed"
 
+[compat]
+Aqua = "0.7"
+
 [extras]
+Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
+JET = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"
 Tensors = "48a634ad-e948-5137-8d70-aa71f2a747f4"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
-JET = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"
 
 [targets]
-test = ["JET", "Tensors", "Test"]
+test = ["Aqua", "JET", "Tensors", "Test"]
