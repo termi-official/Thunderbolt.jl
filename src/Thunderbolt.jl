@@ -38,6 +38,9 @@ include("modeling/solid/drivers.jl") # TODO better name. This is basically the q
 
 include("modeling/fluid/lumped.jl")
 
+include("modeling/coupler/interface.jl")
+include("modeling/coupler/fsi.jl")
+
 include("modeling/problems.jl")
 
 include("solver/interface.jl")

@@ -29,8 +29,6 @@ end
 
 struct SimpleFaceCache{MP, FV}
     mp::MP
-    # microstructure_model::MM
-    # coordinate_system::CS
     fv::FV
 end
 

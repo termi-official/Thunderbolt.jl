@@ -120,8 +120,45 @@ In 'A transmurally heterogeneous orthotropic activation model for ventricular co
 
 TODO citation.
 """
-struct CalciumHatField end
+struct CalciumHatField end # TODO compute calcium profile from actual cell model :)
 
 """
 """
 Thunderbolt.evaluate_coefficient(coeff::CalciumHatField, cell_cache, qp, t) = t < 1.0 ? t : 2.0-t
+
+struct SimpleChamberContractionModel{MM, CF, FM, MM2}
+    mechanical_model::MM
+    calcium_field::CF
+    face_models::FM
+    microstructure_model::MM2
+end
+
+function Thunderbolt.semidiscretize(model::MODEL, discretization::FiniteElementDiscretization, grid::Thunderbolt.AbstractGrid) where {MODEL <: SimpleChamberContractionModel{<:QuasiStaticModel}}
+    ets = elementtypes(grid)
+    @assert length(ets) == 1
+
+    ip = getinterpolation(discretization.interpolations[:displacement], getcells(grid, 1))
+    ip_geo = Ferrite.default_geometric_interpolation(ip) # TODO get interpolation from cell
+    dh = DofHandler(grid)
+    push!(dh, :displacement, ip)
+    close!(dh);
+
+    ch = ConstraintHandler(dh)
+    for dbc ∈ discretization.dbcs
+        Ferrite.add!(ch, dbc)
+    end
+    close!(ch)
+
+    # TODO QuasiStaticNonlinearProblem without calcium_field and microstructure_model
+    semidiscrete_problem = Thunderbolt.QuasiStaticNonlinearProblem(
+        dh,
+        ch,
+        model.mechanical_model,
+        model.face_models,
+        # TODO put this into the constitutive model
+        model.microstructure_model,
+        model.calcium_field,
+    )
+
+    return semidiscrete_problem
+end
