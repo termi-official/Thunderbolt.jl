@@ -31,10 +31,10 @@ include("modeling/microstructure.jl")
 
 include("modeling/electrophysiology.jl")
 
-include("modeling/mechanics/energies.jl")
-include("modeling/mechanics/contraction.jl")
-include("modeling/mechanics/active.jl")
-include("modeling/mechanics/drivers.jl") # TODO better name. This is basically the quadrature point routine.
+include("modeling/solid/energies.jl")
+include("modeling/solid/contraction.jl")
+include("modeling/solid/active.jl")
+include("modeling/solid/drivers.jl") # TODO better name. This is basically the quadrature point routine.
 
 include("modeling/fluid/lumped.jl")
 
