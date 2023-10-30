@@ -63,7 +63,6 @@ function setup_solver_caches(problem, solver::NewtonRaphsonSolver{T}, t₀) wher
     element_cache = CardiacMechanicalElementCache(
         constitutive_model,
         microstructure_cache,
-        nothing,
         contraction_cache,
         cv
     )

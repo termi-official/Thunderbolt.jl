@@ -86,10 +86,9 @@ end
 
 """
 """
-struct CardiacMechanicalElementCache{MP, MSCache, CFCache, CMCache, CV}
+struct CardiacMechanicalElementCache{MP, MSCache, CMCache, CV}
     mp::MP
     microstructure_cache::MSCache
-    calcium_field_cache::CFCache
     # coordinate_system_cache::CSCache
     contraction_model_cache::CMCache
     cv::CV

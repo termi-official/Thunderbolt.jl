@@ -141,12 +141,10 @@ export
     JLD2Writer,
     store_timestep!,
     finalize!,
-    # Drivers
+    # Mechanical PDEs
     GeneralizedHillModel,
     ActiveStressModel,
     ExtendedHillModel,
-    constitutive_driver,
     #  BCs
     NormalSpringBC
-
 end
