@@ -24,7 +24,7 @@ Base.@kwdef struct ReggazoniSalvadorAfrica2022SurrogateVolume{T}
     b::Vec{3,T} = Vec((0.0, 0.0, 0.5))
 end
 
-function volume_driver(x, d, F, N, method::ReggazoniSalvadorAfrica2022SurrogateVolume)
+function volume_integral(x, d, F, N, method::ReggazoniSalvadorAfrica2022SurrogateVolume)
     @unpack h, b = method
     -det(F) * ((h ⊗ h) ⋅ (xq + dq - b)) ⋅ (transpose(inv(F)) ⋅  N)
 end
@@ -41,8 +41,48 @@ with the z axis, where the origin is at z=0.
 struct Hirschvogel2016SurrogateVolume
 end
 
-function volume_driver(x, d, F, N, method::Hirschvogel2016SurrogateVolume)
+function volume_integral(x, d, F, N, method::Hirschvogel2016SurrogateVolume)
     -det(F) * (x + d) ⋅ inv(transpose(F)) ⋅ N
+end
+
+function assemble_interface_coupling_contribution!(C, r, dh, u, setname, method::Hirschvogel2016SurrogateVolume)
+    grid = dh.grid
+    ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], :displacement)
+    ip_geo = Ferrite.default_interpolation(typeof(getcells(grid, 1)))
+    intorder = 2*Ferrite.getorder(ip)
+    ref_shape = Ferrite.getrefshape(ip)
+    qr_face = FaceQuadratureRule{ref_shape}(intorder)
+    fv = FaceValues(qr_face, ip, ip_geo)
+
+    drange = dof_range(dh,:displacement)
+    for face ∈ FaceIterator(dh, getfaceset(grid, setname))
+        coords = getcoordinates(face)
+        ddofs = @view celldofs(face)[drange]
+        uₑ = @view u[ddofs]
+
+        for qp in 1:getnquadpoints(fv)
+            dΓ = getdetJdV(fv, qp)
+            N = getnormal(fv, qp)
+
+            ∇u = function_gradient(fv, qp, uₑ)
+            F = one(∇u) + ∇u
+
+            d = function_value(fv, qp, uₑ)
+
+            x = spatial_coordinate(fv, qp, coords)
+
+            R[1,1] += volume_integral(x, d, F, N, method) * dΓ
+
+            # δV(u,F(u)) = δ_u V + (δ_F V) ⋅ (δ_u F)
+            ∂V∂u = Tensors.gradient(u -> volume_integral(x, u, F, N, method), d)
+            ∂V∂F = Tensors.gradient(u -> volume_integral(x, d, u, N, method), F)
+            for j ∈ 1:getnbasefunctions(fv)
+                δuⱼ = shape_value(fv, qp, j)
+                ∇δuj = shape_gradient(cv, qpᵢ, j)
+                C[1, ddofs[j]] += (∂V∂u ⋅ δuⱼ + ∂V∂F ⊡ ∇δuj) * dΓ
+            end
+        end
+    end
 end
 
 function compute_chamber_volume(dh, u, setname, method)
@@ -74,8 +114,10 @@ function compute_chamber_volume(dh, u, setname, method)
 
             x = spatial_coordinate(fv, qp, coords)
 
-            volume += volume_driver(x, d, F, N, method) * dΓ
+            volume += volume_integral(x, d, F, N, method) * dΓ
         end
     end
     return volume
 end
+
+
