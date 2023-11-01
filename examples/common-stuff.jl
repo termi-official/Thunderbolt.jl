@@ -162,3 +162,26 @@ function Thunderbolt.semidiscretize(model::MODEL, discretization::FiniteElementD
 
     return semidiscrete_problem
 end
+
+function Thunderbolt.semidiscretize(split::Thunderbolt.ReggazoniSalvadorAfricaSplit, discretization::FiniteElementDiscretization, grid::Thunderbolt.AbstractGrid)
+    ets = elementtypes(grid)
+    @assert length(ets) == 1 "Multiple element types not supported"
+    @assert length(discretization.dbcs) == 0 "Dirichlet elimination is not supported yet."
+    @assert length(split.model.base_models) == 2 "I can only handle pure mechanics coupled to pure circuit."
+
+    semidiscrete_problem = Thunderbolt.SplitProblem(
+        Thunderbolt.CoupledProblem( # Recouple mechanical problem with dummy to introduce the coupling!
+            [
+                Thunderbolt.semidiscretize(split.model.base_models[1], discretization, grid),
+                Thunderbolt.NullProblem(1) # 1 coupling dof (chamber pressure)
+            ],
+            split.model.couplers
+        ),
+        Thunderbolt.PointwiseODEProblem(
+            1,
+            split.model.base_models[2]
+        )
+    )
+
+    return semidiscrete_problem
+end

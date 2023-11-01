@@ -155,7 +155,17 @@ function solve_ideal_lv(name_base, material_model, grid, coordinate_system, micr
     # io = JLD2Writer(name_base);
 
     problem = semidiscretize(
-        SimpleChamberContractionModel(material_model, calcium_field, face_models, microstructure_model),
+        ReggazoniSalvadorAfricaSplit(CoupledModel(
+            [
+                SimpleChamberContractionModel(material_model, calcium_field, face_models, microstructure_model),
+                ReggazoniSalvadorAfricaLumpedCicuitModel{Float64,Float64,Float64,Float64,Float64}()
+            ],
+            [
+                Coupling(1,2,LumpedFluidSolidCoupler(
+                    Hirschvogel2016SurrogateVolume()
+                ))
+            ]
+        )),
         FiniteElementDiscretization(
             Dict(:displacement => LagrangeCollection{1}()^3),
             Dirichlet[],
@@ -167,11 +177,14 @@ function solve_ideal_lv(name_base, material_model, grid, coordinate_system, micr
 
     # Postprocessor
     cv_post = CellValues(QuadratureRule{ref_shape}(intorder-1), ip_mech, ip_geo)
-    microstructure_cache = setup_microstructure_cache(cv_post, microstructure_model, CellCache(problem.dh)) # HOTFIX CTOR
+    microstructure_cache = setup_microstructure_cache(cv_post, microstructure_model, CellCache(problem.A.base_problems[1].dh)) # HOTFIX CTOR
     standard_postproc = StandardMechanicalIOPostProcessor2(io, cv_post, [1], coordinate_system, microstructure_cache)
 
     # Create sparse matrix and residual vector
-    solver = LoadDrivenSolver(NewtonRaphsonSolver(;max_iter=100))
+    solver = LTGOSSolver(
+        LoadDrivenSolver(NewtonRaphsonSolver(;max_iter=100)),
+        ForwardEulerCellSolver(),
+    )
 
     Thunderbolt.solve(
         problem,

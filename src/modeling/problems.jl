@@ -1,3 +1,12 @@
+struct NullProblem
+    ndofs::Int
+end
+
+struct CoupledProblem{MT, CT}
+    base_problems::MT
+    couplers::CT
+end
+
 struct SplitProblem{APT, BPT}
     A::APT
     B::BPT

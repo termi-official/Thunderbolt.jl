@@ -8,6 +8,15 @@ struct ReactionDiffusionSplit{MODEL}
 end
 
 """
+    ReggazoniSalvadorAfricaSplit{MODEL}
+
+Annotation for the split described in the 2022 paper.
+"""
+struct ReggazoniSalvadorAfricaSplit{MODEL <: CoupledModel}
+    model::MODEL
+end
+
+"""
     LTGOSSolver
 
 Classical Lie-Trotter-Godunov operator splitting in time.

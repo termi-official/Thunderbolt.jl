@@ -104,6 +104,11 @@ export
     ParabolicParabolicBidomainModel,
     ParabolicEllipticBidomainModel,
     NoStimulationProtocol,
+    # Circuit
+    ReggazoniSalvadorAfricaLumpedCicuitModel,
+    # FSI
+    Hirschvogel2016SurrogateVolume,
+    LumpedFluidSolidCoupler,
     # Microstructure
     OrthotropicMicrostructureModel,
     directions,
@@ -120,11 +125,13 @@ export
     compute_midmyocardial_section_coordinate_system,
     getcoordinateinterpolation,
     vtk_coordinate_system,
+    # Coupling
+    Coupling,
+    CoupledModel,
     # Discretization
     semidiscretize,
     FiniteElementDiscretization,
     # Solver
-    setup_solver_caches,
     solve!,
     NewtonRaphsonSolver,
     LoadDrivenSolver,
@@ -132,6 +139,7 @@ export
     ForwardEulerCellSolver,
     LTGOSSolver,
     ReactionDiffusionSplit,
+    ReggazoniSalvadorAfricaSplit,
     # Utils
     calculate_volume_deformed_mesh,
     elementtypes,
