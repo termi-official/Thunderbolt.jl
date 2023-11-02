@@ -67,18 +67,16 @@ import Ferrite: get_grid, find_field
 # end
 
 # TODO refactor this one into the framework code and put a nice abstraction layer around it
-struct StandardMechanicalIOPostProcessor{IO, CV, MC}
+struct StandardMechanicalIOPostProcessor{IO, CV}
     io::IO
     cv::CV
     subdomains::Vector{Int}
-    # coordinate_system_cache::CC
-    microstructure_cache::MC
 end
 
-function (postproc::StandardMechanicalIOPostProcessor{IO, CV, MC})(t, problem, solver_cache) where {IO, CV, MC}
+function (postproc::StandardMechanicalIOPostProcessor)(t, problem, solver_cache)
     @unpack dh = problem
     grid = get_grid(dh)
-    @unpack io, cv, subdomains, microstructure_cache = postproc
+    @unpack io, cv, subdomains = postproc
 
     # Compute some elementwise measures
     E_ff = zeros(getncells(grid))
@@ -106,8 +104,6 @@ function (postproc::StandardMechanicalIOPostProcessor{IO, CV, MC})(t, problem, s
             field_dofs  = dof_range(sdh, field_idx)
             uₑ = solver_cache.uₜ[global_dofs] # element dofs
 
-            update_microstructure_cache!(microstructure_cache, t, cell, cv)
-
             E_ff_cell = 0.0
             E_cc_cell = 0.0
             E_rr_cell = 0.0
@@ -133,7 +129,7 @@ function (postproc::StandardMechanicalIOPostProcessor{IO, CV, MC})(t, problem, s
 
                 C = tdot(F)
                 E = (C-one(C))/2.0
-                f₀,s₀,n₀ = directions(microstructure_cache, qp)
+                f₀,s₀,n₀ = evaluate_coefficient(problem.constitutive_model.microstructure_model, cell, qp, time)
 
                 E_ff_cell += f₀ ⋅ E ⋅ f₀
 
@@ -193,6 +189,7 @@ function (postproc::StandardMechanicalIOPostProcessor{IO, CV, MC})(t, problem, s
     # Save the solution
     Thunderbolt.store_timestep!(io, t, dh.grid)
     Thunderbolt.store_timestep_field!(io, t, dh, solver_cache.uₜ, :displacement)
+    # TODo replace by "dump coefficient" function
     Thunderbolt.store_timestep_celldata!(io, t, hcat(frefdata...),"Reference Fiber Data")
     Thunderbolt.store_timestep_celldata!(io, t, hcat(fdata...),"Current Fiber Data")
     Thunderbolt.store_timestep_celldata!(io, t, hcat(srefdata...),"Reference Sheet Data")
@@ -211,13 +208,12 @@ function (postproc::StandardMechanicalIOPostProcessor{IO, CV, MC})(t, problem, s
     # max_vol = max(max_vol, calculate_volume_deformed_mesh(uₜ,dh,cv));
 end
 
-# function solve_test_ring(name_base, material_model, grid, coordinate_system, microstructure_model, face_models, calcium_field, ip_mech, ip_geo, intorder::Int, Δt = 0.1, T = 2.0)
-function solve_test_ring(name_base, material_model, grid, microstructure_model, face_models::FM, calcium_field, ip_mech::IPM, ip_geo::IPG, intorder::Int, Δt = 0.1, T = 2.0) where {ref_shape, IPM <: Interpolation{ref_shape}, IPG <: Interpolation{ref_shape}, FM}
+function solve_test_ring(name_base, constitutive_model, grid, face_models::FM, calcium_field, ip_mech::IPM, ip_geo::IPG, intorder::Int, Δt = 0.1, T = 2.0) where {ref_shape, IPM <: Interpolation{ref_shape}, IPG <: Interpolation{ref_shape}, FM}
     io = ParaViewWriter(name_base);
     # io = JLD2Writer(name_base);
 
     problem = semidiscretize(
-        SimpleChamberContractionModel(material_model, calcium_field, face_models, microstructure_model),
+        SimpleChamberContractionModel(constitutive_model, calcium_field, face_models),
         FiniteElementDiscretization(
             Dict(:displacement => LagrangeCollection{1}()^3),
             [Dirichlet(:displacement, getfaceset(grid, "Myocardium"), (x,t) -> [0.0], [3])],
@@ -228,8 +224,7 @@ function solve_test_ring(name_base, material_model, grid, microstructure_model, 
 
     # Postprocessor
     cv_post = CellValues(QuadratureRule{ref_shape}(intorder-1), ip_mech, ip_geo)
-    microstructure_cache = setup_microstructure_cache(cv_post, microstructure_model, CellCache(problem.dh.subdofhandlers[1])) # HOTFIX CTOR
-    standard_postproc = StandardMechanicalIOPostProcessor(io, cv_post, [1], microstructure_cache)
+    standard_postproc = StandardMechanicalIOPostProcessor(io, cv_post, [1])
 
     # Create sparse matrix and residual vector
     solver = LoadDrivenSolver(NewtonRaphsonSolver(;max_iter=100))
@@ -266,15 +261,15 @@ solve_test_ring("Debug",
     ActiveStressModel(
         Guccione1991PassiveModel(),
         Guccione1993ActiveModel(10.0),
-        PelceSunLangeveld1995Model()
+        PelceSunLangeveld1995Model(),
+        create_simple_fiber_model(ring_cs, ip_fiber, ip_geo,
+            endo_helix_angle = deg2rad(0.0),
+            epi_helix_angle = deg2rad(0.0),
+            endo_transversal_angle = 0.0,
+            epi_transversal_angle = 0.0,
+            sheetlet_pseudo_angle = deg2rad(0)
+        )
     ), ring_grid, 
-    create_simple_fiber_model(ring_cs, ip_fiber, ip_geo,
-        endo_helix_angle = deg2rad(0.0),
-        epi_helix_angle = deg2rad(0.0),
-        endo_transversal_angle = 0.0,
-        epi_transversal_angle = 0.0,
-        sheetlet_pseudo_angle = deg2rad(0)
-    ),
     [NormalSpringBC(0.01, "Epicardium")],
     CalciumHatField(), ip_u, ip_geo, 2*order,
     0.1

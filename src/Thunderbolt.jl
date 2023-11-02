@@ -63,6 +63,9 @@ export
     ConstantCoefficient,
     FieldCoefficient,
     AnalyticalCoefficient,
+    FieldCoefficient,
+    ConstantCoefficient,
+    evaluate_coefficient,
     # Collections
     LagrangeCollection,
     getinterpolation,
@@ -110,14 +113,9 @@ export
     Hirschvogel2016SurrogateVolume,
     LumpedFluidSolidCoupler,
     # Microstructure
+    AnisotropicPlanarMicrostructureModel,
     OrthotropicMicrostructureModel,
-    directions,
-    FieldCoefficient,
-    ConstantCoefficient,
-    evaluate_coefficient,
     create_simple_fiber_model,
-    update_microstructure_cache!,
-    setup_microstructure_cache,
     # Coordinate system
     LVCoordinateSystem,
     CartesianCoordinateSystem,

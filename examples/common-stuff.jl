@@ -126,11 +126,10 @@ struct CalciumHatField end # TODO compute calcium profile from actual cell model
 """
 Thunderbolt.evaluate_coefficient(coeff::CalciumHatField, cell_cache, qp, t) = t < 1.0 ? t : 2.0-t
 
-struct SimpleChamberContractionModel{MM, CF, FM, MM2}
+struct SimpleChamberContractionModel{MM, CF, FM}
     mechanical_model::MM
     calcium_field::CF
     face_models::FM
-    microstructure_model::MM2
 end
 
 function Thunderbolt.semidiscretize(model::MODEL, discretization::FiniteElementDiscretization, grid::Thunderbolt.AbstractGrid) where {MODEL <: SimpleChamberContractionModel{<:QuasiStaticModel}}
@@ -149,14 +148,12 @@ function Thunderbolt.semidiscretize(model::MODEL, discretization::FiniteElementD
     end
     close!(ch)
 
-    # TODO QuasiStaticNonlinearProblem without calcium_field and microstructure_model
+    # TODO QuasiStaticNonlinearProblem without calcium_field
     semidiscrete_problem = Thunderbolt.QuasiStaticNonlinearProblem(
         dh,
         ch,
         model.mechanical_model,
         model.face_models,
-        # TODO put this into the constitutive model
-        model.microstructure_model,
         model.calcium_field,
     )
 

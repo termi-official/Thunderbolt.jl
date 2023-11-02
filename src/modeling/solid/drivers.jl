@@ -1,21 +1,29 @@
 
 abstract type QuasiStaticModel end
 
+
+#TODO constrain to orthotropic material models, e.g. via traits, or rewrite all 3 "constitutive_driver"s below
+function constitutive_driver(constitutive_model, F, internal_state, geometry_cache, qp::QuadraturePoint, time)
+    f₀, s₀, n₀ = evaluate_coefficient(constitutive_model.microstructure_model, geometry_cache, qp, time)
+    return constitutive_driver(F, f₀, s₀, n₀, internal_state, constitutive_model)
+end
+
 """
 @TODO citation
 """
-struct GeneralizedHillModel{PMat, AMat, ADGMod, CMod} <: QuasiStaticModel
+struct GeneralizedHillModel{PMat, AMat, ADGMod, CMod, MS} <: QuasiStaticModel
     passive_spring::PMat
     active_spring::AMat
     active_deformation_gradient_model::ADGMod
     contraction_model::CMod
+    microstructure_model::MS
 end
 
 """
 """
-function constitutive_driver(F::Tensor{2,dim}, f₀::Vec{dim}, s₀::Vec{dim}, n₀::Vec{dim}, Caᵢ, model::GeneralizedHillModel) where {dim}
+function constitutive_driver(F::Tensor{2,dim}, f₀::Vec{dim}, s₀::Vec{dim}, n₀::Vec{dim}, internal_state, model::GeneralizedHillModel) where {dim}
     # TODO what is a good abstraction here?
-    Fᵃ = compute_Fᵃ(Caᵢ, f₀, s₀, n₀, model.contraction_model, model.active_deformation_gradient_model)
+    Fᵃ = compute_Fᵃ(internal_state, f₀, s₀, n₀, model.contraction_model, model.active_deformation_gradient_model)
 
     ∂²Ψ∂F², ∂Ψ∂F = Tensors.hessian(
         F_ad ->
@@ -29,19 +37,20 @@ end
 """
 @TODO citation
 """
-struct ExtendedHillModel{PMat, AMat, ADGMod, CMod} <: QuasiStaticModel
+struct ExtendedHillModel{PMat, AMat, ADGMod, CMod, MS} <: QuasiStaticModel
     passive_spring::PMat
     active_spring::AMat
     active_deformation_gradient_model::ADGMod
     contraction_model::CMod
+    microstructure_model::MS
 end
 
 """
 """
-function constitutive_driver(F::Tensor{2,dim}, f₀::Vec{dim}, s₀::Vec{dim}, n₀::Vec{dim}, Caᵢ, model::ExtendedHillModel) where {dim}
+function constitutive_driver(F::Tensor{2,dim}, f₀::Vec{dim}, s₀::Vec{dim}, n₀::Vec{dim}, cell_state, model::ExtendedHillModel) where {dim}
     # TODO what is a good abstraction here?
-    Fᵃ = compute_Fᵃ(Caᵢ, f₀, s₀, n₀, model.contraction_model, model.active_deformation_gradient_model)
-    N = 𝓝(Caᵢ, model.contraction_model)
+    Fᵃ = compute_Fᵃ(cell_state, f₀, s₀, n₀, model.contraction_model, model.active_deformation_gradient_model)
+    N = 𝓝(cell_state, model.contraction_model)
 
     ∂²Ψ∂F², ∂Ψ∂F = Tensors.hessian(
         F_ad ->
@@ -54,26 +63,27 @@ end
 
 """
 """
-struct ActiveStressModel{Mat, ASMod, CMod} <: QuasiStaticModel
+struct ActiveStressModel{Mat, ASMod, CMod, MS} <: QuasiStaticModel
     material_model::Mat
     active_stress_model::ASMod
     contraction_model::CMod
+    microstructure_model::MS
 end
 
 """
 """
-function constitutive_driver(F::Tensor{2,dim}, f₀::Vec{dim}, s₀::Vec{dim}, n₀::Vec{dim}, Caᵢ, model::ActiveStressModel) where {dim}
+function constitutive_driver(F::Tensor{2,dim}, f₀::Vec{dim}, s₀::Vec{dim}, n₀::Vec{dim}, cell_state, model::ActiveStressModel) where {dim}
     ∂²Ψ∂F², ∂Ψ∂F = Tensors.hessian(
         F_ad ->
               Ψ(F_ad,     f₀, s₀, n₀, model.material_model),
         F, :all)
 
-    λᵃ = compute_λᵃ(Caᵢ, model.contraction_model)
+    λᵃ = compute_λᵃ(cell_state, model.contraction_model)
     ∂2 = Tensors.gradient(
-        F_ad -> ∂(model.active_stress_model, Caᵢ, F_ad, f₀, s₀, n₀),
+        F_ad -> ∂(model.active_stress_model, cell_state, F_ad, f₀, s₀, n₀),
     F)
-    N = 𝓝(Caᵢ, model.contraction_model)
-    return ∂Ψ∂F + N*∂(model.active_stress_model, Caᵢ, F, f₀, s₀, n₀), ∂²Ψ∂F² + N*∂2
+    N = 𝓝(cell_state, model.contraction_model)
+    return ∂Ψ∂F + N*∂(model.active_stress_model, cell_state, F, f₀, s₀, n₀), ∂²Ψ∂F² + N*∂2
 end
 
 
@@ -86,21 +96,17 @@ end
 
 """
 """
-struct CardiacMechanicalElementCache{MP, MSCache, CMCache, CV}
-    mp::MP
-    microstructure_cache::MSCache
-    # coordinate_system_cache::CSCache
+struct StructuralElementCache{M, CMCache, CV}
+    constitutive_model::M
     contraction_model_cache::CMCache
     cv::CV
 end
 
-function assemble_element!(Kₑ::Matrix, residualₑ, uₑ, cell, element_cache::CardiacMechanicalElementCache, time)
-    @unpack mp, microstructure_cache, contraction_model_cache, cv = element_cache
+function assemble_element!(Kₑ::Matrix, residualₑ, uₑ, geometry_cache, element_cache::StructuralElementCache, time)
+    @unpack constitutive_model, contraction_model_cache, cv = element_cache
     ndofs = getnbasefunctions(cv)
 
-    reinit!(cv, cell)
-    update_microstructure_cache!(microstructure_cache, time, cell, cv)
-    update_contraction_model_cache!(contraction_model_cache, time, cell, cv)
+    reinit!(cv, geometry_cache)
 
     @inbounds for qpᵢ in 1:getnquadpoints(cv)
         ξ = cv.qr.points[qpᵢ]
@@ -112,9 +118,8 @@ function assemble_element!(Kₑ::Matrix, residualₑ, uₑ, cell, element_cache:
         F = one(∇u) + ∇u
 
         # Compute stress and tangent
-        f₀, s₀, n₀ = directions(microstructure_cache, qp) # TODO this can be treated as a coefficient inside the constitutive_driver call?
-        contraction_state = state(contraction_model_cache, qp)
-        P, ∂P∂F = constitutive_driver(F, f₀, s₀, n₀, contraction_state, mp)
+        contraction_state = state(contraction_model_cache, geometry_cache, qp, time)
+        P, ∂P∂F = constitutive_driver(constitutive_model, F, contraction_state, geometry_cache, qp, time)
 
         # Loop over test functions
         for i in 1:ndofs

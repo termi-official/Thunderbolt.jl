@@ -36,13 +36,11 @@ end
 A discrete problem with time dependent terms and no time derivatives w.r.t. any solution variable.
 Abstractly written we want to solve the problem F(u, t) = 0 on some time interval [t₁, t₂].
 """
-struct QuasiStaticNonlinearProblem{CM <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler, FACE, CH, CAL, MM}
+struct QuasiStaticNonlinearProblem{CM <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler, FACE, CH, CAL}
     dh::DH
     ch::CH
     constitutive_model::CM
     face_models::FACE
-    # TODO put this into the constitutive model
-    microstructure_model::MM
     calcium_field::CAL
 end
 

@@ -3,7 +3,7 @@ struct AnisotropicPlanarMicrostructureModel{FiberCoefficientType, SheetletCoeffi
     sheetlet_coefficient::SheetletCoefficientType
 end
 
-function directions(fsn::AnisotropicPlanarMicrostructureModel, cell_cache, qp::QuadraturePoint{2}, t = 0.0)
+function evaluate_coefficient(fsn::AnisotropicPlanarMicrostructureModel, cell_cache, qp::QuadraturePoint{2}, t = 0.0)
     f₀ = evaluate_coefficient(fsn.fiber_coefficient, cell_cache, qp, t)
     s₀ = evaluate_coefficient(fsn.sheetlet_coefficient, cell_cache, qp, t)
 
@@ -16,7 +16,7 @@ struct OrthotropicMicrostructureModel{FiberCoefficientType, SheetletCoefficientT
     normal_coefficient::NormalCoefficientType
 end
 
-function directions(fsn::OrthotropicMicrostructureModel, cell_cache, qp::QuadraturePoint{3}, t = 0.0)
+function evaluate_coefficient(fsn::OrthotropicMicrostructureModel, cell_cache, qp::QuadraturePoint{3}, t = 0.0)
     f₀ = evaluate_coefficient(fsn.fiber_coefficient, cell_cache, qp, t)
     s₀ = evaluate_coefficient(fsn.sheetlet_coefficient, cell_cache, qp, t)
     n₀ = evaluate_coefficient(fsn.normal_coefficient, cell_cache, qp, t)
@@ -104,27 +104,4 @@ function create_simple_fiber_model(coordinate_system, ip_component::ScalarInterp
         FieldCoefficient(elementwise_data_s, ip_component),
         FieldCoefficient(elementwise_data_n, ip_component)
     )
-end
-
-# TODO where to move this? Technically this is assembly infrastructure
-mutable struct LazyMicrostructureCache{MM, VT, CT}
-    const microstructure_model::MM
-    const x_ref::Vector{VT}
-    cell_cache::CT
-end
-
-function directions(cache::LazyMicrostructureCache, qp::QuadraturePoint)
-    return directions(cache.microstructure_model, cache.cell_cache, qp)
-end
-
-function setup_microstructure_cache(cv, model::AnisotropicPlanarMicrostructureModel, cell_cache::CellCache)
-    return LazyMicrostructureCache(model, cv.qr.points, cell_cache)
-end
-
-function setup_microstructure_cache(cv, model::OrthotropicMicrostructureModel, cell_cache::CellCache)
-    return LazyMicrostructureCache(model, cv.qr.points, cell_cache)
-end
-
-function update_microstructure_cache!(cache::LazyMicrostructureCache, time, cell_cache, cv)
-    cache.cell_cache = cell_cache # this looks bad :/
 end
