@@ -213,7 +213,7 @@ function solve_test_ring(name_base, constitutive_model, grid, face_models::FM, i
     # io = JLD2Writer(name_base);
 
     problem = semidiscretize(
-        SimpleChamberContractionModel(constitutive_model, face_models),
+        StructuralModel(constitutive_model, face_models),
         FiniteElementDiscretization(
             Dict(:displacement => LagrangeCollection{1}()^3),
             [Dirichlet(:displacement, getfaceset(grid, "Myocardium"), (x,t) -> [0.0], [3])],

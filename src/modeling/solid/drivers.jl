@@ -1,6 +1,10 @@
 
-abstract type QuasiStaticModel end
+struct StructuralModel{MM, FM}
+    mechanical_model::MM
+    face_models::FM
+end
 
+abstract type QuasiStaticModel end
 
 #TODO constrain to orthotropic material models, e.g. via traits, or rewrite all 3 "constitutive_driver"s below
 function constitutive_driver(constitutive_model, F, internal_state, geometry_cache, qp::QuadraturePoint, time)

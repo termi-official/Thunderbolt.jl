@@ -36,12 +36,11 @@ end
 A discrete problem with time dependent terms and no time derivatives w.r.t. any solution variable.
 Abstractly written we want to solve the problem F(u, t) = 0 on some time interval [t₁, t₂].
 """
-struct QuasiStaticNonlinearProblem{CM <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler, FACE, CH, CAL}
+struct QuasiStaticNonlinearProblem{CM <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler, FACE, CH}
     dh::DH
     ch::CH
     constitutive_model::CM
     face_models::FACE
-    calcium_field::CAL
 end
 
 """
@@ -51,12 +50,11 @@ A problem with time dependent terms and time derivatives only w.r.t. internal so
 
 TODO implement.
 """
-struct QuasiStaticODEProblem{CM <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler, FACE, CH, CAL}
+struct QuasiStaticODEProblem{CM <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler, FACE, CH}
     dh::DH
     ch::CH
     constitutive_model::CM
     face_models::FACE
-    calcium_field::CAL
 end
 
 
@@ -67,10 +65,9 @@ A problem with time dependent terms and time derivatives only w.r.t. internal so
 
 TODO implement.
 """
-struct QuasiStaticDAEProblem{CM <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler, FACE, CH, CAL}
+struct QuasiStaticDAEProblem{CM <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler, FACE, CH}
     dh::DH
     ch::CH
     constitutive_model::CM
     face_models::FACE
-    calcium_field::CAL
 end

@@ -81,7 +81,7 @@ export
     generate_mesh,
     generate_ring_mesh,
     # Mechanics
-    QuasiStaticModel,
+    StructuralModel,
     # Passive material models
     NullEnergyModel,
     NullCompressionPenalty,
