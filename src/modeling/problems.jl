@@ -51,12 +51,26 @@ A problem with time dependent terms and time derivatives only w.r.t. internal so
 
 TODO implement.
 """
-struct QuasiStaticODEProblem{CM <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler, FACE, CH, CAL, MM}
+struct QuasiStaticODEProblem{CM <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler, FACE, CH, CAL}
     dh::DH
     ch::CH
     constitutive_model::CM
     face_models::FACE
-    # TODO where to put this?
-    microstructure_model::MM
+    calcium_field::CAL
+end
+
+
+"""
+    QuasiStaticDAEProblem{M <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler}
+
+A problem with time dependent terms and time derivatives only w.r.t. internal solution variable which can't be expressed as an ODE.
+
+TODO implement.
+"""
+struct QuasiStaticDAEProblem{CM <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler, FACE, CH, CAL}
+    dh::DH
+    ch::CH
+    constitutive_model::CM
+    face_models::FACE
     calcium_field::CAL
 end
