@@ -208,12 +208,12 @@ function (postproc::StandardMechanicalIOPostProcessor)(t, problem, solver_cache)
     # max_vol = max(max_vol, calculate_volume_deformed_mesh(uₜ,dh,cv));
 end
 
-function solve_test_ring(name_base, constitutive_model, grid, face_models::FM, calcium_field, ip_mech::IPM, ip_geo::IPG, intorder::Int, Δt = 0.1, T = 2.0) where {ref_shape, IPM <: Interpolation{ref_shape}, IPG <: Interpolation{ref_shape}, FM}
+function solve_test_ring(name_base, constitutive_model, grid, face_models::FM, ip_mech::IPM, ip_geo::IPG, intorder::Int, Δt = 0.1, T = 2.0) where {ref_shape, IPM <: Interpolation{ref_shape}, IPG <: Interpolation{ref_shape}, FM}
     io = ParaViewWriter(name_base);
     # io = JLD2Writer(name_base);
 
     problem = semidiscretize(
-        SimpleChamberContractionModel(constitutive_model, calcium_field, face_models),
+        SimpleChamberContractionModel(constitutive_model, face_models),
         FiniteElementDiscretization(
             Dict(:displacement => LagrangeCollection{1}()^3),
             [Dirichlet(:displacement, getfaceset(grid, "Myocardium"), (x,t) -> [0.0], [3])],
@@ -261,7 +261,7 @@ solve_test_ring("Debug",
     ActiveStressModel(
         Guccione1991PassiveModel(),
         Guccione1993ActiveModel(10.0),
-        PelceSunLangeveld1995Model(),
+        PelceSunLangeveld1995Model(;calcium_field=CalciumHatField()),
         create_simple_fiber_model(ring_cs, ip_fiber, ip_geo,
             endo_helix_angle = deg2rad(0.0),
             epi_helix_angle = deg2rad(0.0),
@@ -271,7 +271,7 @@ solve_test_ring("Debug",
         )
     ), ring_grid, 
     [NormalSpringBC(0.01, "Epicardium")],
-    CalciumHatField(), ip_u, ip_geo, 2*order,
+    ip_u, ip_geo, 2*order,
     0.1
 )
 

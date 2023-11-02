@@ -126,9 +126,8 @@ struct CalciumHatField end # TODO compute calcium profile from actual cell model
 """
 Thunderbolt.evaluate_coefficient(coeff::CalciumHatField, cell_cache, qp, t) = t < 1.0 ? t : 2.0-t
 
-struct SimpleChamberContractionModel{MM, CF, FM}
+struct SimpleChamberContractionModel{MM, FM}
     mechanical_model::MM
-    calcium_field::CF
     face_models::FM
 end
 
@@ -154,7 +153,6 @@ function Thunderbolt.semidiscretize(model::MODEL, discretization::FiniteElementD
         ch,
         model.mechanical_model,
         model.face_models,
-        model.calcium_field,
     )
 
     return semidiscrete_problem

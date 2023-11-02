@@ -23,6 +23,10 @@ include("mesh/coordinate_systems.jl")
 include("mesh/tools.jl")
 include("mesh/generators.jl")
 
+
+# TODO where to put these?
+abstract type SteadyStateInternalVariable end
+
 include("modeling/coefficients.jl")
 
 include("modeling/boundary_conditions.jl")

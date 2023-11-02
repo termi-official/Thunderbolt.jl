@@ -44,8 +44,8 @@ mutable struct NewtonRaphsonSolverCache{OpType, ResidualType, T}
     #linear_solver_cache
 end
 
-function setup_solver_caches(problem, solver::NewtonRaphsonSolver{T}, t₀) where {T}
-    @unpack dh, constitutive_model, calcium_field, face_models = problem
+function setup_solver_caches(problem::QuasiStaticNonlinearProblem, solver::NewtonRaphsonSolver{T}, t₀) where {T}
+    @unpack dh, constitutive_model, face_models = problem
     @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the load stepper."
 
     ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], :displacement)
@@ -58,7 +58,7 @@ function setup_solver_caches(problem, solver::NewtonRaphsonSolver{T}, t₀) wher
     fv = FaceValues(qr_face, ip, ip_geo)
 
     # TODO abstraction layer around this! E.g. setup_element_cache(problem, solver)
-    contraction_cache = Thunderbolt.setup_contraction_model_cache(cv, constitutive_model.contraction_model, calcium_field)
+    contraction_cache = Thunderbolt.setup_contraction_model_cache(cv, constitutive_model.contraction_model)
     element_cache = StructuralElementCache(
         constitutive_model,
         contraction_cache,
