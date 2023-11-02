@@ -2,18 +2,17 @@ include("common-stuff.jl")
 using FerriteGmsh
 
 # TODO refactor this one into the framework code and put a nice abstraction layer around it
-struct StandardMechanicalIOPostProcessor2{IO, CV, CC, MC}
+struct StandardMechanicalIOPostProcessor2{IO, CV, CC}
     io::IO
     cv::CV
     subdomains::Vector{Int}
     coordinate_system::CC
-    microstructure_cache::MC
 end
 
-function (postproc::StandardMechanicalIOPostProcessor2{IO, CV, MC})(t, problem, solver_cache) where {IO, CV, MC}
+function (postproc::StandardMechanicalIOPostProcessor2)(t, problem, solver_cache)
     @unpack dh = problem
     grid = Ferrite.get_grid(dh)
-    @unpack io, cv, subdomains, coordinate_system, microstructure_cache = postproc
+    @unpack io, cv, subdomains, coordinate_system = postproc
 
     # Compute some elementwise measures
     E_ff = zeros(getncells(grid))
@@ -150,14 +149,14 @@ function (postproc::StandardMechanicalIOPostProcessor2{IO, CV, MC})(t, problem, 
 end
 
 
-function solve_ideal_lv(name_base, material_model, grid, coordinate_system, microstructure_model, face_models::FM, calcium_field, ip_mech::IPM, ip_geo::IPG, intorder::Int, Δt = 0.1, T = 2.0) where {ref_shape, IPM <: Interpolation{ref_shape}, IPG <: Interpolation{ref_shape}, FM}
+function solve_ideal_lv(name_base, constitutive_model, grid, coordinate_system, face_models, ip_mech::IPM, ip_geo::IPG, intorder::Int, Δt = 0.1, T = 2.0) where {ref_shape, IPM <: Interpolation{ref_shape}, IPG <: Interpolation{ref_shape}}
     io = ParaViewWriter(name_base);
     # io = JLD2Writer(name_base);
 
     problem = semidiscretize(
         ReggazoniSalvadorAfricaSplit(CoupledModel(
             [
-                SimpleChamberContractionModel(material_model, calcium_field, face_models, microstructure_model),
+                StructuralModel(constitutive_model, face_models),
                 ReggazoniSalvadorAfricaLumpedCicuitModel{Float64,Float64,Float64,Float64,Float64}()
             ],
             [
@@ -177,8 +176,7 @@ function solve_ideal_lv(name_base, material_model, grid, coordinate_system, micr
 
     # Postprocessor
     cv_post = CellValues(QuadratureRule{ref_shape}(intorder-1), ip_mech, ip_geo)
-    microstructure_cache = setup_microstructure_cache(cv_post, microstructure_model, CellCache(problem.A.base_problems[1].dh)) # HOTFIX CTOR
-    standard_postproc = StandardMechanicalIOPostProcessor2(io, cv_post, [1], coordinate_system, microstructure_cache)
+    standard_postproc = StandardMechanicalIOPostProcessor2(io, cv_post, [1], coordinate_system)
 
     # Create sparse matrix and residual vector
     solver = LTGOSSolver(
@@ -211,9 +209,10 @@ solve_ideal_lv("LV_test",
     ActiveStressModel(
         passive_ho_model,
         SimpleActiveStress(10.0),
-        PelceSunLangeveld1995Model()
-    ), LV_grid, LV_cs, LV_fm,
-    [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
+        PelceSunLangeveld1995Model(calcium_field=CalciumHatField()),
+        LV_fm,
+    ), LV_grid, LV_cs,
+    [NormalSpringBC(0.001, "Epicardium")],
     ip, ip_geo, max(2*order-1,2)
 )
 
