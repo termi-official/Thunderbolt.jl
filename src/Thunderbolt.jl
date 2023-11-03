@@ -68,7 +68,6 @@ export
     FieldCoefficient,
     AnalyticalCoefficient,
     FieldCoefficient,
-    ConstantCoefficient,
     evaluate_coefficient,
     # Collections
     LagrangeCollection,
@@ -158,5 +157,7 @@ export
     ActiveStressModel,
     ExtendedHillModel,
     #  BCs
-    NormalSpringBC
+    NormalSpringBC,
+    PressureFieldBC,
+    ConstantPressureBC
 end

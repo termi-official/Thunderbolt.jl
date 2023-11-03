@@ -125,3 +125,22 @@ struct CalciumHatField end # TODO compute calcium profile from actual cell model
 """
 """
 Thunderbolt.evaluate_coefficient(coeff::CalciumHatField, cell_cache, qp, t) = t/1000.0 < 0.5 ? 2.0*t/1000.0 : 2.0-2.0*t/1000.0
+
+struct SpatiallyHomogeneousDataField
+    timings::Vector{Float64}
+    data::Vector{Float64}
+end
+
+function Thunderbolt.evaluate_coefficient(coeff::SpatiallyHomogeneousDataField, cell_cache, qp, t)
+    @unpack timings, data = coeff
+    i = 1
+    tᵢ = timings[1]
+    while tᵢ < t
+        i+=1
+        if i > length(timings)
+            return data[end]
+        end
+        tᵢ = timings[i]
+    end
+    return data[i] # TODO interpolation
+end

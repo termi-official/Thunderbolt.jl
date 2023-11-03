@@ -27,6 +27,11 @@ struct ConstantPressureBC
     boundary_name::String
 end
 
+struct PressureFieldBC{C}
+    p::C
+    boundary_name::String
+end
+
 struct SimpleFaceCache{MP, FV}
     mp::MP
     fv::FV
@@ -36,7 +41,7 @@ getboundaryname(face_cache::FC) where {FC} = face_cache.mp.boundary_name
 
 setup_face_cache(bcd::BCD, fv::FV, time) where {BCD, FV} = SimpleFaceCache(bcd, fv)
 
-function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, face, cache::SimpleFaceCache{RobinBC,FV}, time) where {FV}
+function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, face, cache::SimpleFaceCache{<:RobinBC}, time)
     @unpack mp, fv = cache
     @unpack α = mp
 
@@ -64,7 +69,7 @@ function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, face, cache::SimpleFace
     end
 end
 
-function assemble_face!(Kₑ::Matrix, uₑ, face, cache::SimpleFaceCache{RobinBC,FV}, time) where {FV}
+function assemble_face!(Kₑ::Matrix, uₑ, face, cache::SimpleFaceCache{<:RobinBC}, time)
     @unpack mp, fv = cache
     @unpack α = mp
 
@@ -91,7 +96,7 @@ function assemble_face!(Kₑ::Matrix, uₑ, face, cache::SimpleFaceCache{RobinBC
     end
 end
 
-function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, face, cache::SimpleFaceCache{NormalSpringBC,FV}, time) where {FV}
+function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, face, cache::SimpleFaceCache{<:NormalSpringBC}, time)
     @unpack mp, fv = cache
     @unpack kₛ = mp
 
@@ -119,7 +124,7 @@ function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, face, cache::SimpleFace
     end
 end
 
-function assemble_face!(Kₑ::Matrix, uₑ, face, cache::SimpleFaceCache{NormalSpringBC,FV}, time) where {FV}
+function assemble_face!(Kₑ::Matrix, uₑ, face, cache::SimpleFaceCache{<:NormalSpringBC}, time)
     @unpack mp, fv = cache
     @unpack kₛ = mp
 
@@ -146,7 +151,7 @@ function assemble_face!(Kₑ::Matrix, uₑ, face, cache::SimpleFaceCache{NormalS
     end
 end
 
-function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, face, cache::SimpleFaceCache{BendingSpringBC,FV}, time) where {FV}
+function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, face, cache::SimpleFaceCache{<:BendingSpringBC}, time)
     @unpack mp, fv = cache
     @unpack kᵇ = mp
 
@@ -178,7 +183,7 @@ function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, face, cache::SimpleFace
 end
 
 
-function assemble_face!(Kₑ::Matrix, uₑ, face, cache::SimpleFaceCache{BendingSpringBC,FV}, time) where {FV}
+function assemble_face!(Kₑ::Matrix, uₑ, face, cache::SimpleFaceCache{<:BendingSpringBC}, time)
     @unpack mp, fv = cache
     @unpack kᵇ = mp
 
@@ -208,7 +213,88 @@ function assemble_face!(Kₑ::Matrix, uₑ, face, cache::SimpleFaceCache{Bending
     end
 end
 
-function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, face, cache::SimpleFaceCache{ConstantPressureBC,FV}, time) where {FV}
+function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, face, cache::SimpleFaceCache{<:PressureFieldBC}, time)
+    @unpack mp, fv = cache
+    @unpack p = mp
+
+    reinit!(fv, face[1], face[2])
+
+    ndofs_face = getnbasefunctions(fv)
+    for qp in 1:getnquadpoints(fv)
+        ξ = Ferrite.getpoints(fv.qr, face[2])[qp]
+
+        dΓ = getdetJdV(fv, qp)
+
+        n₀ = getnormal(fv, qp)
+
+        ∇u = function_gradient(fv, qp, uₑ)
+        F = one(∇u) + ∇u
+
+        # ∂P∂F = Tensors.gradient(
+        #     F_ad -> p * det(F_ad) * transpose(inv(F_ad)),
+        # F)
+
+        # Add contribution to the residual from this test function
+        cofF = transpose(inv(F))
+        # TODO fix the "nothing" here
+        neumann_term = evaluate_coefficient(p, nothing, QuadraturePoint(qp, ξ), time) * det(F) * cofF
+        for i in 1:ndofs_face
+            δuᵢ = shape_value(fv, qp, i)
+            residualₑ[i] += neumann_term ⋅ n₀ ⋅ δuᵢ * dΓ
+
+            # ∂P∂Fδui =   ∂P∂F ⊡ (n₀ ⊗ δuᵢ) # Hoisted computation
+            for j in 1:ndofs_face
+                ∇δuⱼ = shape_gradient(fv, qp, j)
+                # Add contribution to the tangent
+                # Kₑ[i, j] += (n₀ ⊗ δuⱼ) ⊡ ∂P∂Fδui * dΓ
+                Kₑ[i, j] += δuᵢ ⋅ (((cofF ⊡ ∇δuⱼ) * one(cofF) - cofF ⋅ transpose(∇δuⱼ)) ⋅ neumann_term) ⋅ n₀ * dΓ
+            end
+        end
+    end
+end
+
+
+function assemble_face!(Kₑ::Matrix, uₑ, face, cache::SimpleFaceCache{<:PressureFieldBC}, time)
+    @unpack mp, fv = cache
+    @unpack p = mp
+
+    reinit!(fv, face[1], face[2])
+
+    ndofs_face = getnbasefunctions(fv)
+    for qp in 1:getnquadpoints(fv)
+        ξ = Ferrite.getpoints(fv.qr, face[2])[qp]
+
+        dΓ = getdetJdV(fv, qp)
+    
+        n₀ = getnormal(fv, qp)
+    
+        ∇u = function_gradient(fv, qp, uₑ)
+        F = one(∇u) + ∇u
+    
+        # ∂P∂F = Tensors.gradient(
+        #     F_ad -> p * det(F_ad) * transpose(inv(F_ad)),
+        # F)
+    
+        # Add contribution to the residual from this test function
+        cofF = transpose(inv(F))
+        # TODO fix the "nothing" here
+        neumann_term = evaluate_coefficient(p, nothing, QuadraturePoint(qp, ξ), time) * det(F) * cofF
+        for i in 1:ndofs_face
+            δuᵢ = shape_value(fv, qp, i)
+    
+            # ∂P∂Fδui =   ∂P∂F ⊡ (n₀ ⊗ δuᵢ) # Hoisted computation
+            for j in 1:ndofs_face
+                ∇δuⱼ = shape_gradient(fv, qp, j)
+                # Add contribution to the tangent
+                # Kₑ[i, j] += (n₀ ⊗ δuⱼ) ⊡ ∂P∂Fδui * dΓ
+                Kₑ[i, j] += δuᵢ ⋅ (((cofF ⊡ ∇δuⱼ) * one(cofF) - cofF ⋅ transpose(∇δuⱼ)) ⋅ neumann_term) ⋅ n₀ * dΓ
+            end
+        end
+    end
+end
+
+
+function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, face, cache::SimpleFaceCache{<:ConstantPressureBC}, time)
     @unpack mp, fv = cache
     @unpack p = mp
 
@@ -246,7 +332,7 @@ function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, face, cache::SimpleFace
 end
 
 
-function assemble_face!(Kₑ::Matrix, uₑ, face, cache::SimpleFaceCache{ConstantPressureBC,FV}, time) where {FV}
+function assemble_face!(Kₑ::Matrix, uₑ, face, cache::SimpleFaceCache{<:ConstantPressureBC}, time)
     @unpack mp, fv = cache
     @unpack p = mp
 

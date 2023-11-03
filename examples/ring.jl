@@ -1,5 +1,5 @@
 include("common-stuff.jl")
-using FerriteGmsh
+using FerriteGmsh, DelimitedFiles
 
 import Ferrite: get_grid, find_field
 
@@ -255,11 +255,6 @@ ip_fiber = Lagrange{ref_shape, order}()
 ip_u = Lagrange{ref_shape, order}()^3
 ip_geo = Lagrange{ref_shape, order}()
 
-
-for t ∈ 0.0:100.0:1000.0
-    @show Thunderbolt.evaluate_coefficient(CalciumHatField(), nothing, nothing, t)
-end
-
 ring_grid = generate_ring_mesh(8,2,2)
 ring_cs = compute_midmyocardial_section_coordinate_system(ring_grid, ip_geo)
 solve_test_ring("Debug",
@@ -279,6 +274,36 @@ solve_test_ring("Debug",
     ip_u, ip_geo, 2*order,
     100.0
 )
+
+
+activation_data = readdlm("../data/ActivationFunction_1ms.dat", ' ', Float64, '\n')
+pressure_data = readdlm("../data/ActivationFunction_1ms.dat", ' ', Float64, '\n')
+
+ring_grid = generate_ring_mesh(8,2,2)
+ring_cs = compute_midmyocardial_section_coordinate_system(ring_grid, ip_geo)
+solve_test_ring("ring-test",
+    ActiveStressModel(
+        Guccione1991PassiveModel(),
+        Guccione1993ActiveModel(10.0),
+        PelceSunLangeveld1995Model(;calcium_field=SpatiallyHomogeneousDataField(
+            activation_data[:,1],activation_data[:,2]
+        )),
+        create_simple_fiber_model(ring_cs, ip_fiber, ip_geo,
+            endo_helix_angle = deg2rad(0.0),
+            epi_helix_angle = deg2rad(0.0),
+            endo_transversal_angle = 0.0,
+            epi_transversal_angle = 0.0,
+            sheetlet_pseudo_angle = deg2rad(0)
+        )
+    ), ring_grid, 
+    [NormalSpringBC(0.01, "Epicardium"), PressureFieldBC(
+        SpatiallyHomogeneousDataField(pressure_data[:,1],pressure_data[:,2]),
+        "Endocardium"
+    )],
+    ip_u, ip_geo, 2*order,
+    10.0, 800.0
+)
+
 
 return
 
