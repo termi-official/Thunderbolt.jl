@@ -2,7 +2,7 @@ struct NullProblem
     ndofs::Int
 end
 
-default_initializer(problem::ODEProblem, t) = zeros(problem.ndofs)
+default_initializer(problem::NullProblem, t) = zeros(problem.ndofs)
 
 struct CoupledProblem{MT, CT}
     base_problems::MT
