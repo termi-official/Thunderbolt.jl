@@ -88,8 +88,9 @@ function semidiscretize(split::ReggazoniSalvadorAfricaSplit, discretization::Fin
             split.model.couplers
         ),
         ODEProblem(
-            #TODO pₗᵥ is the new dof of the first problem. :) We need to pass it down here.
-            (du,u,t) -> lumped_driver_lv!(du, u, t, ???pₗᵥ???, split.model.base_models[2])
+            split.model.base_models[2],
+            (du,u,pₗᵥ,t) -> lumped_driver_lv!(du, u, t, pₗᵥ, split.model.base_models[2]),
+            [0.0] #pₗᵥ TODO better design
         )
     )
 

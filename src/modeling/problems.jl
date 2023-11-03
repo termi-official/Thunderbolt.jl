@@ -2,6 +2,8 @@ struct NullProblem
     ndofs::Int
 end
 
+default_initializer(problem::ODEProblem, t) = zeros(problem.ndofs)
+
 struct CoupledProblem{MT, CT}
     base_problems::MT
     couplers::CT
@@ -19,8 +21,16 @@ end
 
 abstract type AbstractPointwiseProblem end
 
-struct ODEProblem{ODET}
+struct ODEProblem{ODET,F,P}
     ode::ODET
+    f::F
+    p::P
+end
+
+function default_initializer(problem::ODEProblem, t) 
+    u = zeros(num_states(problem.ode))
+    initial_condition!(u, problem.ode)
+    u
 end
 
 struct PointwiseODEProblem{ODET} <: AbstractPointwiseProblem
@@ -46,6 +56,8 @@ struct QuasiStaticNonlinearProblem{CM <: QuasiStaticModel, DH <: Ferrite.Abstrac
     constitutive_model::CM
     face_models::FACE
 end
+
+default_initializer(problem::QuasiStaticNonlinearProblem, t) = zeros(ndofs(problem.dh))
 
 """
     QuasiStaticODEProblem{M <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler}

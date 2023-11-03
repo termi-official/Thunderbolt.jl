@@ -86,20 +86,22 @@ transfer_fields!(A, A_cache, B, B_cache)
 transfer_fields!(A, A_cache::BackwardEulerSolverCache, B, B_cache::AbstractPointwiseSolverCache) = nothing
 transfer_fields!(A, A_cache::AbstractPointwiseSolverCache, B, B_cache::BackwardEulerSolverCache) = nothing
 
-function setup_initial_condition!(problem::SplitProblem, cache, initial_condition, time)
-    # TODO cleaner implementation. We need to extract this from the types or via dispatch.
-    # u₀ = initial_condition(problem, time)
-    
-    cache.A_solver_cache.uₜ .= zeros(ndofs(problem.A.dh))
-    cache.B_solver_cache.uₜ .= zeros(ndofs(problem.B.dh))
+function setup_initial_condition!(problem, cache, initial_condition, time)
+    u₀ = initial_condition(problem, time)
+    cache.uₙ .= u₀
+    return nothing
+end
 
+function setup_initial_condition!(problem::SplitProblem, cache, initial_condition, time)
+    setup_initial_condition!(problem.A, cache.A_solver_cache, initial_condition, time)
+    setup_initial_condition!(problem.B, cache.B_solver_cache, initial_condition, time)
     return nothing
 end
 
 function setup_initial_condition!(problem::SplitProblem{<:CoupledProblem{<:Tuple{<:Any, <: NullProblem}}, <:AbstractPointwiseProblem}, cache, initial_condition, time)
     # TODO cleaner implementation. We need to extract this from the types or via dispatch.
     # u₀ = initial_condition(problem, time)
-    cache.A_solver_cache.uₜ .= zeros(ndofs(problem.A.base_problems[1].dh)) # TODO fixme :)
+    cache.A_solver_cache.uₙ .= zeros(ndofs(problem.A.base_problems[1].dh)) # TODO fixme :)
     # TODO maybe we should replace n with t here
     cache.B_solver_cache.uₙ .= zeros(problem.B.npoints*num_states(problem.B.ode))
     return nothing

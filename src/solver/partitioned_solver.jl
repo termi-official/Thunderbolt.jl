@@ -6,6 +6,7 @@ end
 
 mutable struct ForwardEulerCellSolverCache{VT, MT} <: AbstractPointwiseSolverCache
     du::VT
+    #TODO merge into a helper vector
     uₙ::VT
     sₙ::MT
 end

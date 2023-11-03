@@ -124,26 +124,28 @@ function setup_solver_caches(problem::TransientHeatProblem, solver::BackwardEule
     return cache
 end
 
-struct ForwardEulerSolver <: AbstractPointwiseSolver
+struct ForwardEulerSolver
 end
 
-mutable struct ForwardEulerSolverCache{VT,F} <: AbstractPointwiseSolverCache
+mutable struct ForwardEulerSolverCache{VT,F}
     du::VT
-    uₜ::VT
+    uₙ::VT
     rhs!::F
 end
 
-function perform_step!(cell_model::ION, t::Float64, Δt::Float64, solver_cache::ForwardEulerSolverCache)
-    @unpack du, uₜ, rhs! = solver_cache
-    @inbounds rhs!(du, uₜ, t)
-    @inbounds uₜ[i] = φₘ_cell + Δt*du[1]
+function perform_step!(problem, t::Float64, Δt::Float64, solver_cache::ForwardEulerSolverCache)
+    @unpack du, uₙ, rhs! = solver_cache
+    @inbounds rhs!(du, uₙ, t, problem.p)
+    @inbounds uₙ .= uₙ .+ Δt .* du
 
     return true
 end
 
-function setup_solver_caches(problem, solver::ForwardEulerSolver, t₀)
+function setup_solver_caches(problem::ODEProblem, solver::ForwardEulerSolver, t₀)
     return ForwardEulerSolverCache(
         zeros(num_states(problem.ode)),
-        zeros(num_states(problem.ode))
+        zeros(num_states(problem.ode)),
+        problem.f
     )
 end
+

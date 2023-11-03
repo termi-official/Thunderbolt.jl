@@ -32,7 +32,7 @@ import Ferrite: get_grid, find_field
 #     helixanglerefdata::SVT
 # end
 
-# function prepare_postprocessor_cache!(cache::AverageCardiacMechanicalMicrostructuralPostProcessorCache{MC, SVT, VVT}, problem, t, uₜ) where {MC, SVT <: AbstractVector, VVT <: AbstractVector}
+# function prepare_postprocessor_cache!(cache::AverageCardiacMechanicalMicrostructuralPostProcessorCache{MC, SVT, VVT}, problem, t, uₙ) where {MC, SVT <: AbstractVector, VVT <: AbstractVector}
 #     @unpack dh   = problem
 #     @unpack grid = dh
 #     @assert getdim(grid) == 3
@@ -52,7 +52,7 @@ import Ferrite: get_grid, find_field
 #     detF_per_cell::SVT
 # end
 
-# function prepare_postprocessor_cache!(cache::VolumePostProcessorCache{SVT}, problem, t, uₜ) where {SVT <: AbstractVector}
+# function prepare_postprocessor_cache!(cache::VolumePostProcessorCache{SVT}, problem, t, uₙ) where {SVT <: AbstractVector}
 #     @unpack dh = problem
 #     grid = getgrid(dh)
 #     _ncells = getncells(grid)
@@ -102,7 +102,7 @@ function (postproc::StandardMechanicalIOPostProcessor)(t, problem, solver_cache)
             reinit!(cv, cell)
             global_dofs = celldofs(cell)
             field_dofs  = dof_range(sdh, field_idx)
-            uₑ = solver_cache.uₜ[global_dofs] # element dofs
+            uₑ = solver_cache.uₙ[global_dofs] # element dofs
 
             E_ff_cell = 0.0
             E_cc_cell = 0.0
@@ -188,7 +188,7 @@ function (postproc::StandardMechanicalIOPostProcessor)(t, problem, solver_cache)
 
     # Save the solution
     Thunderbolt.store_timestep!(io, t, dh.grid)
-    Thunderbolt.store_timestep_field!(io, t, dh, solver_cache.uₜ, :displacement)
+    Thunderbolt.store_timestep_field!(io, t, dh, solver_cache.uₙ, :displacement)
     # TODo replace by "dump coefficient" function
     Thunderbolt.store_timestep_celldata!(io, t, hcat(frefdata...),"Reference Fiber Data")
     Thunderbolt.store_timestep_celldata!(io, t, hcat(fdata...),"Current Fiber Data")
@@ -204,8 +204,8 @@ function (postproc::StandardMechanicalIOPostProcessor)(t, problem, solver_cache)
     Thunderbolt.store_timestep_celldata!(io, t, rad2deg.(helixanglerefdata),"Helix Angle (End Diastole)")
     Thunderbolt.finalize_timestep!(io, t)
 
-    # min_vol = min(min_vol, calculate_volume_deformed_mesh(uₜ,dh,cv));
-    # max_vol = max(max_vol, calculate_volume_deformed_mesh(uₜ,dh,cv));
+    # min_vol = min(min_vol, calculate_volume_deformed_mesh(uₙ,dh,cv));
+    # max_vol = max(max_vol, calculate_volume_deformed_mesh(uₙ,dh,cv));
 end
 
 function solve_test_ring(name_base, constitutive_model, grid, face_models::FM, ip_mech::IPM, ip_geo::IPG, intorder::Int, Δt = 0.1, T = 2.0) where {ref_shape, IPM <: Interpolation{ref_shape}, IPG <: Interpolation{ref_shape}, FM}
@@ -234,7 +234,7 @@ function solve_test_ring(name_base, constitutive_model, grid, face_models::FM, i
         solver,
         Δt, 
         (0.0, T),
-        nothing,
+        default_initializer,
         standard_postproc
     )
 end

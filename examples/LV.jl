@@ -38,7 +38,7 @@ function (postproc::StandardMechanicalIOPostProcessor2)(t, problem, solver_cache
             reinit!(cv, cell)
             global_dofs = celldofs(cell)
             field_dofs  = dof_range(sdh, field_idx)
-            uₑ = solver_cache.uₜ[global_dofs] # element dofs
+            uₑ = solver_cache.uₙ[global_dofs] # element dofs
 
             update_microstructure_cache!(microstructure_cache, t, cell, cv)
 
@@ -126,7 +126,7 @@ function (postproc::StandardMechanicalIOPostProcessor2)(t, problem, solver_cache
 
     # Save the solution
     Thunderbolt.store_timestep!(io, t, dh.grid)
-    Thunderbolt.store_timestep_field!(io, t, dh, solver_cache.uₜ, :displacement)
+    Thunderbolt.store_timestep_field!(io, t, dh, solver_cache.uₙ, :displacement)
     Thunderbolt.store_timestep_field!(io, t, coordinate_system.dh, coordinate_system.u_transmural, "transmural")
     Thunderbolt.store_timestep_field!(io, t, coordinate_system.dh, coordinate_system.u_apicobasal, "apicobasal")
     Thunderbolt.store_timestep_celldata!(io, t, hcat(frefdata...),"Reference Fiber Data")
@@ -143,9 +143,9 @@ function (postproc::StandardMechanicalIOPostProcessor2)(t, problem, solver_cache
     Thunderbolt.store_timestep_celldata!(io, t, rad2deg.(helixanglerefdata),"Helix Angle (End Diastole)")
     Thunderbolt.finalize_timestep!(io, t)
 
-    @show Thunderbolt.compute_chamber_volume(dh, solver_cache.uₜ, "Endocardium", Thunderbolt.Hirschvogel2016SurrogateVolume())
-    # min_vol = min(min_vol, calculate_volume_deformed_mesh(uₜ,dh,cv));
-    # max_vol = max(max_vol, calculate_volume_deformed_mesh(uₜ,dh,cv));
+    @show Thunderbolt.compute_chamber_volume(dh, solver_cache.uₙ, "Endocardium", Thunderbolt.Hirschvogel2016SurrogateVolume())
+    # min_vol = min(min_vol, calculate_volume_deformed_mesh(uₙ,dh,cv));
+    # max_vol = max(max_vol, calculate_volume_deformed_mesh(uₙ,dh,cv));
 end
 
 
@@ -189,7 +189,7 @@ function solve_ideal_lv(name_base, constitutive_model, grid, coordinate_system, 
         solver,
         Δt, 
         (0.0, T),
-        nothing, # TODO pass actual initial condition here!
+        default_initializer,
         standard_postproc
     )
 end
