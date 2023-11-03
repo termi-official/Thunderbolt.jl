@@ -208,7 +208,7 @@ function (postproc::StandardMechanicalIOPostProcessor)(t, problem, solver_cache)
     # max_vol = max(max_vol, calculate_volume_deformed_mesh(uₙ,dh,cv));
 end
 
-function solve_test_ring(name_base, constitutive_model, grid, face_models::FM, ip_mech::IPM, ip_geo::IPG, intorder::Int, Δt = 0.1, T = 2.0) where {ref_shape, IPM <: Interpolation{ref_shape}, IPG <: Interpolation{ref_shape}, FM}
+function solve_test_ring(name_base, constitutive_model, grid, face_models::FM, ip_mech::IPM, ip_geo::IPG, intorder::Int, Δt = 100.0, T = 1000.0) where {ref_shape, IPM <: Interpolation{ref_shape}, IPG <: Interpolation{ref_shape}, FM}
     io = ParaViewWriter(name_base);
     # io = JLD2Writer(name_base);
 
@@ -255,6 +255,11 @@ ip_fiber = Lagrange{ref_shape, order}()
 ip_u = Lagrange{ref_shape, order}()^3
 ip_geo = Lagrange{ref_shape, order}()
 
+
+for t ∈ 0.0:100.0:1000.0
+    @show Thunderbolt.evaluate_coefficient(CalciumHatField(), nothing, nothing, t)
+end
+
 ring_grid = generate_ring_mesh(8,2,2)
 ring_cs = compute_midmyocardial_section_coordinate_system(ring_grid, ip_geo)
 solve_test_ring("Debug",
@@ -272,7 +277,7 @@ solve_test_ring("Debug",
     ), ring_grid, 
     [NormalSpringBC(0.01, "Epicardium")],
     ip_u, ip_geo, 2*order,
-    0.1
+    100.0
 )
 
 return

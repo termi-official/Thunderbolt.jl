@@ -124,4 +124,4 @@ struct CalciumHatField end # TODO compute calcium profile from actual cell model
 
 """
 """
-Thunderbolt.evaluate_coefficient(coeff::CalciumHatField, cell_cache, qp, t) = t < 1.0 ? t : 2.0-t
+Thunderbolt.evaluate_coefficient(coeff::CalciumHatField, cell_cache, qp, t) = t/1000.0 < 0.5 ? 2.0*t/1000.0 : 2.0-2.0*t/1000.0

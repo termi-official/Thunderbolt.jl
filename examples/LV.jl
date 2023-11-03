@@ -149,7 +149,7 @@ function (postproc::StandardMechanicalIOPostProcessor2)(t, problem, solver_cache
 end
 
 
-function solve_ideal_lv(name_base, constitutive_model, grid, coordinate_system, face_models, ip_mech::IPM, ip_geo::IPG, intorder::Int, Δt = 0.1, T = 2.0) where {ref_shape, IPM <: Interpolation{ref_shape}, IPG <: Interpolation{ref_shape}}
+function solve_ideal_lv(name_base, constitutive_model, grid, coordinate_system, face_models, ip_mech::IPM, ip_geo::IPG, intorder::Int, Δt = 100.0, T = 1000.0) where {ref_shape, IPM <: Interpolation{ref_shape}, IPG <: Interpolation{ref_shape}}
     io = ParaViewWriter(name_base);
     # io = JLD2Writer(name_base);
 
