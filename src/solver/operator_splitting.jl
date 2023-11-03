@@ -86,12 +86,6 @@ transfer_fields!(A, A_cache, B, B_cache)
 transfer_fields!(A, A_cache::BackwardEulerSolverCache, B, B_cache::AbstractPointwiseSolverCache) = nothing
 transfer_fields!(A, A_cache::AbstractPointwiseSolverCache, B, B_cache::BackwardEulerSolverCache) = nothing
 
-function setup_initial_condition!(problem, cache, initial_condition, time)
-    u₀ = initial_condition(problem, time)
-    cache.uₙ .= u₀
-    return nothing
-end
-
 function setup_initial_condition!(problem::SplitProblem, cache, initial_condition, time)
     setup_initial_condition!(problem.A, cache.A_solver_cache, initial_condition, time)
     setup_initial_condition!(problem.B, cache.B_solver_cache, initial_condition, time)

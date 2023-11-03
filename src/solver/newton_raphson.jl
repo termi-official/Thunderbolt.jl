@@ -77,6 +77,7 @@ function setup_solver_caches(problem::QuasiStaticNonlinearProblem, solver::Newto
     NewtonRaphsonSolverCache(quasi_static_operator, Vector{Float64}(undef, ndofs(dh)), solver)
 end
 
+# TODO what is a cleaner solution for this?
 function setup_solver_caches(coupled_problem::CoupledProblem{<:Tuple{<:QuasiStaticNonlinearProblem,<:NullProblem}}, solver::NewtonRaphsonSolver{T}, t₀) where {T}
     problem = coupled_problem.base_problems[1]
     @unpack dh, constitutive_model, face_models = problem
@@ -107,6 +108,8 @@ function setup_solver_caches(coupled_problem::CoupledProblem{<:Tuple{<:QuasiStat
         face_caches,
         dh,
     )
+    # TODO introduce CouplingOperator
+    # TODO introduce BlockOperator
 
     NewtonRaphsonSolverCache(quasi_static_operator, Vector{Float64}(undef, ndofs(dh)), solver)
 end
