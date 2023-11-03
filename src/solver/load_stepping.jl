@@ -15,7 +15,18 @@ mutable struct LoadDrivenSolverCache{ISC, T}
 end
 
 # TODO revisiv if t₀ is really the right thing here to pass
-function setup_solver_caches(problem, solver::LoadDrivenSolver{IS}, t₀) where {IS}
+function setup_solver_caches(problem::QuasiStaticNonlinearProblem, solver::LoadDrivenSolver{IS}, t₀) where {IS}
+    inner_solver_cache = setup_solver_caches(problem, solver.inner_solver, t₀)
+    @unpack dh = problem
+    LoadDrivenSolverCache(
+        inner_solver_cache,
+        Vector{Float64}(undef, ndofs(dh)),
+        Vector{Float64}(undef, ndofs(dh)),
+    )
+end
+
+function setup_solver_caches(coupled_problem::CoupledProblem{<:Tuple{<:QuasiStaticNonlinearProblem,<:NullProblem}}, solver::LoadDrivenSolver{IS}, t₀) where {IS}
+    problem = coupled_problem.base_problems[1]
     inner_solver_cache = setup_solver_caches(problem, solver.inner_solver, t₀)
     @unpack dh = problem
     LoadDrivenSolverCache(

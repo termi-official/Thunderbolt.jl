@@ -86,11 +86,32 @@ transfer_fields!(A, A_cache, B, B_cache)
 transfer_fields!(A, A_cache::BackwardEulerSolverCache, B, B_cache::AbstractPointwiseSolverCache) = nothing
 transfer_fields!(A, A_cache::AbstractPointwiseSolverCache, B, B_cache::BackwardEulerSolverCache) = nothing
 
+function setup_initial_condition!(problem::SplitProblem, cache, initial_condition, time)
+    # TODO cleaner implementation. We need to extract this from the types or via dispatch.
+    # u₀ = initial_condition(problem, time)
+    
+    cache.A_solver_cache.uₜ .= zeros(ndofs(problem.A.dh))
+    cache.B_solver_cache.uₜ .= zeros(ndofs(problem.B.dh))
+
+    return nothing
+end
+
+function setup_initial_condition!(problem::SplitProblem{<:CoupledProblem{<:Tuple{<:Any, <: NullProblem}}, <:AbstractPointwiseProblem}, cache, initial_condition, time)
+    # TODO cleaner implementation. We need to extract this from the types or via dispatch.
+    # u₀ = initial_condition(problem, time)
+    cache.A_solver_cache.uₜ .= zeros(ndofs(problem.A.base_problems[1].dh)) # TODO fixme :)
+    # TODO maybe we should replace n with t here
+    cache.B_solver_cache.uₙ .= zeros(problem.B.npoints*num_states(problem.B.ode))
+    return nothing
+end
+
 # TODO what exactly is the job here? How do we know where to write and what to iterate?
-function setup_initial_condition!(problem::SplitProblem{<:Any, <:AbstractPointwiseProblem}, cache, initial_condition, time)
+function setup_initial_condition!(problem::SplitProblem{<:TransientHeatProblem, <:AbstractPointwiseProblem}, cache, initial_condition, time)
     # TODO cleaner implementation. We need to extract this from the types or via dispatch.
     u₀, s₀ = initial_condition(problem, time)
+    # TODO maybe we should replace n with t here
     cache.B_solver_cache.uₙ .= u₀ # Note that the vectors in the caches are connected
+    # TODO maybe we should replace n with t here
     cache.B_solver_cache.sₙ .= s₀
     return nothing
 end

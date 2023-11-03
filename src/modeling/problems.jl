@@ -19,6 +19,10 @@ end
 
 abstract type AbstractPointwiseProblem end
 
+struct ODEProblem{ODET}
+    ode::ODET
+end
+
 struct PointwiseODEProblem{ODET} <: AbstractPointwiseProblem
     npoints::Int
     ode::ODET

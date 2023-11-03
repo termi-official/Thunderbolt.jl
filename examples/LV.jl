@@ -181,7 +181,7 @@ function solve_ideal_lv(name_base, constitutive_model, grid, coordinate_system, 
     # Create sparse matrix and residual vector
     solver = LTGOSSolver(
         LoadDrivenSolver(NewtonRaphsonSolver(;max_iter=100)),
-        ForwardEulerCellSolver(),
+        ForwardEulerSolver(),
     )
 
     Thunderbolt.solve(
@@ -189,7 +189,7 @@ function solve_ideal_lv(name_base, constitutive_model, grid, coordinate_system, 
         solver,
         Δt, 
         (0.0, T),
-        nothing,
+        nothing, # TODO pass actual initial condition here!
         standard_postproc
     )
 end

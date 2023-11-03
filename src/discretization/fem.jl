@@ -81,15 +81,15 @@ function semidiscretize(split::ReggazoniSalvadorAfricaSplit, discretization::Fin
 
     semidiscrete_problem = SplitProblem(
         CoupledProblem( # Recouple mechanical problem with dummy to introduce the coupling!
-            [
+            (
                 semidiscretize(split.model.base_models[1], discretization, grid),
                 NullProblem(1) # 1 coupling dof (chamber pressure)
-            ],
+            ),
             split.model.couplers
         ),
-        PointwiseODEProblem(
-            1,
-            split.model.base_models[2]
+        ODEProblem(
+            #TODO pₗᵥ is the new dof of the first problem. :) We need to pass it down here.
+            (du,u,t) -> lumped_driver_lv!(du, u, t, ???pₗᵥ???, split.model.base_models[2])
         )
     )
 
