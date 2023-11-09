@@ -173,6 +173,7 @@ function solve!(u, problem, solver_cache::NewtonRaphsonSolverCache{OpType, Resid
     while true
         newton_itr += 1
 
+        residual .= 0.0
         update_linearization!(solver_cache.op, u, residual, t)
 
         eliminate_constraints_from_linearization!(solver_cache, problem)
