@@ -198,7 +198,8 @@ function solve_inner_linear_system!(Δu, solver_cache::NewtonRaphsonSolverCache)
     J = getJ(solver_cache.op)
     r = solver_cache.residual
     try
-        Δu .= J \ r
+        # https://github.com/JuliaArrays/BlockArrays.jl/issues/319
+        Δu .= J \ Vector(r)
     catch err
         @warn "Linear solver failed: " , typeof(err)
         return false

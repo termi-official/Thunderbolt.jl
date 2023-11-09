@@ -1,5 +1,5 @@
 include("common-stuff.jl")
-using FerriteGmsh
+using FerriteGmsh, BlockArrays
 
 # TODO refactor this one into the framework code and put a nice abstraction layer around it
 struct StandardMechanicalIOPostProcessor2{IO, CV, CC}
@@ -8,6 +8,8 @@ struct StandardMechanicalIOPostProcessor2{IO, CV, CC}
     subdomains::Vector{Int}
     coordinate_system::CC
 end
+
+(postproc::StandardMechanicalIOPostProcessor2)(t, problem::Thunderbolt.SplitProblem, solver_cache) = (postproc::StandardMechanicalIOPostProcessor2)(t, problem.A.base_problems[1], solver_cache.A_solver_cache)
 
 function (postproc::StandardMechanicalIOPostProcessor2)(t, problem, solver_cache)
     @unpack dh = problem
@@ -40,8 +42,6 @@ function (postproc::StandardMechanicalIOPostProcessor2)(t, problem, solver_cache
             field_dofs  = dof_range(sdh, field_idx)
             uₑ = solver_cache.uₙ[global_dofs] # element dofs
 
-            update_microstructure_cache!(microstructure_cache, t, cell, cv)
-
             E_ff_cell = 0.0
             E_cc_cell = 0.0
             E_rr_cell = 0.0
@@ -67,7 +67,7 @@ function (postproc::StandardMechanicalIOPostProcessor2)(t, problem, solver_cache
 
                 C = tdot(F)
                 E = (C-one(C))/2.0
-                f₀,s₀,n₀ = directions(microstructure_cache, qp)
+                f₀,s₀,n₀ = evaluate_coefficient(problem.constitutive_model.microstructure_model, cell, qp, time)
 
                 E_ff_cell += f₀ ⋅ E ⋅ f₀
 
@@ -126,7 +126,7 @@ function (postproc::StandardMechanicalIOPostProcessor2)(t, problem, solver_cache
 
     # Save the solution
     Thunderbolt.store_timestep!(io, t, dh.grid)
-    Thunderbolt.store_timestep_field!(io, t, dh, solver_cache.uₙ, :displacement)
+    Thunderbolt.store_timestep_field!(io, t, dh, solver_cache.uₙ[Block(1)], :displacement)
     Thunderbolt.store_timestep_field!(io, t, coordinate_system.dh, coordinate_system.u_transmural, "transmural")
     Thunderbolt.store_timestep_field!(io, t, coordinate_system.dh, coordinate_system.u_apicobasal, "apicobasal")
     Thunderbolt.store_timestep_celldata!(io, t, hcat(frefdata...),"Reference Fiber Data")
