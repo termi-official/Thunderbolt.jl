@@ -89,7 +89,7 @@ function semidiscretize(split::ReggazoniSalvadorAfricaSplit, discretization::Fin
         ),
         ODEProblem(
             split.model.base_models[2],
-            (du,u,pₗᵥ,t) -> lumped_driver_lv!(du, u, t, pₗᵥ, split.model.base_models[2]),
+            (du,u,t,pₗᵥ) -> lumped_driver_lv!(du, u, t, pₗᵥ[1], split.model.base_models[2]),
             [0.0] #pₗᵥ TODO better design
         )
     )

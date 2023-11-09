@@ -7,12 +7,16 @@ struct NullProblem
     ndofs::Int
 end
 
+solution_size(problem::NullProblem) = problem.ndofs
+
 default_initializer(problem::NullProblem, t) = zeros(problem.ndofs)
 
 struct CoupledProblem{MT, CT}
     base_problems::MT
     couplers::CT
 end
+
+solution_size(problem::CoupledProblem) = sum([solution_size(p) for p ∈ problem.base_problems])
 
 function default_initializer(problem::CoupledProblem, t)
     mortar([default_initializer(p,t) for p ∈ problem.base_problems])
@@ -24,6 +28,8 @@ struct SplitProblem{APT, BPT}
     B::BPT
 end
 
+solution_size(problem::SplitProblem) = (solution_size(problem.A), solution_size(problem.B))
+
 default_initializer(problem::SplitProblem, t) = (default_initializer(problem.A, t), default_initializer(problem.B, t))
 
 # TODO support arbitrary partitioning
@@ -32,6 +38,8 @@ struct PartitionedProblem{APT, BPT}
     B::BPT
 end
 
+solution_size(problem::PartitionedProblem) = solution_size(problem.A) + solution_size(problem.B)
+
 abstract type AbstractPointwiseProblem end
 
 struct ODEProblem{ODET,F,P}
@@ -39,6 +47,8 @@ struct ODEProblem{ODET,F,P}
     f::F
     p::P
 end
+
+solution_size(problem::ODEProblem) = num_states(problem.ode)
 
 function default_initializer(problem::ODEProblem, t) 
     u = zeros(num_states(problem.ode))
@@ -51,6 +61,8 @@ struct PointwiseODEProblem{ODET} <: AbstractPointwiseProblem
     ode::ODET
 end
 
+solution_size(problem::PointwiseODEProblem) = problem.npoints*num_states(problem.ode)
+
 default_initializer(problem::PointwiseODEProblem, t) = default_initializer(problem.ode, t)
 
 struct TransientHeatProblem{DTF, ST, DH}
@@ -58,6 +70,8 @@ struct TransientHeatProblem{DTF, ST, DH}
     source_term::ST
     dh::DH
 end
+
+solution_size(problem::TransientHeatProblem) = ndofs(problem.dh)
 
 """
     QuasiStaticNonlinearProblem{M <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler}
@@ -71,6 +85,8 @@ struct QuasiStaticNonlinearProblem{CM <: QuasiStaticModel, DH <: Ferrite.Abstrac
     constitutive_model::CM
     face_models::FACE
 end
+
+solution_size(problem::QuasiStaticNonlinearProblem) = ndofs(problem.dh)
 
 default_initializer(problem::QuasiStaticNonlinearProblem, t) = zeros(ndofs(problem.dh))
 

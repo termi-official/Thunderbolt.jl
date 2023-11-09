@@ -18,13 +18,18 @@ Interface:
 """
 abstract type AbstractNonlinearOperator end
 
+getJ(op) = error("J is not explicitly accessible for given operator")
+
 struct BlockOperator{OPS <: Tuple}
     # TODO maybe SMatrix?
     operators::OPS # stored row by row as in [1 2; 3 4]
 end
 
+getJ(op::BlockOperator) = mortar(reshape([getJ(opi) for opi ∈ op.operators], (isqrt(length(op.operators)), isqrt(length(op.operators)))))
+
 # TODO can we be clever with broadcasting here?
 function update_linearization!(op::BlockOperator, u::BlockVector, time)
+    @warn "linearization not functional for actually coupled problems!" maxlog=1
     for opi ∈ op.operators
         update_linearization!(opi, u, time)
     end
@@ -32,12 +37,14 @@ end
 
 # TODO can we be clever with broadcasting here?
 function update_linearization!(op::BlockOperator, u::BlockVector, residual::BlockVector, time)
+    @warn "linearization not functional for actually coupled problems!" maxlog=1
     nops = length(op.operators)
     nrows = isqrt(nops)
     for i ∈ 1:nops
         i1 = Block(div(i-1, nrows) + 1) # index shift due to 1-based indices
         row_residual = @view residual[i1]
-        update_linearization!(i, u, row_residual, time)
+        u_ = @view u[Block(rem(i-1, nrows) + 1)] # TODO REMOVEME
+        update_linearization!(op.operators[i], u_, row_residual, time)
     end
 end
 
@@ -66,6 +73,8 @@ struct AssembledNonlinearOperator{MatrixType, ElementCacheType, FaceCacheType, D
     face_caches::FaceCacheType
     dh::DHType
 end
+
+getJ(op::AssembledNonlinearOperator) = op.J
 
 function update_linearization!(op::AssembledNonlinearOperator, u::Vector, time)
     @unpack J, element_cache, face_caches, dh  = op
@@ -143,6 +152,9 @@ Base.size(op::AssembledNonlinearOperator, axis) = sisze(op.A, axis)
 
 abstract type AbstractBilinearOperator <: AbstractNonlinearOperator end
 
+update_linearization!(op::AbstractBilinearOperator, u, residual, time) = nothing # TODO REMOVEME
+update_linearization!(op::AbstractBilinearOperator, u, time) = nothing # TODO REMOVEME
+
 struct AssembledBilinearOperator{MatrixType, CacheType, DHType <: AbstractDofHandler} <: AbstractBilinearOperator
     A::MatrixType
     element_cache::CacheType
@@ -186,6 +198,7 @@ mul!(out, op::DiagonalOperator, in, α, β) = out .= α * op.values .* in + β *
 Base.eltype(op::DiagonalOperator) = eltype(op.values)
 Base.size(op::DiagonalOperator, axis) = length(op.values)
 
+getJ(op::DiagonalOperator) = spdiagm(op.values)
 
 """
     NullOperator <: AbstractBilinearOperator
@@ -200,6 +213,8 @@ mul!(out, op::NullOperator, in) = out .= 0.0
 mul!(out, op::NullOperator, in, α, β) = out .= β*out
 Base.eltype(op::NullOperator{T}) where {T} = T
 Base.size(op::NullOperator{T,S1,S2}, axis) where {T,S1,S2} = axis == 1 ? S1 : (axis == 2 ? S2 : error("faulty axis!"))
+
+getJ(op::NullOperator{T, SIN, SOUT}) where {T, SIN, SOUT} = spzeros(SIN,SOUT)
 
 ###############################################################################
 abstract type AbstractLinearOperator end

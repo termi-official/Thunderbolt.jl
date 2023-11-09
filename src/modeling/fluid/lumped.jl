@@ -10,6 +10,7 @@ Activation transient from the paper.
 [tR,TR] = relaxation period
 """
 function Φ_ReggazoniSalvadorAfrica(t,tC,tR,TC,TR,THB)
+    @show t
     tnow = mod(t - tC, THB)
     if 0 ≤ tnow < TC
         return 1/2 * (1+cos(π/TC * tnow)) 

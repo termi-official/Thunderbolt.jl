@@ -1,6 +1,6 @@
 import Thunderbolt: AssembledNonlinearOperator, AssembledBilinearOperator, NullOperator, DiagonalOperator, BlockOperator
 import LinearAlgebra: mul!
-using BlockArrays
+using BlockArrays, SparseArrays
 
 @testset "Operators" begin
     @testset "Actions" begin
@@ -21,6 +21,8 @@ using BlockArrays
 
         @test length(vin)  == size(nullop, 1)
         @test length(vout) == size(nullop, 2)
+        
+        @test Thunderbolt.getJ(nullop) ≈ zeros(5,5)
 
 
         diagop = DiagonalOperator([1.0, 2.0, 3.0, 4.0, 5.0])
@@ -36,6 +38,9 @@ using BlockArrays
         @test vout == zeros(5)
         @test length(vin)  == size(diagop, 1)
         @test length(vout) == size(diagop, 2)
+        
+        @test Thunderbolt.getJ(diagop) ≈ spdiagm([1.0, 2.0, 3.0, 4.0, 5.0])
+
 
         vin = ones(4)
         vout .= ones(5)
@@ -46,6 +51,9 @@ using BlockArrays
         @test vout == vout
         @test length(vin)  == size(nullop_rect, 1)
         @test length(vout) == size(nullop_rect, 2)
+
+        @test Thunderbolt.getJ(nullop_rect) ≈ zeros(4,5)
+
 
         vin = mortar([ones(4), -ones(2)])
         vout = mortar([-ones(4), -ones(2)])
@@ -59,5 +67,7 @@ using BlockArrays
         @test vout == vin
         mul!(vout, bop_id, vin, 2.0, 1.0)
         @test vout == 3.0*vin
+        
+        @test Thunderbolt.getJ(bop_id) ≈ spdiagm(ones(6))
     end
 end

@@ -74,7 +74,7 @@ function setup_solver_caches(problem::QuasiStaticNonlinearProblem, solver::Newto
         dh,
     )
 
-    NewtonRaphsonSolverCache(quasi_static_operator, Vector{Float64}(undef, ndofs(dh)), solver)
+    NewtonRaphsonSolverCache(quasi_static_operator, Vector{Float64}(undef, solution_size(problem)), solver)
 end
 
 # TODO what is a cleaner solution for this?
@@ -109,14 +109,62 @@ function setup_solver_caches(coupled_problem::CoupledProblem{<:Tuple{<:QuasiStat
         dh,
     )
     # TODO introduce CouplingOperator
-    # TODO introduce BlockOperator
+    # BlockOperator((
+    #     quasi_static_operator, NullOperator{Float64,1,ndofs(dh)}(),
+    #     NullOperator{Float64,ndofs(dh),1}(), NullOperator{Float64,1,1}()
+    # ))
+    op = BlockOperator((
+        quasi_static_operator, NullOperator{Float64,1,ndofs(dh)}(),
+        NullOperator{Float64,ndofs(dh),1}(), DiagonalOperator([1.0])
+    ))
+    solution = mortar([
+        Vector{Float64}(undef, solution_size(coupled_problem.base_problems[1])),
+        Vector{Float64}(undef, solution_size(coupled_problem.base_problems[2]))
+    ])
 
-    NewtonRaphsonSolverCache(quasi_static_operator, Vector{Float64}(undef, ndofs(dh)), solver)
+    NewtonRaphsonSolverCache(op, solution, solver)
 end
 
 eliminate_constraints_from_linearization!(solver_cache, problem) = apply_zero!(solver_cache.op.J, solver_cache.residual, problem.ch)
 eliminate_constraints_from_increment!(Δu, problem, solver_cache) = apply_zero!(Δu, problem.ch)
 residual_norm(solver_cache::NewtonRaphsonSolverCache, problem) = norm(solver_cache.residual[Ferrite.free_dofs(problem.ch)])
+
+function eliminate_constraints_from_increment!(Δu, problem::CoupledProblem, solver_cache)
+    for (i,p) ∈ enumerate(problem.base_problems)
+        eliminate_constraints_from_increment!(Δu[Block(i)], p, solver_cache)
+    end
+end
+eliminate_constraints_from_increment!(Δu, problem::NullProblem, solver_cache) = nothing
+
+function residual_norm(solver_cache::NewtonRaphsonSolverCache, problem::CoupledProblem)
+    val = 0.0
+    for (i,p) ∈ enumerate(problem.base_problems)
+        val += residual_norm(solver_cache, p, Block(i))
+    end
+    return val
+end
+
+residual_norm(solver_cache::NewtonRaphsonSolverCache, problem, i::Block) = norm(solver_cache.residual[i][Ferrite.free_dofs(problem.ch)])
+residual_norm(solver_cache::NewtonRaphsonSolverCache, problem::NullProblem, i::Block) = 0.0
+
+function eliminate_constraints_from_linearization!(solver_cache, problem::CoupledProblem)
+    for (i,p) ∈ enumerate(problem.base_problems)
+        eliminate_constraints_from_linearization_blocked!(solver_cache, problem, Block(i))
+    end
+end
+
+# TODO FIXME this only works if the problem to eliminate is in the first block
+function eliminate_constraints_from_linearization_blocked!(solver_cache, problem::CoupledProblem, i::Block)
+    if i.n[1] > 1
+        if typeof(problem.base_problems[2]) != NullProblem
+            @error "Block elimination not working if it is not  $i"
+        else
+            return nothing 
+        end
+    end
+    # TODO more performant block elimination
+    apply_zero!(solver_cache.op.operators[1].J, solver_cache.residual[i], problem.base_problems[1].ch)
+end
 
 function solve!(u, problem, solver_cache::NewtonRaphsonSolverCache{OpType, ResidualType, T}, t) where {OpType, ResidualType, T}
     @unpack op, residual = solver_cache
@@ -136,12 +184,7 @@ function solve!(u, problem, solver_cache::NewtonRaphsonSolverCache{OpType, Resid
             return false
         end
 
-        try
-            solve_inner_linear_system!(Δu, solver_cache)
-        catch err
-            @warn "Linear solver failed: " , err
-            return false
-        end
+        !solve_inner_linear_system!(Δu, solver_cache) && return false
 
         eliminate_constraints_from_increment!(Δu, problem, solver_cache)
 
@@ -150,6 +193,14 @@ function solve!(u, problem, solver_cache::NewtonRaphsonSolverCache{OpType, Resid
     return true
 end
 
-function solve_inner_linear_system!(Δu, solver_cache::NewtonRaphsonSolverCache{JacType, ResidualType, T}) where {JacType, ResidualType, T}
-    Δu .= solver_cache.op.J \ solver_cache.residual
+function solve_inner_linear_system!(Δu, solver_cache::NewtonRaphsonSolverCache)
+    J = getJ(solver_cache.op)
+    r = solver_cache.residual
+    try
+        Δu .= J \ r
+    catch err
+        @warn "Linear solver failed: " , typeof(err)
+        return false
+    end
+    return true
 end

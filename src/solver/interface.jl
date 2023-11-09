@@ -35,9 +35,10 @@ function solve(problem, solver, Δt₀, (t₀, T), initial_condition, callback =
     return true
 end
 
-adapt_timestep(t, Δt, problem, solver_cache) = (t += Δt, Δt)
+adapt_timestep(t, Δt, problem, solver_cache) = (t += Δt, Δt) # :)
 
 """
+    setup_initial_condition!(problem, cache, initial_condition, time)
 
 Main entry point to setup the initial condition of a problem for a given solver.
 """

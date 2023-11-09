@@ -1,12 +1,12 @@
 module Thunderbolt
 
-using Reexport, UnPack, StaticArrays
+using Reexport, UnPack
 import LinearAlgebra: mul!
 using SparseMatricesCSR
 using Krylov
 using OrderedCollections
 @reexport using Ferrite
-using BlockArrays
+using BlockArrays, SparseArrays, StaticArrays
 
 using JLD2
 
