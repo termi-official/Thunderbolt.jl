@@ -1,3 +1,8 @@
+# TODO rethink interface here
+#      1. Who creates the solution vector?
+#      2. Is there a better way to pass the initial solution information?
+default_initializer(problem, t) = error("No default initializer available for a problem of type $(typeof(problem))")
+
 struct NullProblem
     ndofs::Int
 end
@@ -9,11 +14,19 @@ struct CoupledProblem{MT, CT}
     couplers::CT
 end
 
+function default_initializer(problem::CoupledProblem, t)
+    mortar([default_initializer(p,t) for p ∈ problem.base_problems])
+end
+
+# TODO support arbitrary splits
 struct SplitProblem{APT, BPT}
     A::APT
     B::BPT
 end
 
+default_initializer(problem::SplitProblem, t) = (default_initializer(problem.A, t), default_initializer(problem.B, t))
+
+# TODO support arbitrary partitioning
 struct PartitionedProblem{APT, BPT}
     A::APT
     B::BPT
@@ -37,6 +50,8 @@ struct PointwiseODEProblem{ODET} <: AbstractPointwiseProblem
     npoints::Int
     ode::ODET
 end
+
+default_initializer(problem::PointwiseODEProblem, t) = default_initializer(problem.ode, t)
 
 struct TransientHeatProblem{DTF, ST, DH}
     diffusion_tensor_field::DTF
@@ -72,7 +87,6 @@ struct QuasiStaticODEProblem{CM <: QuasiStaticModel, DH <: Ferrite.AbstractDofHa
     constitutive_model::CM
     face_models::FACE
 end
-
 
 """
     QuasiStaticDAEProblem{M <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler}
