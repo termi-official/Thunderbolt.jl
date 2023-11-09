@@ -1,4 +1,64 @@
+# TODO split nonlinear operator and the linearization concepts
+# TODO energy based operator?
+"""
+    AbstractNonlinearOperator
+
+Models of a nonlinear function F(u).
+
+Interface:
+    (op::AbstractNonlinearOperator)(residual::AbstractVector, in::AbstractNonlinearOperator)
+    eltype()
+    size()
+
+    # linearization
+    mul!(out, op::AbstractNonlinearOperator, in)
+    mul!(out, op::AbstractNonlinearOperator, in, α, β)
+    update_linearization!(op::AbstractNonlinearOperator, u::AbstractVector, time)
+    update_linearization!(op::AbstractNonlinearOperator, u::AbstractVector, residual::AbstractVector, time)
+"""
 abstract type AbstractNonlinearOperator end
+
+struct BlockOperator{OPS <: Tuple}
+    # TODO maybe SMatrix?
+    operators::OPS # stored row by row as in [1 2; 3 4]
+end
+
+# TODO can we be clever with broadcasting here?
+function update_linearization!(op::BlockOperator, u::BlockVector, time)
+    for opi ∈ op.operators
+        update_linearization!(opi, u, time)
+    end
+end
+
+# TODO can we be clever with broadcasting here?
+function update_linearization!(op::BlockOperator, u::BlockVector, residual::BlockVector, time)
+    nops = length(op.operators)
+    nrows = isqrt(nops)
+    for i ∈ 1:nops
+        i1 = Block(div(i-1, nrows) + 1) # index shift due to 1-based indices
+        row_residual = @view residual[i1]
+        update_linearization!(i, u, row_residual, time)
+    end
+end
+
+# TODO can we be clever with broadcasting here?
+function mul!(out::BlockVector, op::BlockOperator, in::BlockVector)
+    out .= 0.0
+    # 5-arg-mul over 3-ar-gmul because the bocks would overwrite the solution!
+    mul!(out, op, in, 1.0, 1.0)
+end
+
+# TODO can we be clever with broadcasting here?
+function mul!(out::BlockVector, op::BlockOperator, in::BlockVector, α, β)
+    nops = length(op.operators)
+    nrows = isqrt(nops)
+    for i ∈ 1:nops
+        i1, i2 = Block.(divrem(i-1, nrows) .+1) # index shift due to 1-based indices
+        in_next  = @view in[i1] 
+        out_next = @view out[i2]
+        mul!(out_next, op.operators[i], in_next, α, β)
+    end
+end
 
 struct AssembledNonlinearOperator{MatrixType, ElementCacheType, FaceCacheType, DHType <: AbstractDofHandler} <: AbstractNonlinearOperator
     J::MatrixType
@@ -10,7 +70,7 @@ end
 function update_linearization!(op::AssembledNonlinearOperator, u::Vector, time)
     @unpack J, element_cache, face_caches, dh  = op
 
-    assembler = start_assemble(A)
+    assembler = start_assemble(J)
 
     ndofs = ndofs_per_cell(dh)
     Jₑ = zeros(ndofs, ndofs)
@@ -39,7 +99,7 @@ end
 function update_linearization!(op::AssembledNonlinearOperator, u::Vector, residual::Vector, time)
     @unpack J, element_cache, face_caches, dh  = op
 
-    assembler = start_assemble(J, residual)
+    assembler = start_assemble(J)
 
     ndofs = ndofs_per_cell(dh)
     Jₑ = zeros(ndofs, ndofs)
@@ -61,7 +121,8 @@ function update_linearization!(op::AssembledNonlinearOperator, u::Vector, residu
                 end
             end
         end
-        assemble!(assembler, celldofs(cell), Jₑ, rₑ)
+        assemble!(assembler, celldofs(cell), Jₑ)
+        residual[celldofs(cell)] += rₑ # separate because the residual might contain more external stuff
     end
 
     #finish_assemble(assembler)
@@ -69,10 +130,12 @@ end
 
 """
     mul!(out, op::AssembledNonlinearOperator, in)
+    mul!(out, op::AssembledNonlinearOperator, in, α, β)
 
-Apply the action of the linearization of the contained nonlinear form to the vector `in`.
+Apply the (scaled) action of the linearization of the contained nonlinear form to the vector `in`.
 """
 mul!(out, op::AssembledNonlinearOperator, in) = mul!(out, op.J, in)
+mul!(out, op::AssembledNonlinearOperator, in, α, β) = mul!(out, op.J, in, α, β)
 
 Base.eltype(op::AssembledNonlinearOperator) = eltype(op.A)
 Base.size(op::AssembledNonlinearOperator, axis) = sisze(op.A, axis)
@@ -105,9 +168,40 @@ function update_operator!(op::AssembledBilinearOperator, time)
 end
 
 mul!(out, op::AssembledBilinearOperator, in) = mul!(out, op.A, in)
+mul!(out, op::AssembledBilinearOperator, in, α, β) = mul!(out, op.A, in, α, β)
 Base.eltype(op::AssembledBilinearOperator) = eltype(op.A)
 Base.size(op::AssembledBilinearOperator, axis) = sisze(op.A, axis)
 
+"""
+    DiagonalOperator <: AbstractBilinearOperator
+
+Literally a "diagonal matrix".
+"""
+struct DiagonalOperator{TV <: AbstractVector} <: AbstractBilinearOperator
+    values::TV
+end
+
+mul!(out, op::DiagonalOperator, in) = out .= op.values .* out
+mul!(out, op::DiagonalOperator, in, α, β) = out .= α * op.values .* in + β * out
+Base.eltype(op::DiagonalOperator) = eltype(op.values)
+Base.size(op::DiagonalOperator, axis) = length(op.values)
+
+
+"""
+    NullOperator <: AbstractBilinearOperator
+
+Literally a "null matrix".
+"""
+
+struct NullOperator{T, SIN, SOUT} <: AbstractBilinearOperator
+end
+
+mul!(out, op::NullOperator, in) = out .= 0.0
+mul!(out, op::NullOperator, in, α, β) = out .= β*out
+Base.eltype(op::NullOperator{T}) where {T} = T
+Base.size(op::NullOperator{T,S1,S2}, axis) where {T,S1,S2} = axis == 1 ? S1 : (axis == 2 ? S2 : error("faulty axis!"))
+
+###############################################################################
 abstract type AbstractLinearOperator end
 
 """
