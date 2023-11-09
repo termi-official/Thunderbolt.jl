@@ -2,6 +2,7 @@
     f₀ = Tensors.Vec{3,Float64}((1.0,0.0,0.0))
     s₀ = Tensors.Vec{3,Float64}((0.0,1.0,0.0))
     n₀ = Tensors.Vec{3,Float64}((0.0,0.0,1.0))
+    fsn = ConstantCoefficient((f₀, s₀, n₀))
     F = one(Tensors.Tensor{2,3})
     Caᵢ = 1.0
 
@@ -29,15 +30,16 @@
                 model = ActiveStressModel(
                     passive_spring,
                     PiersantiActiveStress(2.0, 1.0, 0.75, 0.0),
-                    PelceSunLangeveld1995Model()
+                    PelceSunLangeveld1995Model(;calcium_field=ConstantCoefficient(1.0)),
+                    fsn,
                 )
-                @test_call constitutive_driver(F, f₀, s₀, n₀, Caᵢ, model)
+                @test_call Thunderbolt.constitutive_driver(F, f₀, s₀, n₀, Caᵢ, model)
             end
         end
 
         contraction_model_set = [
-            ConstantStretchModel(),
-            PelceSunLangeveld1995Model(),
+            ConstantStretchModel(;calcium_field=ConstantCoefficient(1.0)),
+            PelceSunLangeveld1995Model(;calcium_field=ConstantCoefficient(1.0)),
         ]
         Fᵃmodel_set = [
             GMKActiveDeformationGradientModel(),
@@ -53,8 +55,9 @@
                             ActiveMaterialAdapter(passive_spring),
                             Fᵃmodel,
                             contraction_model,
+                            fsn,
                         )
-                        @test_call broken=true constitutive_driver(F, f₀, s₀, n₀, Caᵢ, model)
+                        @test_call broken=true Thunderbolt.constitutive_driver(F, f₀, s₀, n₀, Caᵢ, model)
                     end
                 end
             end
