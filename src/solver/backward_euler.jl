@@ -4,7 +4,7 @@
 struct BackwardEulerSolver
 end
 
-# TODO decouple from heat problem.
+# TODO decouple from heat problem via special ODEFunction (AffineODEFunction)
 mutable struct BackwardEulerSolverCache{SolutionType, MassMatrixType, DiffusionMatrixType, SystemMatrixType, SourceTermType, LinSolverType, RHSType}
     # Current solution buffer
     uₙ::SolutionType
@@ -100,8 +100,8 @@ function setup_solver_caches(problem::TransientHeatProblem, solver::BackwardEule
     )
 
     cache = BackwardEulerSolverCache(
-        zeros(ndofs(dh)),
-        zeros(ndofs(dh)),
+        zeros(solution_size(problem)),
+        zeros(solution_size(problem)),
         # TODO How to choose the exact operator types here?
         #      Maybe via some parameter in BackwardEulerSolver?
         mass_operator,
@@ -110,11 +110,11 @@ function setup_solver_caches(problem::TransientHeatProblem, solver::BackwardEule
         create_linear_operator(dh, problem.source_term),
         # TODO this via LinearSolvers.jl?
         CgSolver(
-            ndofs(dh),
-            ndofs(dh),
+            solution_size(problem),
+            solution_size(problem),
             Vector{Float64}
         ),
-        zeros(ndofs(dh)),
+        zeros(solution_size(problem)),
         0.0
     )
 
@@ -133,7 +133,7 @@ mutable struct ForwardEulerSolverCache{VT,F}
     rhs!::F
 end
 
-function perform_step!(problem, t::Float64, Δt::Float64, solver_cache::ForwardEulerSolverCache)
+function perform_step!(problem, solver_cache::ForwardEulerSolverCache, t::Float64, Δt::Float64)
     @unpack du, uₙ, rhs! = solver_cache
     @inbounds rhs!(du, uₙ, t, problem.p)
     @inbounds uₙ .= uₙ .+ Δt .* du
