@@ -194,14 +194,22 @@ function solve!(u, problem, solver_cache::NewtonRaphsonSolverCache{OpType, Resid
     return true
 end
 
+# https://github.com/JuliaArrays/BlockArrays.jl/issues/319
+inner_solve(J, r) = J \ r
+inner_solve(J::BlockMatrix, r::BlockArray) = SparseMatrixCSC(J) \ Vector(r)
+inner_solve(J::BlockMatrix, r) = SparseMatrixCSC(J) \ r
+inner_solve(J, r::BlockArray) = J \ Vector(r)
+
 function solve_inner_linear_system!(Δu, solver_cache::NewtonRaphsonSolverCache)
     J = getJ(solver_cache.op)
     r = solver_cache.residual
     try
-        # https://github.com/JuliaArrays/BlockArrays.jl/issues/319
-        Δu .= J \ Vector(r)
+        Δu .= inner_solve(J, r)
     catch err
-        @warn "Linear solver failed: " , typeof(err)
+        io = IOBuffer();
+        showerror(io, err, catch_backtrace())
+        error_msg = String(take!(io))
+        @warn "Linear solver failed: \n $error_msg"
         return false
     end
     return true
