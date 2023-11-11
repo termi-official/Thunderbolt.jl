@@ -27,7 +27,7 @@ function semidiscretize(split::ReactionDiffusionSplit{<:MonodomainModel}, discre
 
     ip = getinterpolation(discretization.interpolations[:φₘ], getcells(grid, 1))
     dh = DofHandler(grid)
-    push!(dh, :ϕₘ, ip)
+    Ferrite.add!(dh, :ϕₘ, ip)
     close!(dh);
 
     #
@@ -54,7 +54,7 @@ function semidiscretize(model::StructuralModel{<:QuasiStaticModel}, discretizati
     ip = getinterpolation(discretization.interpolations[:displacement], getcells(grid, 1))
     ip_geo = Ferrite.default_geometric_interpolation(ip) # TODO get interpolation from cell
     dh = DofHandler(grid)
-    push!(dh, :displacement, ip)
+    Ferrite.add!(dh, :displacement, ip)
     close!(dh);
 
     ch = ConstraintHandler(dh)
