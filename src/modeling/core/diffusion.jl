@@ -1,0 +1,38 @@
+# @doc raw"""
+#     AssembledDiffusionOperator{MT, DT, CV}
+
+# Assembles the matrix associated to the bilinearform ``a(u,v) = -\int \nabla v(x) \cdot D(x) \nabla u(x) dx`` for a given diffusion tensor ``D(x)`` and ``u,v`` from the same function space.
+# """
+"""
+    Represents the integrand of the bilinear form <ϕ,ψ> = -∫ D∇ϕ ⋅ ∇ψ dΩ .
+"""
+struct BilinearDiffusionIntegrator{CoefficientType}
+    D::CoefficientType
+    # coordinate_system
+end
+
+struct BilinearDiffusionElementCache{IT <: BilinearDiffusionIntegrator, CV}
+    integrator::IT
+    cellvalues::CV
+end
+
+function assemble_element!(Kₑ, cell, element_cache::CACHE, time) where {CACHE <: BilinearDiffusionElementCache}
+    @unpack cellvalues = element_cache
+    n_basefuncs = getnbasefunctions(cellvalues)
+
+    reinit!(cellvalues, cell)
+
+    for q_point in 1:getnquadpoints(cellvalues)
+        ξ = cellvalues.qr.points[q_point]
+        qp = QuadraturePoint(q_point, ξ)
+        D_loc = evaluate_coefficient(element_cache.integrator.D, cell, qp, time)
+        dΩ = getdetJdV(cellvalues, q_point)
+        for i in 1:n_basefuncs
+            ∇Nᵢ = shape_gradient(cellvalues, q_point, i)
+            for j in 1:n_basefuncs
+                ∇Nⱼ = shape_gradient(cellvalues, q_point, j)
+                Kₑ[i,j] -= ((D_loc ⋅ ∇Nᵢ) ⋅ ∇Nⱼ) * dΩ
+            end
+        end
+    end
+end

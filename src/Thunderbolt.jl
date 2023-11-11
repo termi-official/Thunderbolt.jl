@@ -15,52 +15,38 @@ import Ferrite: vertices, edges, faces, sortedge, sortface
 
 import Krylov: CgSolver
 
-include("collections.jl")
 include("utils.jl")
 
 include("mesh/meshes.jl")
-include("mesh/coordinate_systems.jl")
-include("mesh/tools.jl")
-include("mesh/generators.jl")
 
-
-# TODO where to put these?
-abstract type SteadyStateInternalVariable end
-
-include("modeling/coefficients.jl")
-
-include("modeling/boundary_conditions.jl")
+# Note that some modules below have an "interface.jl" but this one has only a "common.jl".
+# This is simply because there is no modeling interface, but just individual physics modules and couplers.
+include("modeling/common.jl")
 
 include("modeling/microstructure.jl")
 
 include("modeling/electrophysiology.jl")
+include("modeling/solid_mechanics.jl")
+include("modeling/fluid_mechanics.jl")
 
-include("modeling/solid/energies.jl")
-include("modeling/solid/contraction.jl")
-include("modeling/solid/active.jl")
-include("modeling/solid/drivers.jl") # TODO better name. This is basically the quadrature point routine.
+include("modeling/multiphysics.jl")
 
-include("modeling/fluid/lumped.jl")
-
-include("modeling/coupler/interface.jl")
-include("modeling/coupler/fsi.jl")
-
-include("modeling/problems.jl")
+include("modeling/problems.jl") # This is not really "modeling" but a glue layer to translate from model to solver via a discretization
 
 include("solver/interface.jl")
 include("solver/operator.jl")
 include("solver/newton_raphson.jl")
 include("solver/load_stepping.jl")
-include("solver/backward_euler.jl")
+include("solver/euler.jl")
 include("solver/partitioned_solver.jl")
 include("solver/operator_splitting.jl")
 
 include("discretization/interface.jl")
 include("discretization/fem.jl")
 
-
 include("io.jl")
 
+# TODO put exports into the individual submodules above!
 export
     solve,
     # Coefficients

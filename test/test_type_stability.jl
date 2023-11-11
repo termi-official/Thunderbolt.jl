@@ -33,7 +33,7 @@
                     PelceSunLangeveld1995Model(;calcium_field=ConstantCoefficient(1.0)),
                     fsn,
                 )
-                @test_call Thunderbolt.constitutive_driver(F, f₀, s₀, n₀, Caᵢ, model)
+                @test_call Thunderbolt.material_routine(F, f₀, s₀, n₀, Caᵢ, model)
             end
         end
 
@@ -57,7 +57,7 @@
                             contraction_model,
                             fsn,
                         )
-                        @test_call broken=true Thunderbolt.constitutive_driver(F, f₀, s₀, n₀, Caᵢ, model)
+                        @test_call broken=true Thunderbolt.material_routine(F, f₀, s₀, n₀, Caᵢ, model)
                     end
                 end
             end

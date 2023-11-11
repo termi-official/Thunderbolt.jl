@@ -143,6 +143,7 @@ The original model formulation (TODO citation) with the structure
     ∂ₜ𝐬  = g(φₘ,𝐬,x)
  φᵢ - φₑ = φₘ
 
+TODO implement
 """
 struct ParabolicParabolicBidomainModel <: AbstractEPModel
     χ
@@ -163,6 +164,8 @@ Transformed bidomain model with the structure
 
 This formulation is a transformation of the parabolic-parabolic
 form (c.f. TODO citation) and has been derived by (TODO citation) first.
+
+TODO implement
 """
 struct ParabolicEllipticBidomainModel <: AbstractEPModel
     χ
@@ -172,7 +175,6 @@ struct ParabolicEllipticBidomainModel <: AbstractEPModel
     stim::AbstractStimulationProtocol
     ion::AbstractIonicModel
 end
-
 
 """
 Simplification of the bidomain model with the structure
@@ -192,84 +194,8 @@ struct MonodomainModel{F1,F2,F3,STIM<:TransmembraneStimulationProtocol,ION<:Abst
     ion::ION
 end
 
-# @doc raw"""
-#     AssembledDiffusionOperator{MT, DT, CV}
-
-# Assembles the matrix associated to the bilinearform ``a(u,v) = -\int \nabla v(x) \cdot D(x) \nabla u(x) dx`` for a given diffusion tensor ``D(x)`` and ``u,v`` from the same function space.
-# """
-"""
-    Represents the integrand of the bilinear form <ϕ,ψ> = -∫ D∇ϕ ⋅ ∇ψ dΩ .
-"""
-struct BilinearDiffusionIntegrator{CoefficientType}
-    D::CoefficientType
-    # coordinate_system
-end
-
-struct BilinearDiffusionElementCache{IT <: BilinearDiffusionIntegrator, CV}
-    integrator::IT
-    cellvalues::CV
-end
-
-function assemble_element!(Kₑ, cell, element_cache::CACHE, time) where {CACHE <: BilinearDiffusionElementCache}
-    @unpack cellvalues = element_cache
-    n_basefuncs = getnbasefunctions(cellvalues)
-
-    reinit!(cellvalues, cell)
-
-    for q_point in 1:getnquadpoints(cellvalues)
-        ξ = cellvalues.qr.points[q_point]
-        qp = QuadraturePoint(q_point, ξ)
-        D_loc = evaluate_coefficient(element_cache.integrator.D, cell, qp, time)
-        dΩ = getdetJdV(cellvalues, q_point)
-        for i in 1:n_basefuncs
-            ∇Nᵢ = shape_gradient(cellvalues, q_point, i)
-            for j in 1:n_basefuncs
-                ∇Nⱼ = shape_gradient(cellvalues, q_point, j)
-                Kₑ[i,j] -= ((D_loc ⋅ ∇Nᵢ) ⋅ ∇Nⱼ) * dΩ
-            end
-        end
-    end
-end
-
-# @doc raw"""
-#     AssembledMassOperator{MT, CV}
-
-# Assembles the matrix associated to the bilinearform ``a(u,v) = -\int v(x) u(x) dx`` for ``u,v`` from the same function space.
-# """
-"""
-    Represents the integrand of the bilinear form <ϕ,ψ> = ∫ ρϕ ⋅ ψ dΩ .
-"""
-struct BilinearMassIntegrator{CoefficientType}
-    ρ::CoefficientType
-    # coordinate_system
-end
-
-struct BilinearMassElementCache{IT <: BilinearMassIntegrator, T, CV}
-    integrator::IT
-    ρq::Vector{T}
-    cellvalues::CV
-end
-
-function assemble_element!(Mₑ, cell, element_cache::CACHE, time) where {CACHE <: BilinearMassElementCache}
-    @unpack cellvalues = element_cache
-    reinit!(element_cache.cellvalues, cell)
-    n_basefuncs = getnbasefunctions(cellvalues)
-    for q_point in 1:getnquadpoints(cellvalues)
-        ξ = cellvalues.qr.points[q_point]
-        qp = QuadraturePoint(q_point, ξ)
-        ρ = evaluate_coefficient(element_cache.integrator.ρ, cell, qp, time)
-        dΩ = getdetJdV(cellvalues, q_point)
-        for i in 1:n_basefuncs
-            Nᵢ = shape_value(cellvalues, q_point, i)
-            for j in 1:n_basefuncs
-                Nⱼ = shape_value(cellvalues, q_point, j)
-                Mₑ[i,j] += ρ * Nᵢ * Nⱼ * dΩ 
-            end
-        end
-    end
-end
-
 ######################################################
+# TODO where to put these?
 Base.@kwdef struct ParametrizedFHNModel{T} <: AbstractIonicModel
     a::T = T(0.1)
     b::T = T(0.5)

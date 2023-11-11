@@ -1,0 +1,5 @@
+include("solid/energies.jl")
+include("solid/contraction.jl")
+include("solid/active.jl")
+include("solid/materials.jl")
+include("solid/elements.jl")
