@@ -1,5 +1,7 @@
 module Thunderbolt
 
+using TimerOutputs
+
 using Reexport, UnPack
 import LinearAlgebra: mul!
 using SparseMatricesCSR

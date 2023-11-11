@@ -34,3 +34,17 @@ Questions:
 1. How to control which exact operator?
 1. When and how to check if the operator is compatible with the solver?
 
+## Benchmarking
+
+To investiage the performance we can use the following code snippet, which should be self-explanatory
+
+```julia
+using Thunderbolt.TimerOutputs
+TimerOutputs.enable_debug_timings(Thunderbolt)
+TimerOutputs.reset_timer!()
+run_simulation()
+TimerOutputs.print_timer()
+TimerOutputs.disable_debug_timings(Thunderbolt)
+```
+
+It makes sense to make sure the code is properly precompiled before benchmarkins, e.g. by calling `run_simulation()` once before running the code snippet.

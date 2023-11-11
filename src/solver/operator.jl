@@ -60,7 +60,7 @@ function update_linearization!(op::BlockOperator, u::BlockVector, residual::Bloc
         i1 = Block(div(i-1, nrows) + 1) # index shift due to 1-based indices
         row_residual = @view residual[i1]
         u_ = @view u[Block(rem(i-1, nrows) + 1)] # TODO REMOVEME
-        update_linearization!(op.operators[i], u_, row_residual, time)
+        @timeit_debug "update block $i1" update_linearization!(op.operators[i], u_, row_residual, time)
     end
 end
 
@@ -104,9 +104,9 @@ function update_linearization!(op::AssembledNonlinearOperator, u::Vector, time)
         fill!(Jₑ, 0)
         uₑ = @view u[celldofs(cell)]
         # TODO instead of "cell" pass object with geometry information only
-        assemble_element!(Jₑ, uₑ, cell, element_cache, time)
+        @timeit_debug "assemble element" assemble_element!(Jₑ, uₑ, cell, element_cache, time)
         # TODO maybe it makes sense to merge this into the element routine in a modular fasion?
-        for local_face_index ∈ 1:nfaces(cell)
+        @timeit_debug "assemble faces" for local_face_index ∈ 1:nfaces(cell)
             for face_cache ∈ face_caches
                 if (cellid(cell), local_face_index) ∈ getfaceset(cell.grid, getboundaryname(face_cache))
                     # TODO fix "(cell, local_face_index)" 
@@ -135,9 +135,9 @@ function update_linearization!(op::AssembledNonlinearOperator, u::Vector, residu
         fill!(rₑ, 0)
         uₑ = @view u[celldofs(cell)]
         # TODO instead of "cell" pass object with geometry information only
-        assemble_element!(Jₑ, rₑ, uₑ, cell, element_cache, time)
+        @timeit_debug "assemble element" assemble_element!(Jₑ, rₑ, uₑ, cell, element_cache, time)
         # TODO maybe it makes sense to merge this into the element routine in a modular fasion?
-        for local_face_index ∈ 1:nfaces(cell)
+        @timeit_debug "assemble faces" for local_face_index ∈ 1:nfaces(cell)
             for face_cache ∈ face_caches
                 if (cellid(cell), local_face_index) ∈ getfaceset(cell.grid, getboundaryname(face_cache))
                     # TODO fix "(cell, local_face_index)" 
@@ -188,7 +188,7 @@ function update_operator!(op::AssembledBilinearOperator, time)
     @inbounds for cell in CellIterator(dh)
         fill!(Aₑ, 0)
         # TODO instead of "cell" pass object with geometry information only
-        assemble_element!(Aₑ, cell, element_cache, time)
+        @timeit_debug "assemble element" assemble_element!(Aₑ, cell, element_cache, time)
         assemble!(assembler, celldofs(cell), Aₑ)
     end
 
@@ -266,7 +266,7 @@ function update_operator!(op::LinearOperator, time)
     fill!(b, 0.0)
     @inbounds for cell in CellIterator(dh)
         fill!(bₑ, 0)
-        assemble_element!(bₑ, cell, element_cache, time)
+        @timeit_debug "assemble element" assemble_element!(bₑ, cell, element_cache, time)
         # assemble!(assembler, celldofs(cell), bₑ)
         b[celldofs(cell)] .+= bₑ
     end

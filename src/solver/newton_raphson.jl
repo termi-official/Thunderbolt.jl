@@ -167,7 +167,7 @@ function eliminate_constraints_from_linearization_blocked!(solver_cache, problem
     apply_zero!(solver_cache.op.operators[1].J, solver_cache.residual[i], problem.base_problems[1].ch)
 end
 
-function solve!(u, problem, solver_cache::NewtonRaphsonSolverCache{OpType, ResidualType, T}, t) where {OpType, ResidualType, T}
+function solve!(u, problem, solver_cache::NewtonRaphsonSolverCache, t)
     @unpack op, residual = solver_cache
     newton_itr = -1
     Δu = zero(u)
@@ -175,9 +175,9 @@ function solve!(u, problem, solver_cache::NewtonRaphsonSolverCache{OpType, Resid
         newton_itr += 1
 
         residual .= 0.0
-        update_linearization!(solver_cache.op, u, residual, t)
+        @timeit_debug "update operator" update_linearization!(solver_cache.op, u, residual, t)
 
-        eliminate_constraints_from_linearization!(solver_cache, problem)
+        @timeit_debug "elimination" eliminate_constraints_from_linearization!(solver_cache, problem)
         residualnorm = residual_norm(solver_cache, problem)
         if residualnorm < solver_cache.parameters.tol
             break
@@ -186,7 +186,7 @@ function solve!(u, problem, solver_cache::NewtonRaphsonSolverCache{OpType, Resid
             return false
         end
 
-        !solve_inner_linear_system!(Δu, solver_cache) && return false
+        @timeit_debug "solve" !solve_inner_linear_system!(Δu, solver_cache) && return false
 
         eliminate_constraints_from_increment!(Δu, problem, solver_cache)
 
