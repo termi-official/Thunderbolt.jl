@@ -12,7 +12,7 @@ function test_initializer(problem, t₀)
         _celldofs = celldofs(cell)
         ϕₘ_celldofs = _celldofs[dof_range(dh, :ϕₘ)]
         # TODO get coordinate via coordinate_system
-        coordinates = get_cell_coordinates(cell)
+        coordinates = getcoordinates(cell)
         for (i, x) in enumerate(coordinates)
             u₀[ϕₘ_celldofs[i]] = norm(x)/2
         end

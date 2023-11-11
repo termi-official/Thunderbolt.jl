@@ -13,7 +13,7 @@
         # TODO use GeometryValues
         cv = CellValues(qr, ip)
         for cell ∈ CellIterator(grid)
-            x = get_cell_coordinates(cell)
+            x = getcoordinates(cell)
             n_geom_basefuncs = getnbasefunctions(cv.gip)
             fecv_J = zero(Tensor{2,dim})
             for j in 1:n_geom_basefuncs
