@@ -158,7 +158,7 @@ end
 function eliminate_constraints_from_linearization_blocked!(solver_cache, problem::CoupledProblem, i::Block)
     if i.n[1] > 1
         if typeof(problem.base_problems[2]) != NullProblem
-            @error "Block elimination not working if it is not  $i"
+            @error "Block elimination not working for block $i"
         else
             return nothing 
         end

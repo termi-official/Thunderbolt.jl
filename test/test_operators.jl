@@ -70,4 +70,33 @@ using BlockArrays, SparseArrays
         
         @test Thunderbolt.getJ(bop_id) ≈ spdiagm(ones(6))
     end
+
+    @testset "Coupled" begin
+        # TODO test with faulty blocks
+        @testset "Block action" begin
+            op1 = BlockOperator((
+                DiagonalOperator([1.0, 2.0, 3.0]), NullOperator{Float64,2,3}(),
+                NullOperator{Float64,3,2}(), NullOperator{Float64,2,2}()
+            ))
+            @test op1 * [1.0, 2.0, 3.0, 4.0, 5.0] ≈ [1.0, 4.0, 9.0, 0.0, 0.0]
+
+            op2 = BlockOperator((
+                NullOperator{Float64,3,3}(), NullOperator{Float64,2,3}(),
+                NullOperator{Float64,3,2}(), DiagonalOperator([-1.0, 2.0])
+            ))
+            @test op2 * [1.0, 2.0, 3.0, 4.0, 5.0] ≈ [0.0, 0.0, 0.0, -4.0, 10.0]
+        end
+
+        @testset "Block elimination" begin
+            # Idea
+            # 1. Setup coupled problem with diffusion diffusion coupling as in Bidomain model
+            # 2. Setup equivalent Bidomain system matrix manually
+            # 3. Check that problem is singular in both cases
+            # 4. Eliminate system from 2. manually
+            # 5. Eliminate system from 3. with Thunderbolt.jl
+            # 6. Check elimination gives the same result
+            # 7. Check that problem is not singular anymore
+            @test_broken false && "Implement me!" 
+        end
+    end
 end

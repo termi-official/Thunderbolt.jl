@@ -7,10 +7,9 @@ using Aqua
         # unbound_args=true,
         # undefined_exports=true,
         # project_extras=true,
-        # stale_deps=(ignore=[:SomePackage],),
+        stale_deps=(ignore=[:FerriteGmsh],), # We use this one in the examples for now 
         deps_compat=false,
         # piracy=false,
     )
     Aqua.test_ambiguities(Thunderbolt) # Must be separate for now, see https://github.com/JuliaTesting/Aqua.jl/issues/77
 end
-

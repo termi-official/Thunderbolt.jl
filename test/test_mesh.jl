@@ -13,7 +13,7 @@
         # TODO use GeometryValues
         cv = CellValues(qr, ip)
         for cell ∈ CellIterator(grid)
-            x = getcoordinates(cell)
+            x = get_cell_coordinates(cell)
             n_geom_basefuncs = getnbasefunctions(cv.gip)
             fecv_J = zero(Tensor{2,dim})
             for j in 1:n_geom_basefuncs
@@ -57,7 +57,8 @@
         Hexahedron,
     ]
         lv_mesh = Thunderbolt.generate_ideal_lv_mesh(8,4,4)
-        # TODO skip this step
+        # TODO fix this
+        # test_detJ(lv_mesh)
         lv_mesh_hex = Thunderbolt.hexahedralize(lv_mesh)
         test_detJ(lv_mesh_hex)
     end

@@ -20,12 +20,28 @@ abstract type AbstractNonlinearOperator end
 
 getJ(op) = error("J is not explicitly accessible for given operator")
 
+function *(op::AbstractNonlinearOperator, x::AbstractVector)
+    y = similar(x)
+    mul!(y, op, x)
+    return y
+end
+
+# TODO constructor which checks for axis compat
 struct BlockOperator{OPS <: Tuple}
     # TODO maybe SMatrix?
     operators::OPS # stored row by row as in [1 2; 3 4]
 end
 
 getJ(op::BlockOperator) = mortar(reshape([getJ(opi) for opi ∈ op.operators], (isqrt(length(op.operators)), isqrt(length(op.operators)))))
+
+function *(op::BlockOperator, x::AbstractVector)
+    y = similar(x)
+    mul!(y, op, x)
+    return y
+end
+
+# TODO optimize
+mul!(y, op::BlockOperator, x) = mul!(y, getJ(op), x)
 
 # TODO can we be clever with broadcasting here?
 function update_linearization!(op::BlockOperator, u::BlockVector, time)
@@ -214,7 +230,7 @@ mul!(out, op::NullOperator, in, α, β) = out .= β*out
 Base.eltype(op::NullOperator{T}) where {T} = T
 Base.size(op::NullOperator{T,S1,S2}, axis) where {T,S1,S2} = axis == 1 ? S1 : (axis == 2 ? S2 : error("faulty axis!"))
 
-getJ(op::NullOperator{T, SIN, SOUT}) where {T, SIN, SOUT} = spzeros(SIN,SOUT)
+getJ(op::NullOperator{T, SIN, SOUT}) where {T, SIN, SOUT} = spzeros(T,SIN,SOUT)
 
 ###############################################################################
 abstract type AbstractLinearOperator end

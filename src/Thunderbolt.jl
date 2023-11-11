@@ -15,6 +15,8 @@ import Ferrite: vertices, edges, faces, sortedge, sortface
 
 import Krylov: CgSolver
 
+import Base: *, +, -
+
 include("utils.jl")
 
 include("mesh/meshes.jl")
