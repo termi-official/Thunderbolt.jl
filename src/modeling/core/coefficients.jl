@@ -59,15 +59,41 @@ function evaluate_coefficient(coeff::ConductivityToDiffusivityCoefficient, cell_
 end
 
 
-struct AnalyticalCoefficient{F, IPG}
-    f::F
-    ip_g::IPG #TODO remove this
+struct CartesianCoordinateSystemCoefficient{IP<:VectorizedInterpolation}
+    ip::IP
 end
 
-function evaluate_coefficient(coeff::AnalyticalCoefficient{F, <: VectorizedInterpolation{sdim}}, cell_cache, qp::QuadraturePoint{<:Any,T}, t) where {F, sdim, T}
+function evaluate_coefficient(coeff::CartesianCoordinateSystemCoefficient{<:VectorizedInterpolation{sdim}}, cell_cache, qp::QuadraturePoint{<:Any,T}, t) where {sdim, T}
     x = zero(Vec{sdim, T})
-    for i in 1:getnbasefunctions(coeff.ip_g.ip)
-        x += shape_value(coeff.ip_g.ip, qp.ξ, i) * cell_cache.coords[i]
+    for i in 1:getnbasefunctions(coeff.ip.ip)
+        x += shape_value(coeff.ip.ip, qp.ξ, i) * cell_cache.coords[i]
     end
+    return x
+end
+
+
+struct AnalyticalCoefficient{F, CSYS}
+    f::F
+    coordinate_system::CSYS
+end
+
+function evaluate_coefficient(coeff::AnalyticalCoefficient{F}, cell_cache, qp::QuadraturePoint{<:Any,T}, t) where {F, T}
+    x = evaluate_coefficient(coeff.coordinate_system, cell_cache, qp, t)
     return coeff.f(x, t)
+end
+
+
+struct SpectralDiffusionTensorCoefficient{MSC, sdim}
+    microstructure_model::MSC
+    conductivities::SVector{sdim}
+end
+
+function Thunderbolt.evaluate_coefficient(coeff::SpectralDiffusionTensorCoefficient{<:Any, 2}, cell_cache, ξ::Vec, t)
+    f, s = evaluate_coefficient(coeff.microstructure_model, cell_cache, ξ, t)
+    return coeff.conductivities[1] * f ⊗ f + coeff.conductivities[2] * s ⊗ s
+end
+
+function Thunderbolt.evaluate_coefficient(coeff::SpectralDiffusionTensorCoefficient{<:Any, 3}, cell_cache, ξ::Vec, t)
+    f, s, n = evaluate_coefficient(coeff.microstructure_model, cell_cache, ξ, t)
+    return coeff.conductivities[1] * f ⊗ f + coeff.conductivities[2] * s ⊗ s + coeff.conductivities[3] * n ⊗ n
 end

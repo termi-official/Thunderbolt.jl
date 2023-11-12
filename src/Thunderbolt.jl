@@ -58,6 +58,8 @@ export
     FieldCoefficient,
     AnalyticalCoefficient,
     FieldCoefficient,
+    CartesianCoordinateSystemCoefficient,
+    SpectralDiffusionTensorCoefficient,
     evaluate_coefficient,
     # Collections
     LagrangeCollection,
