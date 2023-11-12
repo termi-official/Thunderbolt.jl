@@ -1,28 +1,6 @@
-using Thunderbolt, LinearAlgebra, SparseArrays, UnPack
-import Thunderbolt: AbstractIonicModel
-
-using TimerOutputs, BenchmarkTools
-
-# using Krylov
-
-import LinearAlgebra: mul!
-
-using SparseArrays: AbstractSparseMatrixCSC #,AbstractSparseMatrixCSR?
-# using SparseMatricesCSR #, ThreadedSparseCSR
-# ThreadedSparseCSR.multithread_matmul(PolyesterThreads())
+using Thunderbolt
 
 ######################################################
-using StaticArrays
-struct PlanarDiffusionTensorCoefficient{MSC}
-    microstructure_cache::MSC
-    conductivities::SVector{2}
-end
-
-function Thunderbolt.evaluate_coefficient(coeff::PlanarDiffusionTensorCoefficient{MSC}, cell_cache, ξ::Vec{rdim}, t::Float64=0.0) where {MSC, rdim}
-    f₀, s₀ = directions(coeff.microstructure_cache, cell_cache, ξ, t)
-    return coeff.conductivities[1] * f₀ ⊗ f₀ + coeff.conductivities[2] * s₀ ⊗ s₀
-end
-
 mutable struct IOCallback{IO}
     io::IO
     counter::Int
