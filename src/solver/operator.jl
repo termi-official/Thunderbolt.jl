@@ -1,5 +1,6 @@
 # TODO split nonlinear operator and the linearization concepts
 # TODO energy based operator?
+# TODO maybe a trait system for operators?
 """
     AbstractNonlinearOperator
 
