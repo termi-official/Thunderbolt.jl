@@ -1,70 +1,17 @@
-include("common-stuff.jl")
-using FerriteGmsh, DelimitedFiles
+using Thunderbolt, UnPack
+
+"""
+In 'A transmurally heterogeneous orthotropic activation model for ventricular contraction and its numerical validation' it is suggested that uniform activtaion is fine.
+
+TODO citation.
+"""
+struct CalciumHatField end # TODO compute calcium profile from actual cell model :)
+
+"""
+"""
+Thunderbolt.evaluate_coefficient(coeff::CalciumHatField, cell_cache, qp, t) = t/1000.0 < 0.5 ? 2.0*t/1000.0 : 2.0-2.0*t/1000.0
 
 import Ferrite: get_grid, find_field
-
-# mutable struct AverageCoordinateStrainProcessorCache{CC, SVT <: AbstractVector}
-#     coordinate_system_cache::CC
-#     E_cc::SVT
-#     E_ll::SVT
-#     E_rr::SVT
-# end
-
-# function prepare_postprocessor_cache!(cache::AverageCoordinateStrainProcessorCache{CC, SVT}, problem) where {CC, SVT <: AbstractVector}
-#     @unpack dh   = problem
-#     @unpack grid = dh
-#     _ncells = getncells(grid)
-#     cache.E_cc = zero(SVT(undef, _ncells))
-#     cache.E_ll = zero(SVT(undef, _ncells))
-#     cache.E_rr = zero(SVT(undef, _ncells))
-# end
-
-# mutable struct AverageCardiacMechanicalMicrostructuralPostProcessorCache{MC, SVT <: AbstractVector, VVT <: AbstractVector}
-#     microstructure_cache::MC
-#     E_ff:SVT
-#     frefdata::VVT
-#     fdata::VVT
-#     srefdata::VVT
-#     sdata::VVT
-#     nrefdata::VVT
-#     ndata::VVT
-#     helixangledata::SVT
-#     helixanglerefdata::SVT
-# end
-
-# function prepare_postprocessor_cache!(cache::AverageCardiacMechanicalMicrostructuralPostProcessorCache{MC, SVT, VVT}, problem, t, uₙ) where {MC, SVT <: AbstractVector, VVT <: AbstractVector}
-#     @unpack dh   = problem
-#     @unpack grid = dh
-#     @assert getdim(grid) == 3
-#     _ncells = getncells(grid)
-#     cache.E_ff = zero(SVT(undef,_ncells))
-#     cache.frefdata = zero(VVT(undef, _ncells))
-#     cache.srefdata = zero(VVT(undef, _ncells))
-#     cache.nrefdata = zero(VVT(undef, _ncells))
-#     cache.fdata = zero(VVT(undef, _ncells))
-#     cache.sdata = zero(VVT(undef, _ncells))
-#     cache.ndata = zero(VVT(undef, _ncells))
-#     helixangledata = zero(SVT(undef,_ncells))
-#     helixanglerefdata = zero(SVT(undef,_ncells))
-# end
-
-# mutable struct VolumePostProcessorCache{SVT <: AbstractVector}
-#     detF_per_cell::SVT
-# end
-
-# function prepare_postprocessor_cache!(cache::VolumePostProcessorCache{SVT}, problem, t, uₙ) where {SVT <: AbstractVector}
-#     @unpack dh = problem
-#     grid = getgrid(dh)
-#     _ncells = getncells(grid)
-#     cache.detF_per_cell = zero(SVT(undef, _ncells))
-# end
-
-# struct StandardIOPostProcessor{IO, CV, CL}
-#     io::IO
-#     cv::CV
-#     subdomains::Vector{Int}
-#     # cache_list::CL
-# end
 
 # TODO refactor this one into the framework code and put a nice abstraction layer around it
 struct StandardMechanicalIOPostProcessor{IO, CV}
@@ -80,7 +27,6 @@ function (postproc::StandardMechanicalIOPostProcessor)(t, problem, solver_cache)
 
     # Compute some elementwise measures
     E_ff = zeros(getncells(grid))
-    E_ff2 = zeros(getncells(grid))
     E_cc = zeros(getncells(grid))
     E_ll = zeros(getncells(grid))
     E_rr = zeros(getncells(grid))
@@ -197,7 +143,6 @@ function (postproc::StandardMechanicalIOPostProcessor)(t, problem, solver_cache)
     Thunderbolt.store_timestep_celldata!(io, t, hcat(srefdata...),"Reference Sheet Data")
     Thunderbolt.store_timestep_celldata!(io, t, hcat(sdata...),"Current Sheet Data")
     Thunderbolt.store_timestep_celldata!(io, t, E_ff,"E_ff")
-    Thunderbolt.store_timestep_celldata!(io, t, E_ff2,"E_ff2")
     Thunderbolt.store_timestep_celldata!(io, t, E_cc,"E_cc")
     Thunderbolt.store_timestep_celldata!(io, t, E_rr,"E_rr")
     Thunderbolt.store_timestep_celldata!(io, t, E_ll,"E_ll")
@@ -241,15 +186,6 @@ function solve_test_ring(name_base, constitutive_model, grid, face_models::FM, i
     )
 end
 
-
-# for (filename, ref_shape, order) ∈ [
-#     # ("MidVentricularSectionQuadTet.msh", RefTetrahedron, 2),
-#     ("MidVentricularSectionTet.msh", RefTetrahedron, 1),
-#     # ("MidVentricularSectionHex.msh", RefCube, 1),
-#     # ("MidVentricularSectionQuadHex.msh", RefCube, 2) # We have to update FerriteGmsh first, because the hex27 translator is missing. See https://github.com/Ferrite-FEM/FerriteGmsh.jl/pull/29
-# ]
-function run_simulations()
-
 ref_shape = RefHexahedron
 order = 1
 
@@ -276,185 +212,3 @@ solve_test_ring("Debug",
     ip_u, ip_geo, 2*order,
     100.0
 )
-
-
-activation_data = readdlm("../data/ActivationFunction_1ms.dat", ' ', Float64, '\n')
-pressure_data = readdlm("../data/ActivationFunction_1ms.dat", ' ', Float64, '\n')
-
-ring_grid = generate_ring_mesh(8,2,2)
-ring_cs = compute_midmyocardial_section_coordinate_system(ring_grid, ip_geo)
-solve_test_ring("ring-test",
-    ActiveStressModel(
-        Guccione1991PassiveModel(),
-        Guccione1993ActiveModel(10.0),
-        PelceSunLangeveld1995Model(;calcium_field=SpatiallyHomogeneousDataField(
-            activation_data[:,1],activation_data[:,2]
-        )),
-        create_simple_microstructure_model(ring_cs, ip_fsn, ip_geo,
-            endo_helix_angle = deg2rad(0.0),
-            epi_helix_angle = deg2rad(0.0),
-            endo_transversal_angle = 0.0,
-            epi_transversal_angle = 0.0,
-            sheetlet_pseudo_angle = deg2rad(0)
-        )
-    ), ring_grid, 
-    [NormalSpringBC(0.01, "Epicardium"), PressureFieldBC(
-        SpatiallyHomogeneousDataField(pressure_data[:,1],pressure_data[:,2]),
-        "Endocardium"
-    )],
-    ip_u, ip_geo, 2*order,
-    10.0, 800.0
-)
-
-
-return
-
-ring_grid = generate_ring_mesh(50,10,10)
-filename = "MidVentricularSectionHexG50-10-10"
-
-# ring_grid = saved_file_to_grid("../data/meshes/ring/" * filename)
-ring_cs = compute_midmyocardial_section_coordinate_system(ring_grid, ip_geo)
-ring_fm = create_simple_microstructure_model(ring_cs, ip_fsn, ip_geo, endo_helix_angle = deg2rad(60.0), epi_helix_angle = deg2rad(-60.0), endo_transversal_angle = 0.0, epi_transversal_angle = 0.0)
-
-passive_model = HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 0.28504197825657906, 4.126552003938297, 0.0, 1.0, 0.0, 1.0, SimpleCompressionPenalty(4.0))
-
-# solve_test_ring(filename*"_GHM-HO_AS1_GMKI_Pelce",
-#     GeneralizedHillModel(
-#         passive_model,
-#         ActiveMaterialAdapter(NewActiveSpring()),
-#         GMKIncompressibleActiveDeformationGradientModel(),
-#         PelceSunLangeveld1995Model()
-#     ),
-#     ring_grid, ring_cs, ring_fm,
-#     [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
-#     ip_u, ip_geo, 2*order
-# )
-
-# Diverges...?
-# solve_test_ring(filename*"_GHM-HO_AS2_GMKI_Pelce",
-#     GeneralizedHillModel(
-#         passive_model,
-#         ActiveMaterialAdapter(NewActiveSpring2()),
-#         GMKIncompressibleActiveDeformationGradientModel(),
-#         PelceSunLangeveld1995Model()
-#     ), ring_grid, ring_cs, ring_fm,
-#     [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
-#     ip_u, ip_geo, 2*order
-# )
-
-# solve_test_ring(filename*"_GHM-HO_AS1_RLRSQ75_Pelce",
-#     GeneralizedHillModel(
-#         passive_model,
-#         ActiveMaterialAdapter(NewActiveSpring()),
-#         RLRSQActiveDeformationGradientModel(0.75),
-#         PelceSunLangeveld1995Model()
-#     ), ring_grid, ring_cs, ring_fm,
-#     [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
-#     ip_u, ip_geo, 2*order
-# )
-
-# solve_test_ring(filename*"_GHM-HO_HO_RLRSQ75_Pelce",
-#     GeneralizedHillModel(
-#         passive_model,
-#         ActiveMaterialAdapter(passive_model),
-#         RLRSQActiveDeformationGradientModel(0.75),
-#         PelceSunLangeveld1995Model()
-#     ), ring_grid, ring_cs, ring_fm,
-#     [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
-#     ip_u, ip_geo, 2*order
-# )
-
-# solve_test_ring(filename*"_ActiveStress-HO_Simple_Pelce",
-#     ActiveStressModel(
-#         passive_model,
-#         SimpleActiveStress(),
-#         PelceSunLangeveld1995Model()
-#     ), ring_grid, ring_cs, ring_fm,
-#     [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
-#     ip_u, ip_geo, 2*order
-# )
-
-# solve_test_ring(filename*"_ActiveStress-HO_Piersanti_Pelce",
-#     ActiveStressModel(
-#         passive_model,
-#         PiersantiActiveStress(2.0, 1.0, 0.75, 0.0),
-#         PelceSunLangeveld1995Model()
-#     ), ring_grid, ring_cs, ring_fm,
-#     [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
-#     ip_u, ip_geo, 2*order
-# )
-
-# solve_test_ring(filename*"_GHM-HONEW_HONEW_RLRSQ100_Pelce",
-#     ExtendedHillModel(
-#         NewHolzapfelOgden2009Model(),
-#         ActiveMaterialAdapter(NewHolzapfelOgden2009Model(;mpU=NullCompressionPenalty())),
-#         RLRSQActiveDeformationGradientModel(0.5),
-#         PelceSunLangeveld1995Model()
-#     ), ring_grid, ring_cs, ring_fm,
-#     [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
-#     ip_u, ip_geo, 2*order
-# )
-
-# solve_test_ring(filename*"_ActiveStress-HONEW_Piersanti_Pelce",
-#     ActiveStressModel(
-#         NewHolzapfelOgden2009Model(),
-#         PiersantiActiveStress(2.0, 1.0, 0.75, 0.0),
-#         PelceSunLangeveld1995Model()
-#     ), ring_grid, ring_cs, ring_fm,
-#     [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
-#     ip_u, ip_geo, 2*order
-# )
-
-# solve_test_ring(filename*"Vallespin2023-Reproducer",
-#     ActiveStressModel(
-#         Guccione1991PassiveModel(),
-#         Guccione1993ActiveModel(150.0),
-#         PelceSunLangeveld1995Model()
-#     ), ring_grid, ring_cs, ring_fm,
-#     [NormalSpringBC(0.01, "Epicardium")],
-#     CalciumHatField(),
-#     ip_u, ip_geo, 2*order
-# )
-
-# solve_test_ring(filename*"Vallespin2023-Ring",
-#     ActiveStressModel(
-#         Guccione1991PassiveModel(),
-#         Guccione1993ActiveModel(10),
-#         PelceSunLangeveld1995Model()
-#     ), ring_grid, ring_cs,
-#     create_simple_microstructure_model(ring_cs, ip_fsn, ip_geo,
-#         endo_helix_angle = deg2rad(60.0),
-#         epi_helix_angle = deg2rad(-60.0),
-#         endo_transversal_angle = 0.0,
-#         epi_transversal_angle = 0.0,
-#         sheetlet_pseudo_angle = deg2rad(20)
-#     ),
-#     [NormalSpringBC(0.01, "Epicardium")],
-#     CalciumHatField(), ip_u, ip_geo, 2*order
-# )
-
-# solve_test_ring(filename*"_GHM-HO_AS1_RLRSQ75_Pelce_MoulinHelixAngle",
-#     GeneralizedHillModel(
-#         passive_model,
-#         ActiveMaterialAdapter(NewActiveSpring()),
-#         RLRSQActiveDeformationGradientModel(0.75),
-#         PelceSunLangeveld1995Model()
-#     ), ring_grid, ring_cs, create_simple_microstructure_model(ring_cs, ip_fsn, ip_geo, endo_helix_angle = deg2rad(50.0), epi_helix_angle = deg2rad(-40.0), endo_transversal_angle = 0.0, epi_transversal_angle = 0.0),
-#     [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
-#     ip_u, ip_geo, 2*order
-# )
-
-# solve_test_ring(filename*"_GHM-HO_AS1_RLRSQ75_Pelce_MoulinHelixAngle_SA45",
-#     GeneralizedHillModel(
-#         passive_model,
-#         ActiveMaterialAdapter(NewActiveSpring()),
-#         RLRSQActiveDeformationGradientModel(0.75),
-#         PelceSunLangeveld1995Model()
-#     ), ring_grid, ring_cs, create_simple_microstructure_model(ring_cs, ip_fsn, ip_geo, endo_helix_angle = deg2rad(50.0), epi_helix_angle = deg2rad(-40.0), endo_transversal_angle = 0.0, epi_transversal_angle = 0.0, sheetlet_pseudo_angle = deg2rad(45)),
-#     [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
-#     ip_u, ip_geo, 2*order
-# )
-
-end
-
-run_simulations()

@@ -104,3 +104,27 @@ function evaluate_coefficient(coeff::SpectralTensorCoefficient, cell_cache, ξ::
     λ = evaluate_coefficient(coeff.eigenvalues, cell_cache, ξ, t)
     return _eval_sdt_coefficient(M, λ)
 end
+
+"""
+    SpatiallyHomogeneousDataField
+
+A data field which is constant in space and piecewise constant in time.
+"""
+struct SpatiallyHomogeneousDataField
+    timings::Vector{Float64}
+    data::Vector{Float64}
+end
+
+function Thunderbolt.evaluate_coefficient(coeff::SpatiallyHomogeneousDataField, cell_cache, qp, t)
+    @unpack timings, data = coeff
+    i = 1
+    tᵢ = timings[1]
+    while tᵢ ≤ t
+        i+=1
+        if i > length(timings)
+            return data[end]
+        end
+        tᵢ = timings[i]
+    end
+    return data[i] # TODO interpolation
+end

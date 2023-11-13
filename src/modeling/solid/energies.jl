@@ -236,6 +236,20 @@ function Thunderbolt.Ψ(F, f₀, s₀, n₀, mp::Guccione1991PassiveModel{CPT}) 
     return C₀*exp(Q)/2.0 + Thunderbolt.U(I₃, mpU)
 end
 
+Base.@kwdef struct SimpleActiveSpring
+    aᶠ::Float64  = 1.0
+end
+using UnPack
+function Thunderbolt.Ψ(F, Fᵃ, f₀, s₀, n₀, mp::SimpleActiveSpring)
+    @unpack aᶠ = mp
+
+    Fᵉ = F ⋅ inv(Fᵃ)
+    Cᵉ = tdot(Fᵉ)
+    Iᵉ₄ᶠ = f₀ ⋅ Cᵉ ⋅ f₀
+
+    return aᶠ/2.0*(Iᵉ₄ᶠ-1.0)^2
+end
+
 # """
 # """
 # Base.@kwdef struct BarbarottaRossiDedeQuarteroni2018 #<: OrthotropicMaterialModel
