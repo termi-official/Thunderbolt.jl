@@ -1,6 +1,10 @@
+```@meta
+DocTestSetup = :(using Thunderbolt)
+```
+
 # Operators
 
-```@devdocs
+```@docs
 BlockOperator
 Thunderbolt.AbstractNonlinearOperator
 Thunderbolt.AbstractBilinearOperator

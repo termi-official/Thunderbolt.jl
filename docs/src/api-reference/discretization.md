@@ -1,3 +1,7 @@
+```@meta
+DocTestSetup = :(using Thunderbolt)
+```
+
 # Discretization
 
 ## Interface

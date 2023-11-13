@@ -1,3 +1,7 @@
+```@meta
+DocTestSetup = :(using Thunderbolt)
+```
+
 # Utility
 
 ## Collections
@@ -15,7 +19,7 @@ CellValueCollection
 FaceValueCollection
 ```
 
-# Iteration
+## Iteration
 
 TODO QuadraturePointIterator https://github.com/termi-official/Thunderbolt.jl/issues/27
 TODO TimeChoiceIterator https://github.com/termi-official/Thunderbolt.jl/issues/32

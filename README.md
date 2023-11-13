@@ -26,10 +26,8 @@ enter `pkg>` mode. Then you [activate and instantiate](https://pkgdocs.julialang
 (@v1.9) pkg> activate .
 (docs) pkg> instantiate
 ```
-This has to be done only once. Now to build the docs you can execute the makefile by opening a terminal in the 
-docs folder and typing
+This has to be done only once. Now you can use the provided liveserver to build and open the docs via
 ```
-$ julia --project=. make.jl
+$ julia --project=. liveserver.jl
 ```
-This creates a folder called "build" in the docs folder, which contains the html documentation.
-Now just open the contained "index.html" with your browser. All further information will be provided there.
+Now you can view the documentation at https://localhost:8000 . All further information will be provided there.

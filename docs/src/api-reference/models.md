@@ -1,5 +1,5 @@
 ```@meta
-DocTestSetup = :(using Ferrite)
+DocTestSetup = :(using Thunderbolt)
 ```
 
 # Models
