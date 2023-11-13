@@ -44,19 +44,24 @@ function finalize!(io::ParaViewWriter)
 end
 
 #### Storing coefficients
-function store_coefficient!(io, dh, coefficient::AnisotropicPlanarMicrostructureModel, name, t)
-    store_coefficient!(io::ParaViewWriter, dh, coefficient.eigenvalues, name*".f", t)
-    store_coefficient!(io::ParaViewWriter, dh, coefficient.eigenvectors, name*".s", t)
+function store_coefficient!(io, t, coefficient::AnisotropicPlanarMicrostructureModel, name)
+    store_coefficient!(io, t, coefficient.fiber_coefficient, name*".f", t)
+    store_coefficient!(io, t, coefficient.sheetlet_coefficient, name*".s", t)
 end
 
-function store_coefficient!(io, dh, coefficient::OrthotropicMicrostructureModel, name, t)
-    store_coefficient!(io::ParaViewWriter, dh, coefficient.eigenvalues, name*".f", t)
-    store_coefficient!(io::ParaViewWriter, dh, coefficient.eigenvectors, name*".s", t)
-    store_coefficient!(io::ParaViewWriter, dh, coefficient.eigenvectors, name*".n", t)
+function store_coefficient!(io, t, coefficient::OrthotropicMicrostructureModel, name)
+    store_coefficient!(io, t, coefficient.fiber_coefficient, name*".f", t)
+    store_coefficient!(io, t, coefficient.sheetlet_coefficient, name*".s", t)
+    store_coefficient!(io, t, coefficient.normal_coefficient, name*".n", t)
 end
 
 # TODO split up compute from store
-function store_coefficient!(io::ParaViewWriter, dh, coefficient::ConstantCoefficient{T}, name, t) where {T}
+function store_coefficient!(io::ParaViewWriter, t, coefficient::FieldCoefficient, name)
+    error("Unimplemented")
+end
+
+# TODO split up compute from store
+function store_coefficient!(io::ParaViewWriter, t, coefficient::ConstantCoefficient{T}, name) where {T}
     data = zeros(T, getncells(grid))
     qrc = QuadratureRuleCollection(1)
     for cell_cache in CellIterator(dh)

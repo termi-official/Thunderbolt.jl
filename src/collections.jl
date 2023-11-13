@@ -62,7 +62,7 @@ struct QuadratureRuleCollection{QRW, QRH, QRT}
 end
 
 QuadratureRuleCollection(order::Int) = QuadratureRuleCollection(
-    QuadratureRule{RefWedge}(order), 
+    QuadratureRule{RefPrism}(order), 
     QuadratureRule{RefHexahedron}(order), 
     QuadratureRule{RefTetrahedron}(order)
 )
