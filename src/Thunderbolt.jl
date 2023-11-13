@@ -60,6 +60,7 @@ export
     FieldCoefficient,
     CartesianCoordinateSystemCoefficient,
     SpectralTensorCoefficient,
+    SpatiallyHomogeneousDataField,
     evaluate_coefficient,
     # Collections
     LagrangeCollection,
@@ -71,6 +72,7 @@ export
     # Mesh generators
     generate_mesh,
     generate_ring_mesh,
+    generate_ideal_lv_mesh,
     # Mechanics
     StructuralModel,
     # Passive material models
@@ -86,6 +88,7 @@ export
     Guccione1991PassiveModel,
     Guccione1993ActiveModel,
     LinearSpringModel,
+    SimpleActiveSpring,
     # Contraction model
     ConstantStretchModel,
     PelceSunLangeveld1995Model,
@@ -102,9 +105,12 @@ export
     ParabolicParabolicBidomainModel,
     ParabolicEllipticBidomainModel,
     NoStimulationProtocol,
+    TransmembraneStimulationProtocol,
+    AnalyticalTransmembraneStimulationProtocol,
     # Circuit
     ReggazoniSalvadorAfricaLumpedCicuitModel,
     # FSI
+    ReggazoniSalvadorAfrica2022SurrogateVolume,
     Hirschvogel2016SurrogateVolume,
     LumpedFluidSolidCoupler,
     # Microstructure
@@ -143,8 +149,11 @@ export
     ParaViewWriter,
     JLD2Writer,
     store_timestep!,
+    store_timestep_celldata!,
+    store_timestep_field!,
     store_coefficient!,
     store_green_lagrange!,
+    finalize_timestep!,
     finalize!,
     # Mechanical PDEs
     GeneralizedHillModel,
@@ -153,5 +162,7 @@ export
     #  BCs
     NormalSpringBC,
     PressureFieldBC,
+    BendingSpringBC,
+    RobinBC,
     ConstantPressureBC
 end
