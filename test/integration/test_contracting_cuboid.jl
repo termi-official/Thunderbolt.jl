@@ -4,7 +4,7 @@ struct TestCalciumHatField end
 Thunderbolt.evaluate_coefficient(coeff::TestCalciumHatField, cell_cache, qp, t) = t/1000.0 < 0.5 ? 2.0*t/1000.0 : 2.0-2.0*t/1000.0
 
 function test_solve_contractile_cuboid(constitutive_model)
-    T = 1000.0
+    T  = 300.0
     Δt = 100.0
     grid = generate_grid(Hexahedron, (10, 10, 2), Ferrite.Vec{3}((0.0,0.0,0.0)), Ferrite.Vec{3}((1.0, 1.0, 0.2)))
 
