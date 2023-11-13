@@ -59,7 +59,7 @@ export
     AnalyticalCoefficient,
     FieldCoefficient,
     CartesianCoordinateSystemCoefficient,
-    SpectralDiffusionTensorCoefficient,
+    SpectralTensorCoefficient,
     evaluate_coefficient,
     # Collections
     LagrangeCollection,
@@ -110,7 +110,7 @@ export
     # Microstructure
     AnisotropicPlanarMicrostructureModel,
     OrthotropicMicrostructureModel,
-    create_simple_fiber_model,
+    create_simple_microstructure_model,
     # Coordinate system
     LVCoordinateSystem,
     CartesianCoordinateSystem,
@@ -143,6 +143,8 @@ export
     ParaViewWriter,
     JLD2Writer,
     store_timestep!,
+    store_coefficient!,
+    store_green_lagrange!,
     finalize!,
     # Mechanical PDEs
     GeneralizedHillModel,

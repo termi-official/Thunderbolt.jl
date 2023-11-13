@@ -1,13 +1,14 @@
+# TODO Merge the two coefficient below and alias the name
 struct AnisotropicPlanarMicrostructureModel{FiberCoefficientType, SheetletCoefficientType}
     fiber_coefficient::FiberCoefficientType
     sheetlet_coefficient::SheetletCoefficientType
 end
 
-function evaluate_coefficient(fsn::AnisotropicPlanarMicrostructureModel, cell_cache, qp::QuadraturePoint{2}, t = 0.0)
-    f₀ = evaluate_coefficient(fsn.fiber_coefficient, cell_cache, qp, t)
-    s₀ = evaluate_coefficient(fsn.sheetlet_coefficient, cell_cache, qp, t)
+function evaluate_coefficient(fsn::AnisotropicPlanarMicrostructureModel, cell_cache, qp::QuadraturePoint{2}, t)
+    f = evaluate_coefficient(fsn.fiber_coefficient, cell_cache, qp, t)
+    s = evaluate_coefficient(fsn.sheetlet_coefficient, cell_cache, qp, t)
 
-    f₀, s₀
+    f, s
 end
 
 struct OrthotropicMicrostructureModel{FiberCoefficientType, SheetletCoefficientType, NormalCoefficientType}
@@ -16,12 +17,12 @@ struct OrthotropicMicrostructureModel{FiberCoefficientType, SheetletCoefficientT
     normal_coefficient::NormalCoefficientType
 end
 
-function evaluate_coefficient(fsn::OrthotropicMicrostructureModel, cell_cache, qp::QuadraturePoint{3}, t = 0.0)
-    f₀ = evaluate_coefficient(fsn.fiber_coefficient, cell_cache, qp, t)
-    s₀ = evaluate_coefficient(fsn.sheetlet_coefficient, cell_cache, qp, t)
-    n₀ = evaluate_coefficient(fsn.normal_coefficient, cell_cache, qp, t)
+function evaluate_coefficient(fsn::OrthotropicMicrostructureModel, cell_cache, qp::QuadraturePoint{3}, t)
+    f = evaluate_coefficient(fsn.fiber_coefficient, cell_cache, qp, t)
+    s = evaluate_coefficient(fsn.sheetlet_coefficient, cell_cache, qp, t)
+    n = evaluate_coefficient(fsn.normal_coefficient, cell_cache, qp, t)
 
-    f₀, s₀, n₀
+    f, s, n
 end
 
 function streeter_type_fsn(transmural_direction, circumferential_direction, apicobasal_direction, helix_angle, transversal_angle, sheetlet_pseudo_angle, make_orthogonal=true)
@@ -55,22 +56,22 @@ function streeter_type_fsn(transmural_direction, circumferential_direction, apic
 end
 
 """
-    create_simple_fiber_model(coordinate_system, ip_component::Interpolation{ref_shape}, ip_geo; endo_helix_angle = deg2rad(80.0), epi_helix_angle = deg2rad(-65.0), endo_transversal_angle = 0.0, epi_transversal_angle = 0.0, sheetlet_angle = 0.0) where {dim}
+    create_simple_microstructure_model(coordinate_system, ip_component::Interpolation{ref_shape}, ip_geo; endo_helix_angle = deg2rad(80.0), epi_helix_angle = deg2rad(-65.0), endo_transversal_angle = 0.0, epi_transversal_angle = 0.0, sheetlet_angle = 0.0) where {dim}
 
 Create a rotating fiber field by deducing the circumferential direction from apicobasal and transmural gradients.
 
 !!! note Sheetlet angle construction is broken (i.e. does not preserve input angle). FIXME!
 """
-function create_simple_fiber_model(coordinate_system, ip_component::ScalarInterpolation{ref_shape}, ip_geo::ScalarInterpolation{ref_shape}; endo_helix_angle = deg2rad(80.0), epi_helix_angle = deg2rad(-65.0), endo_transversal_angle = 0.0, epi_transversal_angle = 0.0, sheetlet_pseudo_angle = 0.0, make_orthogonal=true) where {dim, ref_shape <: AbstractRefShape{dim}}
+function create_simple_microstructure_model(coordinate_system, ip::VectorInterpolation{sdim, ref_shape}, ip_geo::VectorizedInterpolation{sdim, ref_shape}; endo_helix_angle = deg2rad(80.0), epi_helix_angle = deg2rad(-65.0), endo_transversal_angle = 0.0, epi_transversal_angle = 0.0, sheetlet_pseudo_angle = 0.0, make_orthogonal=true) where {sdim, ref_shape <: AbstractRefShape}
     @unpack dh = coordinate_system
 
-    n_basefuns = getnbasefunctions(ip_component)
+    n_basefuns = getnbasefunctions(ip.ip)
 
-    elementwise_data_f = zero(Array{Vec{dim}, 2}(undef, getncells(dh.grid), n_basefuns))
-    elementwise_data_s = zero(Array{Vec{dim}, 2}(undef, getncells(dh.grid), n_basefuns))
-    elementwise_data_n = zero(Array{Vec{dim}, 2}(undef, getncells(dh.grid), n_basefuns))
+    elementwise_data_f = zero(Array{Vec{3,Float64}, 2}(undef, getncells(dh.grid), n_basefuns))
+    elementwise_data_s = zero(Array{Vec{3,Float64}, 2}(undef, getncells(dh.grid), n_basefuns))
+    elementwise_data_n = zero(Array{Vec{3,Float64}, 2}(undef, getncells(dh.grid), n_basefuns))
 
-    qr_fiber = generate_nodal_quadrature_rule(ip_component)
+    qr_fiber = generate_nodal_quadrature_rule(ip.ip)
     cv = create_cellvalues(coordinate_system, qr_fiber, ip_geo)
 
     for (cellindex,cell) in enumerate(CellIterator(dh))
@@ -100,8 +101,8 @@ function create_simple_fiber_model(coordinate_system, ip_component::ScalarInterp
     end
 
     OrthotropicMicrostructureModel(
-        FieldCoefficient(elementwise_data_f, ip_component),
-        FieldCoefficient(elementwise_data_s, ip_component),
-        FieldCoefficient(elementwise_data_n, ip_component)
+        FieldCoefficient(elementwise_data_f, ip),
+        FieldCoefficient(elementwise_data_s, ip),
+        FieldCoefficient(elementwise_data_n, ip)
     )
 end

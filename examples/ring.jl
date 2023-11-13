@@ -186,6 +186,8 @@ function (postproc::StandardMechanicalIOPostProcessor)(t, problem, solver_cache)
         end
     end
 
+    # problem.constitutive_model.microstructure_model
+
     # Save the solution
     Thunderbolt.store_timestep!(io, t, dh.grid)
     Thunderbolt.store_timestep_field!(io, t, dh, solver_cache.uₙ, :displacement)
@@ -251,9 +253,9 @@ function run_simulations()
 ref_shape = RefHexahedron
 order = 1
 
-ip_fiber = Lagrange{ref_shape, order}()
+ip_fsn = Lagrange{ref_shape, order}()^3
 ip_u = Lagrange{ref_shape, order}()^3
-ip_geo = Lagrange{ref_shape, order}()
+ip_geo = Lagrange{ref_shape, order}()^3
 
 ring_grid = generate_ring_mesh(8,2,2)
 ring_cs = compute_midmyocardial_section_coordinate_system(ring_grid, ip_geo)
@@ -262,7 +264,7 @@ solve_test_ring("Debug",
         Guccione1991PassiveModel(),
         Guccione1993ActiveModel(10.0),
         PelceSunLangeveld1995Model(;calcium_field=CalciumHatField()),
-        create_simple_fiber_model(ring_cs, ip_fiber, ip_geo,
+        create_simple_microstructure_model(ring_cs, ip_fsn, ip_geo,
             endo_helix_angle = deg2rad(0.0),
             epi_helix_angle = deg2rad(0.0),
             endo_transversal_angle = 0.0,
@@ -288,7 +290,7 @@ solve_test_ring("ring-test",
         PelceSunLangeveld1995Model(;calcium_field=SpatiallyHomogeneousDataField(
             activation_data[:,1],activation_data[:,2]
         )),
-        create_simple_fiber_model(ring_cs, ip_fiber, ip_geo,
+        create_simple_microstructure_model(ring_cs, ip_fsn, ip_geo,
             endo_helix_angle = deg2rad(0.0),
             epi_helix_angle = deg2rad(0.0),
             endo_transversal_angle = 0.0,
@@ -312,7 +314,7 @@ filename = "MidVentricularSectionHexG50-10-10"
 
 # ring_grid = saved_file_to_grid("../data/meshes/ring/" * filename)
 ring_cs = compute_midmyocardial_section_coordinate_system(ring_grid, ip_geo)
-ring_fm = create_simple_fiber_model(ring_cs, ip_fiber, ip_geo, endo_helix_angle = deg2rad(60.0), epi_helix_angle = deg2rad(-60.0), endo_transversal_angle = 0.0, epi_transversal_angle = 0.0)
+ring_fm = create_simple_microstructure_model(ring_cs, ip_fsn, ip_geo, endo_helix_angle = deg2rad(60.0), epi_helix_angle = deg2rad(-60.0), endo_transversal_angle = 0.0, epi_transversal_angle = 0.0)
 
 passive_model = HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 0.28504197825657906, 4.126552003938297, 0.0, 1.0, 0.0, 1.0, SimpleCompressionPenalty(4.0))
 
@@ -420,7 +422,7 @@ passive_model = HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 
 #         Guccione1993ActiveModel(10),
 #         PelceSunLangeveld1995Model()
 #     ), ring_grid, ring_cs,
-#     create_simple_fiber_model(ring_cs, ip_fiber, ip_geo,
+#     create_simple_microstructure_model(ring_cs, ip_fsn, ip_geo,
 #         endo_helix_angle = deg2rad(60.0),
 #         epi_helix_angle = deg2rad(-60.0),
 #         endo_transversal_angle = 0.0,
@@ -437,7 +439,7 @@ passive_model = HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 
 #         ActiveMaterialAdapter(NewActiveSpring()),
 #         RLRSQActiveDeformationGradientModel(0.75),
 #         PelceSunLangeveld1995Model()
-#     ), ring_grid, ring_cs, create_simple_fiber_model(ring_cs, ip_fiber, ip_geo, endo_helix_angle = deg2rad(50.0), epi_helix_angle = deg2rad(-40.0), endo_transversal_angle = 0.0, epi_transversal_angle = 0.0),
+#     ), ring_grid, ring_cs, create_simple_microstructure_model(ring_cs, ip_fsn, ip_geo, endo_helix_angle = deg2rad(50.0), epi_helix_angle = deg2rad(-40.0), endo_transversal_angle = 0.0, epi_transversal_angle = 0.0),
 #     [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
 #     ip_u, ip_geo, 2*order
 # )
@@ -448,7 +450,7 @@ passive_model = HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 
 #         ActiveMaterialAdapter(NewActiveSpring()),
 #         RLRSQActiveDeformationGradientModel(0.75),
 #         PelceSunLangeveld1995Model()
-#     ), ring_grid, ring_cs, create_simple_fiber_model(ring_cs, ip_fiber, ip_geo, endo_helix_angle = deg2rad(50.0), epi_helix_angle = deg2rad(-40.0), endo_transversal_angle = 0.0, epi_transversal_angle = 0.0, sheetlet_pseudo_angle = deg2rad(45)),
+#     ), ring_grid, ring_cs, create_simple_microstructure_model(ring_cs, ip_fsn, ip_geo, endo_helix_angle = deg2rad(50.0), epi_helix_angle = deg2rad(-40.0), endo_transversal_angle = 0.0, epi_transversal_angle = 0.0, sheetlet_pseudo_angle = deg2rad(45)),
 #     [NormalSpringBC(0.001, "Epicardium")], CalciumHatField(),
 #     ip_u, ip_geo, 2*order
 # )
