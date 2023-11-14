@@ -58,7 +58,7 @@ function perform_step!(problem::TransientHeatProblem, cache::BackwardEulerSolver
     add!(b, cache.source_term)
     # Solve linear problem
     # TODO abstraction layer and way to pass the solver/preconditioner pair (LinearSolve.jl?)
-    Krylov.cg!(linsolver, A, b, uₙ₋₁)
+    @timeit_debug "inner solve" Krylov.cg!(linsolver, A, b, uₙ₋₁)
     @inbounds uₙ .= linsolver.x
     @info linsolver.stats
     return true
