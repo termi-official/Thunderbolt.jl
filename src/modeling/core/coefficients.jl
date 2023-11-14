@@ -1,4 +1,7 @@
 """
+    FieldCoefficient
+
+A constant in time data field, interpolated per element with a given interpolation.
 """
 struct FieldCoefficient{TA,IP<:Interpolation}
     # TODO data structure for this
@@ -7,8 +10,6 @@ struct FieldCoefficient{TA,IP<:Interpolation}
     # TODO use CellValues
 end
 
-"""
-"""
 function evaluate_coefficient(coeff::FieldCoefficient{<:Any,<:ScalarInterpolation}, cell_cache, qp::QuadraturePoint{<:Any, T}, t) where T
     @unpack elementwise_data, ip = coeff
 
@@ -21,8 +22,6 @@ function evaluate_coefficient(coeff::FieldCoefficient{<:Any,<:ScalarInterpolatio
     return val
 end
 
-"""
-"""
 function evaluate_coefficient(coeff::FieldCoefficient{<:Any,<:VectorizedInterpolation{vdim}}, cell_cache, qp::QuadraturePoint{<:Any, T}, t) where {vdim,T}
     @unpack elementwise_data, ip = coeff
 
@@ -36,6 +35,9 @@ function evaluate_coefficient(coeff::FieldCoefficient{<:Any,<:VectorizedInterpol
 end
 
 """
+    ConstantCoefficient
+
+Constant in space and time data.
 """
 struct ConstantCoefficient{T}
     val::T
@@ -45,6 +47,7 @@ end
 """
 evaluate_coefficient(coeff::ConstantCoefficient, cell_cache, qp, t) = coeff.val
 
+#  Internal helper for ep problems
 struct ConductivityToDiffusivityCoefficient{DTC, CC, STVC}
     conductivity_tensor_coefficient::DTC
     capacitance_coefficient::CC
@@ -57,7 +60,6 @@ function evaluate_coefficient(coeff::ConductivityToDiffusivityCoefficient, cell_
     χ  = evaluate_coefficient(coeff.χ_coefficient, cell_cache, qp, t)
     return κ/(Cₘ*χ)
 end
-
 
 struct CartesianCoordinateSystemCoefficient{IP<:VectorizedInterpolation}
     ip::IP
@@ -87,21 +89,17 @@ end
 
 Represent a tensor A via spectral decomposition ∑ᵢ λᵢ vᵢ ⊗ vᵢ.
 """
-struct SpectralTensorCoefficient{dim, MSC, TC}
+struct SpectralTensorCoefficient{MSC, TC}
     eigenvectors::MSC
     eigenvalues::TC
-
-    function SpectralTensorCoefficient(dim, vectors, values)
-        new{dim, typeof(vectors), typeof(values)}(vectors, values)
-    end
 end
 
 @inline _eval_sdt_coefficient(M::SVector{MS}, λ::SVector{λS}) where {MS, λS} = error("Incompatible dimensions! dim(M)=$MS dim(λ)=$λS")
-@inline _eval_sdt_coefficient(M::SVector{dim}, λ::SVector{dim}) where {dim} = sum(i->λ[i] * M[i] ⊗ M[i], 1:dim; init=0.0)
+@inline _eval_sdt_coefficient(M::SVector{rdim,<:Vec{sdim}}, λ::SVector{rdim}) where {rdim,sdim} = sum(i->λ[i] * M[i] ⊗ M[i], 1:rdim; init=zero(Tensor{2,sdim}))
 
-function evaluate_coefficient(coeff::SpectralTensorCoefficient, cell_cache, ξ::Vec, t)
-    M = evaluate_coefficient(coeff.eigenvectors, cell_cache, ξ, t)
-    λ = evaluate_coefficient(coeff.eigenvalues, cell_cache, ξ, t)
+function evaluate_coefficient(coeff::SpectralTensorCoefficient, cell_cache, qp::QuadraturePoint, t)
+    M = evaluate_coefficient(coeff.eigenvectors, cell_cache, qp, t)
+    λ = evaluate_coefficient(coeff.eigenvalues, cell_cache, qp, t)
     return _eval_sdt_coefficient(M, λ)
 end
 
@@ -109,17 +107,19 @@ end
     SpatiallyHomogeneousDataField
 
 A data field which is constant in space and piecewise constant in time.
+
+The value during the time interval [tᵢ,tᵢ₊₁] is dataᵢ, where t₀ is negative infinity and the last time point+1 is positive infinity.
 """
-struct SpatiallyHomogeneousDataField
+struct SpatiallyHomogeneousDataField{T}
     timings::Vector{Float64}
-    data::Vector{Float64}
+    data::Vector{T}
 end
 
-function Thunderbolt.evaluate_coefficient(coeff::SpatiallyHomogeneousDataField, cell_cache, qp, t)
+function Thunderbolt.evaluate_coefficient(coeff::SpatiallyHomogeneousDataField, cell_cache, qp::QuadraturePoint, t)
     @unpack timings, data = coeff
     i = 1
     tᵢ = timings[1]
-    while tᵢ ≤ t
+    while tᵢ < t
         i+=1
         if i > length(timings)
             return data[end]
