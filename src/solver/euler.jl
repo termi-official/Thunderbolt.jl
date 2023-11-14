@@ -39,7 +39,7 @@ function implicit_euler_heat_solver_update_system_matrix!(cache::BackwardEulerSo
 end
 
 function implicit_euler_heat_update_source_term!(cache::BackwardEulerSolverCache, t)
-    update_operator!(cache.source_term, t)
+    needs_update(cache.source_term, t) && update_operator!(cache.source_term, t)
 end
 
 # Performs a backward Euler step
