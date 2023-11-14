@@ -302,37 +302,30 @@ struct AnalyticalCoefficientElementCache{F <: AnalyticalCoefficient, T, CV}
     cv::CV
 end
 
-@inline function _reinit_tb!(cv, x::AbstractVector{Vec{dim,T}}) where {dim,T}
+function assemble_element!(bₑ, cell, element_cache::AnalyticalCoefficientElementCache, time)
+    _assemble_element!(bₑ, getcoordinates(cell), element_cache::AnalyticalCoefficientElementCache, time)
+end
+# We want this to be as fast as possible, so throw away everything unused
+@inline function _assemble_element!(bₑ, coords::AbstractVector{<:Vec{dim,T}}, element_cache::AnalyticalCoefficientElementCache, time) where {dim,T}
+    @unpack f, cv = element_cache
     n_geom_basefuncs = Ferrite.getngeobasefunctions(cv)
-    n_func_basefuncs = Ferrite.getnbasefunctions(cv)
-    length(x) == n_geom_basefuncs || throw_incompatible_coord_length(length(x), n_geom_basefuncs)
-
-    @inbounds for (i, w) in pairs(Ferrite.getweights(cv.qr))
+    @inbounds for (qp, w) in pairs(Ferrite.getweights(cv.qr))
+        # Compute dΩ
         fecv_J = zero(Tensor{2,dim,T})
-        for j in 1:n_geom_basefuncs
-            fecv_J += x[j] ⊗ cv.dMdξ[j, i]
+        @inbounds for j in 1:n_geom_basefuncs
+            fecv_J += coords[j] ⊗ cv.dMdξ[j, qp]
         end
         detJ = det(fecv_J)
-        # detJ > 0.0 || throw_detJ_not_pos(detJ)
-        cv.detJdV[i] = detJ * w
-        # Jinv = inv(fecv_J)
-        # for j in 1:n_func_basefuncs
-        #     # cv.dNdx[j, i] = cv.dNdξ[j, i] ⋅ Jinv
-        #     cv.dNdx[j, i] = dothelper(cv.dNdξ[j, i], Jinv)
-        # end
-    end
-end
-function assemble_element!(bₑ, cell, element_cache::AnalyticalCoefficientElementCache, time)
-    @unpack f, cv = element_cache
-    coords = getcoordinates(cell)
-    #reinit!(cv, coords) # TODO reinit geometry values only...
-    _reinit_tb!(cv, coords)
-    
-    @inbounds for qp ∈ 1:getnquadpoints(cv)
-        x = spatial_coordinate(cv, qp, coords)
+        dΩ = detJ * w
+        # Compute x
+        x = zero(Vec{dim,T})
+        @inbounds for j in 1:n_geom_basefuncs
+            x += Ferrite.geometric_value(cv, qp, j) * coords[j]
+        end
+        # Evaluate f
         fx = f.f(x,time)
-        dΩ = getdetJdV(cv, qp)
-        for j ∈ 1:getnbasefunctions(cv)
+        # Evaluate all basis functions
+        @inbounds for j ∈ 1:getnbasefunctions(cv)
             δu = shape_value(cv, qp, j)
             bₑ[j] += fx * δu * dΩ
         end
