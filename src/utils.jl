@@ -129,11 +129,12 @@ function mul!(y::AbstractVector, A_::ThreadedSparseMatrixCSR, x::AbstractVector)
 
     @batch minbatch = size(y, 1) ÷ Threads.nthreads() for row in 1:size(y, 1)
         @inbounds begin
-            y[row] = 0.0
+            v = zero(eltype(y))
             for nz in nzrange(A, row)
                 col = A.colval[nz]
-                y[row] += A.nzval[nz]*x[col]
+                v += A.nzval[nz]*x[col]
             end
+            y[row] = v
         end
     end
 
@@ -146,7 +147,7 @@ function mul(A::ThreadedSparseMatrixCSR, x::AbstractVector)
 end
 *(A::ThreadedSparseMatrixCSR, v::AbstractVector) = mul(A,v)
 
-eltype(A::ThreadedSparseMatrixCSR) = eltype(A.A)
+Base.eltype(A::ThreadedSparseMatrixCSR) = Base.eltype(A.A)
 getrowptr(A::ThreadedSparseMatrixCSR) = getrowptr(A.A)
 getnzval(A::ThreadedSparseMatrixCSR) = getnzval(A.A)
 getcolval(A::ThreadedSparseMatrixCSR) = getnzval(A.A)
