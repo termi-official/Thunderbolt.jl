@@ -14,7 +14,7 @@ Base.@kwdef struct ParametrizedPCG2019Model{T} <: AbstractIonicModel
     E_z::T  = -91.9655 # [mV]
     k_z::T  = 12.4997  # [mV]
     # ------ I_to -------
-    g_to    = 0.1688   # [mS/µF]
+    g_to::T = 0.1688   # [mS/µF]
     E_r::T  = 14.3116  # [mV]
     k_r::T  = 11.462   # [mV]
     E_s::T  = -47.9286 # [mV]
