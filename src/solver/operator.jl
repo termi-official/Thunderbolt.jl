@@ -303,14 +303,29 @@ struct AnalyticalCoefficientElementCache{F <: AnalyticalCoefficient, T, CV}
 end
 
 function assemble_element!(bₑ, cell, element_cache::AnalyticalCoefficientElementCache, time)
+    _assemble_element!(bₑ, getcoordinates(cell), element_cache::AnalyticalCoefficientElementCache, time)
+end
+# We want this to be as fast as possible, so throw away everything unused
+@inline function _assemble_element!(bₑ, coords::AbstractVector{<:Vec{dim,T}}, element_cache::AnalyticalCoefficientElementCache, time) where {dim,T}
     @unpack f, cv = element_cache
-    reinit!(cv, cell)
-    coords = getcoordinates(cell)
-    for qp ∈ 1:getnquadpoints(cv)
-        x = spatial_coordinate(cv, qp, coords)
+    n_geom_basefuncs = Ferrite.getngeobasefunctions(cv)
+    @inbounds for (qp, w) in pairs(Ferrite.getweights(cv.qr))
+        # Compute dΩ
+        fecv_J = zero(Tensor{2,dim,T})
+        @inbounds for j in 1:n_geom_basefuncs
+            fecv_J += coords[j] ⊗ cv.dMdξ[j, qp]
+        end
+        detJ = det(fecv_J)
+        dΩ = detJ * w
+        # Compute x
+        x = zero(Vec{dim,T})
+        @inbounds for j in 1:n_geom_basefuncs
+            x += Ferrite.geometric_value(cv, qp, j) * coords[j]
+        end
+        # Evaluate f
         fx = f.f(x,time)
-        dΩ = getdetJdV(cv, qp)
-        for j ∈ 1:getnbasefunctions(cv)
+        # Evaluate all basis functions
+        @inbounds for j ∈ 1:getnbasefunctions(cv)
             δu = shape_value(cv, qp, j)
             bₑ[j] += fx * δu * dΩ
         end

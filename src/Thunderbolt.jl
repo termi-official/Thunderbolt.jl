@@ -4,7 +4,7 @@ using TimerOutputs
 
 using Reexport, UnPack
 import LinearAlgebra: mul!
-using SparseMatricesCSR
+using SparseMatricesCSR, Polyester, LinearAlgebra
 using Krylov
 using OrderedCollections
 @reexport using Ferrite

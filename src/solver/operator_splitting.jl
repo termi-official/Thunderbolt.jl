@@ -46,13 +46,13 @@ end
 # Lie-Trotter-Godunov step to advance the problem split into A and B from a given initial condition
 function perform_step!(problem::SplitProblem, cache::LTGOSSolverCache, t, Δt)
     # We start by setting the initial condition for the step of problem A from the solution in B.
-    transfer_fields!(problem.B, cache.B_solver_cache, problem.A, cache.A_solver_cache)
+    @timeit_debug "transfer B->A" transfer_fields!(problem.B, cache.B_solver_cache, problem.A, cache.A_solver_cache)
     # Then the step for A is executed
-    perform_step!(problem.A, cache.A_solver_cache, t, Δt) || return false
+    @timeit_debug "step A" perform_step!(problem.A, cache.A_solver_cache, t, Δt) || return false
     # This sets the initial condition for problem B
-    transfer_fields!(problem.A, cache.A_solver_cache, problem.B, cache.B_solver_cache)
+    @timeit_debug "transfer A->B" transfer_fields!(problem.A, cache.A_solver_cache, problem.B, cache.B_solver_cache)
     # Then the step for B is executed
-    perform_step!(problem.B, cache.B_solver_cache, t, Δt) || return false
+    @timeit_debug "step B" perform_step!(problem.B, cache.B_solver_cache, t, Δt) || return false
     # This concludes the time step
     return true
 end
