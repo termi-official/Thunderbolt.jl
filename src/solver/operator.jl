@@ -304,7 +304,7 @@ end
 
 function assemble_element!(bₑ, cell, element_cache::AnalyticalCoefficientElementCache, time)
     @unpack f, cv = element_cache
-    reinit!(cv, cell)
+    @timeit_debug "reinit!" reinit!(cv, cell) # TODO reinit geometry values only...
     coords = getcoordinates(cell)
     for qp ∈ 1:getnquadpoints(cv)
         x = spatial_coordinate(cv, qp, coords)

@@ -34,7 +34,7 @@ end
 # Optimized version for CSR matrices - Lucky gamble dispatch
 function implicit_euler_heat_solver_update_system_matrix!(cache::BackwardEulerSolverCache{<:Any, <:Any, <:Any, SystemMatrixType}, Δt) where {SystemMatrixType <: ThreadedSparseMatrixCSR}
     # We live in a symmeric utopia :)
-    cache.A = SystemMatrixType(transpose(cache.M.A - Δt*cache.J.A)) # TODO FIXME make me generic
+    @timeit_debug "implicit_euler_heat_solver_update_system_matrix!" cache.A = SystemMatrixType(transpose(cache.M.A - Δt*cache.J.A)) # TODO FIXME make me generic
     cache.Δt_last = Δt
 end
 
@@ -51,11 +51,13 @@ function perform_step!(problem::TransientHeatProblem, cache::BackwardEulerSolver
     # Update matrix if time step length has changed
     Δt ≈ Δt_last || implicit_euler_heat_solver_update_system_matrix!(cache, Δt)
     # Prepare right hand side b = M uₙ₋₁
-    mul!(b, M, uₙ₋₁)
+    @timeit_debug "b = M uₙ₋₁" mul!(b, M, uₙ₋₁)
     # TODO How to remove these two lines here?
     # Update source term
-    implicit_euler_heat_update_source_term!(cache, t)
-    add!(b, cache.source_term)
+    @timeit_debug "update source term" begin
+        implicit_euler_heat_update_source_term!(cache, t)
+        add!(b, cache.source_term)
+    end
     # Solve linear problem
     # TODO abstraction layer and way to pass the solver/preconditioner pair (LinearSolve.jl?)
     @timeit_debug "inner solve" Krylov.cg!(linsolver, A, b, uₙ₋₁)
@@ -118,8 +120,10 @@ function setup_solver_caches(problem::TransientHeatProblem, solver::BackwardEule
         0.0
     )
 
-    update_operator!(cache.M, t₀)
-    update_operator!(cache.J, t₀)
+    @timeit_debug "initial assembly" begin
+        update_operator!(cache.M, t₀)
+        update_operator!(cache.J, t₀)
+    end
     
     return cache
 end
