@@ -302,11 +302,33 @@ struct AnalyticalCoefficientElementCache{F <: AnalyticalCoefficient, T, CV}
     cv::CV
 end
 
+@inline function _reinit_tb!(cv, x::AbstractVector{Vec{dim,T}}) where {dim,T}
+    n_geom_basefuncs = Ferrite.getngeobasefunctions(cv)
+    n_func_basefuncs = Ferrite.getnbasefunctions(cv)
+    length(x) == n_geom_basefuncs || throw_incompatible_coord_length(length(x), n_geom_basefuncs)
+
+    @inbounds for (i, w) in pairs(Ferrite.getweights(cv.qr))
+        fecv_J = zero(Tensor{2,dim,T})
+        for j in 1:n_geom_basefuncs
+            fecv_J += x[j] ⊗ cv.dMdξ[j, i]
+        end
+        detJ = det(fecv_J)
+        # detJ > 0.0 || throw_detJ_not_pos(detJ)
+        cv.detJdV[i] = detJ * w
+        # Jinv = inv(fecv_J)
+        # for j in 1:n_func_basefuncs
+        #     # cv.dNdx[j, i] = cv.dNdξ[j, i] ⋅ Jinv
+        #     cv.dNdx[j, i] = dothelper(cv.dNdξ[j, i], Jinv)
+        # end
+    end
+end
 function assemble_element!(bₑ, cell, element_cache::AnalyticalCoefficientElementCache, time)
     @unpack f, cv = element_cache
-    @timeit_debug "reinit!" reinit!(cv, cell) # TODO reinit geometry values only...
     coords = getcoordinates(cell)
-    for qp ∈ 1:getnquadpoints(cv)
+    #reinit!(cv, coords) # TODO reinit geometry values only...
+    _reinit_tb!(cv, coords)
+    
+    @inbounds for qp ∈ 1:getnquadpoints(cv)
         x = spatial_coordinate(cv, qp, coords)
         fx = f.f(x,time)
         dΩ = getdetJdV(cv, qp)
