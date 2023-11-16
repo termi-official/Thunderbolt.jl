@@ -57,7 +57,8 @@
                             contraction_model,
                             fsn,
                         )
-                        @test_call broken=true Thunderbolt.material_routine(F, f₀, s₀, n₀, Caᵢ, model)
+                        # Not sure which PR exactly fixed this.
+                        @test_call broken=VERSION<v"1.11.0-DEV" Thunderbolt.material_routine(F, f₀, s₀, n₀, Caᵢ, model)
                     end
                 end
             end
