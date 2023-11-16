@@ -10,7 +10,7 @@ if liveserver
     @timeit dto "Revise.revise()" Revise.revise()
 end
 
-using Documenter, DocumenterCitations, Thunderbolt, FerriteGmsh
+using Documenter, DocumenterCitations, Thunderbolt
 
 const is_ci = haskey(ENV, "GITHUB_ACTIONS")
 

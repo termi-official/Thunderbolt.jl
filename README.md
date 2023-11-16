@@ -6,6 +6,8 @@
 
 A modular shared-memory high-performance framework for multiscale cardiac multiphysics.
 
+[![](https://img.shields.io/badge/docs-dev-blue.svg)](https://termi-official.github.io/Thunderbolt.jl/dev)
+
 > [!WARNING]
 > This package is under heavy development. Expect regular breaking changes
 > for now. If you are interested in joining development, then either comment
@@ -29,7 +31,7 @@ enter `pkg>` mode:
 pkg> add Ferrite#master, github.com/termi-official/Thunderbolt.jl#master
 ```
 
-> note
+> [!NOTE]
 > The package is under codevelopment with Ferrite.jl, which is why you will need the currently (unreleased)
 > 1.0 version of Ferrite.jl and the (unregistered) Thunderbolt.jl package. Please use [these Ferrite.jl docs](https://ferrite-fem.github.io/Ferrite.jl/dev/)
 > for Ferrite specific questions.
@@ -46,10 +48,7 @@ using Thunderbolt
 
 You are now all set to start using Thunderbolt!
 
-## Accessing the documentation
-
-Currently the documentation can only be built and viewed locally. Note that the
-documentation is incomplete at this point.
+## Accessing the Documentation Offline
 
 To build the docs you first need to install Julia, see <https://julialang.org/> for details.
 Then you need to install the packages. To accomplish this you first start a julia shell in the 
