@@ -9,13 +9,13 @@ A modular shared-memory high-performance framework for multiscale cardiac multip
 > [!WARNING]
 > This package is under heavy development. Expect regular breaking changes
 > for now. If you are interested in joining development, then either comment
-> an issue or reach out via julialang.zulipchat.com, via mail or via 
-> julialang.slack.com. Alternatively open a discussion if you have something 
+> an issue you are interested or directly reach out to me via julialang.zulipchat.com, mail or
+> julialang.slack.com. Alternatively open a [GitHub discussion](https://github.com/termi-official/Thunderbolt.jl/discussions) if you have something 
 > specific in mind.
 
 ## Questions
 
-If you have questions about Thunderbolt it is suggested to use the #Thunderbolt.jl stream on Zulip.
+If you have questions about Thunderbolt it is suggested to use the [#Thunderbolt.jl stream on Zulip](https://julialang.zulipchat.com/#narrow/stream/413315-Thunderbolt.2Ejl).
 
 If you encounter what you think is a bug please report it. A CONTRIBUTING.md will be provided soon with more information.
 
@@ -29,9 +29,10 @@ enter `pkg>` mode:
 pkg> add Ferrite#master, github.com/termi-official/Thunderbolt.jl#master
 ```
 
-!!! note
-    The package is under development, which is why you will need the currently (unreleased)
-    1.0 version of Ferrite.jl and the (unregistered) Thunderbolt.jl package.
+> note
+> The package is under codevelopment with Ferrite.jl, which is why you will need the currently (unreleased)
+> 1.0 version of Ferrite.jl and the (unregistered) Thunderbolt.jl package. Please use [these Ferrite.jl docs](https://ferrite-fem.github.io/Ferrite.jl/dev/)
+> for Ferrite specific questions.
 
 This will install Thunderbolt and all necessary dependencies. Press backspace to get back to the
 `julia>` prompt. (See the [documentation for Pkg](https://pkgdocs.julialang.org/), Julia's
@@ -66,4 +67,4 @@ Now you can view the documentation at https://localhost:8000 . All further infor
 
 ## Community Standards
 
-Please keep in mind that we are part of the Julia community and adhere to the Julia Community Standards.
+Please keep in mind that we are part of the Julia community and adhere to the [Julia Community Standards](https://julialang.org/community/standards/).
