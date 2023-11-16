@@ -68,3 +68,7 @@ Now you can view the documentation at https://localhost:8000 . All further infor
 ## Community Standards
 
 Please keep in mind that we are part of the Julia community and adhere to the [Julia Community Standards](https://julialang.org/community/standards/).
+
+## Acknowledgement
+
+This framework is primarily developed at the [chair of continuum mechanics at Ruhr-University Bochum under Prof. Dr.-Ing. Daniel Balzani](https://www.lkm.ruhr-uni-bochum.de/).
