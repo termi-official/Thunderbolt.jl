@@ -4,14 +4,14 @@
   <img alt="Thunderbolt.jl logo." src="docs/src/assets/logo-horizontal.svg">
 </picture>
 
-A modular high-performance framework for cardiac multiphysics.
+A modular shared-memory high-performance framework for multiscale cardiac multiphysics.
 
-!!! warning
-    This package is under heavy development. Expect regular breaking changes
-    for now. If you are interested in joining development, then either comment
-    an issue or reach out via julialang.zulipchat.com, via mail or via 
-    julialang.slack.com. Alternatively open a discussion if you have something 
-    specific in mind.
+> [!WARNING]
+> This package is under heavy development. Expect regular breaking changes
+> for now. If you are interested in joining development, then either comment
+> an issue or reach out via julialang.zulipchat.com, via mail or via 
+> julialang.slack.com. Alternatively open a discussion if you have something 
+> specific in mind.
 
 ## Accessing the documentation
 
