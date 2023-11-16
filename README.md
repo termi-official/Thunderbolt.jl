@@ -19,7 +19,7 @@ If you have questions about Thunderbolt it is suggested to use the [#Thunderbolt
 
 If you encounter what you think is a bug please report it. A CONTRIBUTING.md will be provided soon with more information.
 
-### Installation
+## Installation
 
 To use Thunderbolt you first need to install Julia, see <https://julialang.org/> for details.
 Installing Thunderbolt can then be done from the Pkg REPL; press `]` at the `julia>` promp to
