@@ -146,6 +146,8 @@ function mul(A::ThreadedSparseMatrixCSR, x::AbstractVector)
     return mul!(y, A, x)
 end
 *(A::ThreadedSparseMatrixCSR, v::AbstractVector) = mul(A,v)
+*(A::ThreadedSparseMatrixCSR, v::BlockArrays.FillArrays.AbstractZeros{<:Any, 1}) = mul(A,v)
+*(A::ThreadedSparseMatrixCSR, v::BlockArrays.ArrayLayouts.LayoutVector) = mul(A,v)
 
 Base.eltype(A::ThreadedSparseMatrixCSR) = Base.eltype(A.A)
 getrowptr(A::ThreadedSparseMatrixCSR) = getrowptr(A.A)

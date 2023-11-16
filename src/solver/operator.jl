@@ -29,7 +29,7 @@ end
 
 # TODO constructor which checks for axis compat
 struct BlockOperator{OPS <: Tuple}
-    # TODO maybe SMatrix?
+    # TODO custom "square matrix tuple"
     operators::OPS # stored row by row as in [1 2; 3 4]
 end
 
@@ -324,6 +324,7 @@ end
         end
         # Evaluate f
         fx = f.f(x,time)
+        # TODO replace with evaluate_coefficient
         # Evaluate all basis functions
         @inbounds for j ∈ 1:getnbasefunctions(cv)
             δu = shape_value(cv, qp, j)
