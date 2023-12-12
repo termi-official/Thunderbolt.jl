@@ -21,15 +21,13 @@ function assemble_element!(Mₑ, cell, element_cache::CACHE, time) where {CACHE 
     @unpack cellvalues = element_cache
     reinit!(element_cache.cellvalues, cell)
     n_basefuncs = getnbasefunctions(cellvalues)
-    for q_point in 1:getnquadpoints(cellvalues)
-        ξ = cellvalues.qr.points[q_point]
-        qp = QuadraturePoint(q_point, ξ)
+    for qp in QuadratureIterator(cellvalues)
         ρ = evaluate_coefficient(element_cache.integrator.ρ, cell, qp, time)
-        dΩ = getdetJdV(cellvalues, q_point)
+        dΩ = getdetJdV(cellvalues, qp)
         for i in 1:n_basefuncs
-            Nᵢ = shape_value(cellvalues, q_point, i)
+            Nᵢ = shape_value(cellvalues, qp, i)
             for j in 1:n_basefuncs
-                Nⱼ = shape_value(cellvalues, q_point, j)
+                Nⱼ = shape_value(cellvalues, qp, j)
                 Mₑ[i,j] += ρ * Nᵢ * Nⱼ * dΩ 
             end
         end

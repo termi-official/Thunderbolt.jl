@@ -22,15 +22,13 @@ function assemble_element!(Kₑ, cell, element_cache::CACHE, time) where {CACHE 
 
     reinit!(cellvalues, cell)
 
-    for q_point in 1:getnquadpoints(cellvalues)
-        ξ = cellvalues.qr.points[q_point]
-        qp = QuadraturePoint(q_point, ξ)
+    for qp in QuadratureIterator(cellvalues)
         D_loc = evaluate_coefficient(element_cache.integrator.D, cell, qp, time)
-        dΩ = getdetJdV(cellvalues, q_point)
+        dΩ = getdetJdV(cellvalues, qp)
         for i in 1:n_basefuncs
-            ∇Nᵢ = shape_gradient(cellvalues, q_point, i)
+            ∇Nᵢ = shape_gradient(cellvalues, qp, i)
             for j in 1:n_basefuncs
-                ∇Nⱼ = shape_gradient(cellvalues, q_point, j)
+                ∇Nⱼ = shape_gradient(cellvalues, qp, j)
                 Kₑ[i,j] -= ((D_loc ⋅ ∇Nᵢ) ⋅ ∇Nⱼ) * dΩ
             end
         end

@@ -30,13 +30,11 @@ function assemble_element!(Kₑ::Matrix, residualₑ, uₑ, geometry_cache, elem
 
     reinit!(cv, geometry_cache)
 
-    @inbounds for qpᵢ in 1:getnquadpoints(cv)
-        ξ = cv.qr.points[qpᵢ]
-        qp = QuadraturePoint(qpᵢ, ξ)
-        dΩ = getdetJdV(cv, qpᵢ)
+    @inbounds for qp ∈ QuadratureIterator(cv)
+        dΩ = getdetJdV(cv, qp)
 
         # Compute deformation gradient F
-        ∇u = function_gradient(cv, qpᵢ, uₑ)
+        ∇u = function_gradient(cv, qp, uₑ)
         F = one(∇u) + ∇u
 
         # Compute stress and tangent
@@ -45,14 +43,14 @@ function assemble_element!(Kₑ::Matrix, residualₑ, uₑ, geometry_cache, elem
 
         # Loop over test functions
         for i in 1:ndofs
-            ∇δui = shape_gradient(cv, qpᵢ, i)
+            ∇δui = shape_gradient(cv, qp, i)
 
             # Add contribution to the residual from this test function
             residualₑ[i] += ∇δui ⊡ P * dΩ
 
             ∇δui∂P∂F = ∇δui ⊡ ∂P∂F # Hoisted computation
             for j in 1:ndofs
-                ∇δuj = shape_gradient(cv, qpᵢ, j)
+                ∇δuj = shape_gradient(cv, qp, j)
                 # Add contribution to the tangent
                 Kₑ[i, j] += ( ∇δui∂P∂F ⊡ ∇δuj ) * dΩ
             end

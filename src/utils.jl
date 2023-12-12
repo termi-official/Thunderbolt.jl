@@ -1,10 +1,11 @@
 
 include("collections.jl")
+include("quadrature_iterator.jl")
 
 function calculate_element_volume(cell, cellvalues_u, uₑ)
     reinit!(cellvalues_u, cell)
     evol::Float64=0.0;
-    @inbounds for qp in 1:getnquadpoints(cellvalues_u)
+    @inbounds for qp in QuadratureIterator(cellvalues_u)
         dΩ = getdetJdV(cellvalues_u, qp)
         ∇u = function_gradient(cellvalues_u, qp, uₑ)
         F = one(∇u) + ∇u
@@ -78,11 +79,6 @@ function generate_nodal_quadrature_rule(ip::Interpolation{ref_shape, order}) whe
     n_base = Ferrite.getnbasefunctions(ip)
     positions = Ferrite.reference_coordinates(ip)
     return QuadratureRule{ref_shape, Float64}(ones(length(positions)), positions)
-end
-
-struct QuadraturePoint{dim, T}
-    i::Int
-    ξ::Vec{dim, T}
 end
 
 """
