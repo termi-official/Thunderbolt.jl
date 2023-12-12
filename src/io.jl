@@ -66,7 +66,7 @@ function store_coefficient!(io::ParaViewWriter, t, coefficient::ConstantCoeffici
     qrc = QuadratureRuleCollection(1)
     for cell_cache in CellIterator(dh)
         qr = getquadraturerule(qr_collection, getcells(get_grid(dh), cellid(cell_cache)))
-        data[cellid(cell_cache)] = evaluate_coefficient(coefficient, cell_cache, QuadraturePoint(1, getpoints(qr)[1]), t)
+        data[cellid(cell_cache)] = evaluate_coefficient(coefficient, cell_cache, first(QuadratureIterator(qr)), t)
     end
     vtk_cell_data(io.current_file, data, name)
 end
