@@ -78,7 +78,7 @@ function create_simple_microstructure_model(coordinate_system, ip::VectorInterpo
         reinit!(cv, cell)
         dof_indices = celldofs(cell)
 
-        for qp in 1:getnquadpoints(cv)
+        for qp in QuadratureIterator(cv)
             # TODO grab these via some interface!
             apicobasal_direction = function_gradient(cv, qp, coordinate_system.u_apicobasal[dof_indices])
             apicobasal_direction /= norm(apicobasal_direction)

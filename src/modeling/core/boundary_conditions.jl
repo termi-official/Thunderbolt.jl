@@ -48,7 +48,7 @@ function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, face, cache::SimpleFace
     reinit!(fv, face[1], face[2])
 
     ndofs_face = getnbasefunctions(fv)
-    for qp in 1:getnquadpoints(fv)
+    for qp in QuadratureIterator(fv)
         dΓ = getdetJdV(fv, qp)
         N = getnormal(fv, qp)
 
@@ -76,7 +76,7 @@ function assemble_face!(Kₑ::Matrix, uₑ, face, cache::SimpleFaceCache{<:Robin
     reinit!(fv, face[1], face[2])
 
     ndofs_face = getnbasefunctions(fv)
-    for qp in 1:getnquadpoints(fv)
+    for qp in QuadratureIterator(fv)
         dΓ = getdetJdV(fv, qp)
         N = getnormal(fv, qp)
 
@@ -103,7 +103,7 @@ function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, face, cache::SimpleFace
     reinit!(fv, face[1], face[2])
 
     ndofs_face = getnbasefunctions(fv)
-    for qp in 1:getnquadpoints(fv)
+    for qp in QuadratureIterator(fv)
         dΓ = getdetJdV(fv, qp)
         N = getnormal(fv, qp)
 
@@ -131,7 +131,7 @@ function assemble_face!(Kₑ::Matrix, uₑ, face, cache::SimpleFaceCache{<:Norma
     reinit!(fv, face[1], face[2])
 
     ndofs_face = getnbasefunctions(fv)
-    for qp in 1:getnquadpoints(fv)
+    for qp in QuadratureIterator(fv)
         dΓ = getdetJdV(fv, qp)
         N = getnormal(fv, qp)
     
@@ -158,7 +158,7 @@ function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, face, cache::SimpleFace
     reinit!(fv, face[1], face[2])
 
     ndofs_face = getnbasefunctions(fv)
-    for qp in 1:getnquadpoints(fv)
+    for qp in QuadratureIterator(fv)
         dΓ = getdetJdV(fv, qp)
         N = getnormal(fv, qp)
 
@@ -190,7 +190,7 @@ function assemble_face!(Kₑ::Matrix, uₑ, face, cache::SimpleFaceCache{<:Bendi
     reinit!(fv, face[1], face[2])
 
     ndofs_face = getnbasefunctions(fv)
-    for qp in 1:getnquadpoints(fv)
+    for qp in QuadratureIterator(fv)
         dΓ = getdetJdV(fv, qp)
         N = getnormal(fv, qp)
     
@@ -220,9 +220,7 @@ function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, face, cache::SimpleFace
     reinit!(fv, face[1], face[2])
 
     ndofs_face = getnbasefunctions(fv)
-    for qp in 1:getnquadpoints(fv)
-        ξ = Ferrite.getpoints(fv.qr, face[2])[qp]
-
+    for qp in QuadratureIterator(fv)
         dΓ = getdetJdV(fv, qp)
 
         n₀ = getnormal(fv, qp)
@@ -237,7 +235,7 @@ function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, face, cache::SimpleFace
         # Add contribution to the residual from this test function
         cofF = transpose(inv(F))
         # TODO fix the "nothing" here
-        neumann_term = evaluate_coefficient(p, nothing, QuadraturePoint(qp, ξ), time) * det(F) * cofF
+        neumann_term = evaluate_coefficient(p, nothing, qp, time) * det(F) * cofF
         for i in 1:ndofs_face
             δuᵢ = shape_value(fv, qp, i)
             residualₑ[i] += neumann_term ⋅ n₀ ⋅ δuᵢ * dΓ
@@ -261,9 +259,7 @@ function assemble_face!(Kₑ::Matrix, uₑ, face, cache::SimpleFaceCache{<:Press
     reinit!(fv, face[1], face[2])
 
     ndofs_face = getnbasefunctions(fv)
-    for qp in 1:getnquadpoints(fv)
-        ξ = Ferrite.getpoints(fv.qr, face[2])[qp]
-
+    for qp in QuadratureIterator(fv)
         dΓ = getdetJdV(fv, qp)
     
         n₀ = getnormal(fv, qp)
@@ -278,7 +274,7 @@ function assemble_face!(Kₑ::Matrix, uₑ, face, cache::SimpleFaceCache{<:Press
         # Add contribution to the residual from this test function
         cofF = transpose(inv(F))
         # TODO fix the "nothing" here
-        neumann_term = evaluate_coefficient(p, nothing, QuadraturePoint(qp, ξ), time) * det(F) * cofF
+        neumann_term = evaluate_coefficient(p, nothing, qp, time) * det(F) * cofF
         for i in 1:ndofs_face
             δuᵢ = shape_value(fv, qp, i)
     
@@ -301,7 +297,7 @@ function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, face, cache::SimpleFace
     reinit!(fv, face[1], face[2])
 
     ndofs_face = getnbasefunctions(fv)
-    for qp in 1:getnquadpoints(fv)
+    for qp in QuadratureIterator(fv)
         dΓ = getdetJdV(fv, qp)
 
         n₀ = getnormal(fv, qp)
@@ -339,7 +335,7 @@ function assemble_face!(Kₑ::Matrix, uₑ, face, cache::SimpleFaceCache{<:Const
     reinit!(fv, face[1], face[2])
 
     ndofs_face = getnbasefunctions(fv)
-    for qp in 1:getnquadpoints(fv)
+    for qp in QuadratureIterator(fv)
         dΓ = getdetJdV(fv, qp)
     
         n₀ = getnormal(fv, qp)

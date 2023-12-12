@@ -60,7 +60,7 @@ function assemble_interface_coupling_contribution!(C, r, dh, u, setname, method:
         ddofs = @view celldofs(face)[drange]
         uₑ = @view u[ddofs]
 
-        for qp in 1:getnquadpoints(fv)
+        for qp in QuadratureIterator(fv)
             dΓ = getdetJdV(fv, qp)
             N = getnormal(fv, qp)
 
@@ -103,7 +103,7 @@ function compute_chamber_volume(dh, u, setname, method)
         ddofs = @view celldofs(face)[drange]
         uₑ = @view u[ddofs]
 
-        for qp in 1:getnquadpoints(fv)
+        for qp in QuadratureIterator(fv)
             dΓ = getdetJdV(fv, qp)
             N = getnormal(fv, qp)
 

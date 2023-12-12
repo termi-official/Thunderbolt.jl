@@ -21,12 +21,12 @@ FaceValueCollection
 
 ## Iteration
 
-TODO QuadraturePointIterator https://github.com/termi-official/Thunderbolt.jl/issues/27
-TODO TimeChoiceIterator https://github.com/termi-official/Thunderbolt.jl/issues/32
-
-```@devdocs
+```@docs
 QuadraturePoint
+QuadratureIterator
 ```
+
+TODO TimeChoiceIterator https://github.com/termi-official/Thunderbolt.jl/issues/32
 
 ## IO
 

@@ -68,7 +68,7 @@ end
 function evaluate_coefficient(coeff::CartesianCoordinateSystemCoefficient{<:VectorizedInterpolation{sdim}}, cell_cache, qp::QuadraturePoint{<:Any,T}, t) where {sdim, T}
     x = zero(Vec{sdim, T})
     for i in 1:getnbasefunctions(coeff.ip.ip)
-        x += shape_value(coeff.ip.ip, qp.ξ, i) * cell_cache.coords[i]
+        x += Ferrite.shape_value(coeff.ip.ip, qp.ξ, i) * cell_cache.coords[i]
     end
     return x
 end

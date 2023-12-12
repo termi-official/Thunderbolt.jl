@@ -66,7 +66,7 @@ function store_coefficient!(io::ParaViewWriter, t, coefficient::ConstantCoeffici
     qrc = QuadratureRuleCollection(1)
     for cell_cache in CellIterator(dh)
         qr = getquadraturerule(qr_collection, getcells(get_grid(dh), cellid(cell_cache)))
-        data[cellid(cell_cache)] = evaluate_coefficient(coefficient, cell_cache, QuadraturePoint(1, getpoints(qr)[1]), t)
+        data[cellid(cell_cache)] = evaluate_coefficient(coefficient, cell_cache, first(QuadratureIterator(qr)), t)
     end
     vtk_cell_data(io.current_file, data, name)
 end
@@ -82,8 +82,7 @@ function _store_coefficient!(::Union{Type{<:Tuple{T}},Type{<:SVector{T}}}, tlen:
     data = zeros(T, getncells(grid), tlen)
     for cell_cache in CellIterator(dh) # TODO subdomain support
         qr = getquadraturerule(qr_collection, getcells(get_grid(dh), cellid(cell_cache)))
-        for qpᵢ ∈ 1:getnquadpoints(qr) # TODO iterator
-            qp = QuadraturePoint(qpᵢ, getpoints(qr)[qpᵢ])
+        for qp ∈ QuadratureIterator(qr)
             tval = evaluate_coefficient(coefficient, cell_cache, qp, t)
             for i ∈ 1:tlen
                 data[cellid(cell_cache), i] += tval[I]
@@ -100,8 +99,7 @@ function _store_coefficient!(T::Type, tlen::Int, io::ParaViewWriter, dh, coeffic
     data = zeros(T, getncells(grid))
     for cell_cache in CellIterator(dh) # TODO subdomain support
         qr = getquadraturerule(qr_collection, getcells(get_grid(dh), cellid(cell_cache)))
-        for qpᵢ ∈ 1:getnquadpoints(qr) # TODO iterator
-            qp = QuadraturePoint(qpᵢ, getpoints(qr)[qpᵢ])
+        for qp ∈ QuadratureIterator(qr)
             data[cellid(cell_cache)] += evaluate_coefficient(coefficient, cell_cache, qp, t)
         end
         data[cellid(cell_cache)] /= getnquadpoints(qr)
@@ -125,9 +123,7 @@ function store_green_lagrange!(io::ParaViewWriter, dh, u::AbstractVector, a_coef
         global_dofs = celldofs(cell_cache)
         field_dofs  = dof_range(sdh, field_idx)
         uₑ = @view u[global_dofs] # element dofs
-        nqp = getnquadpoints(cv)
-        for qpᵢ in 1:nqp
-            qp = QuadraturePoint(qpᵢ, cv.qr.points[qpᵢ])
+        for qp in QuadratureIterator(cv)
             ∇u = function_gradient(cv, qpᵢ, uₑ)
 
             F = one(∇u) + ∇u
@@ -139,7 +135,7 @@ function store_green_lagrange!(io::ParaViewWriter, dh, u::AbstractVector, a_coef
 
             E[cellid(cell)] += a ⋅ E ⋅ b
         end
-        E[cellid(cell)] /= nqp
+        E[cellid(cell)] /= getnquadpoints(cv)
     end
     vtk_cell_data(io.current_file, E, name)
 end

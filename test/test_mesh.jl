@@ -10,16 +10,13 @@
         ref_shape = Ferrite.getrefshape(getcells(grid, 1))
         ip = Lagrange{ref_shape, 1}()
         qr = QuadratureRule{ref_shape, Float64}([1.0], [Vec(ntuple(_->0.1, dim))]) # TODO randomize point
-        # TODO use GeometryValues
-        cv = CellValues(qr, ip)
+
+        gv = Ferrite.GeometryMapping{1}(Float64, ip, qr)
         for cell ∈ CellIterator(grid)
             x = getcoordinates(cell)
-            n_geom_basefuncs = getnbasefunctions(cv.gip)
-            fecv_J = zero(Tensor{2,dim})
-            for j in 1:n_geom_basefuncs
-                fecv_J += x[j] ⊗ cv.dMdξ[j, 1]
-            end
-            @test det(fecv_J) > 0
+            mapping = Ferrite.calculate_mapping(gv, 1, x)
+            J = Ferrite.getjacobian(mapping)
+            @test Ferrite.calculate_detJ(J) > 0
         end
     end
 

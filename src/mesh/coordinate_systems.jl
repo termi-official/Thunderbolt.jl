@@ -49,13 +49,13 @@ function compute_LV_coordinate_system(grid::AbstractGrid, ip_geo::Interpolation{
 
         reinit!(cellvalues, cell)
 
-        for q_point in 1:getnquadpoints(cellvalues)
-            dΩ = getdetJdV(cellvalues, q_point)
+        for qp in QuadratureIterator(cellvalues)
+            dΩ = getdetJdV(cellvalues, qp)
 
             for i in 1:n_basefuncs
-                ∇v = shape_gradient(cellvalues, q_point, i)
+                ∇v = shape_gradient(cellvalues, qp, i)
                 for j in 1:n_basefuncs
-                    ∇u = shape_gradient(cellvalues, q_point, j)
+                    ∇u = shape_gradient(cellvalues, qp, j)
                     Ke[i, j] += (∇v ⋅ ∇u) * dΩ
                 end
             end
@@ -132,13 +132,13 @@ function compute_midmyocardial_section_coordinate_system(grid::AbstractGrid,ip_g
 
         reinit!(cellvalues, cell)
 
-        for q_point in 1:getnquadpoints(cellvalues)
-            dΩ = getdetJdV(cellvalues, q_point)
+        for qp in QuadratureIterator(cellvalues)
+            dΩ = getdetJdV(cellvalues, qp)
 
             for i in 1:n_basefuncs
-                ∇v = shape_gradient(cellvalues, q_point, i)
+                ∇v = shape_gradient(cellvalues, qp, i)
                 for j in 1:n_basefuncs
-                    ∇u = shape_gradient(cellvalues, q_point, j)
+                    ∇u = shape_gradient(cellvalues, qp, j)
                     Ke[i, j] += (∇v ⋅ ∇u) * dΩ
                 end
             end
