@@ -45,6 +45,8 @@ include("solver/euler.jl")
 include("solver/partitioned_solver.jl")
 include("solver/operator_splitting.jl")
 
+include("solver/ecg.jl")
+
 include("discretization/interface.jl")
 include("discretization/fem.jl")
 
