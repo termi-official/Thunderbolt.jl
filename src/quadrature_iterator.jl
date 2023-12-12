@@ -1,4 +1,7 @@
 """
+    QuadraturePoint{dim, T}
+
+A simple helper to carry quadrature point information.
 """
 struct QuadraturePoint{dim, T}
     i::Int
@@ -6,6 +9,12 @@ struct QuadraturePoint{dim, T}
 end
 
 """
+    QuadratureIterator(::QuadratureRule)
+    QuadratureIterator(::FaceQuadratureRule, local_face_idx::Int)
+    QuadratureIterator(::CellValues)
+    QuadratureIterator(::FaceValues)
+
+A helper to loop over the quadrature points in some rule or cache with type [`QuadraturePoint`](@ref).
 """
 struct QuadratureIterator{QR<:QuadratureRule}
     qr::QR

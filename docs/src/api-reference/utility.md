@@ -26,6 +26,7 @@ TODO TimeChoiceIterator https://github.com/termi-official/Thunderbolt.jl/issues/
 
 ```@devdocs
 QuadraturePoint
+QuadratureIterator
 ```
 
 ## IO
