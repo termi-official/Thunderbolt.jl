@@ -78,7 +78,7 @@ function assemble_interface_coupling_contribution!(C, r, dh, u, setname, method:
             ∂V∂F = Tensors.gradient(u -> volume_integral(x, d, u, N, method), F)
             for j ∈ 1:getnbasefunctions(fv)
                 δuⱼ = shape_value(fv, qp, j)
-                ∇δuj = shape_gradient(cv, qpᵢ, j)
+                ∇δuj = shape_gradient(cv, qp, j)
                 C[1, ddofs[j]] += (∂V∂u ⋅ δuⱼ + ∂V∂F ⊡ ∇δuj) * dΓ
             end
         end
