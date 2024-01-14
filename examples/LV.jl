@@ -57,7 +57,7 @@ function (postproc::StandardMechanicalIOPostProcessor2)(t, problem, solver_cache
             sdata_cell = Ferrite.Vec{3}((0.0, 0.0, 0.0))
             helixangle_cell = 0.0
             helixangleref_cell = 0.0
-            
+
             nqp = getnquadpoints(cv)
             for qp in QuadratureIterator(cv)
                 dΩ = getdetJdV(cv, qp)
