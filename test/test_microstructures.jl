@@ -3,7 +3,6 @@
     order = 1
 
     ip_fsn = Lagrange{ref_shape, order}()^3
-    ip_u = Lagrange{ref_shape, order}()^3
     ip_geo = Lagrange{ref_shape, order}()^3
     cv = CellValues(QuadratureRule{ref_shape}(1), ip_fsn, ip_geo)
 
