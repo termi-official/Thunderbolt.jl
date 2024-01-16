@@ -1,23 +1,20 @@
 """
-    evaluate_ecg(method, x::Vec)
+    Plonsey1964ECGGaussCache(problem, op, φₘ)
 
-Evaluate the ECG with a given method at a single point.
+Here φₘ is the solution vector containing the transmembranepotential, op is the associated diffusion opeartor and 
+κₜ is the torso's conductivity.
+
+Returns a cache to compute the lead field with the form proposed in [Plo:1964:vcf](@cite)
+with the Gauss theorem applied to it, as for example described in [OgiBalPer:2021:ema](@cite).
+Calling [`evaluate_ecg`](@ref) with this method simply evaluates the following integral efficiently:
+
+\$\\varphi_e(x)=\\frac{1}{4 \\pi \\kappa_t} \\int_\\Omega \\frac{ \\kappa_ ∇φₘ \\cdot (\\tilde{x}-x)}{||(\\tilde{x}-x)||^3}\\mathrm{d}\\tilde{x}\$
+
+The important simplifications taken are:
+   1. Surrounding volume is an infinite, homogeneous sphere with isotropic conductivity
+   2. The extracellular space and surrounding volume share the same isotropic, homogeneous conductivity tensor
 """
-evaluate_ecg(method, x::Vec)
-
-"""
-    Plonsey1964ECGGaussCache(problem, op)
-
-Cache to compute the lead field with the form proposed in [Plo:1964:vcf](@cite)
-with the Gauss theorem applied to it, as for example described in [OgiBalPer:2021:](@cite):
-TODO formula
-
-TODO citations
-    * Original formulation  https://www.sciencedirect.com/science/article/pii/S0006349564867850?via%3Dihub
-    * Numerical treatment  https://link.springer.com/chapter/10.1007/978-3-030-78710-3_48
-TODO who proposed this one first?
-"""
-struct Plonsey1964ECGGaussCache{BUF, CV, G}
+struct Plonsey1964ECGGaussCache{BUF, CV, G, K}
     # Buffer for storing "κ(x) ∇φₘ(x,t)" at the quadrature points
     κ∇φₘ::BUF
     cv::CV
@@ -62,6 +59,15 @@ function Plonsey1964ECGGaussCache(problem::SplitProblem{<:TransientHeatProblem},
     Plonsey1964ECGGaussCache(dh, op, φₘ)
 end
 
+"""
+    evaluate_ecg(method::Plonsey1964ECGGaussCache, x::Vec, κₜ::Real)
+
+Compute the pseudo ECG at a given point x by evaluating:
+
+\$\\varphi_e(x)=\\frac{1}{4 \\pi \\kappa_t} \\int_\\Omega \\frac{ \\kappa_ ∇φₘ \\cdot (\\tilde{x}-x)}{||(\\tilde{x}-x)||^3}\\mathrm{d}\\tilde{x}\$
+
+For more information please read the docstring for [`Plonsey1964ECGGaussCache`](@ref)
+"""
 function evaluate_ecg(method::Plonsey1964ECGGaussCache, x::Vec, κₜ::Real)
     φₑ = 0.0
     @unpack κ∇φₘ, cv, grid = method
