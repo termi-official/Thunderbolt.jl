@@ -36,7 +36,7 @@ function _compute_quadrature_fluxes!(κ∇φₘ,dh,cv,φₘ,D)
             # dΩ = getdetJdV(cellvalues, qp)
             for i in 1:n_basefuncs
                 ∇Nᵢ = shape_gradient(cv, qp, i)
-                κ∇φₘ[qp.i, cellid(cell)] = D_loc ⋅ ∇Nᵢ * φₘₑ[i]
+                κ∇φₘ[qp.i, cellid(cell)] += D_loc ⋅ ∇Nᵢ * φₘₑ[i]
             end
         end
     end
@@ -50,7 +50,7 @@ function Plonsey1964ECGGaussCache(dh::DofHandler, op::AssembledBilinearOperator,
     # TODO https://github.com/Ferrite-FEM/Ferrite.jl/pull/806 maybe?
     ip = dh.subdofhandlers[1].field_interpolations[1]
     # TODO QVector
-    qr = QuadratureRule{Ferrite.getrefshape(ip)}(2*Ferrite.getorder(ip))
+    qr = op.element_cache.cellvalues.qr
     κ∇φₘ = zeros(Vec{sdim}, getnquadpoints(qr), getncells(dh.grid))
     cv = CellValues(qr, ip)
     _compute_quadrature_fluxes!(κ∇φₘ,dh,cv,φₘ,op.element_cache.integrator.D) # Function barrier
