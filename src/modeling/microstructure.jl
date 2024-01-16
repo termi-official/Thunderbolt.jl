@@ -25,6 +25,7 @@ function evaluate_coefficient(fsn::OrthotropicMicrostructureModel, cell_cache, q
     f, s, n
 end
 
+# TODO: citation
 function streeter_type_fsn(transmural_direction, circumferential_direction, apicobasal_direction, helix_angle, transversal_angle, sheetlet_pseudo_angle, make_orthogonal=true)
     # First we construct the helix rotation ...
     f₀ = rotate_around(circumferential_direction, transmural_direction, helix_angle)
