@@ -34,7 +34,7 @@ end
 
 Compute the chamber volume as a surface integral via the integral
  - ∫ (x + d) det(F) adj(F) N ∂Ωendo
-where it is assumet that the chamber is convex, zero displacement in 
+where it is assumed that the chamber is convex, zero displacement in 
 apicobasal direction at the valvular plane occurs and the plane normal is aligned
 with the z axis, where the origin is at z=0.
 """
