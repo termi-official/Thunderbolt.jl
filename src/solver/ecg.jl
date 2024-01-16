@@ -14,7 +14,7 @@ The important simplifications taken are:
    1. Surrounding volume is an infinite, homogeneous sphere with isotropic conductivity
    2. The extracellular space and surrounding volume share the same isotropic, homogeneous conductivity tensor
 """
-struct Plonsey1964ECGGaussCache{BUF, CV, G, K}
+struct Plonsey1964ECGGaussCache{BUF, CV, G}
     # Buffer for storing "κ(x) ∇φₘ(x,t)" at the quadrature points
     κ∇φₘ::BUF
     cv::CV
