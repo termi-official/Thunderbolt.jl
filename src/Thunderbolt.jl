@@ -74,6 +74,7 @@ export
     # Mesh generators
     generate_mesh,
     generate_ring_mesh,
+    generate_quadratic_ring_mesh,
     generate_ideal_lv_mesh,
     # Mechanics
     StructuralModel,
