@@ -15,7 +15,9 @@
 const LinearCellGeometry = Union{Hexahedron, Tetrahedron, Pyramid, Wedge, Triangle, Quadrilateral, Line}
 
 elementtypes(grid::Grid{3,Hexahedron}) = @SVector [Hexahedron]
+elementtypes(grid::Grid{3,QuadraticHexahedron}) = @SVector [QuadraticHexahedron]
 elementtypes(grid::Grid{3,Tetrahedron}) = @SVector [Tetrahedron]
+elementtypes(grid::Grid{3,QuadraticTetrahedron}) = @SVector [QuadraticTetrahedron]
 
 include("simple_meshes.jl")
 include("coordinate_systems.jl")

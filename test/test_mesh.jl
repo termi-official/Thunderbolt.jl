@@ -4,15 +4,14 @@
     num_refined_elements(::Type{Triangle}) = 4
     num_refined_elements(::Type{Quadrilateral}) = 4
 
-     # TODO fix for embedded elements and mixed grids
     function test_detJ(grid)
         dim = Ferrite.getdim(grid)
-        ref_shape = Ferrite.getrefshape(getcells(grid, 1))
-        ip = Lagrange{ref_shape, 1}()
-        qr = QuadratureRule{ref_shape, Float64}([1.0], [Vec(ntuple(_->0.1, dim))]) # TODO randomize point
 
-        gv = Ferrite.GeometryMapping{1}(Float64, ip, qr)
         for cell ∈ CellIterator(grid)
+            ref_shape = Ferrite.getrefshape(getcells(grid, cellid(cell)))
+            ip = Lagrange{ref_shape, 1}()
+            qr = QuadratureRule{ref_shape, Float64}([1.0], [Vec(ntuple(_->0.1, dim))]) # TODO randomize point
+            gv = Ferrite.GeometryMapping{1}(Float64, ip, qr)
             x = getcoordinates(cell)
             mapping = Ferrite.calculate_mapping(gv, 1, x)
             J = Ferrite.getjacobian(mapping)
@@ -34,7 +33,7 @@
             @test all(typeof.(getcells(grid_hex)) .== Hexahedron) # Test if we really hit all elements
             test_detJ(grid_hex) # And for messed up elements
         end
-        
+
         if element_type == Hexahedron
             grid_fine = Thunderbolt.uniform_refinement(grid)
             @test getncells(grid_fine) == num_refined_elements(element_type)*getncells(grid) 
@@ -43,19 +42,19 @@
         end
     end
 
-    @testset "Ring $element_type" for element_type ∈ [
-        Hexahedron,
-    ]
-        ring_mesh = generate_ring_mesh(8,2,2)
+    @testset "Linear Hex Ring" begin
+        ring_mesh = generate_ring_mesh(8,3,3)
         test_detJ(ring_mesh)
     end
 
-    @testset "LV $element_type" for element_type ∈ [
-        Hexahedron,
-    ]
+    @testset "Quadratic Hex Ring" begin
+        ring_mesh = generate_quadratic_ring_mesh(5,3,3)
+        test_detJ(ring_mesh)
+    end
+
+    @testset "Linear Hex LV" begin
         lv_mesh = Thunderbolt.generate_ideal_lv_mesh(8,4,4)
-        # TODO fix this
-        # test_detJ(lv_mesh)
+        test_detJ(lv_mesh)
         lv_mesh_hex = Thunderbolt.hexahedralize(lv_mesh)
         test_detJ(lv_mesh_hex)
     end
