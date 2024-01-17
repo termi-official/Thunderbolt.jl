@@ -30,6 +30,8 @@ end
 Base.eltype(::Type{<:QuadraturePoint{<:QuadratureRule{<:AbstractRefShape, dim, T}}}) where {dim, T} = QuadraturePoint{dim, T}
 Base.length(iterator::QuadratureIterator) = length(Ferrite.getnquadpoints(iterator.qr))
 
+Ferrite.spatial_coordinate(fe_v::Ferrite.AbstractValues, qp::QuadraturePoint, x::AbstractVector{<:Vec}) = Ferrite.spatial_coordinate(fe_v, qp.i, x)
+
 Ferrite.getdetJdV(cv::CellValues, qp::QuadraturePoint) = Ferrite.getdetJdV(cv, qp.i)
 Ferrite.shape_value(cv::CellValues, qp::QuadraturePoint, base_fun_idx::Int) = Ferrite.shape_value(cv, qp.i, base_fun_idx)
 Ferrite.shape_gradient(cv::CellValues, qp::QuadraturePoint, base_fun_idx::Int) = Ferrite.shape_gradient(cv, qp.i, base_fun_idx)

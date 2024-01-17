@@ -124,7 +124,7 @@ function store_green_lagrange!(io::ParaViewWriter, dh, u::AbstractVector, a_coef
         field_dofs  = dof_range(sdh, field_idx)
         uₑ = @view u[global_dofs] # element dofs
         for qp in QuadratureIterator(cv)
-            ∇u = function_gradient(cv, qpᵢ, uₑ)
+            ∇u = function_gradient(cv, qp, uₑ)
 
             F = one(∇u) + ∇u
             C = tdot(F)

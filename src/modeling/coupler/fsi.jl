@@ -34,7 +34,7 @@ end
 
 Compute the chamber volume as a surface integral via the integral
  - ∫ (x + d) det(F) adj(F) N ∂Ωendo
-where it is assumet that the chamber is convex, zero displacement in 
+where it is assumed that the chamber is convex, zero displacement in 
 apicobasal direction at the valvular plane occurs and the plane normal is aligned
 with the z axis, where the origin is at z=0.
 """
@@ -78,7 +78,7 @@ function assemble_interface_coupling_contribution!(C, r, dh, u, setname, method:
             ∂V∂F = Tensors.gradient(u -> volume_integral(x, d, u, N, method), F)
             for j ∈ 1:getnbasefunctions(fv)
                 δuⱼ = shape_value(fv, qp, j)
-                ∇δuj = shape_gradient(cv, qpᵢ, j)
+                ∇δuj = shape_gradient(cv, qp, j)
                 C[1, ddofs[j]] += (∂V∂u ⋅ δuⱼ + ∂V∂F ⊡ ∇δuj) * dΓ
             end
         end

@@ -59,12 +59,11 @@ function (postproc::StandardMechanicalIOPostProcessor2)(t, problem, solver_cache
             helixangleref_cell = 0.0
 
             nqp = getnquadpoints(cv)
-            for qpᵢ in 1:nqp
-                qp = QuadraturePoint(qpᵢ, cv.qr.points[qpᵢ])
-                dΩ = getdetJdV(cv, qpᵢ)
+            for qp in QuadratureIterator(cv)
+                dΩ = getdetJdV(cv, qp)
 
                 # Compute deformation gradient F
-                ∇u = function_gradient(cv, qpᵢ, uₑ)
+                ∇u = function_gradient(cv, qp, uₑ)
                 F = one(∇u) + ∇u
 
                 C = tdot(F)
@@ -80,7 +79,7 @@ function (postproc::StandardMechanicalIOPostProcessor2)(t, problem, solver_cache
                 s₀_current /= norm(s₀_current)
 
                 coords = getcoordinates(cell)
-                x_global = spatial_coordinate(cv, qpᵢ, coords)
+                x_global = spatial_coordinate(cv, qp, coords)
 
                 # v_longitudinal = function_gradient(cv_cs, qp, coordinate_system.u_apicobasal[celldofs(cell)])
                 # v_radial = function_gradient(cv_cs, qp, coordinate_system.u_transmural[celldofs(cell)])
