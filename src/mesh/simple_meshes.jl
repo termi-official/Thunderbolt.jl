@@ -134,3 +134,5 @@ elementtypes(::SimpleMesh2D{Quadrilateral}) = @SVector [Quadrilateral]
 
 @inline Ferrite.get_coordinate_type(::SimpleMesh2D{C,T}) where {C,T} = Vec{2,T} 
 @inline Ferrite.get_coordinate_type(::SimpleMesh3D{C,T}) where {C,T} = Vec{3,T} 
+
+@inline Ferrite.CellIterator(mesh::Union{SimpleMesh2D,SimpleMesh3D}) = CellIterator(mesh.grid)
