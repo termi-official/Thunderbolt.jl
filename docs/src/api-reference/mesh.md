@@ -23,6 +23,7 @@ Thunderbolt.LVCoordinateSystem
 ```@docs
 generate_mesh
 generate_ring_mesh
+generate_quadratic_ring_mesh
 generate_ideal_lv_mesh
 ```
 
