@@ -89,7 +89,7 @@ struct AssembledNonlinearOperator{MatrixType, ElementCacheType, FaceCacheType, D
     element_cache::ElementCacheType
     face_caches::FaceCacheType
     dh::DHType
-    function AssembledNonlinearOperator(J::MatrixType, element_cache::ElementCacheType, face_caches::FaceCacheType, dh::DHType) where {CM <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler, FACE, CH} where {MatrixType, ElementCacheType, FaceCacheType, DHType <: AbstractDofHandler}
+    function AssembledNonlinearOperator(J::MatrixType, element_cache::ElementCacheType, face_caches::FaceCacheType, dh::DHType) where {MatrixType, ElementCacheType, FaceCacheType, DHType <: AbstractDofHandler}
         check_subdomains(dh)
         return new{MatrixType, ElementCacheType, FaceCacheType, DHType}(J, element_cache, face_caches, dh)
     end
