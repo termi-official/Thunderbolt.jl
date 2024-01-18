@@ -37,7 +37,7 @@ getinterpolation(lc::LagrangeCollection{order}, ::Type{ref_shape}) where {order,
 
 A collection of fixed-order vectorized Lagrange interpolations across different cell types.
 """
-struct VectorizedInterpolationCollection{vdim, IPC <: ScalarInterpolationCollection} <: InterpolationCollection
+struct VectorizedInterpolationCollection{vdim, IPC <: ScalarInterpolationCollection} <: VectorInterpolationCollection
     base::IPC
     function VectorizedInterpolationCollection{vdim}(ip::SIPC) where {vdim, SIPC <: ScalarInterpolationCollection}
         return new{vdim, SIPC}(ip)
@@ -67,9 +67,13 @@ QuadratureRuleCollection(order::Int) = QuadratureRuleCollection(
     QuadratureRule{RefTetrahedron}(order)
 )
 
-getquadraturerule(qrc::QuadratureRuleCollection{QRW, QRH, QRT}, cell::Hexahedron) where {QRW, QRH, QRT} = qcr.qr_hex
-getquadraturerule(qrc::QuadratureRuleCollection{QRW, QRH, QRT}, cell::Wedge) where {QRW, QRH, QRT} = qcr.qr_wedge
-getquadraturerule(qrc::QuadratureRuleCollection{QRW, QRH, QRT}, cell::Tetrahedron) where {QRW, QRH, QRT} = qcr.qr_tet
+getquadraturerule(qrc::QuadratureRuleCollection{QRW, QRH, QRT}, cell::Hexahedron) where {QRW, QRH, QRT} = qrc.qr_hex
+getquadraturerule(qrc::QuadratureRuleCollection{QRW, QRH, QRT}, cell::Wedge) where {QRW, QRH, QRT} = qrc.qr_wedge
+getquadraturerule(qrc::QuadratureRuleCollection{QRW, QRH, QRT}, cell::Tetrahedron) where {QRW, QRH, QRT} = qrc.qr_tet
+
+getquadraturerule(qrc::QuadratureRuleCollection{QRW, QRH, QRT}, cell::Type{Hexahedron}) where {QRW, QRH, QRT} = qrc.qr_hex
+getquadraturerule(qrc::QuadratureRuleCollection{QRW, QRH, QRT}, cell::Type{Wedge}) where {QRW, QRH, QRT} = qrc.qr_wedge
+getquadraturerule(qrc::QuadratureRuleCollection{QRW, QRH, QRT}, cell::Type{Tetrahedron}) where {QRW, QRH, QRT} = qrc.qr_tet
 
 """
     CellValueCollection
@@ -82,9 +86,19 @@ struct CellValueCollection{CVW, CVH, CVT}
     cv_tet::CVT
 end
 
+CellValueCollection(qr:: QuadratureRuleCollection, ip::InterpolationCollection, ip_geo::InterpolationCollection = ip) = CellValueCollection(
+    CellValues(getquadraturerule(qr, Wedge), getinterpolation(ip, RefPrism), getinterpolation(ip_geo, RefPrism)), 
+    CellValues(getquadraturerule(qr, Hexahedron), getinterpolation(ip, RefHexahedron), getinterpolation(ip_geo, RefHexahedron)), 
+    CellValues(getquadraturerule(qr, Tetrahedron), getinterpolation(ip, RefTetrahedron), getinterpolation(ip_geo, RefTetrahedron)), 
+)
+
 getcellvalues(cv::CellValueCollection{CVW, CVH, CVT}, cell::Hexahedron) where {CVW, CVH, CVT} = cv.cv_hex
 getcellvalues(cv::CellValueCollection{CVW, CVH, CVT}, cell::Wedge) where {CVW, CVH, CVT} = cv.cv_wedge
 getcellvalues(cv::CellValueCollection{CVW, CVH, CVT}, cell::Tetrahedron) where {CVW, CVH, CVT} = cv.cv_tet
+
+# getcellvalues(cv::CellValueCollection{CVW, CVH, CVT}, cell::Type{Hexahedron}) where {CVW, CVH, CVT} = cv.cv_hex
+# getcellvalues(cv::CellValueCollection{CVW, CVH, CVT}, cell::Type{Wedge}) where {CVW, CVH, CVT} = cv.cv_wedge
+# getcellvalues(cv::CellValueCollection{CVW, CVH, CVT}, cell::Type{Tetrahedron}) where {CVW, CVH, CVT} = cv.cv_tet
 
 """
     FaceValueCollection

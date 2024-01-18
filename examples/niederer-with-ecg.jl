@@ -48,7 +48,10 @@ end
 
 ######################################################
 
-cs = Thunderbolt.CartesianCoordinateSystemCoefficient(Lagrange{RefHexahedron,1}()^3) # TODO normalize
+order = 1
+ip_collection = LagrangeCollection{order}()
+
+cs = Thunderbolt.CartesianCoordinateSystemCoefficient(getinterpolation(ip_collection^3)) # TODO normalize
 
 κ₁ = 0.17 * 0.62 / (0.17 + 0.62)
 κᵣ = 0.019 * 0.24 / (0.019 + 0.24)
@@ -71,7 +74,7 @@ mesh = generate_mesh(Hexahedron, (80,28,12), Vec((0.0,0.0,0.0)), Vec((20.0,7.0,3
 
 problem = semidiscretize(
     ReactionDiffusionSplit(model),
-    FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}())),
+    FiniteElementDiscretization(Dict(:φₘ => ip_collection)),
     mesh
 )
 

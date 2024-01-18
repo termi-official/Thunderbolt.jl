@@ -9,7 +9,7 @@
 
         for cell ∈ CellIterator(grid)
             ref_shape = Ferrite.getrefshape(getcells(grid, cellid(cell)))
-            ip = Lagrange{ref_shape, 1}()
+            ip = getinterpolation(LagrangeCollection{1}(), ref_shape)
             qr = QuadratureRule{ref_shape, Float64}([1.0], [Vec(ntuple(_->0.1, dim))]) # TODO randomize point
             gv = Ferrite.GeometryMapping{1}(Float64, ip, qr)
             x = getcoordinates(cell)

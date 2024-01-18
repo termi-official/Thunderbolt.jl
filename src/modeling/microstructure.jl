@@ -63,9 +63,12 @@ Create a rotating fiber field by deducing the circumferential direction from api
 
 !!! note Sheetlet angle construction is broken (i.e. does not preserve input angle). FIXME!
 """
-function create_simple_microstructure_model(coordinate_system, ip::VectorInterpolation{sdim, ref_shape}, ip_geo::VectorizedInterpolation{sdim, ref_shape}; endo_helix_angle = deg2rad(80.0), epi_helix_angle = deg2rad(-65.0), endo_transversal_angle = 0.0, epi_transversal_angle = 0.0, sheetlet_pseudo_angle = 0.0, make_orthogonal=true) where {sdim, ref_shape <: AbstractRefShape}
+function create_simple_microstructure_model(coordinate_system, ip_collection::VectorInterpolationCollection, ip_geo_collection::VectorizedInterpolationCollection; endo_helix_angle = deg2rad(80.0), epi_helix_angle = deg2rad(-65.0), endo_transversal_angle = 0.0, epi_transversal_angle = 0.0, sheetlet_pseudo_angle = 0.0, make_orthogonal=true)
     @unpack dh = coordinate_system
 
+    ref_shape = getrefshape(getcells(Ferrite.get_grid(dh), 1))
+    ip = getinterpolation(ip_collection, ref_shape)
+    ip_geo = getinterpolation(ip_geo_collection, ref_shape)
     n_basefuns = getnbasefunctions(ip.ip)
 
     elementwise_data_f = zero(Array{Vec{3,Float64}, 2}(undef, getncells(dh.grid), n_basefuns))

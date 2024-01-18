@@ -1,15 +1,16 @@
 @testset "microstructures" begin
     ref_shape = RefHexahedron
     order = 1
-
-    qr = QuadratureRule{ref_shape}(2)
-
-    ip_fsn = Lagrange{ref_shape, order}()^3
-    ip_geo = Lagrange{ref_shape, order}()^3
-    cv_fsn = CellValues(qr, ip_fsn, ip_geo)
-
     ring_grid = generate_ring_mesh(80,1,1)
-    ring_cs = compute_midmyocardial_section_coordinate_system(ring_grid, ip_geo)
+
+    qr_collection = QuadratureRuleCollection(2)
+    qr = getquadraturerule(qr_collection, getcells(ring_grid, 1))
+    ip_collection = LagrangeCollection{order}()
+    
+    cv_collection = CellValueCollection(qr_collection, ip_collection^3, ip_collection^3)
+    cv_fsn = Thunderbolt.getcellvalues(cv_collection, getcells(ring_grid, 1))
+
+    ring_cs = compute_midmyocardial_section_coordinate_system(ring_grid, ip_collection)
 
     cv_cs = Thunderbolt.create_cellvalues(ring_cs, qr)
 
@@ -27,7 +28,7 @@
     end
 
     @testset "OrthotropicMicrostructureModel" begin
-        ms = create_simple_microstructure_model(ring_cs, ip_fsn, ip_geo,
+        ms = create_simple_microstructure_model(ring_cs, ip_collection^3, ip_collection^3,
             endo_helix_angle = deg2rad(0.0),
             epi_helix_angle = deg2rad(0.0),
             endo_transversal_angle = 0.0,
