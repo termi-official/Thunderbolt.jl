@@ -111,10 +111,6 @@ struct QuasiStaticODEProblem{CM <: QuasiStaticModel, DH <: Ferrite.AbstractDofHa
     ch::CH
     constitutive_model::CM
     face_models::FACE
-    # function QuasiStaticODEProblem(dh::DH, ch::CH, constitutive_model::CM, face_models::FACE) where {CM <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler, FACE, CH}
-    #     check_subdomains(dh)
-    #     return new{CM, DH, FACE, CH}(dh, ch, constitutive_model, face_models)
-    # end
 end
 
 """
@@ -129,8 +125,4 @@ struct QuasiStaticDAEProblem{CM <: QuasiStaticModel, DH <: Ferrite.AbstractDofHa
     ch::CH
     constitutive_model::CM
     face_models::FACE
-    # function QuasiStaticDAEProblem(dh::DH, ch::CH, constitutive_model::CM, face_models::FACE) where {CM <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler, FACE, CH}
-    #     check_subdomains(dh)
-    #     return new{CM, DH, FACE, CH}(dh, ch, constitutive_model, face_models)
-    # end
 end
