@@ -9,4 +9,6 @@ include("test_coefficients.jl")
 include("integration/test_contracting_cuboid.jl")
 include("integration/test_waveprop_cuboid.jl")
 
+include("test_subdomains.jl")
+
 include("test_aqua.jl")
