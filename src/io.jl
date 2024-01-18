@@ -16,11 +16,13 @@ function store_timestep!(io::ParaViewWriter, t, grid)
 end
 
 function store_timestep_field!(io::ParaViewWriter, t, dh, u, sym::Symbol)
+    check_subdomains(dh)
     # TODO extract symbol only
     vtk_point_data(io.current_file, dh, u, String(sym))
 end
 
 function store_timestep_field!(io::ParaViewWriter, t, dh, u, name::String)
+    check_subdomains(dh)
     vtk_point_data(io.current_file, dh, u, name)
 end
 
@@ -73,6 +75,7 @@ end
 
 # TODO split up compute from store
 function store_coefficient!(io::ParaViewWriter, dh, coefficient::AnalyticalCoefficient{<:Any,<:VectorInterpolation{sdim}}, name, t::TimeType, qr_collection::QuadratureRuleCollection) where {sdim, TimeType}
+    check_subdomains(dh)
     T = Base.return_types(c.f, (Vec{sdim}, TimeType)) # Extract the return type from the function
     @assert length(T) == 1 "Cannot deduce return type for analytical coefficient! Found: $T"
     _store_coefficient(T, io, dh, coefficient, name, t, qr_collection)
@@ -108,6 +111,7 @@ function _store_coefficient!(T::Type, tlen::Int, io::ParaViewWriter, dh, coeffic
 end
 
 function store_coefficient!(io, dh, coefficient::SpectralTensorCoefficient, name, t)
+    check_subdomains(dh)
     store_coefficient!(io, dh, coefficient.eigenvalues, name*".λ", t) # FIXME. PLS...
     store_coefficient!(io, dh, coefficient.eigenvectors, name*".ev.", t)
 end
@@ -115,7 +119,7 @@ end
 # TODO split up compute from store
 # TODO revisit if this might be expressed as some cofficient which is then stored (likely FieldCoefficient) - I think this is basically similar to `interpolate_gradient_field` in FerriteViz
 function store_green_lagrange!(io::ParaViewWriter, dh, u::AbstractVector, a_coeff, b_coeff, cv, name, t)
-    @assert length(dh.subdofhandlers) == 1 "No subdomain support yet"
+    check_subdomains(dh)
     # TODO subdomain support
     field_idx = find_field(dh, :displacement) # TODO abstraction layer
     for cell_cache ∈ CellIterator(dh)
@@ -155,11 +159,13 @@ function store_timestep!(io::JLD2Writer, t, grid)
 end
 
 function store_timestep_field!(io::JLD2Writer, t, dh, u, coeff_name::String)
+    check_subdomains(dh)
     t ≈ 0.0 && (io.fd["dh-$coeff_name"] = dh)
     io.fd["timesteps/$t/coefficient/$coeff_name"] = u
 end
 
 function store_timestep_celldata!(io::JLD2Writer, t, u, coeff_name::String)
+    check_subdomains(dh)
     io.fd["timesteps/$t/celldata/$coeff_name"] = u
 end
 

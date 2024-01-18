@@ -89,6 +89,10 @@ struct AssembledNonlinearOperator{MatrixType, ElementCacheType, FaceCacheType, D
     element_cache::ElementCacheType
     face_caches::FaceCacheType
     dh::DHType
+    function AssembledNonlinearOperator(J::MatrixType, element_cache::ElementCacheType, face_caches::FaceCacheType, dh::DHType) where {MatrixType, ElementCacheType, FaceCacheType, DHType <: AbstractDofHandler}
+        check_subdomains(dh)
+        return new{MatrixType, ElementCacheType, FaceCacheType, DHType}(J, element_cache, face_caches, dh)
+    end
 end
 
 getJ(op::AssembledNonlinearOperator) = op.J
@@ -176,6 +180,10 @@ struct AssembledBilinearOperator{MatrixType, CacheType, DHType <: AbstractDofHan
     A::MatrixType
     element_cache::CacheType
     dh::DHType
+    function AssembledBilinearOperator(A::MatrixType, element_cache::CacheType, dh::DHType) where {MatrixType, CacheType, DHType <: AbstractDofHandler}
+        check_subdomains(dh)
+        return new{MatrixType, CacheType, DHType}(A, element_cache, dh)
+    end
 end
 
 function update_operator!(op::AssembledBilinearOperator, time)
@@ -255,6 +263,10 @@ struct LinearOperator{VectorType, CacheType, DHType <: AbstractDofHandler} <: Ab
     b::VectorType
     element_cache::CacheType
     dh::DHType
+    function LinearOperator(b::VectorType, element_cache::CacheType, dh::DHType) where {VectorType, CacheType, DHType <: AbstractDofHandler}
+        check_subdomains(dh)
+        return new{VectorType, CacheType, DHType}(b, element_cache, dh)
+    end
 end
 
 function update_operator!(op::LinearOperator, time)
@@ -280,8 +292,12 @@ Base.eltype(op::LinearOperator) = eltype(op.b)
 Base.size(op::LinearOperator) = sisze(op.b)
 
 # TODO where to put these?
-create_linear_operator(dh, ::NoStimulationProtocol) = LinearNullOperator{Float64, ndofs(dh)}()
+function create_linear_operator(dh, ::NoStimulationProtocol) 
+    check_subdomains(dh)
+    LinearNullOperator{Float64, ndofs(dh)}()
+end
 function create_linear_operator(dh, protocol::AnalyticalTransmembraneStimulationProtocol)
+    check_subdomains(dh)
     ip = dh.subdofhandlers[1].field_interpolations[1]
     ip_g = Ferrite.default_interpolation(typeof(getcells(Ferrite.get_grid(dh), 1)))
     qr = QuadratureRule{Ferrite.getrefshape(ip_g)}(Ferrite.getorder(ip_g)+1)
