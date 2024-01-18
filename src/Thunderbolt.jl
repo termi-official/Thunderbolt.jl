@@ -60,7 +60,7 @@ export
     FieldCoefficient,
     AnalyticalCoefficient,
     FieldCoefficient,
-    CartesianCoordinateSystemCoefficient,
+    CoordinateSystemCoefficient,
     SpectralTensorCoefficient,
     SpatiallyHomogeneousDataField,
     evaluate_coefficient,

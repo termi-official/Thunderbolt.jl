@@ -1,32 +1,42 @@
 """
-    FieldCoefficient
+    FieldCoefficient(data, interpolation)
 
 A constant in time data field, interpolated per element with a given interpolation.
 """
-struct FieldCoefficient{TA,IP<:Interpolation}
+struct FieldCoefficient{T,TA<:Array{T,2},IP<:Interpolation}
     # TODO data structure for this
-    elementwise_data::TA #3d array (element_idx, base_fun_idx, dim)
+    elementwise_data::TA #2d ragged array (element_idx, base_fun_idx)
     ip::IP
-    # TODO use CellValues
+    # TODO use CellValueCollection
+    qbuf::Vector{T}
 end
 
-function evaluate_coefficient(coeff::FieldCoefficient{<:Any,<:ScalarInterpolation}, cell_cache, qp::QuadraturePoint{<:Any, T}, t) where T
+function FieldCoefficient(data::Array{T}, ip::Interpolation) where T
+    n_base_funcs = Ferrite.getnbasefunctions(ip)
+    FieldCoefficient(data, ip, zeros(T,n_base_funcs))
+end
+
+function evaluate_coefficient(coeff::FieldCoefficient{<:Any,<:Any,<:ScalarInterpolation}, cell_cache, qp::QuadraturePoint{<:Any, T}, t) where T
     @unpack elementwise_data, ip = coeff
 
     n_base_funcs = Ferrite.getnbasefunctions(ip)
     val = zero(T)
 
+    Ferrite.shape_values!(coeff.qbuf, ip, qp.ξ)
+
     @inbounds for i in 1:n_base_funcs
-        val += Ferrite.shape_value(ip, qp.ξ, i) * elementwise_data[cellid(cell_cache), i]
+        val += coeff.qbuf[i] * elementwise_data[cellid(cell_cache), i]
     end
     return val
 end
 
-function evaluate_coefficient(coeff::FieldCoefficient{<:Any,<:VectorizedInterpolation{vdim}}, cell_cache, qp::QuadraturePoint{<:Any, T}, t) where {vdim,T}
+function evaluate_coefficient(coeff::FieldCoefficient{<:Any,<:Any,<:VectorizedInterpolation{vdim}}, cell_cache, qp::QuadraturePoint{<:Any, T}, t) where {vdim,T}
     @unpack elementwise_data, ip = coeff
 
     n_base_funcs = Ferrite.getnbasefunctions(ip.ip)
     val = zero(Vec{vdim, T})
+
+    Ferrite.shape_values!(coeff.qbuf, ip, qp.ξ)
 
     @inbounds for i in 1:n_base_funcs
         val += Ferrite.shape_value(ip.ip, qp.ξ, i) * elementwise_data[cellid(cell_cache), i]
@@ -34,20 +44,24 @@ function evaluate_coefficient(coeff::FieldCoefficient{<:Any,<:VectorizedInterpol
     return val
 end
 
-"""
-    ConstantCoefficient
 
-Constant in space and time data.
+"""
+    ConstantCoefficient(value)
+
+Evaluates to the same value in space and time everywhere.
 """
 struct ConstantCoefficient{T}
     val::T
 end
 
-"""
-"""
 evaluate_coefficient(coeff::ConstantCoefficient, cell_cache, qp, t) = coeff.val
 
-#  Internal helper for ep problems
+
+"""
+    ConductivityToDiffusivityCoefficient(conductivity_tensor_coefficient, capacitance_coefficient, χ_coefficient)
+
+Internal helper for ep problems.
+"""
 struct ConductivityToDiffusivityCoefficient{DTC, CC, STVC}
     conductivity_tensor_coefficient::DTC
     capacitance_coefficient::CC
@@ -61,31 +75,57 @@ function evaluate_coefficient(coeff::ConductivityToDiffusivityCoefficient, cell_
     return κ/(Cₘ*χ)
 end
 
-struct CartesianCoordinateSystemCoefficient{IP<:VectorizedInterpolation}
-    ip::IP
+
+"""
+    CoordinateSystemCoefficient(coordinate_system)
+
+Helper to obtain the location in some possibly problem-specific coordinate system, e.g. for analytical coefficients (see [`AnalyticalCoefficient`](@ref)).
+"""
+struct CoordinateSystemCoefficient{CS}
+    cs::CS
 end
 
-function evaluate_coefficient(coeff::CartesianCoordinateSystemCoefficient{<:VectorizedInterpolation{sdim}}, cell_cache, qp::QuadraturePoint{<:Any,T}, t) where {sdim, T}
+function evaluate_coefficient(coeff::CoordinateSystemCoefficient{<:CartesianCoordinateSystem{sdim}}, cell_cache, qp::QuadraturePoint{<:Any,T}, t) where {sdim, T}
     x = zero(Vec{sdim, T})
-    for i in 1:getnbasefunctions(coeff.ip.ip)
-        x += Ferrite.shape_value(coeff.ip.ip, qp.ξ, i) * cell_cache.coords[i]
+    ip = getcoordinateinterpolation(coeff.cs)
+    for i in 1:getnbasefunctions(ip.ip)
+        x += Ferrite.shape_value(ip.ip, qp.ξ, i) * cell_cache.coords[i]
     end
     return x
 end
 
+function evaluate_coefficient(coeff::CoordinateSystemCoefficient{<:LVCoordinateSystem}, cell_cache, qp::QuadraturePoint{ref_shape,T}, t) where {ref_shape,T}
+    x = @MVector zeros(T, 3)
+    ip = getcoordinateinterpolation(coeff.cs)
+    dofs = celldofs(coeff.cs.dh, cellid(cell_cache))
+    for i in 1:getnbasefunctions(ip.ip)
+        val = Ferrite.shape_value(ip.ip, qp.ξ, i)
+        x[1] += val * coeff.cs.u_transmural[dofs[i]]
+        x[2] += val * coeff.cs.u_apicobasal[dofs[i]]
+        x[3] += val * coeff.cs.u_circumferential[dofs[i]]
+    end
+    return LVCoordinate(x[1], x[2], x[3])
+end
 
-struct AnalyticalCoefficient{F, CSYS}
+
+"""
+    AnalyticalCoefficient(f::Function, cs::CoordinateSystemCoefficient)
+
+A coefficient given as the analytical function f(x,t) in the specified coordiante system.
+"""
+struct AnalyticalCoefficient{F<:Function, CSYS<:CoordinateSystemCoefficient}
     f::F
-    coordinate_system::CSYS
+    coordinate_system_coefficient::CSYS
 end
 
 function evaluate_coefficient(coeff::AnalyticalCoefficient{F}, cell_cache, qp::QuadraturePoint{<:Any,T}, t) where {F, T}
-    x = evaluate_coefficient(coeff.coordinate_system, cell_cache, qp, t)
+    x = evaluate_coefficient(coeff.coordinate_system_coefficient, cell_cache, qp, t)
     return coeff.f(x, t)
 end
 
+
 """
-    SpectralTensorCoefficient
+    SpectralTensorCoefficient(eigenvector_coefficient, eigenvalue_coefficient)
 
 Represent a tensor A via spectral decomposition ∑ᵢ λᵢ vᵢ ⊗ vᵢ.
 """
@@ -103,8 +143,9 @@ function evaluate_coefficient(coeff::SpectralTensorCoefficient, cell_cache, qp::
     return _eval_sdt_coefficient(M, λ)
 end
 
+
 """
-    SpatiallyHomogeneousDataField
+    SpatiallyHomogeneousDataField(timings::Vector, data::Vector)
 
 A data field which is constant in space and piecewise constant in time.
 

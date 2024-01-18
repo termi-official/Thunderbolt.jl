@@ -74,8 +74,9 @@ function store_coefficient!(io::ParaViewWriter, t, coefficient::ConstantCoeffici
 end
 
 # TODO split up compute from store
-function store_coefficient!(io::ParaViewWriter, dh, coefficient::AnalyticalCoefficient{<:Any,<:VectorInterpolation{sdim}}, name, t::TimeType, qr_collection::QuadratureRuleCollection) where {sdim, TimeType}
+function store_coefficient!(io::ParaViewWriter, dh, coefficient::AnalyticalCoefficient{<:Any,<:CoordinateSystemCoefficient}, name, t::TimeType, qr_collection::QuadratureRuleCollection) where {TimeType}
     check_subdomains(dh)
+    sdim = Ferrite.getdim(getcoordinateinterpolation(coefficient.cs))
     T = Base.return_types(c.f, (Vec{sdim}, TimeType)) # Extract the return type from the function
     @assert length(T) == 1 "Cannot deduce return type for analytical coefficient! Found: $T"
     _store_coefficient(T, io, dh, coefficient, name, t, qr_collection)

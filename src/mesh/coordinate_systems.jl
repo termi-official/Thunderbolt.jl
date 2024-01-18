@@ -1,36 +1,63 @@
+"""
+    CartesianCoordinateSystem{sdim, IP <: VectorizedInterpolation{sdim}}
 
-struct CartesianCoordinateSystem end
+Standard cartesian coordinate system.
+"""
+struct CartesianCoordinateSystem{sdim, IP <: VectorizedInterpolation{sdim}}
+    ip::IP
+end
+
+getcoordinateinterpolation(cs::CartesianCoordinateSystem) = cs.ip
 
 """
-Simple Coordinate System.
+    LVCoordinateSystem(dh, u_transmural, u_apicobasal)
 
-!!! note TODO implement circumferential coordinate
+Simplified universal ventricular coordinate on LV only, containing the transmural, apicobasal and 
+circumferential coordinates. See [`compute_LV_coordinate_system`](@ref) to construct it.
 """
-struct LVCoordinateSystem
-    dh::AbstractDofHandler
+struct LVCoordinateSystem{DH <: AbstractDofHandler}
+    dh::DH
     u_transmural::Vector{Float64}
     u_apicobasal::Vector{Float64}
+    u_circumferential::Vector{Float64}
     function LVCoordinateSystem(dh::AbstractDofHandler, u_transmural::Vector{Float64}, u_apicobasal::Vector{Float64})
         check_subdomains(dh)
-        return new(dh, u_transmural, u_apicobasal)
+        return new{typeof(dh)}(dh, u_transmural, u_apicobasal)
     end
 end
 
 """
+    LVCoordinate{T}
+
+LV only part of the universal ventricular coordinate, containing
+    * transmural
+    * apicobasal
+    * circumferential
+"""
+struct LVCoordinate{T}
+    transmural::T
+    apicaobasal::T
+    circumferential::T
+end
+
+"""
+    getcoordinateinterpolation(cs::LVCoordinateSystem)
+
+Get interpolation function for the LV coordinate system.
 """
 getcoordinateinterpolation(cs::LVCoordinateSystem) = Ferrite.getfieldinterpolation(cs.dh, (1,1))
 
-"""
-"""
 create_cellvalues(cs::LVCoordinateSystem, qr::QuadratureRule, ip_geo=getcoordinateinterpolation(cs)) = CellValues(qr, getcoordinateinterpolation(cs), ip_geo)
 
 """
+    compute_LV_coordinate_system(grid::AbstractGrid, ip_geo::Interpolation{ref_shape})
+
 Requires a grid with facesets
-* Base
-* Epicardium
-* Endocardium
+    * Base
+    * Epicardium
+    * Endocardium
 and a nodeset
-* Apex
+    * Apex
 """
 function compute_LV_coordinate_system(grid::AbstractGrid, ip_geo::Interpolation{ref_shape}) where {ref_shape <: AbstractRefShape{3}}
     ip = Lagrange{ref_shape, 1}()
@@ -114,6 +141,13 @@ function compute_LV_coordinate_system(grid::AbstractGrid, ip_geo::Interpolation{
 end
 
 """
+    compute_midmyocardial_section_coordinate_system(grid::AbstractGrid,ip_geo::Interpolation{ref_shape})
+
+Requires a grid with facesets
+    * Base
+    * Epicardium
+    * Endocardium
+    * Myocardium
 """
 function compute_midmyocardial_section_coordinate_system(grid::AbstractGrid,ip_geo::Interpolation{ref_shape}) where {ref_shape <: AbstractRefShape{3}}
     ip = Lagrange{ref_shape, 1}()
@@ -184,6 +218,9 @@ function compute_midmyocardial_section_coordinate_system(grid::AbstractGrid,ip_g
 end
 
 """
+    vtk_coordinate_system(vtk, cs::LVCoordinateSystem)
+    
+Store the LV coordinate system in a vtk file.
 """
 function vtk_coordinate_system(vtk, cs::LVCoordinateSystem)
     vtk_point_data(vtk, cs.dh, cs.u_apicobasal, "apicobasal_")
