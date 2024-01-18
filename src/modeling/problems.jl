@@ -2,6 +2,7 @@
 #      1. Who creates the solution vector?
 #      2. Is there a better way to pass the initial solution information?
 default_initializer(problem, t) = error("No default initializer available for a problem of type $(typeof(problem))")
+@noinline check_subdomains(dh::DH) where DH <: Ferrite.AbstractDofHandler= length(dh.subdofhandlers) == 1 || throw(ArgumentError("Using DofHandler with multiple subdomains is not currently supported"))
 
 struct NullProblem
     ndofs::Int
@@ -69,6 +70,10 @@ struct TransientHeatProblem{DTF, ST, DH}
     diffusion_tensor_field::DTF
     source_term::ST
     dh::DH
+    function TransientHeatProblem(diffusion_tensor_field::DTF, source_term::ST, dh::DH) where {DTF, ST, DH}
+        check_subdomains(dh)
+        return new{DTF, ST, DH}(diffusion_tensor_field, source_term, dh)
+    end
 end
 
 solution_size(problem::TransientHeatProblem) = ndofs(problem.dh)
@@ -84,6 +89,10 @@ struct QuasiStaticNonlinearProblem{CM <: QuasiStaticModel, DH <: Ferrite.Abstrac
     ch::CH
     constitutive_model::CM
     face_models::FACE
+    function QuasiStaticNonlinearProblem(dh::DH, ch::CH, constitutive_model::CM, face_models::FACE) where {CM <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler, FACE, CH}
+        check_subdomains(dh)
+        return new{CM, DH, FACE, CH}(dh, ch, constitutive_model, face_models)
+    end
 end
 
 solution_size(problem::QuasiStaticNonlinearProblem) = ndofs(problem.dh)
@@ -102,6 +111,10 @@ struct QuasiStaticODEProblem{CM <: QuasiStaticModel, DH <: Ferrite.AbstractDofHa
     ch::CH
     constitutive_model::CM
     face_models::FACE
+    # function QuasiStaticODEProblem(dh::DH, ch::CH, constitutive_model::CM, face_models::FACE) where {CM <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler, FACE, CH}
+    #     check_subdomains(dh)
+    #     return new{CM, DH, FACE, CH}(dh, ch, constitutive_model, face_models)
+    # end
 end
 
 """
@@ -116,4 +129,8 @@ struct QuasiStaticDAEProblem{CM <: QuasiStaticModel, DH <: Ferrite.AbstractDofHa
     ch::CH
     constitutive_model::CM
     face_models::FACE
+    # function QuasiStaticDAEProblem(dh::DH, ch::CH, constitutive_model::CM, face_models::FACE) where {CM <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler, FACE, CH}
+    #     check_subdomains(dh)
+    #     return new{CM, DH, FACE, CH}(dh, ch, constitutive_model, face_models)
+    # end
 end
