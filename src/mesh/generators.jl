@@ -1,7 +1,7 @@
 """
     generate_ring_mesh(num_elements_circumferential::Int, num_elements_radial::Int, num_elements_logintudinal::Int; inner_radius::T = Float64(0.75), outer_radius::T = Float64(1.0), longitudinal_lower::T = Float64(-0.2), longitudinal_upper::T = Float64(0.2), apicobasal_tilt::T=Float64(0.0)) where {T}
 
-Generates an idealized full-hexahedral ring. Geometrically it is the substraction of a small cylinder ``C_i`` of a large cylinder ``C_o``.
+Generates an idealized full-hexahedral ring with linear ansatz. Geometrically it is the substraction of a small cylinder ``C_i`` of a large cylinder ``C_o``.
 The number of elements for the cylindrical system can be controlled by the first three input parameters.
 The remaining parameters control the spatial dimensions and the ring shape.
 """
@@ -57,6 +57,13 @@ end
 # const local_index_to_linear_index_table_hex27 = invperm(linear_index_to_local_index_table_hex27)
 # const tensorproduct_index_to_local_index_table_hex27 = reshape(raw_index_to_local_index_table_hex27, (3,3,3))
 
+"""
+    generate_quadratic_ring_mesh(num_elements_circumferential::Int, num_elements_radial::Int, num_elements_logintudinal::Int; inner_radius::T = Float64(0.75), outer_radius::T = Float64(1.0), longitudinal_lower::T = Float64(-0.2), longitudinal_upper::T = Float64(0.2), apicobasal_tilt::T=Float64(0.0)) where {T}
+
+Generates an idealized full-hexahedral ring with quadratic ansatz. Geometrically it is the substraction of a small cylinder ``C_i`` of a large cylinder ``C_o``.
+The number of elements for the cylindrical system can be controlled by the first three input parameters.
+The remaining parameters control the spatial dimensions and the ring shape.
+"""
 function generate_quadratic_ring_mesh(num_elements_circumferential::Int, num_elements_radial::Int, num_elements_logintudinal::Int; inner_radius::T = Float64(0.75), outer_radius::T = Float64(1.0), longitudinal_lower::T = Float64(-0.2), longitudinal_upper::T = Float64(0.2), apicobasal_tilt::T=Float64(0.0)) where {T}
     # Generate a rectangle in cylindrical coordinates and transform coordinates back to carthesian.
     ne_tot = num_elements_circumferential*num_elements_radial*num_elements_logintudinal;
