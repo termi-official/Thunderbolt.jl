@@ -327,17 +327,10 @@ end
     n_geom_basefuncs = Ferrite.getngeobasefunctions(cv)
     @inbounds for (qp, w) in pairs(Ferrite.getweights(cv.qr))
         # Compute dΩ
-        fecv_J = zero(Tensor{2,dim,T})
-        @inbounds for j in 1:n_geom_basefuncs
-            fecv_J += coords[j] ⊗ cv.dMdξ[j, qp]
-        end
-        detJ = det(fecv_J)
-        dΩ = detJ * w
+        mapping = Ferrite.calculate_mapping(cv.geo_mapping, qp, coords)
+        dΩ = Ferrite.calculate_detJ(Ferrite.getjacobian(mapping)) * w
         # Compute x
-        x = zero(Vec{dim,T})
-        @inbounds for j in 1:n_geom_basefuncs
-            x += Ferrite.geometric_value(cv, qp, j) * coords[j]
-        end
+        x = spatial_coordinate(cv, qp, coords)
         # Evaluate f
         fx = f.f(x,time)
         # TODO replace with evaluate_coefficient

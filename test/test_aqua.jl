@@ -10,6 +10,7 @@ using Aqua
         stale_deps=(ignore=[:FerriteGmsh],), # We use this one in the examples for now 
         deps_compat=false,
         # piracy=false,
+        persistent_tasks=false,
     )
     Aqua.test_ambiguities(Thunderbolt) # Must be separate for now, see https://github.com/JuliaTesting/Aqua.jl/issues/77
 end
