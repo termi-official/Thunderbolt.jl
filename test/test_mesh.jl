@@ -64,10 +64,10 @@
         @testset "voom2 legacy" begin
             voom2_mesh = load_voom2_mesh(dirname * "/data/voom2/ex1")
 
-            @test length(nodes) == 9
-            @test typeof(elements[1]) == Line
-            @test typeof(elements[2]) == Hexahedron
-            @test length(elements) == 2
+            @test length(voom2_mesh.nodes) == 9
+            @test typeof(voom2_mesh.cells[1]) == Line
+            @test typeof(voom2_mesh.cells[2]) == Hexahedron
+            @test length(voom2_mesh.cells) == 2
             test_detJ(voom2_mesh)
         end
 
