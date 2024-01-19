@@ -35,7 +35,7 @@
 
         if element_type == Hexahedron
             grid_fine = Thunderbolt.uniform_refinement(grid)
-            @test getncells(grid_fine) == num_refined_elements(element_type)*getncells(grid) 
+            @test getncells(grid_fine) == num_refined_elements(element_type)*getncells(grid)
             @test all(typeof.(getcells(grid_fine)) .== element_type) # For the tested elements all fine elements are the same type
             test_detJ(grid_fine)
         end
@@ -66,7 +66,7 @@
             nodes = Thunderbolt.load_voom2_nodes("$filename.nodes")
             elements = Thunderbolt.load_voom2_elements("$filename.ele")
             voom2_mesh = Grid(elements, nodes)
-            
+
             @test length(nodes) == 9
             @test typeof(elements[1]) == Line
             @test typeof(elements[2]) == Hexahedron
