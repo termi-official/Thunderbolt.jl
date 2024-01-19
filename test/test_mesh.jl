@@ -62,10 +62,7 @@
         dirname = @__DIR__
 
         @testset "voom2 legacy" begin
-            filename = dirname * "/data/voom2/ex1"
-            nodes = Thunderbolt.load_voom2_nodes("$filename.nodes")
-            elements = Thunderbolt.load_voom2_elements("$filename.ele")
-            voom2_mesh = Grid(elements, nodes)
+            voom2_mesh = load_voom2_mesh(dirname * "/data/voom2/ex1")
 
             @test length(nodes) == 9
             @test typeof(elements[1]) == Line
@@ -83,7 +80,7 @@
             ("ref-prism.mesh", Wedge),
             ("ref-pyramid.mesh", Pyramid),
         ]
-            mfem_mesh = Thunderbolt.load_mfem_mesh(dirname * "/data/mfem/" * filename)
+            mfem_mesh = load_mfem_mesh(dirname * "/data/mfem/" * filename)
 
             @test all(typeof.(mfem_mesh.cells) .== element_type)
             test_detJ(mfem_mesh)
@@ -98,7 +95,7 @@
             ("ref-prism", Wedge),
             # ("ref-pyramid", Pyramid),
         ]
-            carp_mesh = Thunderbolt.load_carp_mesh(dirname * "/data/openCARP/" * filename)
+            carp_mesh = load_carp_mesh(dirname * "/data/openCARP/" * filename)
 
             @test all(typeof.(carp_mesh.cells) .== element_type)
             test_detJ(carp_mesh)

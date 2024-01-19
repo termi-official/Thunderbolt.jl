@@ -149,6 +149,9 @@ export
     elementtypes,
     QuadraturePoint,
     QuadratureIterator,
+    load_carp_mesh,
+    load_voom2_mesh,
+    load_mfem_mesh,
     # IO
     ParaViewWriter,
     JLD2Writer,

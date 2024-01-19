@@ -283,6 +283,22 @@ function load_voom2_fsn(filename)
     return f,s,n
 end
 
+"""
+    load_voom2_mesh(filename)
+
+Loader for the [voom2](https://github.com/luigiemp/voom2) legacy format.
+"""
+function load_voom2_mesh(filename)
+    nodes = load_voom2_nodes("$filename.nodes")
+    elements = load_voom2_elements("$filename.ele")
+    return Grid(elements, nodes)
+end
+
+"""
+    load_mfem_mesh(filename)
+
+Loader for straight mfem meshes supporting v1.0.
+"""
 function load_mfem_mesh(filename)
     @info "loading mfem mesh $filename"
 
@@ -436,6 +452,11 @@ function load_carp_nodes(filename)
     return nodes
 end
 
+"""
+    load_carp_mesh(filename)
+
+Mesh format taken from https://carp.medunigraz.at/file_formats.html .
+"""
 function load_carp_mesh(filename)
     elements, domains = load_carp_elements(filename * ".elem")
     nodes = load_carp_nodes(filename * ".pts")
