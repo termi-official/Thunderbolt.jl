@@ -32,4 +32,7 @@ generate_ideal_lv_mesh
 ```@docs
 Thunderbolt.hexahedralize
 Thunderbolt.uniform_refinement
+load_carp_mesh
+load_voom2_mesh
+load_mfem_mesh
 ```
