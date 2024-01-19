@@ -225,3 +225,60 @@ function compute_degeneracy(grid::Grid{dim, CT, DT}) where {dim, CT, DT}
     end
     return ratio
 end
+
+function load_voom2_elements(filename)
+    elements = Vector{Ferrite.AbstractCell}()
+    open(filename, "r") do file
+        # First line has format number of elements as Int and 2 more integers
+        line = strip(readline(file))
+        ne = parse(Int64,split(line)[1])
+        resize!(elements, ne)
+
+        while !eof(file)
+            line = parse.(Int64,split(strip(readline(file))))
+            ei = line[1]
+            nnodes = line[2]
+            if nnodes == 8
+                elements[ei] = Hexahedron(ntuple(i->line[i+2],8))
+            elseif nnodes == 2
+                elements[ei] = Line(ntuple(i->line[i+2],2))
+            else
+                @error "Unknown element type $nnodes"
+            end
+        end
+    end
+    return elements
+end
+
+function load_voom2_nodes(filename)
+    nodes = Vector{Ferrite.Node{3,Float64}}()
+    open(filename, "r") do file
+        # First line has format number of nodes as Int and 2 more integers
+        line = strip(readline(file))
+        nn = parse(Int64,split(line)[1])
+        resize!(nodes, nn)
+
+        while !eof(file)
+            line = split(strip(readline(file)))
+            ni = parse(Int64, line[1])
+            nodes[ni] = Node(Vec(ntuple(i->parse(Float64,line[i+1]),3)))
+        end
+    end
+    return nodes
+end
+
+function load_voom2_fsn(filename)
+    # Big table
+    f = Vector{Ferrite.Vec{3,Float64}}()
+    s = Vector{Ferrite.Vec{3,Float64}}()
+    n = Vector{Ferrite.Vec{3,Float64}}()
+    open(filename, "r") do file
+        while !eof(file)
+            line = parse.(Float64,split(strip(readline(file))))
+            push!(f, Vec((line[1], line[2], line[3])))
+            push!(s, Vec((line[4], line[5], line[6])))
+            push!(n, Vec((line[7], line[8], line[9])))
+        end
+    end
+    return f,s,n
+end

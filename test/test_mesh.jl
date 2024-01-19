@@ -5,14 +5,13 @@
     num_refined_elements(::Type{Quadrilateral}) = 4
 
     function test_detJ(grid)
-        dim = Ferrite.getdim(grid)
-
-        for cell ∈ CellIterator(grid)
-            ref_shape = Ferrite.getrefshape(getcells(grid, cellid(cell)))
+        for cc ∈ CellIterator(grid)
+            cell = getcells(grid, cellid(cc))
+            ref_shape = Ferrite.getrefshape(cell)
             ip = Lagrange{ref_shape, 1}()
-            qr = QuadratureRule{ref_shape, Float64}([1.0], [Vec(ntuple(_->0.1, dim))]) # TODO randomize point
+            qr = QuadratureRule{ref_shape, Float64}([1.0], [Vec(ntuple(_->0.1, Ferrite.getdim(cell)))]) # TODO randomize point
             gv = Ferrite.GeometryMapping{1}(Float64, ip, qr)
-            x = getcoordinates(cell)
+            x = getcoordinates(cc)
             mapping = Ferrite.calculate_mapping(gv, 1, x)
             J = Ferrite.getjacobian(mapping)
             @test Ferrite.calculate_detJ(J) > 0
@@ -57,5 +56,19 @@
         test_detJ(lv_mesh)
         lv_mesh_hex = Thunderbolt.hexahedralize(lv_mesh)
         test_detJ(lv_mesh_hex)
+    end
+
+    @testset "IO" begin
+        filename = @__DIR__
+        filename *= "/data/voom2/ex1"
+        nodes = Thunderbolt.load_voom2_nodes("$filename.nodes")
+        elements = Thunderbolt.load_voom2_elements("$filename.ele")
+        voom2_mesh = Grid(elements, nodes)
+        
+        @test length(nodes) == 9
+        @test typeof(elements[1]) == Line
+        @test typeof(elements[2]) == Hexahedron
+        @test length(elements) == 2
+        test_detJ(voom2_mesh)
     end
 end
