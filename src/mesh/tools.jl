@@ -237,13 +237,13 @@ function load_voom2_elements(filename)
         while !eof(file)
             line = parse.(Int64,split(strip(readline(file))))
             ei = line[1]
-            nnodes = line[2]
-            if nnodes == 8
+            etype = line[2]
+            if etype == 8
                 elements[ei] = Hexahedron(ntuple(i->line[i+2],8))
-            elseif nnodes == 2
+            elseif etype == 2
                 elements[ei] = Line(ntuple(i->line[i+2],2))
             else
-                @error "Unknown element type $nnodes"
+                @warn  "Unknown element type $etype. Skipping." maxlog=1
             end
         end
     end
@@ -281,4 +281,81 @@ function load_voom2_fsn(filename)
         end
     end
     return f,s,n
+end
+
+function load_mfem_mesh(filename)
+    @info "loading mfem mesh $filename"
+
+    open(filename, "r") do file
+        format = strip(readline(file))
+        format != "MFEM mesh v1.0" && @error "Unsupported mesh format '$format'"
+
+        # Parse spatial dimension
+        while strip(readline(file)) != "dimension" && !eof(file)
+        end
+        eof(file) && @error "Missing 'dimension' specification"
+
+        sdim = parse(Int64, strip(readline(file)))
+        @info "sdim=$sdim"
+
+        # Parse elements
+        while strip(readline(file)) != "elements" && !eof(file)
+        end
+        eof(file) && @error "Missing 'elements' specification"
+
+        ne = parse(Int64, strip(readline(file)))
+        @info "number of elements=$ne"
+        elements = Vector{Ferrite.AbstractCell}(undef, ne)
+        domains = Dict{String,Set{Int}}()
+        for ei in 1:ne
+            line = parse.(Int64,split(strip(readline(file))))
+            etype = line[2]
+            
+            line[3:end] .+= 1 # 0-based to 1-based index
+
+            if etype == 1
+                elements[ei] = Line(ntuple(i->line[i+2],2))
+            elseif etype == 2
+                elements[ei] = Triangle((line[4], line[5], line[3]))
+            elseif etype == 3
+                elements[ei] = Quadrilateral(ntuple(i->line[i+2],4))
+            elseif etype == 4
+                elements[ei] = Tetrahedron(ntuple(i->line[i+2],4))
+            elseif etype == 5
+                elements[ei] = Hexahedron(ntuple(i->line[i+2],8))
+            elseif etype == 6
+                elements[ei] = Wedge(ntuple(i->line[i+2],6))
+            elseif etype == 7
+                elements[ei] = Pyramid((line[3], line[4], line[6], line[5], line[7]))
+            else
+                @warn  "Unknown element type $etype. Skipping." maxlog=1
+            end
+
+            attr = line[1]
+            if !haskey(domains, "$attr")
+                domains["$attr"] = Set{Int}()
+            end
+            push!(domains["$attr"], ei)
+        end
+
+        # while strip(readline(file)) != "boundary" && !eof(file)
+        # end
+        # eof(file) && @error "Missing 'boundary' specification"
+        @warn "Skipping parsing of boundary sets"
+
+        while strip(readline(file)) != "vertices" && !eof(file)
+        end
+        eof(file) && @error "Missing 'vertices' specification"
+        nv = parse(Int64, strip(readline(file)))
+        @info "number of vertices=$nv"
+        @assert sdim == parse(Int64, strip(readline(file))) # redundant space dim
+        nodes = Vector{Ferrite.Node{sdim,Float64}}(undef, nv)
+
+        for vi in 1:nv
+            line = parse.(Float64,split(strip(readline(file))))
+            nodes[vi] = Node(Vec(ntuple(i->line[i], sdim)))
+        end
+
+        return Grid(elements, nodes; cellsets=domains)
+    end
 end

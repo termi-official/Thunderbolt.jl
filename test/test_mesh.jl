@@ -59,16 +59,34 @@
     end
 
     @testset "IO" begin
-        filename = @__DIR__
-        filename *= "/data/voom2/ex1"
-        nodes = Thunderbolt.load_voom2_nodes("$filename.nodes")
-        elements = Thunderbolt.load_voom2_elements("$filename.ele")
-        voom2_mesh = Grid(elements, nodes)
-        
-        @test length(nodes) == 9
-        @test typeof(elements[1]) == Line
-        @test typeof(elements[2]) == Hexahedron
-        @test length(elements) == 2
-        test_detJ(voom2_mesh)
+        dirname = @__DIR__
+
+        @testset "voom2 legacy" begin
+            filename = dirname * "/data/voom2/ex1"
+            nodes = Thunderbolt.load_voom2_nodes("$filename.nodes")
+            elements = Thunderbolt.load_voom2_elements("$filename.ele")
+            voom2_mesh = Grid(elements, nodes)
+            
+            @test length(nodes) == 9
+            @test typeof(elements[1]) == Line
+            @test typeof(elements[2]) == Hexahedron
+            @test length(elements) == 2
+            test_detJ(voom2_mesh)
+        end
+
+        @testset "mfem v1.0 $filename" for (filename, element_type) in [
+            ("ref-segment.mesh", Line),
+            ("ref-triangle.mesh", Triangle),
+            ("ref-square.mesh", Quadrilateral),
+            ("ref-tetrahedron.mesh", Tetrahedron),
+            ("ref-cube.mesh", Hexahedron),
+            ("ref-prism.mesh", Wedge),
+            ("ref-pyramid.mesh", Pyramid),
+        ]
+            mfem_mesh = Thunderbolt.load_mfem_mesh(dirname * "/data/mfem/" * filename)
+
+            @test all(typeof.(mfem_mesh.cells) .== element_type)
+            test_detJ(mfem_mesh)
+        end
     end
 end
