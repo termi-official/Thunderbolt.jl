@@ -9,18 +9,9 @@ end
 IOCallback(io) = IOCallback(io, -1)
 
 function (iocb::IOCallback{ParaViewWriter{PVD}})(t, problem::Thunderbolt.SplitProblem, solver_cache) where {PVD}
-    if iocb.counter == 0
-        open("ecg-trace.txt", "w") do io
-        end
-    end
+    # TODO local activation time
     iocb.counter += 1
     (iocb.counter % 10) == 0 || return nothing
-    ecg_cache = Thunderbolt.Plonsey1964ECGGaussCache(problem, solver_cache.A_solver_cache.J, solver_cache.A_solver_cache.uₙ)
-    open("ecg-trace.txt", "a") do io
-        ecg1 = Thunderbolt.evaluate_ecg(ecg_cache, Vec((25.0, 3.5, 1.5)), 1.0)
-        ecg2 = Thunderbolt.evaluate_ecg(ecg_cache, Vec((-5.0, 3.5, 1.5)), 1.0)
-        writedlm(io, [t ecg1 ecg2], ',')
-    end;
     store_timestep!(iocb.io, t, problem.A.dh.grid)
     Thunderbolt.store_timestep_field!(iocb.io, t, problem.A.dh, solver_cache.A_solver_cache.uₙ, :φₘ)
     Thunderbolt.store_timestep_field!(iocb.io, t, problem.A.dh, solver_cache.B_solver_cache.sₙ[1:length(solver_cache.A_solver_cache.uₙ)], :s)

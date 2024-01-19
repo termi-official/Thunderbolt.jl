@@ -225,3 +225,242 @@ function compute_degeneracy(grid::Grid{dim, CT, DT}) where {dim, CT, DT}
     end
     return ratio
 end
+
+function load_voom2_elements(filename)
+    elements = Vector{Ferrite.AbstractCell}()
+    open(filename, "r") do file
+        # First line has format number of elements as Int and 2 more integers
+        line = strip(readline(file))
+        ne = parse(Int64,split(line)[1])
+        resize!(elements, ne)
+
+        while !eof(file)
+            line = parse.(Int64,split(strip(readline(file))))
+            ei = line[1]
+            etype = line[2]
+            if etype == 8
+                elements[ei] = Hexahedron(ntuple(i->line[i+2],8))
+            elseif etype == 2
+                elements[ei] = Line(ntuple(i->line[i+2],2))
+            else
+                @warn  "Unknown element type $etype. Skipping." maxlog=1
+            end
+        end
+    end
+    return elements
+end
+
+function load_voom2_nodes(filename)
+    nodes = Vector{Ferrite.Node{3,Float64}}()
+    open(filename, "r") do file
+        # First line has format number of nodes as Int and 2 more integers
+        line = strip(readline(file))
+        nn = parse(Int64,split(line)[1])
+        resize!(nodes, nn)
+
+        while !eof(file)
+            line = split(strip(readline(file)))
+            ni = parse(Int64, line[1])
+            nodes[ni] = Node(Vec(ntuple(i->parse(Float64,line[i+1]),3)))
+        end
+    end
+    return nodes
+end
+
+function load_voom2_fsn(filename)
+    # Big table
+    f = Vector{Ferrite.Vec{3,Float64}}()
+    s = Vector{Ferrite.Vec{3,Float64}}()
+    n = Vector{Ferrite.Vec{3,Float64}}()
+    open(filename, "r") do file
+        while !eof(file)
+            line = parse.(Float64,split(strip(readline(file))))
+            push!(f, Vec((line[1], line[2], line[3])))
+            push!(s, Vec((line[4], line[5], line[6])))
+            push!(n, Vec((line[7], line[8], line[9])))
+        end
+    end
+    return f,s,n
+end
+
+"""
+    load_voom2_mesh(filename)
+
+Loader for the [voom2](https://github.com/luigiemp/voom2) legacy format.
+"""
+function load_voom2_mesh(filename)
+    nodes = load_voom2_nodes("$filename.nodes")
+    elements = load_voom2_elements("$filename.ele")
+    return Grid(elements, nodes)
+end
+
+"""
+    load_mfem_mesh(filename)
+
+Loader for straight mfem meshes supporting v1.0.
+"""
+function load_mfem_mesh(filename)
+    @info "loading mfem mesh $filename"
+
+    open(filename, "r") do file
+        format = strip(readline(file))
+        format != "MFEM mesh v1.0" && @error "Unsupported mesh format '$format'"
+
+        # Parse spatial dimension
+        while strip(readline(file)) != "dimension" && !eof(file)
+        end
+        eof(file) && @error "Missing 'dimension' specification"
+
+        sdim = parse(Int64, strip(readline(file)))
+        @info "sdim=$sdim"
+
+        # Parse elements
+        while strip(readline(file)) != "elements" && !eof(file)
+        end
+        eof(file) && @error "Missing 'elements' specification"
+
+        ne = parse(Int64, strip(readline(file)))
+        @info "number of elements=$ne"
+        elements = Vector{Ferrite.AbstractCell}(undef, ne)
+        domains = Dict{String,Set{Int}}()
+        for ei in 1:ne
+            line = parse.(Int64,split(strip(readline(file))))
+            etype = line[2]
+
+            line[3:end] .+= 1 # 0-based to 1-based index
+
+            if etype == 1
+                elements[ei] = Line(ntuple(i->line[i+2],2))
+            elseif etype == 2
+                elements[ei] = Triangle((line[4], line[5], line[3]))
+            elseif etype == 3
+                elements[ei] = Quadrilateral(ntuple(i->line[i+2],4))
+            elseif etype == 4
+                elements[ei] = Tetrahedron(ntuple(i->line[i+2],4))
+            elseif etype == 5
+                elements[ei] = Hexahedron(ntuple(i->line[i+2],8))
+            elseif etype == 6
+                elements[ei] = Wedge(ntuple(i->line[i+2],6))
+            elseif etype == 7
+                elements[ei] = Pyramid((line[3], line[4], line[6], line[5], line[7]))
+            else
+                @warn  "Unknown element type $etype. Skipping." maxlog=1
+            end
+
+            attr = line[1]
+            if !haskey(domains, "$attr")
+                domains["$attr"] = Set{Int}()
+            end
+            push!(domains["$attr"], ei)
+        end
+
+        # while strip(readline(file)) != "boundary" && !eof(file)
+        # end
+        # eof(file) && @error "Missing 'boundary' specification"
+        @warn "Skipping parsing of boundary sets"
+
+        while strip(readline(file)) != "vertices" && !eof(file)
+        end
+        eof(file) && @error "Missing 'vertices' specification"
+        nv = parse(Int64, strip(readline(file)))
+        @info "number of vertices=$nv"
+        @assert sdim == parse(Int64, strip(readline(file))) # redundant space dim
+        nodes = Vector{Ferrite.Node{sdim,Float64}}(undef, nv)
+
+        for vi in 1:nv
+            line = parse.(Float64,split(strip(readline(file))))
+            nodes[vi] = Node(Vec(ntuple(i->line[i], sdim)))
+        end
+
+        return Grid(elements, nodes; cellsets=domains)
+    end
+end
+
+function load_carp_elements(filename)
+    elements = Vector{Ferrite.AbstractCell}()
+    domains = Dict{String,Set{Int}}()
+
+    open(filename, "r") do file
+        # First line has format number of elements as Int and 2 more integers
+        line = strip(readline(file))
+        ne = parse(Int64,split(line)[1])
+        resize!(elements, ne)
+
+        for ei in 1:ne
+            eof(file) && error("Premature end of input file")
+            line = split(strip(readline(file)))
+
+            etype = line[1]
+            attr::Union{Nothing,Int64} = nothing
+            if etype == "Ln"
+                elements[ei] = Line(ntuple(i->parse(Int64,line[i+1])+1,2))
+                if length(line) == 4
+                    attr = parse(Int64,line[end])
+                end
+            elseif etype == "Tr"
+                elements[ei] = Triangle(ntuple(i->parse(Int64,line[i+1])+1,3))
+                if length(line) == 5
+                    attr = parse(Int64,line[end])
+                end
+            elseif etype == "Qd"
+                elements[ei] = Quadrilateral(ntuple(i->parse(Int64,line[i+1])+1,4))
+                if length(line) == 6
+                    attr = parse(Int64,line[end])
+                end
+            elseif etype == "Tt"
+                elements[ei] = Tetrahedron(ntuple(i->parse(Int64,line[i+1])+1,4))
+                if length(line) == 6 
+                    attr = parse(Int64,line[end])
+                end
+            elseif etype == "Pr"
+                elements[ei] = Wedge(ntuple(i->parse(Int64,line[i+1])+1,6))
+                if length(line) == 8
+                    attr = parse(Int64,line[end])
+                end
+            elseif etype == "Hx"
+                elements[ei] = Hexahedron(ntuple(i->parse(Int64,line[i+1])+1,8))
+                if length(line) == 10
+                    attr = parse(Int64,line[end])
+                end
+            else
+                @warn  "Unknown element type $etype. Skipping." maxlog=1
+            end
+
+            attr === nothing && continue # no attribute available
+            if !haskey(domains, "$attr")
+                domains["$attr"] = Set{Int}()
+            end
+            push!(domains["$attr"], ei)
+        end
+    end
+    return elements, domains
+end
+
+function load_carp_nodes(filename)
+    nodes = Vector{Ferrite.Node{3,Float64}}()
+    open(filename, "r") do file
+        line = strip(readline(file))
+        nv = parse(Int64,split(line)[1])
+        resize!(nodes, nv)
+
+        for ni in 1:nv
+            eof(file) && error("Premature end of input file")
+            line = split(strip(readline(file)))
+            nodes[ni] = Node(Vec(ntuple(i->parse(Float64,line[i]),3)))
+        end
+    end
+    return nodes
+end
+
+"""
+    load_carp_mesh(filename)
+
+Mesh format taken from https://carp.medunigraz.at/file_formats.html .
+"""
+function load_carp_mesh(filename)
+    elements, domains = load_carp_elements(filename * ".elem")
+    nodes = load_carp_nodes(filename * ".pts")
+    
+    return Grid(elements, nodes; cellsets=domains)
+end
+ 
