@@ -310,7 +310,7 @@ function load_mfem_mesh(filename)
         for ei in 1:ne
             line = parse.(Int64,split(strip(readline(file))))
             etype = line[2]
-            
+
             line[3:end] .+= 1 # 0-based to 1-based index
 
             if etype == 1
@@ -359,3 +359,87 @@ function load_mfem_mesh(filename)
         return Grid(elements, nodes; cellsets=domains)
     end
 end
+
+function load_carp_elements(filename)
+    elements = Vector{Ferrite.AbstractCell}()
+    domains = Dict{String,Set{Int}}()
+
+    open(filename, "r") do file
+        # First line has format number of elements as Int and 2 more integers
+        line = strip(readline(file))
+        ne = parse(Int64,split(line)[1])
+        resize!(elements, ne)
+
+        for ei in 1:ne
+            eof(file) && error("Premature end of input file")
+            line = split(strip(readline(file)))
+
+            etype = line[1]
+            attr::Union{Nothing,Int64} = nothing
+            if etype == "Ln"
+                elements[ei] = Line(ntuple(i->parse(Int64,line[i+1])+1,2))
+                if length(line) == 4
+                    attr = parse(Int64,line[end])
+                end
+            elseif etype == "Tr"
+                elements[ei] = Triangle(ntuple(i->parse(Int64,line[i+1])+1,3))
+                if length(line) == 5
+                    attr = parse(Int64,line[end])
+                end
+            elseif etype == "Qd"
+                elements[ei] = Quadrilateral(ntuple(i->parse(Int64,line[i+1])+1,4))
+                if length(line) == 6
+                    attr = parse(Int64,line[end])
+                end
+            elseif etype == "Tt"
+                elements[ei] = Tetrahedron(ntuple(i->parse(Int64,line[i+1])+1,4))
+                if length(line) == 6 
+                    attr = parse(Int64,line[end])
+                end
+            elseif etype == "Pr"
+                elements[ei] = Wedge(ntuple(i->parse(Int64,line[i+1])+1,6))
+                if length(line) == 8
+                    attr = parse(Int64,line[end])
+                end
+            elseif etype == "Hx"
+                elements[ei] = Hexahedron(ntuple(i->parse(Int64,line[i+1])+1,8))
+                if length(line) == 10
+                    attr = parse(Int64,line[end])
+                end
+            else
+                @warn  "Unknown element type $etype. Skipping." maxlog=1
+            end
+
+            attr === nothing && continue # no attribute available
+            if !haskey(domains, "$attr")
+                domains["$attr"] = Set{Int}()
+            end
+            push!(domains["$attr"], ei)
+        end
+    end
+    return elements, domains
+end
+
+function load_carp_nodes(filename)
+    nodes = Vector{Ferrite.Node{3,Float64}}()
+    open(filename, "r") do file
+        line = strip(readline(file))
+        nv = parse(Int64,split(line)[1])
+        resize!(nodes, nv)
+
+        for ni in 1:nv
+            eof(file) && error("Premature end of input file")
+            line = split(strip(readline(file)))
+            nodes[ni] = Node(Vec(ntuple(i->parse(Float64,line[i]),3)))
+        end
+    end
+    return nodes
+end
+
+function load_carp_mesh(filename)
+    elements, domains = load_carp_elements(filename * ".elem")
+    nodes = load_carp_nodes(filename * ".pts")
+    
+    return Grid(elements, nodes; cellsets=domains)
+end
+ 

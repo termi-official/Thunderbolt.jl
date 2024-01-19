@@ -88,5 +88,20 @@
             @test all(typeof.(mfem_mesh.cells) .== element_type)
             test_detJ(mfem_mesh)
         end
+
+        @testset "openCARP $filename" for (filename, element_type) in [
+            ("ref-segment", Line),
+            ("ref-triangle", Triangle),
+            ("ref-square", Quadrilateral),
+            ("ref-tetrahedron", Tetrahedron),
+            ("ref-cube", Hexahedron),
+            ("ref-prism", Wedge),
+            # ("ref-pyramid", Pyramid),
+        ]
+            carp_mesh = Thunderbolt.load_carp_mesh(dirname * "/data/openCARP/" * filename)
+
+            @test all(typeof.(carp_mesh.cells) .== element_type)
+            test_detJ(carp_mesh)
+        end
     end
 end
