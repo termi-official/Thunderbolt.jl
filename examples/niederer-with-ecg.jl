@@ -51,7 +51,7 @@ end
 order = 1
 ip_collection = LagrangeCollection{order}()
 
-cs = Thunderbolt.CartesianCoordinateSystemCoefficient(getinterpolation(ip_collection^3)) # TODO normalize
+cs = Thunderbolt.CartesianCoordinateSystemCoefficient(ip_collection^3) # TODO normalize
 
 κ₁ = 0.17 * 0.62 / (0.17 + 0.62)
 κᵣ = 0.019 * 0.24 / (0.019 + 0.24)

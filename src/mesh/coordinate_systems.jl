@@ -115,7 +115,7 @@ end
 
 """
 """
-function compute_midmyocardial_section_coordinate_system(grid::AbstractGrid{dim}, ip_geo_collection::LagrangeCollection) where {dim}
+function compute_midmyocardial_section_coordinate_system(grid::AbstractGrid{dim}, ip_geo_collection::InterpolationCollection) where {dim}
     @assert dim == 3
     @assert length(elementtypes(grid)) == 1
     ref_shape = getrefshape(getcells(grid,1))

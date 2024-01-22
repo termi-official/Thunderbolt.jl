@@ -105,8 +105,8 @@ function create_simple_microstructure_model(coordinate_system, ip_collection::Ve
     end
 
     OrthotropicMicrostructureModel(
-        FieldCoefficient(elementwise_data_f, ip),
-        FieldCoefficient(elementwise_data_s, ip),
-        FieldCoefficient(elementwise_data_n, ip)
+        FieldCoefficient(elementwise_data_f, ip_collection),
+        FieldCoefficient(elementwise_data_s, ip_collection),
+        FieldCoefficient(elementwise_data_n, ip_collection)
     )
 end

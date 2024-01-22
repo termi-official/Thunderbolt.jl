@@ -202,8 +202,8 @@ ip_collection = LagrangeCollection{order}()
 ip = getinterpolation(ip_collection^3, ref_shape)
 ip_fiber = getinterpolation(ip_collection, ref_shape)
 ip_geo = getinterpolation(ip_collection, ref_shape)
-LV_cs = compute_LV_coordinate_system(LV_grid, ip)
-LV_fm = create_simple_fiber_model(LV_cs, ip_fiber, ip_geo, endo_helix_angle = -60.0, epi_helix_angle = 70.0, endo_transversal_angle = 10.0, epi_transversal_angle = -20.0)
+LV_cs = compute_LV_coordinate_system(LV_grid, ip_collection)
+LV_fm = create_simple_microstructure_model(LV_cs, ip_collection^3, ip_collection^3, endo_helix_angle = -60.0, epi_helix_angle = 70.0, endo_transversal_angle = 10.0, epi_transversal_angle = -20.0)
 passive_ho_model = HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 0.28504197825657906, 4.126552003938297, 0.0, 1.0, 0.0, 1.0, SimpleCompressionPenalty(4.0))
 solve_ideal_lv("lv_test",
     ActiveStressModel(

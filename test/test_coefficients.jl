@@ -19,7 +19,7 @@
         data_scalar[1,1] =  1.0
         data_scalar[1,2] = -1.0
         data_scalar[2,1] = -1.0
-        fcs = FieldCoefficient(data_scalar, getinterpolation(ip_collection, RefLine))
+        fcs = FieldCoefficient(data_scalar, ip_collection)
         reinit!(cell_cache, 1)
         @test evaluate_coefficient(fcs, cell_cache, qp1, 0.0) ≈  0.0
         @test evaluate_coefficient(fcs, cell_cache, qp1, 1.0) ≈  0.0
@@ -35,7 +35,7 @@
         data_vector[1,1] = Vec((1.0,0.0))
         data_vector[1,2] = Vec((-1.0,-0.0))
         data_vector[2,1] = Vec((0.0,-1.0))
-        fcv = FieldCoefficient(data_vector, getinterpolation(ip_collection^2, RefLine))
+        fcv = FieldCoefficient(data_vector, ip_collection^2)
         reinit!(cell_cache, 1)
         @test evaluate_coefficient(fcv, cell_cache, qp1, 0.0) ≈ Vec((0.0,0.0))
         @test evaluate_coefficient(fcv, cell_cache, qp2, 1.0) ≈ Vec((-0.1,0.0))
@@ -45,7 +45,7 @@
     end
 
     @testset "CartesianCoordinateSystemCoefficient" begin
-        ccsc = CartesianCoordinateSystemCoefficient(getinterpolation(ip_collection, RefLine)^1)
+        ccsc = CartesianCoordinateSystemCoefficient(ip_collection^1)
         reinit!(cell_cache, 1)
         @test evaluate_coefficient(ccsc, cell_cache, qp1, 0.0) ≈ Vec((-0.5,))
         @test evaluate_coefficient(ccsc, cell_cache, qp1, 1.0) ≈ Vec((-0.5,))
@@ -61,7 +61,7 @@
     @testset "AnalyticalCoefficient" begin
         ac = AnalyticalCoefficient(
             (x,t) -> norm(x)+t,
-            CartesianCoordinateSystemCoefficient(getinterpolation(ip_collection, RefLine)^1)
+            CartesianCoordinateSystemCoefficient(ip_collection^1)
         )
         reinit!(cell_cache, 1)
         @test evaluate_coefficient(ac, cell_cache, qp1, 0.0) ≈  0.5

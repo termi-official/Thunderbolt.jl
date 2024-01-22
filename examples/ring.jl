@@ -194,13 +194,13 @@ ip_u = getinterpolation(ip_collection^3, ref_shape)
 ip_geo = getinterpolation(ip_collection^3, ref_shape)
 
 ring_grid = generate_ring_mesh(8,2,2)
-ring_cs = compute_midmyocardial_section_coordinate_system(ring_grid, ip_geo)
+ring_cs = compute_midmyocardial_section_coordinate_system(ring_grid, ip_collection^3)
 solve_test_ring("Debug",
     ActiveStressModel(
         Guccione1991PassiveModel(),
         Guccione1993ActiveModel(10.0),
         PelceSunLangeveld1995Model(;calcium_field=CalciumHatField()),
-        create_simple_microstructure_model(ring_cs, ip_fsn, ip_geo,
+        create_simple_microstructure_model(ring_cs, ip_collection^3, ip_collection^3,
             endo_helix_angle = deg2rad(0.0),
             epi_helix_angle = deg2rad(0.0),
             endo_transversal_angle = 0.0,
