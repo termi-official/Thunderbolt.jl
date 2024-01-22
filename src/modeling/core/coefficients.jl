@@ -98,8 +98,8 @@ function evaluate_coefficient(coeff::CoordinateSystemCoefficient{<:LVCoordinateS
     x = @MVector zeros(T, 3)
     ip = getcoordinateinterpolation(coeff.cs)
     dofs = celldofs(coeff.cs.dh, cellid(cell_cache))
-    for i in 1:getnbasefunctions(ip.ip)
-        val = Ferrite.shape_value(ip.ip, qp.ξ, i)
+    @inbounds for i in 1:getnbasefunctions(ip)
+        val = Ferrite.shape_value(ip, qp.ξ, i)
         x[1] += val * coeff.cs.u_transmural[dofs[i]]
         x[2] += val * coeff.cs.u_apicobasal[dofs[i]]
         x[3] += val * coeff.cs.u_circumferential[dofs[i]]
