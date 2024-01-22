@@ -1,16 +1,5 @@
 using Thunderbolt, UnPack
 
-"""
-In 'A transmurally heterogeneous orthotropic activation model for ventricular contraction and its numerical validation' it is suggested that uniform activtaion is fine.
-
-TODO citation.
-"""
-struct CalciumHatField end # TODO compute calcium profile from actual cell model :)
-
-"""
-"""
-Thunderbolt.evaluate_coefficient(coeff::CalciumHatField, cell_cache, qp, t) = t/1000.0 < 0.5 ? 2.0*t/1000.0 : 2.0-2.0*t/1000.0
-
 import Ferrite: get_grid, find_field
 
 # TODO refactor this one into the framework code and put a nice abstraction layer around it
@@ -131,8 +120,6 @@ function (postproc::StandardMechanicalIOPostProcessor)(t, problem, solver_cache)
         end
     end
 
-    # problem.constitutive_model.microstructure_model
-
     # Save the solution
     Thunderbolt.store_timestep!(io, t, dh.grid)
     Thunderbolt.store_timestep_field!(io, t, dh, solver_cache.uₙ, :displacement)
@@ -154,14 +141,14 @@ function (postproc::StandardMechanicalIOPostProcessor)(t, problem, solver_cache)
     # max_vol = max(max_vol, calculate_volume_deformed_mesh(uₙ,dh,cv));
 end
 
-function solve_test_ring(name_base, constitutive_model, grid, face_models::FM, ip_mech::IPM, ip_geo::IPG, intorder::Int, Δt = 100.0, T = 1000.0) where {ref_shape, IPM <: Interpolation{ref_shape}, IPG <: Interpolation{ref_shape}, FM}
+function solve_test_ring(name_base, constitutive_model, grid, face_models::FM, ip_mech::IPM, ip_geo::IPG, intorder::Int, Δt = 100.0, T = 1000.0) where {ref_shape, order, IPM <: Interpolation{ref_shape, order}, IPG <: Interpolation{ref_shape}, FM}
     io = ParaViewWriter(name_base);
     # io = JLD2Writer(name_base);
 
     problem = semidiscretize(
         StructuralModel(constitutive_model, face_models),
         FiniteElementDiscretization(
-            Dict(:displacement => LagrangeCollection{1}()^3),
+            Dict(:displacement => LagrangeCollection{order}()^3),
             [Dirichlet(:displacement, getfaceset(grid, "Myocardium"), (x,t) -> [0.0], [3])],
             # [Dirichlet(:displacement, getfaceset(grid, "left"), (x,t) -> [0.0], [1]),Dirichlet(:displacement, getfaceset(grid, "front"), (x,t) -> [0.0], [2]),Dirichlet(:displacement, getfaceset(grid, "bottom"), (x,t) -> [0.0], [3]), Dirichlet(:displacement, Set([1]), (x,t) -> [0.0, 0.0, 0.0], [1, 2, 3])],
         ),
@@ -185,20 +172,36 @@ function solve_test_ring(name_base, constitutive_model, grid, face_models::FM, i
     )
 end
 
+
+"""
+In 'A transmurally heterogeneous orthotropic activation model for ventricular contraction and its numerical validation' it is suggested that uniform activtaion is fine.
+
+TODO citation.
+
+TODO add an example with a calcium profile compute via cell model and Purkinje activation
+"""
+calcium_profile_function(x,t) = t/1000.0 < 0.5 ? (1-x.transmural*0.7)*2.0*t/1000.0 : (2.0-2.0*t/1000.0)*(1-x.transmural*0.7)
+
 ref_shape = RefHexahedron
-order = 1
+
+for (name, order, ring_grid) ∈ [
+    ("Linear-Ring", 1, Thunderbolt.generate_ring_mesh(40,8,8)),
+    ("Quadratic-Ring", 2, Thunderbolt.generate_quadratic_ring_mesh(20,4,4))
+]
 
 ip_fsn = Lagrange{ref_shape, order}()^3
 ip_u = Lagrange{ref_shape, order}()^3
 ip_geo = Lagrange{ref_shape, order}()^3
 
-ring_grid = generate_ring_mesh(8,2,2)
 ring_cs = compute_midmyocardial_section_coordinate_system(ring_grid, ip_geo)
-solve_test_ring("Debug",
+solve_test_ring(name,
     ActiveStressModel(
         Guccione1991PassiveModel(),
-        Guccione1993ActiveModel(10.0),
-        PelceSunLangeveld1995Model(;calcium_field=CalciumHatField()),
+        PiersantiActiveStress(;Tmax=10.0),
+        PelceSunLangeveld1995Model(;calcium_field=AnalyticalCoefficient(
+            calcium_profile_function,
+            CoordinateSystemCoefficient(ring_cs)
+        )),
         create_simple_microstructure_model(ring_cs, ip_fsn, ip_geo,
             endo_helix_angle = deg2rad(0.0),
             epi_helix_angle = deg2rad(0.0),
@@ -206,8 +209,10 @@ solve_test_ring("Debug",
             epi_transversal_angle = 0.0,
             sheetlet_pseudo_angle = deg2rad(0)
         )
-    ), ring_grid, 
+    ), ring_grid,
     [NormalSpringBC(0.01, "Epicardium")],
     ip_u, ip_geo, 2*order,
     100.0
 )
+
+end
