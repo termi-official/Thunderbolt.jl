@@ -12,7 +12,7 @@ getcoordinateinterpolation(cs::CartesianCoordinateSystem) = cs.ip
 """
     LVCoordinateSystem(dh, u_transmural, u_apicobasal)
 
-Simplified universal ventricular coordinate on LV only, containing the transmural, apicobasal and 
+Simplified universal ventricular coordinate on LV only, containing the transmural, apicobasal and
 circumferential coordinates. See [`compute_LV_coordinate_system`](@ref) to construct it.
 """
 struct LVCoordinateSystem{DH <: AbstractDofHandler}
@@ -20,9 +20,9 @@ struct LVCoordinateSystem{DH <: AbstractDofHandler}
     u_transmural::Vector{Float64}
     u_apicobasal::Vector{Float64}
     u_circumferential::Vector{Float64}
-    function LVCoordinateSystem(dh::AbstractDofHandler, u_transmural::Vector{Float64}, u_apicobasal::Vector{Float64})
+    function LVCoordinateSystem(dh::AbstractDofHandler, u_transmural::Vector{Float64}, u_apicobasal::Vector{Float64}, u_circumferential::Vector{Float64})
         check_subdomains(dh)
-        return new{typeof(dh)}(dh, u_transmural, u_apicobasal)
+        return new{typeof(dh)}(dh, u_transmural, u_apicobasal, u_circumferential)
     end
 end
 
@@ -58,6 +58,9 @@ Requires a grid with facesets
     * Endocardium
 and a nodeset
     * Apex
+
+!!! warning
+    The circumferential coordinate is not yet implemented and is guaranteed to evaluate to NaN.
 """
 function compute_LV_coordinate_system(grid::AbstractGrid, ip_geo::Interpolation{ref_shape}) where {ref_shape <: AbstractRefShape{3}}
     ip = Lagrange{ref_shape, 1}()
@@ -137,7 +140,10 @@ function compute_LV_coordinate_system(grid::AbstractGrid, ip_geo::Interpolation{
     apply!(K_apicobasal, f, ch)
     apicobasal = K_apicobasal \ f;
 
-    return LVCoordinateSystem(dh, transmural, apicobasal)
+    circumferential = zeros(ndofs(dh))
+    circumferential .= NaN
+
+    return LVCoordinateSystem(dh, transmural, apicobasal, circumferential)
 end
 
 """
@@ -214,12 +220,15 @@ function compute_midmyocardial_section_coordinate_system(grid::AbstractGrid,ip_g
     apply!(K_apicobasal, f, ch)
     apicobasal = K_apicobasal \ f;
 
-    return LVCoordinateSystem(dh, transmural, apicobasal)
+    circumferential = zeros(ndofs(dh))
+    circumferential .= NaN
+
+    return LVCoordinateSystem(dh, transmural, apicobasal, circumferential)
 end
 
 """
     vtk_coordinate_system(vtk, cs::LVCoordinateSystem)
-    
+
 Store the LV coordinate system in a vtk file.
 """
 function vtk_coordinate_system(vtk, cs::LVCoordinateSystem)
