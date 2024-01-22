@@ -154,7 +154,7 @@ function (postproc::StandardMechanicalIOPostProcessor)(t, problem, solver_cache)
     # max_vol = max(max_vol, calculate_volume_deformed_mesh(uₙ,dh,cv));
 end
 
-function solve_test_ring(name_base, constitutive_model, grid, face_models::FM, ip_collection::Thunderbolt.ScalarInterpolationCollection, ip_mech::IPM, ip_geo::IPG, intorder::Int, Δt = 100.0, T = 1000.0) where {ref_shape, IPM <: Interpolation{ref_shape}, IPG <: Interpolation{ref_shape}, FM}
+function solve_test_ring(name_base, constitutive_model, grid, face_models::FM, ip_collection::Thunderbolt.ScalarInterpolationCollection, ip_mech::IPM, ip_geo::IPG, qr_collection::QuadratureRuleCollection, Δt = 100.0, T = 1000.0) where {ref_shape, IPM <: Interpolation{ref_shape}, IPG <: Interpolation{ref_shape}, FM}
     io = ParaViewWriter(name_base);
     # io = JLD2Writer(name_base);
 
@@ -169,7 +169,8 @@ function solve_test_ring(name_base, constitutive_model, grid, face_models::FM, i
     )
 
     # Postprocessor
-    cv_post = CellValues(QuadratureRule{ref_shape}(intorder-1), ip_mech, ip_geo)
+    qr = getquadraturerule(qr_collection, elementtypes(grid)[1])
+    cv_post = CellValues(qr, ip_mech, ip_geo)
     standard_postproc = StandardMechanicalIOPostProcessor(io, cv_post, [1])
 
     # Create sparse matrix and residual vector
@@ -187,8 +188,9 @@ end
 
 ref_shape = RefHexahedron
 order = 1
-
+intorder = 2*order
 ip_collection = LagrangeCollection{order}()
+qr_collection = QuadratureRuleCollection(intorder-1)
 ip_fsn = getinterpolation(ip_collection^3, ref_shape)
 ip_u = getinterpolation(ip_collection^3, ref_shape)
 ip_geo = getinterpolation(ip_collection^3, ref_shape)
@@ -210,6 +212,6 @@ solve_test_ring("Debug",
     ), ring_grid, 
     [NormalSpringBC(0.01, "Epicardium")],
     ip_collection,
-    ip_u, ip_geo, 2*order,
+    ip_u, ip_geo, qr_collection,
     100.0
 )

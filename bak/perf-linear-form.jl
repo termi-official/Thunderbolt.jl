@@ -1,11 +1,13 @@
 using BenchmarkTools, Thunderbolt, StaticArrays
-cell_cache = Ferrite.CellCache(generate_grid(Hexahedron, (1,1,1)))
+celltype = Hexahedron
+cell_cache = Ferrite.CellCache(generate_grid(celltype, (1,1,1)))
 reinit!(cell_cache,1)
 ref_shape = RefHexahedron
 order = 1
 ip_collection = LagrangeCollection{order}()
 ip = getinterpolation(ip_collection, ref_shape)
-qr = QuadratureRule{ref_shape}(2)
+qr_collection = QuadratureRuleCollection(2)
+qr = getquadraturerule(celltype)
 cv = CellValues(qr, ip)
 ac = AnalyticalCoefficient(
     (x,t) -> norm(x)+t,

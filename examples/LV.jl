@@ -150,7 +150,7 @@ function (postproc::StandardMechanicalIOPostProcessor2)(t, problem, solver_cache
 end
 
 
-function solve_ideal_lv(name_base, constitutive_model, grid, coordinate_system, face_models, ip_collection::Thunderbolt.ScalarInterpolationCollection, ip_mech::IPM, ip_geo::IPG, intorder::Int, Δt = 100.0, T = 1000.0) where {ref_shape, IPM <: Interpolation{ref_shape}, IPG <: Interpolation{ref_shape}}
+function solve_ideal_lv(name_base, constitutive_model, grid, coordinate_system, face_models, ip_collection::Thunderbolt.ScalarInterpolationCollection, ip_mech::IPM, ip_geo::IPG, qr_collection::QuadratureRuleCollection, Δt = 100.0, T = 1000.0) where {ref_shape, IPM <: Interpolation{ref_shape}, IPG <: Interpolation{ref_shape}}
     io = ParaViewWriter(name_base);
     # io = JLD2Writer(name_base);
 
@@ -176,7 +176,8 @@ function solve_ideal_lv(name_base, constitutive_model, grid, coordinate_system, 
     )
 
     # Postprocessor
-    cv_post = CellValues(QuadratureRule{ref_shape}(intorder-1), ip_mech, ip_geo)
+    qr = getquadraturerule(qr_collection, elementtypes(grid)[1])
+    cv_post = CellValues(qr, ip_mech, ip_geo)
     standard_postproc = StandardMechanicalIOPostProcessor2(io, cv_post, [1], coordinate_system)
 
     # Create sparse matrix and residual vector
@@ -198,7 +199,9 @@ end
 LV_grid = Thunderbolt.hexahedralize(Thunderbolt.generate_ideal_lv_mesh(15,2,6))
 ref_shape = RefHexahedron
 order = 1
+intorder = max(2*order-1,2)
 ip_collection = LagrangeCollection{order}()
+qr_collection = QuadratureRuleCollection(intorder-1)
 ip = getinterpolation(ip_collection^3, ref_shape)
 ip_fiber = getinterpolation(ip_collection, ref_shape)
 ip_geo = getinterpolation(ip_collection, ref_shape)
@@ -214,5 +217,6 @@ solve_ideal_lv("lv_test",
     ), LV_grid, LV_cs,
     [NormalSpringBC(0.001, "Epicardium")],
     ip_collection,
-    ip, ip_geo, max(2*order-1,2)
+    ip, ip_geo,
+    qr_collection
 )
