@@ -86,6 +86,7 @@ function assemble_interface_coupling_contribution!(C, r, dh, u, setname, method:
 end
 
 function compute_chamber_volume(dh, u, setname, method)
+    check_subdomains(dh)
     grid = dh.grid
     ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], :displacement)
     ip_geo = Ferrite.default_interpolation(typeof(getcells(grid, 1)))

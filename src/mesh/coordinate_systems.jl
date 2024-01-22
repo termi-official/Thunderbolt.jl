@@ -10,6 +10,10 @@ struct LVCoordinateSystem
     dh::AbstractDofHandler
     u_transmural::Vector{Float64}
     u_apicobasal::Vector{Float64}
+    function LVCoordinateSystem(dh::AbstractDofHandler, u_transmural::Vector{Float64}, u_apicobasal::Vector{Float64})
+        check_subdomains(dh)
+        return new(dh, u_transmural, u_apicobasal)
+    end
 end
 
 """
