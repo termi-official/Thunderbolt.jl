@@ -46,7 +46,7 @@
     io = ParaViewWriter("")
     ioJLD2 = JLD2Writer("") 
     
-    @test_throws subdomain_error LVCoordinateSystem(dh, [0.], [0.])
+    @test_throws subdomain_error LVCoordinateSystem(dh, [0.], [0.], [0.])
     @test_throws subdomain_error Thunderbolt.compute_chamber_volume(dh, [0.], "top", Thunderbolt.Hirschvogel2016SurrogateVolume)
     @test_throws subdomain_error Thunderbolt.TransientHeatProblem(Thunderbolt.ConductivityToDiffusivityCoefficient(0., 0., 0.), protocol, dh)
     @test_throws subdomain_error Thunderbolt.QuasiStaticNonlinearProblem(dh, ch, qsm, [])
