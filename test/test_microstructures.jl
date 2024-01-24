@@ -5,9 +5,9 @@
 
     qr_collection = QuadratureRuleCollection(2)
     qr = getquadraturerule(qr_collection, getcells(ring_grid, 1))
-    ip_collection = LagrangeCollection{order}()
-    
-    cv_collection = CellValueCollection(qr_collection, ip_collection^3, ip_collection^3)
+    ip_collection = LagrangeCollection{order}()^3
+
+    cv_collection = CellValueCollection(qr_collection, ip_collection, ip_collection)
     cv_fsn = Thunderbolt.getcellvalues(cv_collection, getcells(ring_grid, 1))
 
     ring_cs = compute_midmyocardial_section_coordinate_system(ring_grid, ip_collection)
@@ -28,7 +28,7 @@
     end
 
     @testset "OrthotropicMicrostructureModel" begin
-        ms = create_simple_microstructure_model(ring_cs, ip_collection^3, ip_collection^3,
+        ms = create_simple_microstructure_model(ring_cs, ip_collection, ip_collection,
             endo_helix_angle = deg2rad(0.0),
             epi_helix_angle = deg2rad(0.0),
             endo_transversal_angle = 0.0,
