@@ -33,8 +33,8 @@
 
         data_vector = zeros(Vec{2,Float64},2,2)
         data_vector[1,1] = Vec((1.0,0.0))
-        data_vector[1,2] = Vec((-1.0,-0.0))
-        data_vector[2,1] = Vec((0.0,-1.0))
+        data_vector[1,2] = Vec((0.0,-1.0))
+        data_vector[2,1] = Vec((-1.0,-0.0))
         fcv = FieldCoefficient(data_vector, ip_collection^2)
         reinit!(cell_cache, 1)
         @test evaluate_coefficient(fcv, cell_cache, qp1, 0.0) ≈ Vec((0.0,0.0))
