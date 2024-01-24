@@ -3,16 +3,16 @@
 
 A constant in time data field, interpolated per element with a given interpolation.
 """
-struct FieldCoefficient{TA,IP<:Interpolation}
+struct FieldCoefficient{TA,IPC<:InterpolationCollection}
     # TODO data structure for this
     elementwise_data::TA #3d array (element_idx, base_fun_idx, dim)
-    ip::IP
+    ip_collection::IPC
     # TODO use CellValues
 end
 
-function evaluate_coefficient(coeff::FieldCoefficient{<:Any,<:ScalarInterpolation}, cell_cache, qp::QuadraturePoint{<:Any, T}, t) where T
-    @unpack elementwise_data, ip = coeff
-
+function evaluate_coefficient(coeff::FieldCoefficient{<:Any,<:ScalarInterpolationCollection}, cell_cache, qp::QuadraturePoint{<:Any, T}, t) where T
+    @unpack elementwise_data, ip_collection = coeff
+    ip = getinterpolation(ip_collection, getcells(cell_cache.grid, cellid(cell_cache)))
     n_base_funcs = Ferrite.getnbasefunctions(ip)
     val = zero(T)
 
@@ -22,9 +22,9 @@ function evaluate_coefficient(coeff::FieldCoefficient{<:Any,<:ScalarInterpolatio
     return val
 end
 
-function evaluate_coefficient(coeff::FieldCoefficient{<:Any,<:VectorizedInterpolation{vdim}}, cell_cache, qp::QuadraturePoint{<:Any, T}, t) where {vdim,T}
-    @unpack elementwise_data, ip = coeff
-
+function evaluate_coefficient(coeff::FieldCoefficient{<:Any,<:VectorizedInterpolationCollection{vdim}}, cell_cache, qp::QuadraturePoint{<:Any, T}, t) where {vdim,T}
+    @unpack elementwise_data, ip_collection = coeff
+    ip = getinterpolation(ip_collection, getcells(cell_cache.grid, cellid(cell_cache)))
     n_base_funcs = Ferrite.getnbasefunctions(ip.ip)
     val = zero(Vec{vdim, T})
 
@@ -61,14 +61,16 @@ function evaluate_coefficient(coeff::ConductivityToDiffusivityCoefficient, cell_
     return κ/(Cₘ*χ)
 end
 
-struct CartesianCoordinateSystemCoefficient{IP<:VectorizedInterpolation}
-    ip::IP
+struct CartesianCoordinateSystemCoefficient{IPC<:VectorizedInterpolationCollection}
+    ip_collection::IPC
 end
 
-function evaluate_coefficient(coeff::CartesianCoordinateSystemCoefficient{<:VectorizedInterpolation{sdim}}, cell_cache, qp::QuadraturePoint{<:Any,T}, t) where {sdim, T}
+function evaluate_coefficient(coeff::CartesianCoordinateSystemCoefficient{<:VectorizedInterpolationCollection{sdim}}, cell_cache, qp::QuadraturePoint{<:Any,T}, t) where {sdim, T}
     x = zero(Vec{sdim, T})
-    for i in 1:getnbasefunctions(coeff.ip.ip)
-        x += Ferrite.shape_value(coeff.ip.ip, qp.ξ, i) * cell_cache.coords[i]
+    ip_collection = coeff.ip_collection
+    ip = getinterpolation(ip_collection, getcells(cell_cache.grid, cellid(cell_cache)))
+    for i in 1:getnbasefunctions(ip.ip)
+        x += Ferrite.shape_value(ip.ip, qp.ξ, i) * cell_cache.coords[i]
     end
     return x
 end

@@ -32,10 +32,15 @@ Requires a grid with facesets
 and a nodeset
 * Apex
 """
-function compute_LV_coordinate_system(grid::AbstractGrid, ip_geo::Interpolation{ref_shape}) where {ref_shape <: AbstractRefShape{3}}
-    ip = Lagrange{ref_shape, 1}()
-    qr = QuadratureRule{ref_shape}(2)
-    cellvalues = CellValues(qr, ip, ip_geo);
+function compute_LV_coordinate_system(grid::AbstractGrid{dim}, ip_geo_collection::VectorInterpolationCollection) where {dim}
+    @assert dim == 3
+    @assert length(elementtypes(grid)) == 1
+    ref_shape = getrefshape(getcells(grid, 1))
+    ip_collection = LagrangeCollection{1}()
+    ip = getinterpolation(ip_collection, ref_shape)
+    qr_collection = QuadratureRuleCollection(2)
+    cv_collection = CellValueCollection(qr_collection, ip_collection, ip_geo_collection)
+    cellvalues = getcellvalues(cv_collection, getcells(grid, 1))
 
     dh = DofHandler(grid)
     Ferrite.add!(dh, :coordinates, ip)
@@ -50,7 +55,6 @@ function compute_LV_coordinate_system(grid::AbstractGrid, ip_geo::Interpolation{
     assembler = start_assemble(K)
     @inbounds for cell in CellIterator(dh)
         fill!(Ke, 0)
-
         reinit!(cellvalues, cell)
 
         for qp in QuadratureIterator(cellvalues)
@@ -115,10 +119,15 @@ end
 
 """
 """
-function compute_midmyocardial_section_coordinate_system(grid::AbstractGrid,ip_geo::Interpolation{ref_shape}) where {ref_shape <: AbstractRefShape{3}}
-    ip = Lagrange{ref_shape, 1}()
-    qr = QuadratureRule{ref_shape}(2)
-    cellvalues = CellValues(qr, ip, ip_geo);
+function compute_midmyocardial_section_coordinate_system(grid::AbstractGrid{dim}, ip_geo_collection::VectorInterpolationCollection) where {dim}
+    @assert dim == 3
+    @assert length(elementtypes(grid)) == 1
+    ref_shape = getrefshape(getcells(grid,1))
+    ip_collection = LagrangeCollection{1}()
+    ip = getinterpolation(ip_collection, ref_shape)
+    qr_collection = QuadratureRuleCollection(2)
+    cv_collection = CellValueCollection(qr_collection, ip_collection, ip_geo_collection)
+    cellvalues = getcellvalues(cv_collection, getcells(grid,1))
 
     dh = DofHandler(grid)
     Ferrite.add!(dh, :coordinates, ip)

@@ -154,14 +154,14 @@ function (postproc::StandardMechanicalIOPostProcessor)(t, problem, solver_cache)
     # max_vol = max(max_vol, calculate_volume_deformed_mesh(uₙ,dh,cv));
 end
 
-function solve_test_ring(name_base, constitutive_model, grid, face_models::FM, ip_mech::IPM, ip_geo::IPG, intorder::Int, Δt = 100.0, T = 1000.0) where {ref_shape, IPM <: Interpolation{ref_shape}, IPG <: Interpolation{ref_shape}, FM}
+function solve_test_ring(name_base, constitutive_model, grid, face_models::FM, ip_collection::Thunderbolt.ScalarInterpolationCollection, ip_mech::IPM, ip_geo::IPG, qr_collection::QuadratureRuleCollection, Δt = 100.0, T = 1000.0) where {ref_shape, IPM <: Interpolation{ref_shape}, IPG <: Interpolation{ref_shape}, FM}
     io = ParaViewWriter(name_base);
     # io = JLD2Writer(name_base);
 
     problem = semidiscretize(
         StructuralModel(constitutive_model, face_models),
         FiniteElementDiscretization(
-            Dict(:displacement => LagrangeCollection{1}()^3),
+            Dict(:displacement => ip_collection^3),
             [Dirichlet(:displacement, getfaceset(grid, "Myocardium"), (x,t) -> [0.0], [3])],
             # [Dirichlet(:displacement, getfaceset(grid, "left"), (x,t) -> [0.0], [1]),Dirichlet(:displacement, getfaceset(grid, "front"), (x,t) -> [0.0], [2]),Dirichlet(:displacement, getfaceset(grid, "bottom"), (x,t) -> [0.0], [3]), Dirichlet(:displacement, Set([1]), (x,t) -> [0.0, 0.0, 0.0], [1, 2, 3])],
         ),
@@ -169,7 +169,8 @@ function solve_test_ring(name_base, constitutive_model, grid, face_models::FM, i
     )
 
     # Postprocessor
-    cv_post = CellValues(QuadratureRule{ref_shape}(intorder-1), ip_mech, ip_geo)
+    qr = getquadraturerule(qr_collection, elementtypes(grid)[1])
+    cv_post = CellValues(qr, ip_mech, ip_geo)
     standard_postproc = StandardMechanicalIOPostProcessor(io, cv_post, [1])
 
     # Create sparse matrix and residual vector
@@ -187,19 +188,21 @@ end
 
 ref_shape = RefHexahedron
 order = 1
-
-ip_fsn = Lagrange{ref_shape, order}()^3
-ip_u = Lagrange{ref_shape, order}()^3
-ip_geo = Lagrange{ref_shape, order}()^3
+intorder = 2*order
+ip_collection = LagrangeCollection{order}()
+qr_collection = QuadratureRuleCollection(intorder-1)
+ip_fsn = getinterpolation(ip_collection^3, ref_shape)
+ip_u = getinterpolation(ip_collection^3, ref_shape)
+ip_geo = getinterpolation(ip_collection^3, ref_shape)
 
 ring_grid = generate_ring_mesh(8,2,2)
-ring_cs = compute_midmyocardial_section_coordinate_system(ring_grid, ip_geo)
+ring_cs = compute_midmyocardial_section_coordinate_system(ring_grid, ip_collection^3)
 solve_test_ring("Debug",
     ActiveStressModel(
         Guccione1991PassiveModel(),
         Guccione1993ActiveModel(10.0),
         PelceSunLangeveld1995Model(;calcium_field=CalciumHatField()),
-        create_simple_microstructure_model(ring_cs, ip_fsn, ip_geo,
+        create_simple_microstructure_model(ring_cs, ip_collection^3, ip_collection^3,
             endo_helix_angle = deg2rad(0.0),
             epi_helix_angle = deg2rad(0.0),
             endo_transversal_angle = 0.0,
@@ -208,6 +211,7 @@ solve_test_ring("Debug",
         )
     ), ring_grid, 
     [NormalSpringBC(0.01, "Epicardium")],
-    ip_u, ip_geo, 2*order,
+    ip_collection,
+    ip_u, ip_geo, qr_collection,
     100.0
 )
