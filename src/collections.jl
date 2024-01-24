@@ -31,6 +31,17 @@ end
 getinterpolation(lc::LagrangeCollection{order}, cell::AbstractCell{ref_shape}) where {order, ref_shape <: Ferrite.AbstractRefShape} = Lagrange{ref_shape, order}()
 getinterpolation(lc::LagrangeCollection{order}, ::Type{ref_shape}) where {order, ref_shape <: Ferrite.AbstractRefShape} = Lagrange{ref_shape, order}()
 
+"""
+    DiscontinuousLagrangeCollection{order} <: InterpolationCollection
+
+A collection of fixed-order Lagrange interpolations across different cell types.
+"""
+struct DiscontinuousLagrangeCollection{order} <: ScalarInterpolationCollection
+end
+
+getinterpolation(lc::DiscontinuousLagrangeCollection{order}, cell::AbstractCell{ref_shape}) where {order, ref_shape <: Ferrite.AbstractRefShape} = DiscontinuousLagrange{ref_shape, order}()
+getinterpolation(lc::DiscontinuousLagrangeCollection{order}, ::Type{ref_shape}) where {order, ref_shape <: Ferrite.AbstractRefShape} = DiscontinuousLagrange{ref_shape, order}()
+
 
 """
     VectorizedInterpolationCollection{order} <: InterpolationCollection

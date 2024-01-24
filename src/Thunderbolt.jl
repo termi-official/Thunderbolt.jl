@@ -66,6 +66,7 @@ export
     evaluate_coefficient,
     # Collections
     LagrangeCollection,
+    DiscontinuousLagrangeCollection,
     getinterpolation,
     QuadratureRuleCollection,
     getquadraturerule,

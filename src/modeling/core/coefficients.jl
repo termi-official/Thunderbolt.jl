@@ -11,8 +11,8 @@ struct FieldCoefficient{T,T2,TA<:Array{T,2},IPC<:InterpolationCollection}
     qbuf::Vector{T2}
 end
 
-FieldCoefficient(data::Array{T}, ipc::ScalarInterpolationCollection) where T = FieldCoefficient(data, ipc, T[])
-FieldCoefficient(data::Array{T}, ipc::VectorizedInterpolationCollection) where T = FieldCoefficient(data, ipc, eltype(T)[])
+FieldCoefficient(data::Array{T,2}, ipc::ScalarInterpolationCollection) where T = FieldCoefficient(data, ipc, T[])
+FieldCoefficient(data::Array{T,2}, ipc::VectorizedInterpolationCollection) where T = FieldCoefficient(data, ipc, eltype(T)[])
 
 function evaluate_coefficient(coeff::FieldCoefficient{<:Any,<:Any,<:Any,<:ScalarInterpolationCollection}, cell_cache, qp::QuadraturePoint{<:Any, T}, t) where T
     @unpack elementwise_data, ip_collection = coeff
@@ -24,7 +24,7 @@ function evaluate_coefficient(coeff::FieldCoefficient{<:Any,<:Any,<:Any,<:Scalar
     Ferrite.shape_values!(coeff.qbuf, ip, qp.ξ)
 
     @inbounds for i in 1:n_base_funcs
-        val += coeff.qbuf[i] * elementwise_data[cellid(cell_cache), i]
+        val += coeff.qbuf[i] * elementwise_data[i, cellid(cell_cache)]
     end
     return val
 end
@@ -39,7 +39,7 @@ function evaluate_coefficient(coeff::FieldCoefficient{<:Any,<:Any,<:Any,<:Vector
     Ferrite.shape_values!(coeff.qbuf, ip.ip, qp.ξ)
 
     @inbounds for i in 1:n_base_funcs
-        val += coeff.qbuf[i] * elementwise_data[cellid(cell_cache), i]
+        val += coeff.qbuf[i] * elementwise_data[i, cellid(cell_cache)]
     end
     return val
 end
