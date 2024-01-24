@@ -57,11 +57,12 @@ function streeter_type_fsn(transmural_direction, circumferential_direction, apic
 end
 
 """
-    create_simple_microstructure_model(coordinate_system, ip_component::Interpolation{ref_shape}, ip_geo; endo_helix_angle = deg2rad(80.0), epi_helix_angle = deg2rad(-65.0), endo_transversal_angle = 0.0, epi_transversal_angle = 0.0, sheetlet_angle = 0.0) where {dim}
+    create_simple_microstructure_model(coordinate_system, ip_component::VectorInterpolationCollection, ip_geo::VectorizedInterpolationCollection; endo_helix_angle = deg2rad(80.0), epi_helix_angle = deg2rad(-65.0), endo_transversal_angle = 0.0, epi_transversal_angle = 0.0, sheetlet_angle = 0.0, make_orthogonal=true)
 
 Create a rotating fiber field by deducing the circumferential direction from apicobasal and transmural gradients.
 
-!!! note Sheetlet angle construction is broken (i.e. does not preserve input angle). FIXME!
+!!! note
+    FIXME! Sheetlet angle construction is broken (i.e. does not preserve input angle).
 """
 function create_simple_microstructure_model(coordinate_system, ip_collection::VectorInterpolationCollection, ip_geo_collection::VectorizedInterpolationCollection; endo_helix_angle = deg2rad(80.0), epi_helix_angle = deg2rad(-65.0), endo_transversal_angle = 0.0, epi_transversal_angle = 0.0, sheetlet_pseudo_angle = 0.0, make_orthogonal=true)
     @unpack dh = coordinate_system
