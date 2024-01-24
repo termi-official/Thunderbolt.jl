@@ -4,7 +4,9 @@
 default_initializer(problem, t) = error("No default initializer available for a problem of type $(typeof(problem))")
 @noinline check_subdomains(dh::DH) where DH <: Ferrite.AbstractDofHandler= length(dh.subdofhandlers) == 1 || throw(ArgumentError("Using DofHandler with multiple subdomains is not currently supported"))
 
-struct NullProblem
+abstract type AbstractProblem end # Temporary helper for CommonSolve.jl until we have finalized the interface
+
+struct NullProblem <: AbstractProblem
     ndofs::Int
 end
 
@@ -12,7 +14,7 @@ solution_size(problem::NullProblem) = problem.ndofs
 
 default_initializer(problem::NullProblem, t) = zeros(problem.ndofs)
 
-struct CoupledProblem{MT, CT}
+struct CoupledProblem{MT, CT} <: AbstractProblem
     base_problems::MT
     couplers::CT
 end
@@ -24,7 +26,7 @@ function default_initializer(problem::CoupledProblem, t)
 end
 
 # TODO support arbitrary splits
-struct SplitProblem{APT, BPT}
+struct SplitProblem{APT, BPT} <: AbstractProblem
     A::APT
     B::BPT
 end
@@ -34,16 +36,16 @@ solution_size(problem::SplitProblem) = (solution_size(problem.A), solution_size(
 default_initializer(problem::SplitProblem, t) = (default_initializer(problem.A, t), default_initializer(problem.B, t))
 
 # TODO support arbitrary partitioning
-struct PartitionedProblem{APT, BPT}
+struct PartitionedProblem{APT, BPT} <: AbstractProblem
     A::APT
     B::BPT
 end
 
 solution_size(problem::PartitionedProblem) = solution_size(problem.A) + solution_size(problem.B)
 
-abstract type AbstractPointwiseProblem end
+abstract type AbstractPointwiseProblem <: AbstractProblem end
 
-struct ODEProblem{ODET,F,P}
+struct ODEProblem{ODET,F,P} <: AbstractProblem
     ode::ODET
     f::F
     p::P
@@ -84,7 +86,7 @@ solution_size(problem::TransientHeatProblem) = ndofs(problem.dh)
 A discrete problem with time dependent terms and no time derivatives w.r.t. any solution variable.
 Abstractly written we want to solve the problem F(u, t) = 0 on some time interval [t₁, t₂].
 """
-struct QuasiStaticNonlinearProblem{CM <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler, FACE, CH}
+struct QuasiStaticNonlinearProblem{CM <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler, FACE, CH} <: AbstractProblem
     dh::DH
     ch::CH
     constitutive_model::CM
@@ -106,7 +108,7 @@ A problem with time dependent terms and time derivatives only w.r.t. internal so
 
 TODO implement.
 """
-struct QuasiStaticODEProblem{CM <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler, FACE, CH}
+struct QuasiStaticODEProblem{CM <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler, FACE, CH} <: AbstractProblem
     dh::DH
     ch::CH
     constitutive_model::CM
@@ -120,7 +122,7 @@ A problem with time dependent terms and time derivatives only w.r.t. internal so
 
 TODO implement.
 """
-struct QuasiStaticDAEProblem{CM <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler, FACE, CH}
+struct QuasiStaticDAEProblem{CM <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler, FACE, CH} <: AbstractProblem
     dh::DH
     ch::CH
     constitutive_model::CM
