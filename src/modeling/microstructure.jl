@@ -72,9 +72,9 @@ function create_simple_microstructure_model(coordinate_system, ip_collection::Ve
     ip_geo = getinterpolation(ip_geo_collection, ref_shape)
     n_basefuns = getnbasefunctions(ip.ip)
 
-    elementwise_data_f = zero(Array{Vec{3,Float64}, 2}(undef, getncells(dh.grid), n_basefuns))
-    elementwise_data_s = zero(Array{Vec{3,Float64}, 2}(undef, getncells(dh.grid), n_basefuns))
-    elementwise_data_n = zero(Array{Vec{3,Float64}, 2}(undef, getncells(dh.grid), n_basefuns))
+    elementwise_data_f = zero(Array{Vec{3,Float64}, 2}(undef, n_basefuns, getncells(dh.grid)))
+    elementwise_data_s = zero(Array{Vec{3,Float64}, 2}(undef, n_basefuns, getncells(dh.grid)))
+    elementwise_data_n = zero(Array{Vec{3,Float64}, 2}(undef, n_basefuns, getncells(dh.grid)))
 
     qr_fiber = generate_nodal_quadrature_rule(ip.ip)
     cv = create_cellvalues(coordinate_system, qr_fiber, ip_geo)
@@ -99,9 +99,9 @@ function create_simple_microstructure_model(coordinate_system, ip_collection::Ve
             transversal_angle = (1-transmural) * endo_transversal_angle + (transmural) * epi_transversal_angle
 
             f₀, s₀, n₀ = streeter_type_fsn(transmural_direction, circumferential_direction, apicobasal_direction, helix_angle, transversal_angle, sheetlet_pseudo_angle, make_orthogonal)
-            elementwise_data_f[cellindex, qp.i] = f₀
-            elementwise_data_s[cellindex, qp.i] = s₀
-            elementwise_data_n[cellindex, qp.i] = n₀
+            elementwise_data_f[qp.i, cellindex] = f₀
+            elementwise_data_s[qp.i, cellindex] = s₀
+            elementwise_data_n[qp.i, cellindex] = n₀
         end
     end
 

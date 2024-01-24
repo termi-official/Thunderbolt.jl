@@ -3,7 +3,8 @@
 
     # Dummy values, dof and constraint handler
     grid = generate_grid(Hexahedron, (2,1,1))
-    ip = getinterpolation(LagrangeCollection{1}(), RefHexahedron)
+    ipc = LagrangeCollection{1}()
+    ip = getinterpolation(ipc, RefHexahedron)
     dh = DofHandler(grid)
     sdh_A = SubDofHandler(dh, Set(1))
     Ferrite.add!(sdh_A, :u, ip)
@@ -29,7 +30,7 @@
         microstructure_model
     )
     # Dummy Coefficients
-    analytical_coeff = AnalyticalCoefficient((x,t) -> norm(x)+t, ip^3)
+    analytical_coeff = AnalyticalCoefficient((x,t) -> norm(x)+t, CoordinateSystemCoefficient(CartesianCoordinateSystem(ipc^3)))
     spectral_coeff = SpectralTensorCoefficient(
         ConstantCoefficient(SVector((Vec((1.0,0.0)),))),
         ConstantCoefficient(SVector((-1.0,))),
@@ -46,7 +47,7 @@
     io = ParaViewWriter("")
     ioJLD2 = JLD2Writer("") 
     
-    @test_throws subdomain_error LVCoordinateSystem(dh, [0.], [0.])
+    @test_throws subdomain_error LVCoordinateSystem(dh, [0.], [0.], [0.])
     @test_throws subdomain_error Thunderbolt.compute_chamber_volume(dh, [0.], "top", Thunderbolt.Hirschvogel2016SurrogateVolume)
     @test_throws subdomain_error Thunderbolt.TransientHeatProblem(Thunderbolt.ConductivityToDiffusivityCoefficient(0., 0., 0.), protocol, dh)
     @test_throws subdomain_error Thunderbolt.QuasiStaticNonlinearProblem(dh, ch, qsm, [])

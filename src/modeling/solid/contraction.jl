@@ -26,7 +26,7 @@ struct PelceSunLangeveld1995Cache{CF}
 end
 
 function state(model_cache::PelceSunLangeveld1995Cache, geometry_cache, qp::QuadraturePoint, time)
-    return evaluate_coefficient(model_cache.calcium_field, Ferrite.cellid(geometry_cache), qp, time)
+    return evaluate_coefficient(model_cache.calcium_field, geometry_cache, qp, time)
 end
 
 function setup_contraction_model_cache(_, contraction_model::PelceSunLangeveld1995Model)
@@ -51,7 +51,7 @@ struct ConstantStretchCache{CF}
 end
 
 function state(model_cache::ConstantStretchCache, geometry_cache, qp::QuadraturePoint, time)
-    return evaluate_coefficient(model_cache.calcium_field, Ferrite.cellid(geometry_cache), qp, time)
+    return evaluate_coefficient(model_cache.calcium_field, geometry_cache, qp, time)
 end
 
 function setup_contraction_model_cache(_, contraction_model::ConstantStretchModel)

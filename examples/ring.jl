@@ -1,29 +1,17 @@
 using Thunderbolt, UnPack
 
-"""
-In 'A transmurally heterogeneous orthotropic activation model for ventricular contraction and its numerical validation' it is suggested that uniform activtaion is fine.
-
-TODO citation.
-"""
-struct CalciumHatField end # TODO compute calcium profile from actual cell model :)
-
-"""
-"""
-Thunderbolt.evaluate_coefficient(coeff::CalciumHatField, cell_cache, qp, t) = t/1000.0 < 0.5 ? 2.0*t/1000.0 : 2.0-2.0*t/1000.0
-
 import Ferrite: get_grid, find_field
 
 # TODO refactor this one into the framework code and put a nice abstraction layer around it
-struct StandardMechanicalIOPostProcessor{IO, CV}
+struct StandardMechanicalIOPostProcessor{IO, CVC}
     io::IO
-    cv::CV
-    subdomains::Vector{Int}
+    cvc::CVC
 end
 
 function (postproc::StandardMechanicalIOPostProcessor)(t, problem, solver_cache)
     @unpack dh = problem
     grid = get_grid(dh)
-    @unpack io, cv, subdomains = postproc
+    @unpack io, cvc = postproc
 
     # Compute some elementwise measures
     E_ff = zeros(getncells(grid))
@@ -41,10 +29,12 @@ function (postproc::StandardMechanicalIOPostProcessor)(t, problem, solver_cache)
     helixanglerefdata = zero(Vector{Float64}(undef, getncells(grid)))
 
     # Compute some elementwise measures
-    for sdh ∈ dh.subdofhandlers[postproc.subdomains]
+    for sdh ∈ dh.subdofhandlers
         field_idx = find_field(sdh, :displacement)
         field_idx === nothing && continue 
         for cell ∈ CellIterator(sdh)
+            cv = Thunderbolt.getcellvalues(cvc, getcells(grid, cellid(cell)))
+
             reinit!(cv, cell)
             global_dofs = celldofs(cell)
             field_dofs  = dof_range(sdh, field_idx)
@@ -131,8 +121,6 @@ function (postproc::StandardMechanicalIOPostProcessor)(t, problem, solver_cache)
         end
     end
 
-    # problem.constitutive_model.microstructure_model
-
     # Save the solution
     Thunderbolt.store_timestep!(io, t, dh.grid)
     Thunderbolt.store_timestep_field!(io, t, dh, solver_cache.uₙ, :displacement)
@@ -154,24 +142,23 @@ function (postproc::StandardMechanicalIOPostProcessor)(t, problem, solver_cache)
     # max_vol = max(max_vol, calculate_volume_deformed_mesh(uₙ,dh,cv));
 end
 
-function solve_test_ring(name_base, constitutive_model, grid, face_models::FM, ip_collection::Thunderbolt.ScalarInterpolationCollection, ip_mech::IPM, ip_geo::IPG, qr_collection::QuadratureRuleCollection, Δt = 100.0, T = 1000.0) where {ref_shape, IPM <: Interpolation{ref_shape}, IPG <: Interpolation{ref_shape}, FM}
+
+function solve_test_ring(name_base, constitutive_model, grid, face_models, ip_mech::Thunderbolt.VectorInterpolationCollection, ip_geo::Thunderbolt.VectorInterpolationCollection, qr_collection::QuadratureRuleCollection, Δt = 100.0, T = 1000.0)
     io = ParaViewWriter(name_base);
     # io = JLD2Writer(name_base);
 
     problem = semidiscretize(
         StructuralModel(constitutive_model, face_models),
         FiniteElementDiscretization(
-            Dict(:displacement => ip_collection^3),
-            [Dirichlet(:displacement, getfaceset(grid, "Myocardium"), (x,t) -> [0.0], [3])],
-            # [Dirichlet(:displacement, getfaceset(grid, "left"), (x,t) -> [0.0], [1]),Dirichlet(:displacement, getfaceset(grid, "front"), (x,t) -> [0.0], [2]),Dirichlet(:displacement, getfaceset(grid, "bottom"), (x,t) -> [0.0], [3]), Dirichlet(:displacement, Set([1]), (x,t) -> [0.0, 0.0, 0.0], [1, 2, 3])],
+            Dict(:displacement => ip_mech),
+            [Dirichlet(:displacement, getfaceset(grid, "Myocardium"), (x,t) -> [0.0], [3])]
         ),
         grid
     )
 
     # Postprocessor
-    qr = getquadraturerule(qr_collection, elementtypes(grid)[1])
-    cv_post = CellValues(qr, ip_mech, ip_geo)
-    standard_postproc = StandardMechanicalIOPostProcessor(io, cv_post, [1])
+    cv_post = CellValueCollection(qr_collection, ip_mech, ip_geo)
+    standard_postproc = StandardMechanicalIOPostProcessor(io, cv_post)
 
     # Create sparse matrix and residual vector
     solver = LoadDrivenSolver(NewtonRaphsonSolver(;max_iter=100))
@@ -186,32 +173,48 @@ function solve_test_ring(name_base, constitutive_model, grid, face_models::FM, i
     )
 end
 
-ref_shape = RefHexahedron
-order = 1
-intorder = 2*order
-ip_collection = LagrangeCollection{order}()
-qr_collection = QuadratureRuleCollection(intorder-1)
-ip_fsn = getinterpolation(ip_collection^3, ref_shape)
-ip_u = getinterpolation(ip_collection^3, ref_shape)
-ip_geo = getinterpolation(ip_collection^3, ref_shape)
 
-ring_grid = generate_ring_mesh(8,2,2)
-ring_cs = compute_midmyocardial_section_coordinate_system(ring_grid, ip_collection^3)
-solve_test_ring("Debug",
+"""
+In 'A transmurally heterogeneous orthotropic activation model for ventricular contraction and its numerical validation' it is suggested that uniform activtaion is fine.
+
+TODO citation.
+
+TODO add an example with a calcium profile compute via cell model and Purkinje activation
+"""
+calcium_profile_function(x,t) = t/1000.0 < 0.5 ? (1-x.transmural*0.7)*2.0*t/1000.0 : (2.0-2.0*t/1000.0)*(1-x.transmural*0.7)
+
+for (name, order, ring_grid) ∈ [
+    ("Linear-Ring", 1, Thunderbolt.generate_ring_mesh(40,8,8)),
+    ("Quadratic-Ring", 2, Thunderbolt.generate_quadratic_ring_mesh(20,4,4))
+]
+
+intorder = 2*order
+qr_collection = QuadratureRuleCollection(intorder-1)
+
+ip_fsn = LagrangeCollection{order}()^3
+ip_u = LagrangeCollection{order}()^3
+ip_geo = LagrangeCollection{order}()^3
+
+ring_cs = compute_midmyocardial_section_coordinate_system(ring_grid, ip_geo)
+solve_test_ring(name,
     ActiveStressModel(
         Guccione1991PassiveModel(),
-        Guccione1993ActiveModel(10.0),
-        PelceSunLangeveld1995Model(;calcium_field=CalciumHatField()),
-        create_simple_microstructure_model(ring_cs, ip_collection^3, ip_collection^3,
+        PiersantiActiveStress(;Tmax=10.0),
+        PelceSunLangeveld1995Model(;calcium_field=AnalyticalCoefficient(
+            calcium_profile_function,
+            CoordinateSystemCoefficient(ring_cs)
+        )),
+        create_simple_microstructure_model(ring_cs, ip_fsn, ip_geo,
             endo_helix_angle = deg2rad(0.0),
             epi_helix_angle = deg2rad(0.0),
             endo_transversal_angle = 0.0,
             epi_transversal_angle = 0.0,
             sheetlet_pseudo_angle = deg2rad(0)
         )
-    ), ring_grid, 
+    ), ring_grid,
     [NormalSpringBC(0.01, "Epicardium")],
-    ip_collection,
     ip_u, ip_geo, qr_collection,
     100.0
 )
+
+end

@@ -1,36 +1,66 @@
+"""
+    CartesianCoordinateSystem{sdim, IP <: VectorizedInterpolation{sdim}}
 
-struct CartesianCoordinateSystem end
+Standard cartesian coordinate system.
+"""
+struct CartesianCoordinateSystem{sdim, IPC <: VectorizedInterpolationCollection{sdim}}
+    ip::IPC
+end
+
+getcoordinateinterpolation(cs::CartesianCoordinateSystem) = cs.ip
 
 """
-Simple Coordinate System.
+    LVCoordinateSystem(dh, u_transmural, u_apicobasal)
 
-!!! note TODO implement circumferential coordinate
+Simplified universal ventricular coordinate on LV only, containing the transmural, apicobasal and
+circumferential coordinates. See [`compute_LV_coordinate_system`](@ref) to construct it.
 """
-struct LVCoordinateSystem
-    dh::AbstractDofHandler
+struct LVCoordinateSystem{DH <: AbstractDofHandler}
+    dh::DH
     u_transmural::Vector{Float64}
     u_apicobasal::Vector{Float64}
-    function LVCoordinateSystem(dh::AbstractDofHandler, u_transmural::Vector{Float64}, u_apicobasal::Vector{Float64})
+    u_circumferential::Vector{Float64}
+    function LVCoordinateSystem(dh::AbstractDofHandler, u_transmural::Vector{Float64}, u_apicobasal::Vector{Float64}, u_circumferential::Vector{Float64})
         check_subdomains(dh)
-        return new(dh, u_transmural, u_apicobasal)
+        return new{typeof(dh)}(dh, u_transmural, u_apicobasal, u_circumferential)
     end
 end
 
 """
+    LVCoordinate{T}
+
+LV only part of the universal ventricular coordinate, containing
+    * transmural
+    * apicobasal
+    * circumferential
+"""
+struct LVCoordinate{T}
+    transmural::T
+    apicaobasal::T
+    circumferential::T
+end
+
+"""
+    getcoordinateinterpolation(cs::LVCoordinateSystem)
+
+Get interpolation function for the LV coordinate system.
 """
 getcoordinateinterpolation(cs::LVCoordinateSystem) = Ferrite.getfieldinterpolation(cs.dh, (1,1))
 
-"""
-"""
 create_cellvalues(cs::LVCoordinateSystem, qr::QuadratureRule, ip_geo=getcoordinateinterpolation(cs)) = CellValues(qr, getcoordinateinterpolation(cs), ip_geo)
 
 """
+    compute_LV_coordinate_system(grid::AbstractGrid, ip_geo::Interpolation{ref_shape})
+
 Requires a grid with facesets
-* Base
-* Epicardium
-* Endocardium
+    * Base
+    * Epicardium
+    * Endocardium
 and a nodeset
-* Apex
+    * Apex
+
+!!! warning
+    The circumferential coordinate is not yet implemented and is guaranteed to evaluate to NaN.
 """
 function compute_LV_coordinate_system(grid::AbstractGrid{dim}, ip_geo_collection::VectorInterpolationCollection) where {dim}
     @assert dim == 3
@@ -114,10 +144,20 @@ function compute_LV_coordinate_system(grid::AbstractGrid{dim}, ip_geo_collection
     apply!(K_apicobasal, f, ch)
     apicobasal = K_apicobasal \ f;
 
-    return LVCoordinateSystem(dh, transmural, apicobasal)
+    circumferential = zeros(ndofs(dh))
+    circumferential .= NaN
+
+    return LVCoordinateSystem(dh, transmural, apicobasal, circumferential)
 end
 
 """
+    compute_midmyocardial_section_coordinate_system(grid::AbstractGrid,ip_geo::Interpolation{ref_shape})
+
+Requires a grid with facesets
+    * Base
+    * Epicardium
+    * Endocardium
+    * Myocardium
 """
 function compute_midmyocardial_section_coordinate_system(grid::AbstractGrid{dim}, ip_geo_collection::VectorInterpolationCollection) where {dim}
     @assert dim == 3
@@ -189,10 +229,16 @@ function compute_midmyocardial_section_coordinate_system(grid::AbstractGrid{dim}
     apply!(K_apicobasal, f, ch)
     apicobasal = K_apicobasal \ f;
 
-    return LVCoordinateSystem(dh, transmural, apicobasal)
+    circumferential = zeros(ndofs(dh))
+    circumferential .= NaN
+
+    return LVCoordinateSystem(dh, transmural, apicobasal, circumferential)
 end
 
 """
+    vtk_coordinate_system(vtk, cs::LVCoordinateSystem)
+
+Store the LV coordinate system in a vtk file.
 """
 function vtk_coordinate_system(vtk, cs::LVCoordinateSystem)
     vtk_point_data(vtk, cs.dh, cs.u_apicobasal, "apicobasal_")
