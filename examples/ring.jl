@@ -11,7 +11,7 @@ end
 function (postproc::StandardMechanicalIOPostProcessor)(t, problem, solver_cache)
     @unpack dh = problem
     grid = get_grid(dh)
-    @unpack io, cv, subdomains = postproc
+    @unpack io, cvc = postproc
 
     # Compute some elementwise measures
     E_ff = zeros(getncells(grid))
@@ -29,11 +29,11 @@ function (postproc::StandardMechanicalIOPostProcessor)(t, problem, solver_cache)
     helixanglerefdata = zero(Vector{Float64}(undef, getncells(grid)))
 
     # Compute some elementwise measures
-    for sdh ∈ dh.subdofhandlers[1]
+    for sdh ∈ dh.subdofhandlers
         field_idx = find_field(sdh, :displacement)
         field_idx === nothing && continue 
         for cell ∈ CellIterator(sdh)
-            cv = getcellvalues(cvc, getcells(grid, cellid(cell)))
+            cv = Thunderbolt.getcellvalues(cvc, getcells(grid, cellid(cell)))
 
             reinit!(cv, cell)
             global_dofs = celldofs(cell)
@@ -143,7 +143,7 @@ function (postproc::StandardMechanicalIOPostProcessor)(t, problem, solver_cache)
 end
 
 
-function solve_test_ring(name_base, constitutive_model, grid, face_models, ip_mech::Thunderbolt.VectorInterpolationCollection, ip_geo::IPG, qr_collection::QuadratureRuleCollection, Δt = 100.0, T = 1000.0)
+function solve_test_ring(name_base, constitutive_model, grid, face_models, ip_mech::Thunderbolt.VectorInterpolationCollection, ip_geo::Thunderbolt.VectorInterpolationCollection, qr_collection::QuadratureRuleCollection, Δt = 100.0, T = 1000.0)
     io = ParaViewWriter(name_base);
     # io = JLD2Writer(name_base);
 
@@ -157,8 +157,7 @@ function solve_test_ring(name_base, constitutive_model, grid, face_models, ip_me
     )
 
     # Postprocessor
-
-    cv_post = CellValuesCollection(qr_collection, ip_mech, ip_geo)
+    cv_post = CellValueCollection(qr_collection, ip_mech, ip_geo)
     standard_postproc = StandardMechanicalIOPostProcessor(io, cv_post)
 
     # Create sparse matrix and residual vector
@@ -184,16 +183,17 @@ TODO add an example with a calcium profile compute via cell model and Purkinje a
 """
 calcium_profile_function(x,t) = t/1000.0 < 0.5 ? (1-x.transmural*0.7)*2.0*t/1000.0 : (2.0-2.0*t/1000.0)*(1-x.transmural*0.7)
 
-ref_shape = RefHexahedron
-
 for (name, order, ring_grid) ∈ [
     ("Linear-Ring", 1, Thunderbolt.generate_ring_mesh(40,8,8)),
     ("Quadratic-Ring", 2, Thunderbolt.generate_quadratic_ring_mesh(20,4,4))
 ]
 
-ip_fsn = LagrangeCollection{ref_shape, order}()^3
-ip_u = LagrangeCollection{ref_shape, order}()^3
-ip_geo = LagrangeCollection{ref_shape, order}()^3
+intorder = 2*order
+qr_collection = QuadratureRuleCollection(intorder-1)
+
+ip_fsn = LagrangeCollection{order}()^3
+ip_u = LagrangeCollection{order}()^3
+ip_geo = LagrangeCollection{order}()^3
 
 ring_cs = compute_midmyocardial_section_coordinate_system(ring_grid, ip_geo)
 solve_test_ring(name,

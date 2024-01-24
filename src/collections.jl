@@ -51,66 +51,63 @@ getinterpolation(ipc::VectorizedInterpolationCollection{vdim, IPC}, type::Type{r
 
 
 """
-    QuadratureRuleCollection
+    QuadratureRuleCollection(order)
 
 A collection of quadrature rules across different cell types.
 """
-struct QuadratureRuleCollection{QRW, QRH, QRT}
-    qr_wedge::QRW
-    qr_hex::QRH
-    qr_tet::QRT
+struct QuadratureRuleCollection{order}
 end
 
-QuadratureRuleCollection(order::Int) = QuadratureRuleCollection(
-    QuadratureRule{RefPrism}(order), 
-    QuadratureRule{RefHexahedron}(order), 
-    QuadratureRule{RefTetrahedron}(order)
-)
+QuadratureRuleCollection(order::Int) = QuadratureRuleCollection{order}()
 
-getquadraturerule(qrc::QuadratureRuleCollection{QRW, QRH, QRT}, cell::Hexahedron) where {QRW, QRH, QRT} = qrc.qr_hex
-getquadraturerule(qrc::QuadratureRuleCollection{QRW, QRH, QRT}, cell::Wedge) where {QRW, QRH, QRT} = qrc.qr_wedge
-getquadraturerule(qrc::QuadratureRuleCollection{QRW, QRH, QRT}, cell::Tetrahedron) where {QRW, QRH, QRT} = qrc.qr_tet
+getquadraturerule(qrc::QuadratureRuleCollection{order}, cell::AbstractCell{ref_shape}) where {order,ref_shape} = QuadratureRule{ref_shape}(order)
 
-getquadraturerule(qrc::QuadratureRuleCollection{QRW, QRH, QRT}, cell::Type{Hexahedron}) where {QRW, QRH, QRT} = qrc.qr_hex
-getquadraturerule(qrc::QuadratureRuleCollection{QRW, QRH, QRT}, cell::Type{Wedge}) where {QRW, QRH, QRT} = qrc.qr_wedge
-getquadraturerule(qrc::QuadratureRuleCollection{QRW, QRH, QRT}, cell::Type{Tetrahedron}) where {QRW, QRH, QRT} = qrc.qr_tet
+
+"""
+    FaceQuadratureRuleCollection(order)
+
+A collection of quadrature rules across different cell types.
+"""
+struct FaceQuadratureRuleCollection{order}
+end
+
+FaceQuadratureRuleCollection(order::Int) = FaceQuadratureRuleCollection{order}()
+
+getquadraturerule(qrc::FaceQuadratureRuleCollection{order}, cell::AbstractCell{ref_shape}) where {order,ref_shape} = FaceQuadratureRule{ref_shape}(order)
+
 
 """
     CellValueCollection
 
 Helper to construct and query the correct cell values on mixed grids.
 """
-struct CellValueCollection{CVW, CVH, CVT}
-    cv_wedge::CVW
-    cv_hex::CVH
-    cv_tet::CVT
+struct CellValueCollection{QRC,IPC,IPGC}
+    qrc::QRC
+    ipc::IPC
+    ipgc::IPGC
 end
 
-CellValueCollection(qr:: QuadratureRuleCollection, ip::InterpolationCollection, ip_geo::InterpolationCollection = ip) = CellValueCollection(
-    CellValues(getquadraturerule(qr, Wedge), getinterpolation(ip, RefPrism), getinterpolation(ip_geo, RefPrism)), 
-    CellValues(getquadraturerule(qr, Hexahedron), getinterpolation(ip, RefHexahedron), getinterpolation(ip_geo, RefHexahedron)), 
-    CellValues(getquadraturerule(qr, Tetrahedron), getinterpolation(ip, RefTetrahedron), getinterpolation(ip_geo, RefTetrahedron)), 
+CellValueCollection(qr:: QuadratureRuleCollection, ip::InterpolationCollection) = CellValueCollection(qr,ip,ip)
+
+getcellvalues(cv::CellValueCollection, cell::AbstractCell{ref_shape}) where {ref_shape} = CellValues(
+    getquadraturerule(cv.qrc, cell),
+    getinterpolation(cv.ipc, cell),
+    getinterpolation(cv.ipgc, cell)
 )
-
-getcellvalues(cv::CellValueCollection{CVW, CVH, CVT}, cell::Hexahedron) where {CVW, CVH, CVT} = cv.cv_hex
-getcellvalues(cv::CellValueCollection{CVW, CVH, CVT}, cell::Wedge) where {CVW, CVH, CVT} = cv.cv_wedge
-getcellvalues(cv::CellValueCollection{CVW, CVH, CVT}, cell::Tetrahedron) where {CVW, CVH, CVT} = cv.cv_tet
-
-# getcellvalues(cv::CellValueCollection{CVW, CVH, CVT}, cell::Type{Hexahedron}) where {CVW, CVH, CVT} = cv.cv_hex
-# getcellvalues(cv::CellValueCollection{CVW, CVH, CVT}, cell::Type{Wedge}) where {CVW, CVH, CVT} = cv.cv_wedge
-# getcellvalues(cv::CellValueCollection{CVW, CVH, CVT}, cell::Type{Tetrahedron}) where {CVW, CVH, CVT} = cv.cv_tet
 
 """
     FaceValueCollection
 
 Helper to construct and query the correct face values on mixed grids.
 """
-struct FaceValueCollection{CVW, CVH, CVT}
-    cv_wedge::CVW
-    cv_hex::CVH
-    cv_tet::CVT
+struct FaceValueCollection{QRC,IPC,IPGC}
+    qrc::QRC
+    ipc::IPC
+    ipgc::IPGC
 end
 
-getcellvalues(cv::FaceValueCollection{CVW, CVH, CVT}, cell::Hexahedron) where {CVW, CVH, CVT} = cv.cv_hex
-getcellvalues(cv::FaceValueCollection{CVW, CVH, CVT}, cell::Wedge) where {CVW, CVH, CVT} = cv.cv_wedge
-getcellvalues(cv::FaceValueCollection{CVW, CVH, CVT}, cell::Tetrahedron) where {CVW, CVH, CVT} = cv.cv_tet
+getfacevalues(fv::FaceValueCollection, cell::AbstractCell{ref_shape}) where {ref_shape} = FaceValues(
+    getquadraturerule(fv.qrc, cell),
+    getinterpolation(fv.ipc, cell),
+    getinterpolation(fv.ipgc, cell)
+)
