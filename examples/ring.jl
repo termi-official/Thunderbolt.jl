@@ -3,10 +3,9 @@ using Thunderbolt, UnPack
 import Ferrite: get_grid, find_field
 
 # TODO refactor this one into the framework code and put a nice abstraction layer around it
-struct StandardMechanicalIOPostProcessor{IO, CV}
+struct StandardMechanicalIOPostProcessor{IO, CVC}
     io::IO
-    cv::CV
-    subdomains::Vector{Int}
+    cvc::CVC
 end
 
 function (postproc::StandardMechanicalIOPostProcessor)(t, problem, solver_cache)
@@ -30,10 +29,12 @@ function (postproc::StandardMechanicalIOPostProcessor)(t, problem, solver_cache)
     helixanglerefdata = zero(Vector{Float64}(undef, getncells(grid)))
 
     # Compute some elementwise measures
-    for sdh ∈ dh.subdofhandlers[postproc.subdomains]
+    for sdh ∈ dh.subdofhandlers[1]
         field_idx = find_field(sdh, :displacement)
         field_idx === nothing && continue 
         for cell ∈ CellIterator(sdh)
+            cv = getcellvalues(cvc, getcells(grid, cellid(cell)))
+
             reinit!(cv, cell)
             global_dofs = celldofs(cell)
             field_dofs  = dof_range(sdh, field_idx)
@@ -141,23 +142,24 @@ function (postproc::StandardMechanicalIOPostProcessor)(t, problem, solver_cache)
     # max_vol = max(max_vol, calculate_volume_deformed_mesh(uₙ,dh,cv));
 end
 
-function solve_test_ring(name_base, constitutive_model, grid, face_models::FM, ip_mech::IPM, ip_geo::IPG, intorder::Int, Δt = 100.0, T = 1000.0) where {ref_shape, order, IPM <: Interpolation{ref_shape, order}, IPG <: Interpolation{ref_shape}, FM}
+
+function solve_test_ring(name_base, constitutive_model, grid, face_models, ip_mech::Thunderbolt.VectorInterpolationCollection, ip_geo::IPG, qr_collection::QuadratureRuleCollection, Δt = 100.0, T = 1000.0)
     io = ParaViewWriter(name_base);
     # io = JLD2Writer(name_base);
 
     problem = semidiscretize(
         StructuralModel(constitutive_model, face_models),
         FiniteElementDiscretization(
-            Dict(:displacement => LagrangeCollection{order}()^3),
-            [Dirichlet(:displacement, getfaceset(grid, "Myocardium"), (x,t) -> [0.0], [3])],
-            # [Dirichlet(:displacement, getfaceset(grid, "left"), (x,t) -> [0.0], [1]),Dirichlet(:displacement, getfaceset(grid, "front"), (x,t) -> [0.0], [2]),Dirichlet(:displacement, getfaceset(grid, "bottom"), (x,t) -> [0.0], [3]), Dirichlet(:displacement, Set([1]), (x,t) -> [0.0, 0.0, 0.0], [1, 2, 3])],
+            Dict(:displacement => ip_mech),
+            [Dirichlet(:displacement, getfaceset(grid, "Myocardium"), (x,t) -> [0.0], [3])]
         ),
         grid
     )
 
     # Postprocessor
-    cv_post = CellValues(QuadratureRule{ref_shape}(intorder-1), ip_mech, ip_geo)
-    standard_postproc = StandardMechanicalIOPostProcessor(io, cv_post, [1])
+
+    cv_post = CellValuesCollection(qr_collection, ip_mech, ip_geo)
+    standard_postproc = StandardMechanicalIOPostProcessor(io, cv_post)
 
     # Create sparse matrix and residual vector
     solver = LoadDrivenSolver(NewtonRaphsonSolver(;max_iter=100))
@@ -189,9 +191,9 @@ for (name, order, ring_grid) ∈ [
     ("Quadratic-Ring", 2, Thunderbolt.generate_quadratic_ring_mesh(20,4,4))
 ]
 
-ip_fsn = Lagrange{ref_shape, order}()^3
-ip_u = Lagrange{ref_shape, order}()^3
-ip_geo = Lagrange{ref_shape, order}()^3
+ip_fsn = LagrangeCollection{ref_shape, order}()^3
+ip_u = LagrangeCollection{ref_shape, order}()^3
+ip_geo = LagrangeCollection{ref_shape, order}()^3
 
 ring_cs = compute_midmyocardial_section_coordinate_system(ring_grid, ip_geo)
 solve_test_ring(name,
@@ -211,7 +213,7 @@ solve_test_ring(name,
         )
     ), ring_grid,
     [NormalSpringBC(0.01, "Epicardium")],
-    ip_u, ip_geo, 2*order,
+    ip_u, ip_geo, qr_collection,
     100.0
 )
 
