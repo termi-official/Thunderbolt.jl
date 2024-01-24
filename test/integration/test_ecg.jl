@@ -2,7 +2,6 @@
     @testset "Plonsey1964 3D $geo" for (refshape, geo) in ((RefHexahedron, Hexahedron), (RefTetrahedron, Tetrahedron))
         grid = generate_grid(geo, (10, 8, 12))
         Ferrite.transform_coordinates!(grid, x->Vec{3}(x.^3))
-        ip = getinterpolation(LagrangeCollection{1}(), refshape)
 
         dh = DofHandler(grid)
         Ferrite.add!(dh, :ϕₘ, ip)
