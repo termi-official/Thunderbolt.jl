@@ -19,6 +19,8 @@ import Krylov: CgSolver
 
 import Base: *, +, -
 
+import CommonSolve: init, solve, solve!, step!
+
 include("utils.jl")
 
 include("mesh/meshes.jl")

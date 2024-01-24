@@ -4,6 +4,7 @@ version = "0.0.1-DEV"
 
 [deps]
 BlockArrays = "8e7c35d0-a365-5155-bbbb-fb81a777f24e"
+CommonSolve = "38540f10-b2f7-11e9-35d8-d573e4eb0ff2"
 Ferrite = "c061ca5d-56c9-439f-9c0e-210fe06d3992"
 FerriteGmsh = "4f95f4f8-b27c-4ae5-9a39-ea55e634e36b"
 JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
