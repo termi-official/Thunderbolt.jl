@@ -7,7 +7,7 @@ make it available for packages.
 
 TODO iterator syntax
 """
-function solve(problem, solver, Δt₀, (t₀, T), initial_condition, callback = (t,p,c) -> nothing)
+function solve(problem::AbstractProblem, solver, Δt₀, (t₀, T), initial_condition, callback = (t,p,c) -> nothing)
     solver_cache = setup_solver_caches(problem, solver, t₀)
 
     setup_initial_condition!(problem, solver_cache, initial_condition, t₀)
