@@ -39,10 +39,8 @@ end
 
 ######################################################
 
-order = 1
-ip_collection = LagrangeCollection{order}()
-
-cs = Thunderbolt.CoordinateSystemCoefficient(CartesianCoordinateSystem(ip_collection^3))
+mesh = generate_mesh(Hexahedron, (80,28,12), Vec((0.0,0.0,0.0)), Vec((20.0,7.0,3.0)))
+cs = Thunderbolt.CoordinateSystemCoefficient(CartesianCoordinateSystem(mesh))
 
 κ₁ = 0.17 * 0.62 / (0.17 + 0.62)
 κᵣ = 0.019 * 0.24 / (0.019 + 0.24)
@@ -61,7 +59,7 @@ model = MonodomainModel(
     Thunderbolt.PCG2019()
 )
 
-mesh = generate_mesh(Hexahedron, (80,28,12), Vec((0.0,0.0,0.0)), Vec((20.0,7.0,3.0)))
+ip_collection = LagrangeCollection{1}()
 
 problem = semidiscretize(
     ReactionDiffusionSplit(model),

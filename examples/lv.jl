@@ -4,11 +4,10 @@
 using Thunderbolt, FerriteGmsh, UnPack
 
 # TODO refactor this one into the framework code and put a nice abstraction layer around it
-struct StandardMechanicalIOPostProcessor2{IO, CV, CC}
+struct StandardMechanicalIOPostProcessor{IO, CVC, CSC}
     io::IO
-    cv::CV
-    subdomains::Vector{Int}
-    coordinate_system::CC
+    cvc::CVC
+    csc::CSC
 end
 
 (postproc::StandardMechanicalIOPostProcessor2)(t, problem::Thunderbolt.SplitProblem, solver_cache) = (postproc::StandardMechanicalIOPostProcessor2)(t, problem.A.base_problems[1], solver_cache.A_solver_cache)
@@ -16,7 +15,7 @@ end
 function (postproc::StandardMechanicalIOPostProcessor2)(t, problem, solver_cache)
     @unpack dh = problem
     grid = Ferrite.get_grid(dh)
-    @unpack io, cv, subdomains, coordinate_system = postproc
+    @unpack io, cv, csc = postproc
 
     # Compute some elementwise measures
     E_ff = zeros(getncells(grid))
@@ -128,8 +127,8 @@ function (postproc::StandardMechanicalIOPostProcessor2)(t, problem, solver_cache
     # Save the solution
     Thunderbolt.store_timestep!(io, t, dh.grid)
     Thunderbolt.store_timestep_field!(io, t, dh, solver_cache.uₙ[Block(1)], :displacement)
-    Thunderbolt.store_timestep_field!(io, t, coordinate_system.dh, coordinate_system.u_transmural, "transmural")
-    Thunderbolt.store_timestep_field!(io, t, coordinate_system.dh, coordinate_system.u_apicobasal, "apicobasal")
+    # Thunderbolt.store_timestep_field!(io, t, coordinate_system.dh, coordinate_system.u_transmural, "transmural")
+    # Thunderbolt.store_timestep_field!(io, t, coordinate_system.dh, coordinate_system.u_apicobasal, "apicobasal")
     Thunderbolt.store_timestep_celldata!(io, t, hcat(frefdata...),"Reference Fiber Data")
     Thunderbolt.store_timestep_celldata!(io, t, hcat(fdata...),"Current Fiber Data")
     Thunderbolt.store_timestep_celldata!(io, t, hcat(srefdata...),"Reference Sheet Data")
@@ -150,7 +149,7 @@ function (postproc::StandardMechanicalIOPostProcessor2)(t, problem, solver_cache
 end
 
 
-function solve_ideal_lv(name_base, constitutive_model, grid, coordinate_system, face_models, ip_collection::Thunderbolt.ScalarInterpolationCollection, ip_mech::IPM, ip_geo::IPG, qr_collection::QuadratureRuleCollection, Δt = 100.0, T = 1000.0) where {ref_shape, IPM <: Interpolation{ref_shape}, IPG <: Interpolation{ref_shape}}
+function solve_ideal_lv(name_base, constitutive_model, grid, coordinate_system, face_models, ip_mech::Thunderbolt.VetorInterpolationCollection, qr_collection::QuadratureRuleCollection, Δt = 100.0, T = 1000.0)
     io = ParaViewWriter(name_base);
     # io = JLD2Writer(name_base);
 
@@ -167,7 +166,7 @@ function solve_ideal_lv(name_base, constitutive_model, grid, coordinate_system, 
             ]
         )),
         FiniteElementDiscretization(
-            Dict(:displacement => ip_collection^3),
+            Dict(:displacement => ip_collection),
             Dirichlet[],
             # [Dirichlet(:displacement, getfaceset(grid, "Myocardium"), (x,t) -> [0.0], [3])],
             # [Dirichlet(:displacement, getfaceset(grid, "left"), (x,t) -> [0.0], [1]),Dirichlet(:displacement, getfaceset(grid, "front"), (x,t) -> [0.0], [2]),Dirichlet(:displacement, getfaceset(grid, "bottom"), (x,t) -> [0.0], [3]), Dirichlet(:displacement, Set([1]), (x,t) -> [0.0, 0.0, 0.0], [1, 2, 3])],
@@ -176,9 +175,8 @@ function solve_ideal_lv(name_base, constitutive_model, grid, coordinate_system, 
     )
 
     # Postprocessor
-    qr = getquadraturerule(qr_collection, elementtypes(grid)[1])
-    cv_post = CellValues(qr, ip_mech, ip_geo)
-    standard_postproc = StandardMechanicalIOPostProcessor2(io, cv_post, [1], coordinate_system)
+    cv_post = CellValueCollection(qr_collection, ip_mech)
+    standard_postproc = StandardMechanicalIOPostProcessor2(io, cv_post, CoordinateSystemCoefficient(coordinate_system))
 
     # Create sparse matrix and residual vector
     solver = LTGOSSolver(
@@ -200,13 +198,10 @@ LV_grid = Thunderbolt.hexahedralize(Thunderbolt.generate_ideal_lv_mesh(15,2,6))
 ref_shape = RefHexahedron
 order = 1
 intorder = max(2*order-1,2)
-ip_collection = LagrangeCollection{order}()
-qr_collection = QuadratureRuleCollection(intorder-1)
-ip = getinterpolation(ip_collection^3, ref_shape)
-ip_fiber = getinterpolation(ip_collection, ref_shape)
-ip_geo = getinterpolation(ip_collection, ref_shape)
-LV_cs = compute_LV_coordinate_system(LV_grid, ip_collection)
-LV_fm = create_simple_microstructure_model(LV_cs, ip_collection^3, ip_collection^3, endo_helix_angle = -60.0, epi_helix_angle = 70.0, endo_transversal_angle = 10.0, epi_transversal_angle = -20.0)
+ip_u = LagrangeCollection{order}()^3
+qr_u = QuadratureRuleCollection(intorder-1)
+LV_cs = compute_LV_coordinate_system(LV_grid)
+LV_fm = create_simple_microstructure_model(LV_cs, ip_collection, endo_helix_angle = -60.0, epi_helix_angle = 70.0, endo_transversal_angle = 10.0, epi_transversal_angle = -20.0)
 passive_ho_model = HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 0.28504197825657906, 4.126552003938297, 0.0, 1.0, 0.0, 1.0, SimpleCompressionPenalty(4.0))
 solve_ideal_lv("lv_test",
     ActiveStressModel(
@@ -216,7 +211,5 @@ solve_ideal_lv("lv_test",
         LV_fm,
     ), LV_grid, LV_cs,
     [NormalSpringBC(0.001, "Epicardium")],
-    ip_collection,
-    ip, ip_geo,
-    qr_collection
+    ip_collection, qr_collection
 )

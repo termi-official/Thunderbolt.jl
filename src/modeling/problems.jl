@@ -2,7 +2,6 @@
 #      1. Who creates the solution vector?
 #      2. Is there a better way to pass the initial solution information?
 default_initializer(problem, t) = error("No default initializer available for a problem of type $(typeof(problem))")
-@noinline check_subdomains(dh::DH) where DH <: Ferrite.AbstractDofHandler= length(dh.subdofhandlers) == 1 || throw(ArgumentError("Using DofHandler with multiple subdomains is not currently supported"))
 
 abstract type AbstractProblem end # Temporary helper for CommonSolve.jl until we have finalized the interface
 

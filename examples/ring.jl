@@ -3,9 +3,10 @@ using Thunderbolt, UnPack
 import Ferrite: get_grid, find_field
 
 # TODO refactor this one into the framework code and put a nice abstraction layer around it
-struct StandardMechanicalIOPostProcessor{IO, CVC}
+struct StandardMechanicalIOPostProcessor{IO, CVC, CSC}
     io::IO
     cvc::CVC
+    csc::CSC
 end
 
 function (postproc::StandardMechanicalIOPostProcessor)(t, problem, solver_cache)
@@ -125,6 +126,8 @@ function (postproc::StandardMechanicalIOPostProcessor)(t, problem, solver_cache)
     Thunderbolt.store_timestep!(io, t, dh.grid)
     Thunderbolt.store_timestep_field!(io, t, dh, solver_cache.uₙ, :displacement)
     # TODo replace by "dump coefficient" function
+    # Thunderbolt.store_timestep_field!(io, t, coordinate_system.dh, coordinate_system.u_transmural, "transmural")
+    # Thunderbolt.store_timestep_field!(io, t, coordinate_system.dh, coordinate_system.u_apicobasal, "apicobasal")
     Thunderbolt.store_timestep_celldata!(io, t, hcat(frefdata...),"Reference Fiber Data")
     Thunderbolt.store_timestep_celldata!(io, t, hcat(fdata...),"Current Fiber Data")
     Thunderbolt.store_timestep_celldata!(io, t, hcat(srefdata...),"Reference Sheet Data")
@@ -143,7 +146,7 @@ function (postproc::StandardMechanicalIOPostProcessor)(t, problem, solver_cache)
 end
 
 
-function solve_test_ring(name_base, constitutive_model, grid, face_models, ip_mech::Thunderbolt.VectorInterpolationCollection, ip_geo::Thunderbolt.VectorInterpolationCollection, qr_collection::QuadratureRuleCollection, Δt = 100.0, T = 1000.0)
+function solve_test_ring(name_base, constitutive_model, grid, cs, face_models, ip_mech::Thunderbolt.VectorInterpolationCollection, qr_collection::QuadratureRuleCollection, Δt = 100.0, T = 1000.0)
     io = ParaViewWriter(name_base);
     # io = JLD2Writer(name_base);
 
@@ -157,8 +160,8 @@ function solve_test_ring(name_base, constitutive_model, grid, face_models, ip_me
     )
 
     # Postprocessor
-    cv_post = CellValueCollection(qr_collection, ip_mech, ip_geo)
-    standard_postproc = StandardMechanicalIOPostProcessor(io, cv_post)
+    cv_post = CellValueCollection(qr_collection, ip_mech)
+    standard_postproc = StandardMechanicalIOPostProcessor(io, cv_post, CoordinateSystemCoefficient(cs))
 
     # Create sparse matrix and residual vector
     solver = LoadDrivenSolver(NewtonRaphsonSolver(;max_iter=100))
@@ -193,9 +196,8 @@ qr_collection = QuadratureRuleCollection(intorder-1)
 
 ip_fsn = LagrangeCollection{order}()^3
 ip_u = LagrangeCollection{order}()^3
-ip_geo = LagrangeCollection{order}()^3
 
-ring_cs = compute_midmyocardial_section_coordinate_system(ring_grid, ip_geo)
+ring_cs = compute_midmyocardial_section_coordinate_system(ring_grid)
 solve_test_ring(name,
     ActiveStressModel(
         Guccione1991PassiveModel(),
@@ -204,16 +206,16 @@ solve_test_ring(name,
             calcium_profile_function,
             CoordinateSystemCoefficient(ring_cs)
         )),
-        create_simple_microstructure_model(ring_cs, ip_fsn, ip_geo,
+        create_simple_microstructure_model(ring_cs, ip_fsn,
             endo_helix_angle = deg2rad(0.0),
             epi_helix_angle = deg2rad(0.0),
             endo_transversal_angle = 0.0,
             epi_transversal_angle = 0.0,
             sheetlet_pseudo_angle = deg2rad(0)
         )
-    ), ring_grid,
+    ), ring_grid, ring_cs,
     [NormalSpringBC(0.01, "Epicardium")],
-    ip_u, ip_geo, qr_collection,
+    ip_u, qr_collection,
     100.0
 )
 

@@ -62,7 +62,7 @@ getinterpolation(ipc::VectorizedInterpolationCollection{vdim, IPC}, type::Type{r
 
 
 """
-    QuadratureRuleCollection(order)
+    QuadratureRuleCollection(order::Int)
 
 A collection of quadrature rules across different cell types.
 """
@@ -75,7 +75,26 @@ getquadraturerule(qrc::QuadratureRuleCollection{order}, cell::AbstractCell{ref_s
 
 
 """
-    FaceQuadratureRuleCollection(order)
+    NodalQuadratureRuleCollection(::InterpolationCollection)
+
+A collection of nodal quadrature rules across different cell types.
+
+!!! warning
+    The computation for the weights is not implemented yet and hence they default to NaN.
+"""
+struct NodalQuadratureRuleCollection{IPC <: InterpolationCollection}
+    ipc::IPC
+end
+
+function getquadraturerule(nqr::NodalQuadratureRuleCollection, cell::AbstractCell{ref_shape}) where {ref_shape}
+    ip = getinterpolation(nqr.ipc, cell)
+    positions = Ferrite.reference_coordinates(ip)
+    return QuadratureRule{ref_shape, eltype(first(positions))}([NaN for _ in 1:length(positions)], positions)
+end
+
+
+"""
+    FaceQuadratureRuleCollection(order::Int)
 
 A collection of quadrature rules across different cell types.
 """
@@ -88,37 +107,34 @@ getquadraturerule(qrc::FaceQuadratureRuleCollection{order}, cell::AbstractCell{r
 
 
 """
-    CellValueCollection
+    CellValueCollection(::QuadratureRuleCollection, ::InterpolationCollection)
 
 Helper to construct and query the correct cell values on mixed grids.
 """
-struct CellValueCollection{QRC,IPC,IPGC}
+struct CellValueCollection{QRC <: Union{QuadratureRuleCollection, NodalQuadratureRuleCollection}, IPC <: InterpolationCollection}
     qrc::QRC
     ipc::IPC
-    ipgc::IPGC
 end
 
-CellValueCollection(qr:: QuadratureRuleCollection, ip::InterpolationCollection) = CellValueCollection(qr,ip,ip)
-
-getcellvalues(cv::CellValueCollection, cell::AbstractCell{ref_shape}) where {ref_shape} = CellValues(
+getcellvalues(cv::CellValueCollection, cell::CellType) where {CellType <: AbstractCell} = CellValues(
     getquadraturerule(cv.qrc, cell),
     getinterpolation(cv.ipc, cell),
-    getinterpolation(cv.ipgc, cell)
+    Ferrite.default_interpolation(CellType)
 )
 
+
 """
-    FaceValueCollection
+    FaceValueCollection(::QuadratureRuleCollection, ::InterpolationCollection)
 
 Helper to construct and query the correct face values on mixed grids.
 """
-struct FaceValueCollection{QRC,IPC,IPGC}
+struct FaceValueCollection{QRC <: FaceQuadratureRuleCollection, IPC <: InterpolationCollection}
     qrc::QRC
     ipc::IPC
-    ipgc::IPGC
 end
 
-getfacevalues(fv::FaceValueCollection, cell::AbstractCell{ref_shape}) where {ref_shape} = FaceValues(
+getfacevalues(fv::FaceValueCollection, cell::CellType) where {CellType <: AbstractCell} = FaceValues(
     getquadraturerule(fv.qrc, cell),
     getinterpolation(fv.ipc, cell),
-    getinterpolation(fv.ipgc, cell)
+    Ferrite.default_interpolation(CellType)
 )

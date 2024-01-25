@@ -1,34 +1,28 @@
 @testset "microstructures" begin
-    ref_shape = RefHexahedron
-    order = 1
     ring_grid = generate_ring_mesh(80,1,1)
 
     qr_collection = QuadratureRuleCollection(2)
+    ip_collection = LagrangeCollection{1}()^3
+
+    ring_cs = compute_midmyocardial_section_coordinate_system(ring_grid)
+
+    cartesian_coefficient = CoordinateSystemCoefficient(CartesianCoordinateSystem(ring_grid))
     qr = getquadraturerule(qr_collection, getcells(ring_grid, 1))
-    ip_collection = LagrangeCollection{order}()^3
-
-    cv_collection = CellValueCollection(qr_collection, ip_collection, ip_collection)
-    cv_fsn = Thunderbolt.getcellvalues(cv_collection, getcells(ring_grid, 1))
-
-    ring_cs = compute_midmyocardial_section_coordinate_system(ring_grid, ip_collection)
-
-    cv_cs = Thunderbolt.create_cellvalues(ring_cs, qr)
 
     @testset "Midmyocardial coordinate system" begin
+        csc = CoordinateSystemCoefficient(ring_cs)
         for cellcache in CellIterator(ring_cs.dh)
-            reinit!(cv_cs, cellcache)
-            dof_indices = celldofs(cellcache)
-            for qp in QuadratureIterator(cv_fsn)
-                coords = getcoordinates(cellcache)
-                sc = spatial_coordinate(cv_fsn, qp, coords)
-                transmural = 4*(norm(Vec(sc[1:2]..., 0.))-0.75)
-                @test transmural ≈ function_value(cv_cs, qp, ring_cs.u_transmural[dof_indices]) atol=0.01
+            for qp in QuadratureIterator(qr)
+                x = evaluate_coefficient(cartesian_coefficient, cellcache, qp, 0.0)
+                transmural = 4*(norm(Vec(x[1:2]..., 0.))-0.75)
+                coord = evaluate_coefficient(csc, cellcache, qp, 0.0)
+                @test transmural ≈ coord.transmural atol=0.01
             end
         end
     end
 
     @testset "OrthotropicMicrostructureModel" begin
-        ms = create_simple_microstructure_model(ring_cs, ip_collection, ip_collection,
+        ms = create_simple_microstructure_model(ring_cs, ip_collection,
             endo_helix_angle = deg2rad(0.0),
             epi_helix_angle = deg2rad(0.0),
             endo_transversal_angle = 0.0,
@@ -36,15 +30,14 @@
             sheetlet_pseudo_angle = deg2rad(0)
         )
         for cellcache in CellIterator(ring_grid)
-            reinit!(cv_fsn, cellcache)
-            for qp in QuadratureIterator(cv_fsn)
-                coords = getcoordinates(cellcache)
-                sc = spatial_coordinate(cv_fsn, qp, coords)
+            for qp in QuadratureIterator(qr)
+                x = evaluate_coefficient(cartesian_coefficient, cellcache, qp, 0.0)
                 # If we set all angles to 0, then the generator on the ring simply generates sheetlets which point in positive z direction, where the normal point radially outwards.
-                ndir = Vec(sc[1:2]..., 0.)/norm(sc[1:2])
+                ndir = Vec(x[1:2]..., 0.)/norm(x[1:2])
                 sdir = Vec(0., 0., 1.)
                 fdir = sdir × ndir
-                fsn = evaluate_coefficient(ms, cellcache, qp, 0)
+
+                fsn = evaluate_coefficient(ms, cellcache, qp, 0.0)
                 @test fsn[1] ≈ fdir atol=0.05
                 @test fsn[2] ≈ sdir
                 @test fsn[3] ≈ ndir atol=0.05

@@ -30,7 +30,7 @@
         microstructure_model
     )
     # Dummy Coefficients
-    analytical_coeff = AnalyticalCoefficient((x,t) -> norm(x)+t, CoordinateSystemCoefficient(CartesianCoordinateSystem(ipc^3)))
+    analytical_coeff = AnalyticalCoefficient((x,t) -> norm(x)+t, CoordinateSystemCoefficient(CartesianCoordinateSystem(grid)))
     spectral_coeff = SpectralTensorCoefficient(
         ConstantCoefficient(SVector((Vec((1.0,0.0)),))),
         ConstantCoefficient(SVector((-1.0,))),
