@@ -87,7 +87,7 @@ end
 
 function evaluate_coefficient(coeff::CoordinateSystemCoefficient{<:CartesianCoordinateSystem{sdim}}, cell_cache, qp::QuadraturePoint{<:Any,T}, t) where {sdim, T}
     x = zero(Vec{sdim, T})
-    ip = getinterpolation(getcoordinateinterpolation(coeff.cs), getcells(cell_cache.grid, cellid(cell_cache)))
+    ip = getcoordinateinterpolation(coeff.cs, getcells(cell_cache.grid, cellid(cell_cache)))
     for i in 1:getnbasefunctions(ip.ip)
         x += Ferrite.shape_value(ip.ip, qp.ξ, i) * cell_cache.coords[i]
     end
@@ -96,8 +96,7 @@ end
 
 function evaluate_coefficient(coeff::CoordinateSystemCoefficient{<:LVCoordinateSystem}, cell_cache, qp::QuadraturePoint{ref_shape,T}, t) where {ref_shape,T}
     x = @MVector zeros(T, 3)
-    # ip = getinterpolation(getcoordinateinterpolation(coeff.cs), getcells(cell_cache.grid, cellid(cell_cache)))
-    ip = getcoordinateinterpolation(coeff.cs)
+    ip = getcoordinateinterpolation(coeff.cs, getcells(cell_cache.grid, cellid(cell_cache)))
     dofs = celldofs(coeff.cs.dh, cellid(cell_cache))
     @inbounds for i in 1:getnbasefunctions(ip)
         val = Ferrite.shape_value(ip, qp.ξ, i)

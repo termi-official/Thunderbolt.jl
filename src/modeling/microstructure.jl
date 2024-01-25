@@ -57,27 +57,28 @@ function streeter_type_fsn(transmural_direction, circumferential_direction, apic
 end
 
 """
-    create_simple_microstructure_model(coordinate_system, ip_component::VectorInterpolationCollection, ip_geo::VectorizedInterpolationCollection; endo_helix_angle = deg2rad(80.0), epi_helix_angle = deg2rad(-65.0), endo_transversal_angle = 0.0, epi_transversal_angle = 0.0, sheetlet_angle = 0.0, make_orthogonal=true)
+    create_simple_microstructure_model(coordinate_system, ip_component::VectorInterpolationCollection; endo_helix_angle = deg2rad(80.0), epi_helix_angle = deg2rad(-65.0), endo_transversal_angle = 0.0, epi_transversal_angle = 0.0, sheetlet_angle = 0.0, make_orthogonal=true)
 
 Create a rotating fiber field by deducing the circumferential direction from apicobasal and transmural gradients.
 
 !!! note
     FIXME! Sheetlet angle construction is broken (i.e. does not preserve input angle).
 """
-function create_simple_microstructure_model(coordinate_system, ip_collection::VectorInterpolationCollection, ip_geo_collection::VectorizedInterpolationCollection; endo_helix_angle = deg2rad(80.0), epi_helix_angle = deg2rad(-65.0), endo_transversal_angle = 0.0, epi_transversal_angle = 0.0, sheetlet_pseudo_angle = 0.0, make_orthogonal=true)
+function create_simple_microstructure_model(coordinate_system, ip_collection::VectorizedInterpolationCollection{3}; endo_helix_angle = deg2rad(80.0), epi_helix_angle = deg2rad(-65.0), endo_transversal_angle = 0.0, epi_transversal_angle = 0.0, sheetlet_pseudo_angle = 0.0, make_orthogonal=true)
     @unpack dh = coordinate_system
 
-    ref_shape = getrefshape(getcells(Ferrite.get_grid(dh), 1))
-    ip = getinterpolation(ip_collection, ref_shape)
-    ip_geo = getinterpolation(ip_geo_collection, ref_shape)
+    check_subdomains(dh)
+
+    first_cell = getcells(Ferrite.get_grid(dh), 1)
+    ip = getinterpolation(ip_collection, first_cell)
     n_basefuns = getnbasefunctions(ip.ip)
 
     elementwise_data_f = zero(Array{Vec{3,Float64}, 2}(undef, n_basefuns, getncells(dh.grid)))
     elementwise_data_s = zero(Array{Vec{3,Float64}, 2}(undef, n_basefuns, getncells(dh.grid)))
     elementwise_data_n = zero(Array{Vec{3,Float64}, 2}(undef, n_basefuns, getncells(dh.grid)))
 
-    qr_fiber = generate_nodal_quadrature_rule(ip.ip)
-    cv = create_cellvalues(coordinate_system, qr_fiber, ip_geo)
+    cv_collection = CellValueCollection(NodalQuadratureRuleCollection(ip_collection.base), ip_collection.base)
+    cv = getcellvalues(cv_collection, first_cell)
 
     for (cellindex,cell) in enumerate(CellIterator(dh))
         reinit!(cv, cell)

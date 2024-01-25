@@ -1,13 +1,20 @@
 """
-    CartesianCoordinateSystem{sdim, IP <: VectorizedInterpolation{sdim}}
+    CartesianCoordinateSystem(mesh)
 
 Standard cartesian coordinate system.
 """
-struct CartesianCoordinateSystem{sdim, IPC <: VectorizedInterpolationCollection{sdim}}
-    ip::IPC
+struct CartesianCoordinateSystem{sdim}
 end
 
-getcoordinateinterpolation(cs::CartesianCoordinateSystem) = cs.ip
+CartesianCoordinateSystem(grid::AbstractGrid{sdim}) where sdim = CartesianCoordinateSystem{sdim}()
+
+"""
+    getcoordinateinterpolation(cs::CartesianCoordinateSystem, cell::AbstractCell)
+
+Get interpolation function for the cartesian coordinate system.
+"""
+getcoordinateinterpolation(cs::CartesianCoordinateSystem{sdim}, cell::CellType) where {sdim, CellType <: AbstractCell} = Ferrite.default_interpolation(CellType)^sdim
+
 
 """
     LVCoordinateSystem(dh, u_transmural, u_apicobasal)
@@ -26,6 +33,7 @@ struct LVCoordinateSystem{DH <: AbstractDofHandler}
     end
 end
 
+
 """
     LVCoordinate{T}
 
@@ -40,17 +48,17 @@ struct LVCoordinate{T}
     circumferential::T
 end
 
+
 """
-    getcoordinateinterpolation(cs::LVCoordinateSystem)
+    getcoordinateinterpolation(cs::LVCoordinateSystem, cell::AbstractCell)
 
 Get interpolation function for the LV coordinate system.
 """
-getcoordinateinterpolation(cs::LVCoordinateSystem) = Ferrite.getfieldinterpolation(cs.dh, (1,1))
+getcoordinateinterpolation(cs::LVCoordinateSystem, cell::AbstractCell) = Ferrite.getfieldinterpolation(cs.dh, (1,1))
 
-create_cellvalues(cs::LVCoordinateSystem, qr::QuadratureRule, ip_geo=getcoordinateinterpolation(cs)) = CellValues(qr, getcoordinateinterpolation(cs), ip_geo)
 
 """
-    compute_LV_coordinate_system(grid::AbstractGrid, ip_geo::Interpolation{ref_shape})
+    compute_LV_coordinate_system(grid::AbstractGrid)
 
 Requires a grid with facesets
     * Base
@@ -62,14 +70,14 @@ and a nodeset
 !!! warning
     The circumferential coordinate is not yet implemented and is guaranteed to evaluate to NaN.
 """
-function compute_LV_coordinate_system(grid::AbstractGrid{dim}, ip_geo_collection::VectorInterpolationCollection) where {dim}
-    @assert dim == 3
-    @assert length(elementtypes(grid)) == 1
+function compute_LV_coordinate_system(grid::AbstractGrid{3})
+    check_subdomains(grid)
+
     ref_shape = getrefshape(getcells(grid, 1))
     ip_collection = LagrangeCollection{1}()
     ip = getinterpolation(ip_collection, ref_shape)
     qr_collection = QuadratureRuleCollection(2)
-    cv_collection = CellValueCollection(qr_collection, ip_collection, ip_geo_collection)
+    cv_collection = CellValueCollection(qr_collection, ip_collection)
     cellvalues = getcellvalues(cv_collection, getcells(grid, 1))
 
     dh = DofHandler(grid)
@@ -151,7 +159,7 @@ function compute_LV_coordinate_system(grid::AbstractGrid{dim}, ip_geo_collection
 end
 
 """
-    compute_midmyocardial_section_coordinate_system(grid::AbstractGrid,ip_geo::Interpolation{ref_shape})
+    compute_midmyocardial_section_coordinate_system(grid::AbstractGrid)
 
 Requires a grid with facesets
     * Base
@@ -159,14 +167,14 @@ Requires a grid with facesets
     * Endocardium
     * Myocardium
 """
-function compute_midmyocardial_section_coordinate_system(grid::AbstractGrid{dim}, ip_geo_collection::VectorInterpolationCollection) where {dim}
+function compute_midmyocardial_section_coordinate_system(grid::AbstractGrid{dim}) where {dim}
     @assert dim == 3
     @assert length(elementtypes(grid)) == 1
     ref_shape = getrefshape(getcells(grid,1))
     ip_collection = LagrangeCollection{1}()
     ip = getinterpolation(ip_collection, ref_shape)
     qr_collection = QuadratureRuleCollection(2)
-    cv_collection = CellValueCollection(qr_collection, ip_collection, ip_geo_collection)
+    cv_collection = CellValueCollection(qr_collection, ip_collection)
     cellvalues = getcellvalues(cv_collection, getcells(grid,1))
 
     dh = DofHandler(grid)

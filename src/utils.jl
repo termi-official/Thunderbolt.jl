@@ -155,3 +155,7 @@ nonzeros(A::ThreadedSparseMatrixCSR) = nonzeros(A.A)
 Base.size(A::ThreadedSparseMatrixCSR) = Base.size(A.A)
 Base.size(A::ThreadedSparseMatrixCSR,i) = Base.size(A.A,i)
 IndexStyle(::Type{<:ThreadedSparseMatrixCSR}) = IndexCartesian()
+
+# Internal helper to throw uniform error messages on problems with multiple subdomains
+@noinline check_subdomains(dh::Ferrite.AbstractDofHandler) = length(dh.subdofhandlers) == 1 || throw(ArgumentError("Using DofHandler with multiple subdomains is not currently supported"))
+@noinline check_subdomains(grid::Ferrite.AbstractGrid) = length(elementtypes(grid)) == 1 || throw(ArgumentError("Using mixed grid is not currently supported"))

@@ -1,5 +1,6 @@
 @testset "Coefficient API" begin
-    cell_cache = Ferrite.CellCache(generate_grid(Line, (2,)))
+    grid = generate_grid(Line, (2,))
+    cell_cache = Ferrite.CellCache(grid)
     qp1 = QuadraturePoint(1, Vec((0.0,)))
     qp2 = QuadraturePoint(2, Vec((0.1,)))
     ip_collection = LagrangeCollection{1}()
@@ -45,7 +46,7 @@
     end
 
     @testset "Cartesian CoordinateSystemCoefficient" begin
-        ccsc = CoordinateSystemCoefficient(CartesianCoordinateSystem(ip_collection^1))
+        ccsc = CoordinateSystemCoefficient(CartesianCoordinateSystem(grid))
         reinit!(cell_cache, 1)
         @test evaluate_coefficient(ccsc, cell_cache, qp1, 0.0) ≈ Vec((-0.5,))
         @test evaluate_coefficient(ccsc, cell_cache, qp1, 1.0) ≈ Vec((-0.5,))
@@ -61,7 +62,7 @@
     @testset "AnalyticalCoefficient" begin
         ac = AnalyticalCoefficient(
             (x,t) -> norm(x)+t,
-            CoordinateSystemCoefficient(CartesianCoordinateSystem(ip_collection^1))
+            CoordinateSystemCoefficient(CartesianCoordinateSystem(grid))
         )
         reinit!(cell_cache, 1)
         @test evaluate_coefficient(ac, cell_cache, qp1, 0.0) ≈  0.5
