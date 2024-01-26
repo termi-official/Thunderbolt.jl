@@ -10,7 +10,7 @@
         NullEnergyModel(),
         HolzapfelOgden2009Model(),
         HolzapfelOgden2009Model(;mpU = SimpleCompressionPenalty()),
-        HolzapfelOgden2009Model(;mpU = NeffCompressionPenalty()),
+        HolzapfelOgden2009Model(;mpU = HartmannNeffCompressionPenalty1()),
         TransverseIsotopicNeoHookeanModel(),
         LinYinPassiveModel(),
         LinYinActiveModel(),
