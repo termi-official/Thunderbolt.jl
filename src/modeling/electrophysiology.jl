@@ -123,13 +123,19 @@ abstract type AbstractEPModel end;
 
 abstract type AbstractStimulationProtocol end;
 
-"""
-Assumtion: Iₛₜᵢₘ,ₑ = Iₛₜᵢₘ,ᵢ.
+@doc raw"""
+Supertype for all stimulation protocols fulfilling $I_{\rm{stim,e}} = I_{\rm{stim,i}}$.
 """
 abstract type TransmembraneStimulationProtocol <: AbstractStimulationProtocol end;
 
+"""
+A dummy protocol describing the absence of stimuli for a simulation.
+"""
 struct NoStimulationProtocol <: TransmembraneStimulationProtocol end
 
+"""
+Describe the transmembrane stimulation by some analytical function on a given set of time intervals.
+"""
 struct AnalyticalTransmembraneStimulationProtocol{F <: AnalyticalCoefficient, T} <: TransmembraneStimulationProtocol
     f::F
     nonzero_intervals::Vector{SVector{2,T}} # helper to speed up rhs
@@ -143,7 +149,8 @@ The original model formulation (TODO citation) with the structure
     ∂ₜ𝐬  = g(φₘ,𝐬,x)
  φᵢ - φₑ = φₘ
 
-TODO implement
+!!! note 
+    Not implemented yet.
 """
 struct ParabolicParabolicBidomainModel <: AbstractEPModel
     χ
@@ -165,7 +172,8 @@ Transformed bidomain model with the structure
 This formulation is a transformation of the parabolic-parabolic
 form (c.f. TODO citation) and has been derived by (TODO citation) first.
 
-TODO implement
+!!! note 
+    Not implemented yet.
 """
 struct ParabolicEllipticBidomainModel <: AbstractEPModel
     χ

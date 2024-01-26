@@ -1,9 +1,9 @@
 
 """
-TODO document me!
+    StructuralModel(mechanical_model, face_models)
+
+A generic model for structural problems.
 """
-# Is this really what we want? Or should the face integrals be directly merged into the mechanical model?
-# Does this abstraction layer have another benefit?
 struct StructuralModel{MM, FM}
     mechanical_model::MM
     face_models::FM
@@ -13,11 +13,11 @@ end
 """
     StructuralElementCache
 
-TODO document me!
+A generic cache to assemble elements coming from a [StructuralModel](@ref).
 """
-# TODO rename contraction_model_cache
 struct StructuralElementCache{M, CMCache, CV}
     constitutive_model::M
+    # TODO rename contraction_model_cache
     contraction_model_cache::CMCache
     cv::CV
 end

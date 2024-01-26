@@ -1,6 +1,4 @@
 """
-    LumpedFluidSolidCoupler
-
 Enforce the constraints that
   chamber volume 3D (solid model) = chamber volume 0D (lumped circuit)
 where a surface pressure integral is introduced such that
@@ -12,12 +10,13 @@ struct LumpedFluidSolidCoupler{CVM} <: InterfaceCoupler
 end
 
 """
-    ReggazoniSalvadorAfrica2022SurrogateVolume
-
 Compute the chamber volume as a surface integral via the integral
   -∫ det(F) ((h ⊗ h)(x + d - b)) adj(F) N ∂Ωendo
-  
-Note that the integral basically measures the volume via displacement on a given axis.
+
+as proposed by [RegSalAfrFedDedQar:2022:cem](@citet).
+
+!!! note 
+    This integral basically measures the volume via displacement on a given axis.
 """
 Base.@kwdef struct ReggazoniSalvadorAfrica2022SurrogateVolume{T}
     h::Vec{3,T} = Vec((0.0, 0.0, 1.0))
@@ -30,7 +29,7 @@ function volume_integral(x, d, F, N, method::ReggazoniSalvadorAfrica2022Surrogat
 end
 
 """
-    Hirschvogel2016SurrogateVolume
+Chamber volume estimator as presented in [HirBasJagWilGee:2017:mcc](@cite).
 
 Compute the chamber volume as a surface integral via the integral
  - ∫ (x + d) det(F) adj(F) N ∂Ωendo
@@ -38,14 +37,13 @@ where it is assumed that the chamber is convex, zero displacement in
 apicobasal direction at the valvular plane occurs and the plane normal is aligned
 with the z axis, where the origin is at z=0.
 """
-struct Hirschvogel2016SurrogateVolume
-end
+struct Hirschvogel2017SurrogateVolume end
 
-function volume_integral(x, d, F, N, method::Hirschvogel2016SurrogateVolume)
+function volume_integral(x, d, F, N, method::Hirschvogel2017SurrogateVolume)
     -det(F) * (x + d) ⋅ inv(transpose(F)) ⋅ N
 end
 
-function assemble_interface_coupling_contribution!(C, r, dh, u, setname, method::Hirschvogel2016SurrogateVolume)
+function assemble_interface_coupling_contribution!(C, r, dh, u, setname, method::Hirschvogel2017SurrogateVolume)
     grid = dh.grid
     ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], :displacement)
     ip_geo = Ferrite.default_interpolation(typeof(getcells(grid, 1)))
@@ -120,5 +118,3 @@ function compute_chamber_volume(dh, u, setname, method)
     end
     return volume
 end
-
-

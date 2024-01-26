@@ -85,7 +85,9 @@ export
     NullEnergyModel,
     NullCompressionPenalty,
     SimpleCompressionPenalty,
-    NeffCompressionPenalty,
+    HartmannNeffCompressionPenalty1,
+    HartmannNeffCompressionPenalty2,
+    HartmannNeffCompressionPenalty3,
     TransverseIsotopicNeoHookeanModel,
     HolzapfelOgden2009Model,
     LinYinPassiveModel,
@@ -117,7 +119,7 @@ export
     ReggazoniSalvadorAfricaLumpedCicuitModel,
     # FSI
     ReggazoniSalvadorAfrica2022SurrogateVolume,
-    Hirschvogel2016SurrogateVolume,
+    Hirschvogel2017SurrogateVolume,
     LumpedFluidSolidCoupler,
     # Microstructure
     AnisotropicPlanarMicrostructureModel,

@@ -69,6 +69,7 @@ ActiveMaterialAdapter
 
 ```@docs
 GMKActiveDeformationGradientModel
+GMKIncompressibleActiveDeformationGradientModel
 RLRSQActiveDeformationGradientModel
 ```
 
@@ -85,7 +86,9 @@ Guccione1993ActiveModel
 ```@docs
 NullCompressionPenalty
 SimpleCompressionPenalty
-NeffCompressionPenalty
+HartmannNeffCompressionPenalty1
+HartmannNeffCompressionPenalty2
+HartmannNeffCompressionPenalty3
 ```
 
 ## Electrophysiology
@@ -137,7 +140,7 @@ CoupledModel
 
 ```@docs
 LumpedFluidSolidCoupler
-Hirschvogel2016SurrogateVolume
+Hirschvogel2017SurrogateVolume
 ReggazoniSalvadorAfrica2022SurrogateVolume
 ReggazoniSalvadorAfricaSplit
 ```

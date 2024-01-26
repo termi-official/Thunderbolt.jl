@@ -2,7 +2,7 @@
 """
     ΦReggazoniSalvadorAfrica(t,tC,tR,TC,TR,THB)
 
-Activation transient from the paper.
+Activation transient from the paper [RegSalAfrFedDedQar:2022:cem](@citet).
 
      t  = time
    THB  = time for a full heart beat
@@ -24,10 +24,11 @@ end
 
 elastance_ReggazoniSalvadorAfrica(t,Epass,Emax,tC,tR,TC,TR,THB) = Epass + Emax*Φ_ReggazoniSalvadorAfrica(t,tC,tR,TC,TR,THB)
 
+
 """
     ReggazoniSalvadorAfricaLumpedCicuitModel
 
-@TODO citation of "A cardiac electromechanical model coupled with a lumped-parameter model for closed-loop blood circulation"
+A lumped (0D) circulatory model for LV simulations as presented in [RegSalAfrFedDedQar:2022:cem](@citet).
 """
 Base.@kwdef struct ReggazoniSalvadorAfricaLumpedCicuitModel{
     T1, # mmHg s mL^-1

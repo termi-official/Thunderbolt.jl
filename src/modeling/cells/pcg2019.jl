@@ -1,4 +1,6 @@
-# TODO integrate properly with framework
+"""
+The canine ventricular cardiomyocyte electrophysiology model by [PatCorGra:2019:cuq](@citet).
+"""
 Base.@kwdef struct ParametrizedPCG2019Model{T} <: AbstractIonicModel
     # ------ I_Na -------
     g_Na::T = 12.0    # [mS/µF]

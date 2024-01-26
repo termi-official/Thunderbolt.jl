@@ -25,7 +25,13 @@ function evaluate_coefficient(fsn::OrthotropicMicrostructureModel, cell_cache, q
     return SVector((f, s, n))
 end
 
-# TODO: citation
+"""
+    streeter_type_fsn(transmural_direction::Vec{3}, circumferential_direction::Vec{3}, apicobasal_direction::Vec{3}, helix_angle, transversal_angle, sheetlet_pseudo_angle, make_orthogonal=true)
+
+Compute fiber, sheetlet and normal direction from the transmural, circumferential, apicobasal directions
+in addition to given helix, transversal and sheetlet angles. The theory is based on the classical work by
+[StreSpoPatRosSon:1969:foc](@citet).
+"""
 function streeter_type_fsn(transmural_direction, circumferential_direction, apicobasal_direction, helix_angle, transversal_angle, sheetlet_pseudo_angle, make_orthogonal=true)
     # First we construct the helix rotation ...
     f₀ = rotate_around(circumferential_direction, transmural_direction, helix_angle)

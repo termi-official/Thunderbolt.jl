@@ -1,6 +1,4 @@
 """
-    ReactionDiffusionSplit{MODEL}
-
 Annotation for the classical reaction-diffusion split of a given model.
 """
 struct ReactionDiffusionSplit{MODEL}
@@ -8,17 +6,13 @@ struct ReactionDiffusionSplit{MODEL}
 end
 
 """
-    ReggazoniSalvadorAfricaSplit{MODEL}
-
-Annotation for the split described in the 2022 paper.
+Annotation for the split described by [RegSalAfrFedDedQar:2022:cem](@citet).
 """
 struct ReggazoniSalvadorAfricaSplit{MODEL <: CoupledModel}
     model::MODEL
 end
 
 """
-    LTGOSSolver
-
 Classical Lie-Trotter-Godunov operator splitting in time.
 """
 struct LTGOSSolver{AST,BST}
@@ -27,8 +21,6 @@ struct LTGOSSolver{AST,BST}
 end
 
 """
-    LTGOSSolverCache
-
 Caches for the classical Lie-Trotter-Godunov operator splitting scheme.
 """
 struct LTGOSSolverCache{ASCT, BSCT}
