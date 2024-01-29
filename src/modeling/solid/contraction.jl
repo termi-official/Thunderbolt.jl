@@ -102,24 +102,24 @@ end
 num_states(model::RDQ20MFModel) = 20
 
 function rhs_fast!(dRU, uRU, x, t, p::RDQ20MFModel)
-    # TODO StaticArrays
-    dT_L = zeros(2,2)
-    dT_R = zeros(2,2)
-    ΦT_L = zeros(2,2,2,2)
-    ΦT_C = zeros(2,2,2,2)
-    ΦT_R = zeros(2,2,2,2)
-    ΦC_C = zeros(2,2,2,2)
-    dC = zeros(2,2)
-    dT = zeros(2,2,2,2)
+    dT_L = @MMatrix zeros(2,2)
+    dT_R = @MMatrix zeros(2,2)
+    ΦT_L = @MArray zeros(2,2,2,2)
+    ΦT_C = @MArray zeros(2,2,2,2)
+    ΦT_R = @MArray zeros(2,2,2,2)
+    ΦC_C = @MArray zeros(2,2,2,2)
+    dC = @MMatrix zeros(2,2)
+    dT = @MArray zeros(2,2,2,2)
 
     sarcomere_length = evaluate_coefficient(p.sarcomere_length, nothing, QuadraturePoint(1, x), t)
     calcium = evaluate_coefficient(p.calcium_field, nothing, QuadraturePoint(1, x), t)
+
     # Initialize helper rates
     dC[1,1] = p.Koff / (p.Kd₀ - p.αKd * (2.15 - sarcomere_length)) * calcium
     dC[1,2] = p.Koff / (p.Kd₀ - p.αKd * (2.15 - sarcomere_length)) * calcium
     dC[2,1] = p.Koff
     dC[2,2] = p.Koff / p.μ
-    for TL ∈ 1:2, TR ∈ 1:2
+    @inbounds for TL ∈ 1:2, TR ∈ 1:2
         permissive_neighbors = TL + TR - 2
         dT[TL,2,TR,1] = p.Kbasic * p.γ^(2-permissive_neighbors);
         dT[TL,2,TR,2] = p.Kbasic * p.γ^(2-permissive_neighbors);
@@ -129,53 +129,49 @@ function rhs_fast!(dRU, uRU, x, t, p::RDQ20MFModel)
 
     # Update RU
     ## Compute fluxes associated with center unit
-    for TL ∈ 1:2, TC ∈ 1:2, TR ∈ 1:2, CC ∈ 1:2
-        ΦT_C[TL,TC,TR,CC] = uRU[TL,TC,TR,CC] * dT[TL,TC,TR,CC];
-        ΦC_C[TL,TC,TR,CC] = uRU[TL,TC,TR,CC] * dC[CC,TC];
+    @inbounds for TL ∈ 1:2, TC ∈ 1:2, TR ∈ 1:2, CC ∈ 1:2
+        ΦT_C[TL,TC,TR,CC] = uRU[TL,TC,TR,CC] * dT[TL,TC,TR,CC]
+        ΦC_C[TL,TC,TR,CC] = uRU[TL,TC,TR,CC] * dC[CC,TC]
     end
 
     ## Compute rates associated with left unit
-    for TL ∈ 1:2
-        for TC ∈ 1:2
-            flux_tot = 0.0
-            prob_tot = 0.0
-            for TR ∈ 1:2, CC ∈ 1:2
-                flux_tot += ΦT_C[TL,TC,TR,CC]
-                prob_tot += uRU[TL,TC,TR,CC]
-            end
-            if prob_tot > 1e-12
-                dT_L[TL,TC] = flux_tot / prob_tot
-            else
-                dT_L[TL,TC] = 0.0;
-            end
+    @inbounds for TL ∈ 1:2, TC ∈ 1:2
+        flux_tot = 0.0
+        prob_tot = 0.0
+        for TR ∈ 1:2, CC ∈ 1:2
+            flux_tot += ΦT_C[TL,TC,TR,CC]
+            prob_tot += uRU[TL,TC,TR,CC]
+        end
+        if prob_tot > 1e-12
+            dT_L[TL,TC] = flux_tot / prob_tot
+        else
+            dT_L[TL,TC] = 0.0;
         end
     end
 
     ## Compute rates associated with right unit
-    for TR ∈ 1:2
-        for TC ∈ 1:2
-            flux_tot = 0.0
-            prob_tot = 0.0
-            for TL ∈ 1:2, CC ∈ 1:2
-                flux_tot += ΦT_C[TL,TC,TR,CC]
-                prob_tot += uRU[TL,TC,TR,CC]
-            end
-            if prob_tot > 1e-12
-                dT_R[TR,TC] = flux_tot / prob_tot;
-            else
-                dT_R[TR,TC] = 0.0;
-            end
+    @inbounds for TR ∈ 1:2, TC ∈ 1:2
+        flux_tot = 0.0
+        prob_tot = 0.0
+        for TL ∈ 1:2, CC ∈ 1:2
+            flux_tot += ΦT_C[TL,TC,TR,CC]
+            prob_tot += uRU[TL,TC,TR,CC]
+        end
+        if prob_tot > 1e-12
+            dT_R[TR,TC] = flux_tot / prob_tot;
+        else
+            dT_R[TR,TC] = 0.0;
         end
     end
 
     ## Compute fluxes associated with external units
-    for TL ∈ 1:2, TC ∈ 1:2, TR ∈ 1:2, CC ∈ 1:2
+    @inbounds for TL ∈ 1:2, TC ∈ 1:2, TR ∈ 1:2, CC ∈ 1:2
         ΦT_L[TL,TC,TR,CC] = uRU[TL,TC,TR,CC] * dT_L[TC,TL]
         ΦT_R[TL,TC,TR,CC] = uRU[TL,TC,TR,CC] * dT_R[TC,TR]
     end
 
     # Store RU rates
-    for TL ∈ 1:2, TC ∈ 1:2, TR ∈ 1:2, CC ∈ 1:2
+    @inbounds for TL ∈ 1:2, TC ∈ 1:2, TR ∈ 1:2, CC ∈ 1:2
         dRU[TL,TC,TR,CC] = 
             -ΦT_L[TL,TC,TR,CC] + ΦT_L[3 - TL,TC,TR,CC] -
             ΦT_C[TL,TC,TR,CC] + ΦT_C[TL,3 - TC,TR,CC] -
@@ -194,7 +190,7 @@ function rhs!(du, u, x, t, p::RDQ20MFModel)
     dRU = reshape(dRU_flat, (2,2,2,2))
     dXB = @view du[17:20]
 
-    rhs_fast!(dRU, uRU, x, t, p::RDQ20MFModel)
+    rhs_fast!(dRU, uRU, x, t, p)
 
     # Velocity
     dSL_dt = evaluate_coefficient(p.sarcomere_velocity, nothing, QuadraturePoint(1, x), t)
@@ -204,9 +200,8 @@ function rhs!(du, u, x, t, p::RDQ20MFModel)
     flux_PN = 0.0
     flux_NP = 0.0
 
-    # TODO StaticArrays
-    dT = zeros(2,2,2,2)
-    for TL ∈ 1:2, TR ∈ 1:2
+    dT = @MArray zeros(2,2,2,2)
+    @inbounds for TL ∈ 1:2, TR ∈ 1:2
         permissive_neighbors = TL + TR - 2
         dT[TL,2,TR,1] = p.Kbasic * p.γ^(2-permissive_neighbors);
         dT[TL,2,TR,2] = p.Kbasic * p.γ^(2-permissive_neighbors);
@@ -214,9 +209,9 @@ function rhs!(du, u, x, t, p::RDQ20MFModel)
         dT[TL,1,TR,2] = p.Q * p.Kbasic * p.γ^permissive_neighbors;
     end
 
-    XB_A = zeros(4,4)
+    XB_A = @MMatrix zeros(4,4)
 
-    for TL ∈ 1:2, TR ∈ 1:2, CC ∈ 1:2
+    @inbounds for TL ∈ 1:2, TR ∈ 1:2, CC ∈ 1:2
         permissivity += uRU[TL,2,TR,CC]
         flux_PN += uRU[TL,2,TR,CC] * dT[TL,2,TR,CC]
         flux_NP += uRU[TL,1,TR,CC] * dT[TL,1,TR,CC]
