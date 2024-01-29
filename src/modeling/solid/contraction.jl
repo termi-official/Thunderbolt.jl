@@ -112,7 +112,11 @@ function rhs_fast!(dRU, uRU, x, t, p::RDQ20MFModel)
     dC = zeros(2,2)
     dT = zeros(2,2,2,2)
 
+    sarcomere_length = evaluate_coefficient(p.sarcomere_length, nothing, QuadraturePoint(1, x), t)
+    calcium = evaluate_coefficient(p.calcium_field, nothing, QuadraturePoint(1, x), t)
     # Initialize helper rates
+    dC[1,1] = p.Koff / (p.Kd₀ - p.αKd * (2.15 - sarcomere_length)) * calcium
+    dC[1,2] = p.Koff / (p.Kd₀ - p.αKd * (2.15 - sarcomere_length)) * calcium
     dC[2,1] = p.Koff
     dC[2,2] = p.Koff / p.μ
     for TL ∈ 1:2, TR ∈ 1:2
@@ -193,7 +197,7 @@ function rhs!(du, u, x, t, p::RDQ20MFModel)
     rhs_fast!(dRU, uRU, x, t, p::RDQ20MFModel)
 
     # Velocity
-    dSL_dt = 0.0 # TODO how to pass...?
+    dSL_dt = evaluate_coefficient(p.sarcomere_velocity, nothing, QuadraturePoint(1, x), t)
     v = -dSL_dt / evaluate_coefficient(p.SL₀, nothing, QuadraturePoint(1, x), t)
 
     permissivity = 0.0
