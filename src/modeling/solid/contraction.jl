@@ -120,7 +120,7 @@ function rhs_fast!(dRU, uRU, x, t, p::RDQ20MFModel)
     dC[2,1] = p.Koff
     dC[2,2] = p.Koff / p.μ
     for TL ∈ 1:2, TR ∈ 1:2
-        permissive_neighbors = TL + TR
+        permissive_neighbors = TL + TR - 2
         dT[TL,2,TR,1] = p.Kbasic * p.γ^(2-permissive_neighbors);
         dT[TL,2,TR,2] = p.Kbasic * p.γ^(2-permissive_neighbors);
         dT[TL,1,TR,1] = p.Q * p.Kbasic * p.γ^permissive_neighbors / p.μ;
@@ -206,6 +206,14 @@ function rhs!(du, u, x, t, p::RDQ20MFModel)
 
     # TODO StaticArrays
     dT = zeros(2,2,2,2)
+    for TL ∈ 1:2, TR ∈ 1:2
+        permissive_neighbors = TL + TR - 2
+        dT[TL,2,TR,1] = p.Kbasic * p.γ^(2-permissive_neighbors);
+        dT[TL,2,TR,2] = p.Kbasic * p.γ^(2-permissive_neighbors);
+        dT[TL,1,TR,1] = p.Q * p.Kbasic * p.γ^permissive_neighbors / p.μ;
+        dT[TL,1,TR,2] = p.Q * p.Kbasic * p.γ^permissive_neighbors;
+    end
+
     XB_A = zeros(4,4)
 
     for TL ∈ 1:2, TR ∈ 1:2, CC ∈ 1:2
@@ -220,7 +228,7 @@ function rhs!(du, u, x, t, p::RDQ20MFModel)
         k_PN = flux_PN / permissivity
     end
     if 1.0 - permissivity >= 1e-12
-        k_NP = flux_NP / (1 - permissivity)
+        k_NP = flux_NP / (1.0 - permissivity)
     end
 
     r = p.r₀ + p.α*abs(v)
@@ -241,4 +249,27 @@ function rhs!(du, u, x, t, p::RDQ20MFModel)
     dXB .= XB_A*uXB
     dXB[1] += p.μ₀_fP * permissivity
     dXB[2] += p.μ₁_fP * permissivity
+end
+
+function fraction_single_overlap(model::RDQ20MFModel, SL)
+    LMh = (model.LM - model.LB) * 0.5;
+    if (SL > model.LA && SL <= model.LM)
+      return (SL - model.LA) / LMh;
+    elseif (SL > model.LM && SL <= 2 * model.LA - model.LB)
+      return (SL + model.LM - 2 * model.LA) * 0.5 / LMh;
+    elseif (SL > 2 * model.LA - model.LB && SL <= 2 * model.LA + model.LB)
+      return 1.0;
+    elseif (SL > 2 * model.LA + model.LB && SL <= 2 * model.LA + model.LM)
+      return (model.LM + 2 * model.LA - SL) * 0.5 / LMh;
+    else
+      return 0.0;
+    end
+end
+
+function compute_active_tension(model::RDQ20MFModel, state, sarcomere_length)
+    model.a_XB * (state[18] + state[20]) * fraction_single_overlap(model, sarcomere_length)
+end
+
+function compute_active_stiffness(model::RDQ20MFModel, state, sarcomere_length)
+    model.a_XB * (state[17] + state[19]) * fraction_single_overlap(sarcomere_length)
 end

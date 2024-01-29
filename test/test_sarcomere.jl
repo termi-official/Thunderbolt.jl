@@ -9,8 +9,8 @@ Thunderbolt.initial_state!(u, model)
 @show u
 
 
-dt = 1e-6
-const Tmax = 0.1
+dt = 1e-5
+Tmax = 0.1
 
 # Calcium transient
 const c0 = 0.1
@@ -34,11 +34,11 @@ Sl(t) = SL0 + (SL1 - SL0) * (max(0.0, 1.0 - exp((SLt0 - t) / SLτ0)) - max(0.0, 
 
 τ = 0.0:dt:Tmax
 us = zeros(Thunderbolt.num_states(model), length(τ))
-us = zeros(Thunderbolt.num_states(model), length(τ))
+Tas = zeros(1, length(τ))
 for (i,t) ∈ enumerate(τ)
     calcium = Ca(t)
     sarcomere_length = Sl(t)
-    sarcomere_velocity = (Sl(t+1e-8) - sarcomere_length)/1e-8 # TODO via AD
+    sarcomere_velocity = (Sl(t+1e-3) - sarcomere_length)/1e-3 # TODO via AD
     Thunderbolt.rhs!(du, u, Vec((0.0,)), 0.0, Thunderbolt.RDQ20MFModel(;
         calcium_field = ConstantCoefficient(calcium),
         sarcomere_length = ConstantCoefficient(sarcomere_length),
@@ -46,4 +46,6 @@ for (i,t) ∈ enumerate(τ)
     ))
     u .+= dt*du
     us[:,i] .= u
+
+    Tas[i] = Thunderbolt.compute_active_tension(model, u, sarcomere_length)
 end
