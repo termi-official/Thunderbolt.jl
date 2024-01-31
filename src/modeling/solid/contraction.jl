@@ -6,6 +6,10 @@ abstract type SteadyStateSarcomereModel <: SteadyStateInternalVariable end
 TODO citation pelce paper
 
 TODO remove explicit calcium field dependence
+
+!!! warning
+    It should be highlighted that this model directly gives the steady state
+    for the active stretch.
 """
 Base.@kwdef struct PelceSunLangeveld1995Model{TD, CF} <: SteadyStateSarcomereModel
     β::TD = 3.0
@@ -62,10 +66,14 @@ update_contraction_model_cache!(cache::ConstantStretchCache, time, cell, cv) = n
 
 𝓝(Ca, mp::ConstantStretchModel) = Ca
 
-"""
-Mean-field variant of the sarcomere model presented by Reggazoni, Dede and Quarteroni (2020).
+@doc raw"""
+Mean-field variant of the sarcomere model presented by [RegDedQua:2020:bdm](@citet).
 
 The default parameters for the model are taken from the same paper for human cardiomyocytes at body temperature.
+
+!!! note
+    For this model in combination with active stress framework the assumption is
+    taken that the sarcomere length is exactly $\sqrt{I_4}$.
 """
 Base.@kwdef struct RDQ20MFModel{TD, TSL0, TCF, TSL, TSV}
     # Geoemtric parameters
