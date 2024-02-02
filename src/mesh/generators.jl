@@ -60,6 +60,7 @@ end
 Generates an idealized full-hexahedral ring with given opening angle and linear ansatz. Geometrically it is the substraction of a small cylinder ``C_i`` of a large cylinder ``C_o``.
 The number of elements for the cylindrical system can be controlled by the first three input parameters.
 The remaining parameters control the spatial dimensions and the ring shape.
+The ring is opened along the Cartesian x-z plane.
 """
 function generate_open_ring_mesh(num_elements_circumferential::Int, num_elements_radial::Int, num_elements_logintudinal::Int, opening_angle::Float64; inner_radius::T = Float64(0.75), outer_radius::T = Float64(1.0), longitudinal_lower::T = Float64(-0.2), longitudinal_upper::T = Float64(0.2), apicobasal_tilt::T=Float64(0.0)) where {T}
     # Generate a rectangle in cylindrical coordinates and transform coordinates back to carthesian.
@@ -70,7 +71,7 @@ function generate_open_ring_mesh(num_elements_circumferential::Int, num_elements
     n_nodes = n_nodes_c * n_nodes_r * n_nodes_l;
 
     # Generate nodes
-    circumferential_angle = range(0.0, stop=2*π-opening_angle, length=n_nodes_c)
+    circumferential_angle = range(opening_angle/2, stop=2*π-opening_angle/2, length=n_nodes_c)
     radial_coords = range(inner_radius, stop=outer_radius, length=n_nodes_r)
     longitudinal_angle = range(longitudinal_upper, stop=longitudinal_lower, length=n_nodes_l)
     nodes = Node{3,T}[]
@@ -188,6 +189,7 @@ end
 Generates an idealized full-hexahedral ring with given opening angle and quadratic ansatz. Geometrically it is the substraction of a small cylinder ``C_i`` of a large cylinder ``C_o``.
 The number of elements for the cylindrical system can be controlled by the first three input parameters.
 The remaining parameters control the spatial dimensions and the ring shape.
+The ring is opened along the Cartesian x-z plane.
 """
 function generate_quadratic_open_ring_mesh(num_elements_circumferential::Int, num_elements_radial::Int, num_elements_logintudinal::Int, opening_angle::Float64; inner_radius::T = Float64(0.75), outer_radius::T = Float64(1.0), longitudinal_lower::T = Float64(-0.2), longitudinal_upper::T = Float64(0.2), apicobasal_tilt::T=Float64(0.0)) where {T}
     # Generate a rectangle in cylindrical coordinates and transform coordinates back to carthesian.
@@ -198,7 +200,7 @@ function generate_quadratic_open_ring_mesh(num_elements_circumferential::Int, nu
     n_nodes = n_nodes_c * n_nodes_r * n_nodes_l;
 
     # Generate nodes
-    circumferential_angle = range(0.0, stop=2*π-opening_angle, length=n_nodes_c)
+    circumferential_angle = range(opening_angle/2, stop=2*π-opening_angle/2, length=n_nodes_c)
     radial_coords = range(inner_radius, stop=outer_radius, length=n_nodes_r)
     longitudinal_angle = range(longitudinal_upper, stop=longitudinal_lower, length=n_nodes_l)
     nodes = Node{3,T}[]
