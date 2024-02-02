@@ -8,6 +8,7 @@
     @testset "ConstantCoefficient($val" for val ∈ [1.0, one(Tensor{2,2})]
         cc = ConstantCoefficient(val)
         reinit!(cell_cache, 1)
+        @test_opt evaluate_coefficient(cc, cell_cache, qp1, 0.0)
         @test evaluate_coefficient(cc, cell_cache, qp1, 0.0) ≈ val
         @test evaluate_coefficient(cc, cell_cache, qp2, 1.0) ≈ val
         reinit!(cell_cache, 2)
@@ -86,6 +87,7 @@
         st = Tensor{2,2}((-1.0,0.0,0.0,0.0))
         for i in 1:2
             reinit!(cell_cache, i)
+            @test_opt evaluate_coefficient(stc, cell_cache, qp1, 0.0)
             @test evaluate_coefficient(stc, cell_cache, qp1, 0.0) ≈ st
             @test evaluate_coefficient(stc, cell_cache, qp2, 0.0) ≈ st
             @test evaluate_coefficient(stc, cell_cache, qp1, 1.0) ≈ st
@@ -106,6 +108,7 @@
         )
         for i in 1:2
             reinit!(cell_cache, i)
+            @test_opt evaluate_coefficient(shdc, cell_cache, qp1, 0.0)
             @test evaluate_coefficient(shdc, cell_cache, qp1, 0.0) ≈ Vec((0.1,))
             @test evaluate_coefficient(shdc, cell_cache, qp2, 0.0) ≈ Vec((0.1,))
             @test evaluate_coefficient(shdc, cell_cache, qp1, 1.0) ≈ Vec((0.1,))
@@ -134,6 +137,7 @@
         )
         for i in 1:2
             reinit!(cell_cache, i)
+            @test_opt evaluate_coefficient(stc, cell_cache, qp1, 0.0)
             @test evaluate_coefficient(stc, cell_cache, qp1, 0.0) ≈ st
             @test evaluate_coefficient(stc, cell_cache, qp2, 0.0) ≈ st
             @test evaluate_coefficient(stc, cell_cache, qp1, 1.0) ≈ st

@@ -94,13 +94,13 @@ end
 """
 https://onlinelibrary.wiley.com/doi/epdf/10.1002/cnm.2866
 """
-@Base.kwdef struct TransverseIsotopicNeoHookeanModel{TD}
+@Base.kwdef struct TransverseIsotopicNeoHookeanModel{TD, TU}
     a₁::TD = 2.6
     a₂::TD = 2.82
     α₁::TD = 30.48
     α₂::TD = 7.25
 
-    mpU = HartmannNeffCompressionPenalty1()
+    mpU::TU = HartmannNeffCompressionPenalty1()
 end
 function Ψ(F, f₀, s₀, n₀, mp::TransverseIsotopicNeoHookeanModel)
     @unpack a₁, a₂, α₁, α₂, mpU = mp

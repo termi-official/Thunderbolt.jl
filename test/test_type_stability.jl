@@ -17,7 +17,7 @@
         HumphreyStrumpfYinModel(),
     ]
     @testset "Energies $material_model" for material_model ∈ material_model_set
-        @test_call Thunderbolt.Ψ(F, f₀, s₀, n₀, material_model)
+        @test_opt Thunderbolt.Ψ(F, f₀, s₀, n₀, material_model)
     end
 
     @testset "Constitutive Models" begin
@@ -33,7 +33,7 @@
                     PelceSunLangeveld1995Model(;calcium_field=ConstantCoefficient(1.0)),
                     fsn,
                 )
-                @test_call Thunderbolt.material_routine(F, f₀, s₀, n₀, Caᵢ, model)
+                @test_opt Thunderbolt.material_routine(F, f₀, s₀, n₀, Caᵢ, model)
             end
         end
 
@@ -57,8 +57,7 @@
                             contraction_model,
                             fsn,
                         )
-                        # Not sure which PR exactly fixed this.
-                        @test_call broken=VERSION<v"1.11.0-DEV" Thunderbolt.material_routine(F, f₀, s₀, n₀, Caᵢ, model)
+                        @test_opt Thunderbolt.material_routine(F, f₀, s₀, n₀, Caᵢ, model)
                     end
                 end
             end
@@ -73,6 +72,6 @@
         u = copy(du)
         φₘ = u[1]
         s  = @view u[2:end]
-        @test_call Thunderbolt.cell_rhs!(du, φₘ, s, nothing, 0.0, model)
+        @test_opt Thunderbolt.cell_rhs!(du, φₘ, s, nothing, 0.0, model)
     end
 end
