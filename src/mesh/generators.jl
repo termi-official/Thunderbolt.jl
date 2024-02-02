@@ -53,6 +53,65 @@ function generate_ring_mesh(num_elements_circumferential::Int, num_elements_radi
     return Grid(cells, nodes, facesets=facesets)
 end
 
+
+"""
+    generate_open_ring_mesh(num_elements_circumferential::Int, num_elements_radial::Int, num_elements_logintudinal::Int, opening_angle::Float64; inner_radius::T = Float64(0.75), outer_radius::T = Float64(1.0), longitudinal_lower::T = Float64(-0.2), longitudinal_upper::T = Float64(0.2), apicobasal_tilt::T=Float64(0.0)) where {T}
+
+Generates an idealized full-hexahedral ring with given opening angle and linear ansatz. Geometrically it is the substraction of a small cylinder ``C_i`` of a large cylinder ``C_o``.
+The number of elements for the cylindrical system can be controlled by the first three input parameters.
+The remaining parameters control the spatial dimensions and the ring shape.
+"""
+function generate_open_ring_mesh(num_elements_circumferential::Int, num_elements_radial::Int, num_elements_logintudinal::Int, opening_angle::Float64; inner_radius::T = Float64(0.75), outer_radius::T = Float64(1.0), longitudinal_lower::T = Float64(-0.2), longitudinal_upper::T = Float64(0.2), apicobasal_tilt::T=Float64(0.0)) where {T}
+    # Generate a rectangle in cylindrical coordinates and transform coordinates back to carthesian.
+    ne_tot = num_elements_circumferential*num_elements_radial*num_elements_logintudinal;
+    n_nodes_c = num_elements_circumferential+1;
+    n_nodes_r = num_elements_radial+1;
+    n_nodes_l = num_elements_logintudinal+1;
+    n_nodes = n_nodes_c * n_nodes_r * n_nodes_l;
+
+    # Generate nodes
+    circumferential_angle = range(0.0, stop=2*π-opening_angle, length=n_nodes_c)
+    radial_coords = range(inner_radius, stop=outer_radius, length=n_nodes_r)
+    longitudinal_angle = range(longitudinal_upper, stop=longitudinal_lower, length=n_nodes_l)
+    nodes = Node{3,T}[]
+    for k in 1:n_nodes_l, j in 1:n_nodes_r, i in 1:n_nodes_c
+        # cylindrical -> carthesian
+        radius = radial_coords[j]-apicobasal_tilt*longitudinal_angle[k]/maximum(abs.(longitudinal_angle))
+        push!(nodes, Node((radius*cos(circumferential_angle[i]), radius*sin(circumferential_angle[i]), longitudinal_angle[k])))
+    end
+
+    # Generate cells
+    node_array = reshape(collect(1:n_nodes), (n_nodes_c, n_nodes_r, n_nodes_l))
+    cells = Hexahedron[]
+    for k in 1:num_elements_logintudinal, j in 1:num_elements_radial, i in 1:num_elements_circumferential
+        push!(cells, Hexahedron((node_array[i,j,k], node_array[i + 1,j,k], node_array[i + 1,j+1,k], node_array[i,j+1,k],
+                                 node_array[i,j,k+1], node_array[i + 1,j,k+1], node_array[i + 1,j+1,k+1], node_array[i,j+1,k+1])))
+    end
+
+    # Cell faces
+    cell_array = reshape(collect(1:ne_tot),(num_elements_circumferential, num_elements_radial, num_elements_logintudinal))
+    boundary = FaceIndex[[FaceIndex(cl, 1) for cl in cell_array[:,:,1][:]];
+                            [FaceIndex(cl, 2) for cl in cell_array[:,1,:][:]];
+                            [FaceIndex(cl, 3) for cl in cell_array[end,:,:][:]];
+                            [FaceIndex(cl, 4) for cl in cell_array[:,end,:][:]];
+                            [FaceIndex(cl, 5) for cl in cell_array[1,:,:][:]];
+                            [FaceIndex(cl, 6) for cl in cell_array[:,:,end][:]]]
+
+    # Cell face sets
+    offset = 0
+    facesets = Dict{String,Set{FaceIndex}}()
+
+    facesets["Myocardium"] = Set{FaceIndex}(boundary[(1:length(cell_array[:,:,1][:]))   .+ offset]); offset += length(cell_array[:,:,1][:])
+    facesets["Endocardium"]  = Set{FaceIndex}(boundary[(1:length(cell_array[:,1,:][:]))   .+ offset]); offset += length(cell_array[:,1,:][:])
+    facesets["Open1"]  = Set{FaceIndex}(boundary[(1:length(cell_array[end,:,:][:])) .+ offset]); offset += length(cell_array[end,:,:][:])
+    facesets["Epicardium"]   = Set{FaceIndex}(boundary[(1:length(cell_array[:,end,:][:])) .+ offset]); offset += length(cell_array[:,end,:][:])
+    facesets["Open2"]   = Set{FaceIndex}(boundary[(1:length(cell_array[1,:,:][:]))   .+ offset]); offset += length(cell_array[1,:,:][:])
+    facesets["Base"]    = Set{FaceIndex}(boundary[(1:length(cell_array[:,:,end][:])) .+ offset]); offset += length(cell_array[:,:,end][:])
+
+    return Grid(cells, nodes, facesets=facesets)
+end
+
+
 # const linear_index_to_local_index_table_hex27 = [1,9,2, 12,21,10, 4,11,3,  17,22,18, 25,27,23, 20,24,19, 5,13,6, 16,26,14, 8,15,7]
 # const local_index_to_linear_index_table_hex27 = invperm(linear_index_to_local_index_table_hex27)
 # const tensorproduct_index_to_local_index_table_hex27 = reshape(raw_index_to_local_index_table_hex27, (3,3,3))
@@ -121,6 +180,72 @@ function generate_quadratic_ring_mesh(num_elements_circumferential::Int, num_ele
 
     return Grid(cells, nodes, facesets=facesets)
 end
+
+
+"""
+    generate_quadratic_open_ring_mesh(num_elements_circumferential::Int, num_elements_radial::Int, num_elements_logintudinal::Int, opening_angle::Float64; inner_radius::T = Float64(0.75), outer_radius::T = Float64(1.0), longitudinal_lower::T = Float64(-0.2), longitudinal_upper::T = Float64(0.2), apicobasal_tilt::T=Float64(0.0)) where {T}
+
+Generates an idealized full-hexahedral ring with given opening angle and quadratic ansatz. Geometrically it is the substraction of a small cylinder ``C_i`` of a large cylinder ``C_o``.
+The number of elements for the cylindrical system can be controlled by the first three input parameters.
+The remaining parameters control the spatial dimensions and the ring shape.
+"""
+function generate_quadratic_open_ring_mesh(num_elements_circumferential::Int, num_elements_radial::Int, num_elements_logintudinal::Int, opening_angle::Float64; inner_radius::T = Float64(0.75), outer_radius::T = Float64(1.0), longitudinal_lower::T = Float64(-0.2), longitudinal_upper::T = Float64(0.2), apicobasal_tilt::T=Float64(0.0)) where {T}
+    # Generate a rectangle in cylindrical coordinates and transform coordinates back to carthesian.
+    ne_tot = num_elements_circumferential*num_elements_radial*num_elements_logintudinal;
+    n_nodes_c = 2*num_elements_circumferential+1;
+    n_nodes_r = 2*num_elements_radial+1;
+    n_nodes_l = 2*num_elements_logintudinal+1;
+    n_nodes = n_nodes_c * n_nodes_r * n_nodes_l;
+
+    # Generate nodes
+    circumferential_angle = range(0.0, stop=2*π-opening_angle, length=n_nodes_c)
+    radial_coords = range(inner_radius, stop=outer_radius, length=n_nodes_r)
+    longitudinal_angle = range(longitudinal_upper, stop=longitudinal_lower, length=n_nodes_l)
+    nodes = Node{3,T}[]
+    for k in 1:n_nodes_l, j in 1:n_nodes_r, i in 1:n_nodes_c
+        # cylindrical -> carthesian
+        radius = radial_coords[j]-apicobasal_tilt*longitudinal_angle[k]/maximum(abs.(longitudinal_angle))
+        push!(nodes, Node((radius*cos(circumferential_angle[i]), radius*sin(circumferential_angle[i]), longitudinal_angle[k])))
+    end
+
+    # Generate cells
+    node_array = reshape(collect(1:n_nodes), (n_nodes_c, n_nodes_r, n_nodes_l))
+    cells = QuadraticHexahedron[]
+    for k_ in 1:num_elements_logintudinal, j_ in 1:num_elements_radial, i_ in 1:num_elements_circumferential
+        i = 2*i_-1
+        j = 2*j_-1
+        k = 2*k_-1
+        push!(cells, QuadraticHexahedron((
+            node_array[i+0,j+0,k+0], node_array[2*i_ + 1,j+0,k+0], node_array[2*i_ + 1,j+2,k+0], node_array[i+0,j+2,k+0], # Vertex loop back
+            node_array[i+0,j+0,k+2], node_array[2*i_ + 1,j+0,k+2], node_array[2*i_ + 1,j+2,k+2], node_array[i+0,j+2,k+2],  # Vertex loop front
+            node_array[i+1,j+0,k+0], node_array[2*i_ + 1,j+1,k+0], node_array[i+1,j+2,k+0],    node_array[i+0,j+1,k+0], # Edge loop back
+            node_array[i+1,j+0,k+2], node_array[2*i_ + 1,j+1,k+2], node_array[i+1,j+2,k+2],    node_array[i+0,j+1,k+2], # Edge loop front
+            node_array[i+0,j+0,k+1], node_array[2*i_ + 1,j+0,k+1], node_array[2*i_ + 1,j+2,k+1], node_array[i+0,j+2,k+1], # Edge loop center
+            node_array[i+1,j+1,k+0], node_array[i+1,j+0,k+1],    node_array[2*i_ + 1,j+1,k+1], node_array[i+1,j+2,k+1], node_array[i+0,j+1,k+1], node_array[i+1,j+1,k+2], # Face centers
+            node_array[i+1,j+1,k+1]# Center
+        )))
+    end
+
+    # Cell faces
+    cell_array = reshape(collect(1:ne_tot),(num_elements_circumferential, num_elements_radial, num_elements_logintudinal))
+    boundary = FaceIndex[[FaceIndex(cl, 1) for cl in cell_array[:,:,1][:]];
+                            [FaceIndex(cl, 2) for cl in cell_array[:,1,:][:]];
+                            #[FaceIndex(cl, 3) for cl in cell_array[end,:,:][:]];
+                            [FaceIndex(cl, 4) for cl in cell_array[:,end,:][:]];
+                            #[FaceIndex(cl, 5) for cl in cell_array[1,:,:][:]];
+                            [FaceIndex(cl, 6) for cl in cell_array[:,:,end][:]]]
+
+    # Cell face sets
+    offset = 0
+    facesets = Dict{String,Set{FaceIndex}}()
+    facesets["Myocardium"] = Set{FaceIndex}(boundary[(1:length(cell_array[:,:,1][:]))   .+ offset]); offset += length(cell_array[:,:,1][:])
+    facesets["Endocardium"]  = Set{FaceIndex}(boundary[(1:length(cell_array[:,1,:][:]))   .+ offset]); offset += length(cell_array[:,1,:][:])
+    facesets["Epicardium"]   = Set{FaceIndex}(boundary[(1:length(cell_array[:,end,:][:])) .+ offset]); offset += length(cell_array[:,end,:][:])
+    facesets["Base"]    = Set{FaceIndex}(boundary[(1:length(cell_array[:,:,end][:])) .+ offset]); offset += length(cell_array[:,:,end][:])
+
+    return Grid(cells, nodes, facesets=facesets)
+end
+
 
 """
     generate_ideal_lv_mesh(num_elements_circumferential::Int, num_elements_radial::Int, num_elements_logintudinally::Int; inner_chamber_radius = 0.7, outer_wall_radius = 1.0, longitudinal_cutoff_lower::T = Float64(-1.0), longitudinal_cutoff_upper::T = Float64(0.2), longitudinal_stretch::T = Float64(1.2))
