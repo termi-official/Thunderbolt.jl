@@ -154,7 +154,13 @@ function solve_test_ring(name_base, constitutive_model, grid, cs, face_models, i
         StructuralModel(constitutive_model, face_models),
         FiniteElementDiscretization(
             Dict(:displacement => ip_mech),
-            [Dirichlet(:displacement, getfaceset(grid, "Myocardium"), (x,t) -> [0.0], [3])]
+            # [Dirichlet(:displacement, getfaceset(grid, "Myocardium"), (x,t) -> [0.0], [3])]
+            [
+                Dirichlet(:displacement, getnodeset(grid, "MyocardialAnchor1"), (x,t) -> (0.0, 0.0, 0.0), [1,2,3]),
+                Dirichlet(:displacement, getnodeset(grid, "MyocardialAnchor2"), (x,t) -> (0.0, 0.0), [2,3]),
+                Dirichlet(:displacement, getnodeset(grid, "MyocardialAnchor3"), (x,t) -> (0.0,), [3]),
+                Dirichlet(:displacement, getnodeset(grid, "MyocardialAnchor4"), (x,t) -> (0.0,), [3])
+            ]
         ),
         grid
     )
@@ -191,10 +197,9 @@ for (name, order, ring_grid) ∈ [
     ("Quadratic-Ring", 2, Thunderbolt.generate_quadratic_ring_mesh(20,4,4))
 ]
 
-intorder = 2*order
-qr_collection = QuadratureRuleCollection(intorder-1)
+qr_collection = QuadratureRuleCollection(2*order-1)
 
-ip_fsn = LagrangeCollection{order}()^3
+ip_fsn = LagrangeCollection{1}()^3
 ip_u = LagrangeCollection{order}()^3
 
 ring_cs = compute_midmyocardial_section_coordinate_system(ring_grid)
@@ -207,16 +212,16 @@ solve_test_ring(name,
             CoordinateSystemCoefficient(ring_cs)
         )),
         create_simple_microstructure_model(ring_cs, ip_fsn,
-            endo_helix_angle = deg2rad(0.0),
-            epi_helix_angle = deg2rad(0.0),
+            endo_helix_angle = deg2rad(-60.0),
+            epi_helix_angle = deg2rad(60.0),
             endo_transversal_angle = 0.0,
             epi_transversal_angle = 0.0,
             sheetlet_pseudo_angle = deg2rad(0)
         )
     ), ring_grid, ring_cs,
-    [NormalSpringBC(0.01, "Epicardium")],
+    [],
     ip_u, qr_collection,
-    100.0
+    10.0
 )
 
 end
