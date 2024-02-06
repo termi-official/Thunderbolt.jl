@@ -154,7 +154,6 @@ function solve_test_ring(name_base, constitutive_model, grid, cs, face_models, i
         StructuralModel(constitutive_model, face_models),
         FiniteElementDiscretization(
             Dict(:displacement => ip_mech),
-            # [Dirichlet(:displacement, getfaceset(grid, "Myocardium"), (x,t) -> [0.0], [3])]
             [
                 Dirichlet(:displacement, getnodeset(grid, "MyocardialAnchor1"), (x,t) -> (0.0, 0.0, 0.0), [1,2,3]),
                 Dirichlet(:displacement, getnodeset(grid, "MyocardialAnchor2"), (x,t) -> (0.0, 0.0), [2,3]),
