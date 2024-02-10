@@ -49,5 +49,7 @@ finalize!
 
 ```@docs
 Thunderbolt.Plonsey1964ECGGaussCache
+Thunderbolt.Geselowitz1989ECGLeadCache
+Thunderbolt.TODORENAMEECGPoissonReconstructionCache
 Thunderbolt.evaluate_ecg
 ```

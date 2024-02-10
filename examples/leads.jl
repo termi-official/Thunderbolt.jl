@@ -15,7 +15,7 @@ function (iocb::IOCallback{ParaViewWriter{PVD}})(t, problem::Thunderbolt.SplitPr
     iocb.counter += 1
     (iocb.counter % 100) == 0 || return nothing
     ϕₘ = solver_cache.A_solver_cache.uₙ
-    φₑ = Thunderbolt.reconstruct_ecg(iocb.ecg_reconst_cache, iocb.κᵢ, ϕₘ)
+    φₑ = Thunderbolt.evaluate_ecg(iocb.ecg_reconst_cache, ϕₘ, iocb.κᵢ)
     store_timestep!(iocb.io, t, problem.A.dh.grid)
     push!(iocb.v, Thunderbolt.evaluate_ecg(iocb.lead_field, ϕₘ, iocb.κᵢ)[1]) 
     Thunderbolt.store_timestep_field!(iocb.io, t, problem.A.dh, φₑ, :φₑ)
@@ -40,19 +40,17 @@ end
 
 ######################################################
 
-mesh = Thunderbolt.generate_ring_mesh(80,28,12, inner_radius = 10., outer_radius = 20., longitudinal_lower = -3.5, longitudinal_upper = 3.5)
-cs = compute_midmyocardial_section_coordinate_system(mesh)
+mesh = generate_grid(Hexahedron, (80,28,12), Vec((0.0,0.0,0.0)), Vec((20.0,7.0,3.0)))
+cs = CartesianCoordinateSystem(mesh)
 
 qr_collection = QuadratureRuleCollection(2)
 ip_collection = LagrangeCollection{1}()
 
-ms = create_simple_microstructure_model(cs, ip_collection^3,
-            endo_helix_angle = deg2rad(0.0),
-            epi_helix_angle = deg2rad(0.0),
-            endo_transversal_angle = 0.0,
-            epi_transversal_angle = 0.0,
-            sheetlet_pseudo_angle = deg2rad(0)
-        )
+ms = OrthotropicMicrostructureModel(
+    ConstantCoefficient(Vec(0., 0., 1.)),
+    ConstantCoefficient(Vec(1., 0., 0.)),
+    ConstantCoefficient(Vec(0., 1., 0.))
+)
 
 κ = SpectralTensorCoefficient(
     ms, 
@@ -60,9 +58,9 @@ ms = create_simple_microstructure_model(cs, ip_collection^3,
 κᵢ = SpectralTensorCoefficient(
     ms, 
     ConstantCoefficient(SVector(0.3, 0.12, 0.12)))
-lead_field = Thunderbolt.compute_lead_field(mesh, κ, qr_collection, ip_collection, VertexIndex(1,1), [Vec(20., 0., 0.), Vec(-20., 0., 0.)], [(1,2)])
+lead_field = Thunderbolt.Geselowitz1989ECGLeadCache(mesh, κ, qr_collection, ip_collection, VertexIndex(1,1), [Vec(20., 0., 0.), Vec(0., 0., 0.)], [(1,2)])
 
-ecg_reconst_cache = Thunderbolt.ecg_reconstruction_cache(mesh, κ, qr_collection, ip_collection, VertexIndex(1,1))
+ecg_reconst_cache = Thunderbolt.TODORENAMEECGPoissonReconstructionCache(mesh, κ, qr_collection, ip_collection, VertexIndex(1,1))
 
 vtk_grid("Lead", lead_field.dh) do vtk
     vtk_point_data(vtk, lead_field.dh, lead_field.Z[1,:])
@@ -73,7 +71,7 @@ model = MonodomainModel(
     ConstantCoefficient(1),
     κᵢ,
     Thunderbolt.AnalyticalTransmembraneStimulationProtocol(
-        AnalyticalCoefficient((x,t) -> norm(x) < 11 && t < 2.0 ? 0.5 : 0.0, Thunderbolt.CoordinateSystemCoefficient(cs)),
+        AnalyticalCoefficient((x,t) -> norm(x) < 1.5 && t < 2.0 ? 0.5 : 0.0, Thunderbolt.CoordinateSystemCoefficient(cs)),
         [SVector((0.0, 2.1))]
     ),
     Thunderbolt.PCG2019()
