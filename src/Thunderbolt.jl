@@ -15,6 +15,10 @@ using JLD2
 import Ferrite: AbstractDofHandler, AbstractGrid, AbstractRefShape, AbstractCell
 import Ferrite: vertices, edges, faces, sortedge, sortface
 
+using AlgebraicMultigrid
+using IterativeSolvers
+import IterativeSolvers: cg!
+
 import Krylov: CgSolver
 
 import Base: *, +, -
