@@ -17,7 +17,11 @@ function test_solve_contractile_cuboid(constitutive_model)
     ]
 
     problem = semidiscretize(
-        StructuralModel(constitutive_model, []),
+        StructuralModel(constitutive_model, [
+            NormalSpringBC(0.0, "right"),
+            ConstantPressureBC(0.0, "back"),
+            PressureFieldBC(ConstantCoefficient(0.0),"top")
+        ]),
         FiniteElementDiscretization(
             Dict(:displacement => LagrangeCollection{1}()^3),
             dbcs,

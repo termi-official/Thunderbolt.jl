@@ -44,11 +44,15 @@
     @testset "Linear Hex Ring" begin
         ring_mesh = generate_ring_mesh(8,3,3)
         test_detJ(ring_mesh)
+        open_ring_mesh = generate_open_ring_mesh(8,3,3,π/4)
+        test_detJ(open_ring_mesh)
     end
 
     @testset "Quadratic Hex Ring" begin
         ring_mesh = generate_quadratic_ring_mesh(5,3,3)
         test_detJ(ring_mesh)
+        open_ring_mesh = generate_quadratic_open_ring_mesh(8,3,3,π/4)
+        test_detJ(open_ring_mesh)
     end
 
     @testset "Linear Hex LV" begin
