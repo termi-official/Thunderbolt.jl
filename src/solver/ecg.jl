@@ -58,82 +58,100 @@ Calling [`evaluate_ecg`](@ref) with this method simply evaluates the following i
 V(t)=\\int \\nabla Z(\\boldsymbol{x}) \\cdot \\boldsymbol{\\kappa}_i \\nabla \\phi_m \\,\\mathrm{d}\\boldsymbol{x}.
 ```
 """
-struct Geselowitz1989ECGLeadCache{T, D, ZT <: AbstractArray{T}, ∇φT <: AbstractArray{Vec{D, T}}, DH <: DofHandler, CV <: CellValues}
-    Z::ZT
-    κ∇φₘ::∇φT
-    dh::DH
-    cv::CV
+struct Geselowitz1989ECGLeadCache{T, D, ∇φₘT, ZT <: AbstractArray{T}, ∇ZT <: AbstractArray{Vec{D, T}}, OP <: AssembledBilinearOperator, Preconditioner, V}
+    ∇Z::∇ZT
+    κ∇φₘ::∇φₘT
+    op::OP
+    p::Preconditioner
+    v::V
     # Does is make sense to store these?
+    Z::ZT
     zero_vertex::VertexIndex
     electrodes::Vector{Vec{3, T}}
     electrode_pairs::Vector{Tuple{Int, Int}}
 end
 
-function Geselowitz1989ECGLeadCache(mesh, _κ::SpectralTensorCoefficient, qr_collection::QuadratureRuleCollection,
-    ip_collection::ScalarInterpolationCollection, zero_vertex::VertexIndex, electrodes::Vector{Vec{3, T}},
-    electrode_pairs::Vector{Tuple{Int, Int}}) where T
-
-    sdim = Ferrite.getdim(mesh)
-    ets = elementtypes(mesh)
-    @assert length(ets) == 1 "Multiple elements not supported yet." 
+function Geselowitz1989ECGLeadCache(problem::SplitProblem{<:TransientHeatProblem}, κ::SpectralTensorCoefficient,
+    electrodes::Vector{Vec{3, T}}, electrode_pairs::Vector{Tuple{Int, Int}}, zero_vertex::VertexIndex = VertexIndex(1,1)) where T
+    heat_problem = problem.A
+    dh_ϕₘ = heat_problem.dh
+    grid = dh_ϕₘ.grid
+    @assert length(dh_ϕₘ.subdofhandlers) == 1 "TODO subdomain support"
+    @assert length(dh_ϕₘ.subdofhandlers[1].field_interpolations) == 1 "Problem setup might be broken..."
+    sdim = Ferrite.getdim(grid)
 
     nleadfields = length(electrode_pairs)
 
-    ip = getinterpolation(ip_collection, getcells(mesh,1))
-    qr = getquadraturerule(qr_collection, getcells(mesh,1))
-    cv = CellValues(qr, ip);
+    ip = dh_ϕₘ.subdofhandlers[1].field_interpolations[1]
+    qr = QuadratureRule{getrefshape(ip)}(2*Ferrite.getorder(ip)) # TODO Mabe make this part of the problem or create a wrapper for it with qr?
+    cv = CellValues(qr, ip)
 
-    dh = DofHandler(mesh)
-    Ferrite.add!(dh, :Z, ip)
-    close!(dh);
-    Z = Matrix{T}(undef, nleadfields, ndofs(dh))
-    κ∇φₘ = zeros(Vec{sdim, T}, getnquadpoints(qr), getncells(dh.grid))
-    lead_field = Geselowitz1989ECGLeadCache(Z, κ∇φₘ, dh, cv, zero_vertex, electrodes, electrode_pairs)
-    _compute_lead_field(lead_field, _κ)
-    return lead_field
-end
+    dh_Z = DofHandler(grid)
+    Ferrite.add!(dh_Z, :Z, ip)
+    close!(dh_Z);
+    κ∇φₘ = zeros(Vec{sdim}, getnquadpoints(qr), getncells(grid))
+    Z = Matrix{T}(undef, nleadfields, ndofs(dh_Z))
+    ∇Z = zeros(Vec{sdim, T}, nleadfields, getnquadpoints(qr), getncells(grid))
+    K = create_sparsity_pattern(dh_Z)
+    f = zeros(ndofs(dh_Z))
+    v = zeros(size(Z,1))
 
-function _compute_lead_field(lead_field::Geselowitz1989ECGLeadCache, _κ::SpectralTensorCoefficient)
-    
-    @unpack Z, dh, cv, zero_vertex, electrodes, electrode_pairs = lead_field
-
-    K = create_sparsity_pattern(dh)
-    f = zeros(ndofs(dh))
-
-    integrator = BilinearDiffusionIntegrator(_κ)
+    integrator = BilinearDiffusionIntegrator(κ)
     element_cache = BilinearDiffusionElementCache(integrator, cv)
-    op = AssembledBilinearOperator(K, element_cache, dh)
+    op = AssembledBilinearOperator(K, element_cache, dh_Z)
     update_operator!(op, 0.)
 
-    ch = ConstraintHandler(dh)
+    ch = ConstraintHandler(dh_Z)
     Ferrite.add!(ch, Dirichlet(:Z, Set([zero_vertex]), (x, t) -> 0.0))
     close!(ch);
     apply!(op.A, f, ch)
-
+    ml = ruge_stuben(op.A)
+    p = aspreconditioner(ml)
     for (i, electrode_pair) in enumerate(electrode_pairs)
-        _add_electrodes(f, dh, "lead_field_$(i)", electrodes[electrode_pair[1]], electrodes[electrode_pair[2]])
-        ml = ruge_stuben(op.A)
-        p = aspreconditioner(ml)
+        fill!(f, zero(T))
         Z_lead = @view Z[i, :]
-        IterativeSolvers.cg!(Z_lead, op.A, f, Pl=p)
-    end    
+        ∇Z_lead = @view ∇Z[i, :, :]
+        _compute_lead_field(f, ∇Z_lead, Z_lead, op, p, electrodes[[electrode_pair[1], electrode_pair[2]]])
+    end
+    
+    return Geselowitz1989ECGLeadCache(∇Z, κ∇φₘ, op, p, v, Z, zero_vertex, electrodes, electrode_pairs)
 end
 
-function _add_electrodes(f::Vector{T}, dh::DofHandler, set_name::String, positive_electrode::Vec{3,T}, negative_electrode::Vec{3,T}) where T<:Number
-    mesh = dh.grid
-    # Todo: clean this
-    haskey(mesh.vertexsets, set_name) && throw(ArgumentError("Electrode vertexset name $(set_name) already exists"))
-    addvertexset!(mesh, set_name*"-p", x -> x ≈ positive_electrode)
-    addvertexset!(mesh, set_name*"-n", x -> x ≈ negative_electrode)
-    positive_vertex = first(getvertexset(mesh, set_name*"-p"))
-    negative_vertex = first(getvertexset(mesh, set_name*"-n"))
+function _compute_lead_field(f, ∇Z, Z, op, p, electrodes::AbstractArray{Vec{3, T}}) where T
+    _add_electrode(f, op.dh, electrodes[1], true)
+    _add_electrode(f, op.dh, electrodes[2], false)
+    IterativeSolvers.cg!(Z, op.A, f, Pl=p)
+    @info size(Z)
+    @info size(∇Z)
+    _compute_quadrature_fluxes!(∇Z,op.dh,op.element_cache.cellvalues,Z,ConstantCoefficient(SymmetricTensor{2,3}((
+        1, 0, 0,
+           1, 0,
+              1
+    ))))
+end
 
-    local_positive_dof = Ferrite.vertexdof_indices(Ferrite.getfieldinterpolation(dh.subdofhandlers[1], :Z))[positive_vertex[2]][1]::Int
-    global_positive_dof = celldofs(dh, positive_vertex[1])[local_positive_dof]::Int
-    f[global_positive_dof] = -1
-    local_negative_dof = Ferrite.vertexdof_indices(Ferrite.getfieldinterpolation(dh.subdofhandlers[1], :Z))[negative_vertex[2]][1]::Int
-    global_negative_dof = celldofs(dh, negative_vertex[1])[local_negative_dof]::Int
-    f[global_negative_dof] = 1
+function _add_electrode(f::AbstractVector{T}, dh::DofHandler, electrode::Vec{3,T}, is_positive::Bool) where T<:Number
+    grid = dh.grid
+    haskey(grid.vertexsets, "$electrode") || addvertexset!(grid, "$electrode", x -> x ≈ electrode)
+    vertex = first(getvertexset(grid, "$electrode"))
+    local_dof = Ferrite.vertexdof_indices(Ferrite.getfieldinterpolation(dh.subdofhandlers[1], :Z))[vertex[2]][1]::Int
+    global_dof = celldofs(dh, vertex[1])[local_dof]::Int
+    f[global_dof] = is_positive ? -1 : 1
+    return nothing
+end
+
+function reinit!(cache::Geselowitz1989ECGLeadCache, ϕₘ, κ)
+    @unpack κ∇φₘ, ∇Z, op, v = cache
+    cv = op.element_cache.cellvalues
+    dh = op.dh
+    _compute_quadrature_fluxes!(κ∇φₘ, op.dh, cv, ϕₘ, κ)
+    fill!(v, zero(eltype(v)))
+    for cell ∈ CellIterator(dh)
+        Ferrite.reinit!(cv, cell)
+        κ∇φₘe = @view κ∇φₘ[:, cellid(cell)]
+        ∇Ze = @view ∇Z[:, :, cellid(cell)]
+        v .+= _evaluate_ecg_geselowitz(κ∇φₘe, ∇Ze, cv)
+    end
 end
 
 """
@@ -147,38 +165,70 @@ as mentioned in [OgiBalPer:2021:ema](@cite). Where κ is the bulk conductivity t
 stiffness matrix with applied homogeneous Dirichlet boundary condition at the first vertex of the mesh. This should improve performance ScalarInterpolationCollection
 problem is solved for each timestep with only the right hand side changing.
 """
-struct TODORENAMEECGPoissonReconstructionCache{ϕT <: AbstractVector, DH <: AbstractDofHandler, CV <: AbstractCellValues, KT <: AbstractMatrix, FT <: AbstractVector}
+struct ECGPoissonReconstructionCache{ϕT <: AbstractVector, OP, Preconditioner, FT <: AbstractVector}
     ϕₑ::ϕT
-    dh::DH
-    cv::CV
-    K::KT
+    op::OP
+    p::Preconditioner
     f::FT
 end
 
-function TODORENAMEECGPoissonReconstructionCache(mesh, κ::SpectralTensorCoefficient, qr_collection::QuadratureRuleCollection,
-    ip_collection::ScalarInterpolationCollection, zero_vertex::VertexIndex)
+function ECGPoissonReconstructionCache(problem::SplitProblem{<: TransientHeatProblem}, κ::SpectralTensorCoefficient,
+    zero_vertex::VertexIndex = VertexIndex(1,1))
 
-    ip = getinterpolation(ip_collection, getcells(mesh,1))
-    qr = getquadraturerule(qr_collection, getcells(mesh,1))
-    cv = CellValues(qr, ip);
+    heat_problem = problem.A
+    dh_ϕₘ = heat_problem.dh
+    grid = dh_ϕₘ.grid
+    @assert length(dh_ϕₘ.subdofhandlers) == 1 "TODO subdomain support"
+    @assert length(dh_ϕₘ.subdofhandlers[1].field_interpolations) == 1 "Problem setup might be broken..."
+    
+    ip = dh_ϕₘ.subdofhandlers[1].field_interpolations[1]
+    qr = QuadratureRule{getrefshape(ip)}(2*Ferrite.getorder(ip)) # TODO Mabe make this part of the problem or create a wrapper for it with qr?
+    cv = CellValues(qr, ip)
+    dh_ϕₑ = DofHandler(grid)
+    Ferrite.add!(dh_ϕₑ, :ϕₑ, ip)
+    close!(dh_ϕₑ);
 
-    dh = DofHandler(mesh)
-    Ferrite.add!(dh, :Z, ip)
-    close!(dh);
-    K = create_sparsity_pattern(dh)
-    ϕₑ = zeros(Ferrite.ndofs(dh))
+    K = create_sparsity_pattern(dh_ϕₑ)
+    ϕₑ = zeros(Ferrite.ndofs(dh_ϕₑ))
     f = similar(ϕₑ)
     integrator = BilinearDiffusionIntegrator(κ)
     element_cache = BilinearDiffusionElementCache(integrator, cv)
-    op = AssembledBilinearOperator(K, element_cache, dh)
+    op = AssembledBilinearOperator(K, element_cache, dh_ϕₑ)
     update_operator!(op, 0.)
 
-    ch = ConstraintHandler(dh)
-    Ferrite.add!(ch, Dirichlet(:Z, Set([zero_vertex]), (x, t) -> 0.0))
+    ch = ConstraintHandler(dh_ϕₑ)
+    Ferrite.add!(ch, Dirichlet(:ϕₑ, Set([zero_vertex]), (x, t) -> 0.0))
     close!(ch);
     apply!(op.A, f, ch)
 
-    return TODORENAMEECGPoissonReconstructionCache(ϕₑ, dh, cv, K, f)
+    ml = ruge_stuben(op.A)
+    p = aspreconditioner(ml)
+
+    return ECGPoissonReconstructionCache(ϕₑ, op, p, f)
+end
+
+function reinit!(cache::ECGPoissonReconstructionCache, ϕₘ, κᵢ)
+    @unpack ϕₑ, op, p, f = cache
+    cv = op.element_cache.cellvalues
+    dh = op.dh
+    n_basefuncs = getnbasefunctions(cv)
+    fill!(f, 0.0)
+    for cell in CellIterator(dh)
+        Ferrite.reinit!(cv, cell)
+        φₘe = @view ϕₘ[celldofs(cell)]
+        fₑ = @view f[celldofs(cell)]
+
+        for qp in QuadratureIterator(cv)
+            dΩ = getdetJdV(cv, qp)
+            κᵢ_val = evaluate_coefficient(κᵢ, cell, qp, 0.0)
+            ∇ϕₘ = function_gradient(cv, qp, φₘe)
+            for j in 1:n_basefuncs
+                ∇Nⱼ = shape_gradient(cv, qp, j)
+                fₑ[j] -= ∇Nⱼ ⋅ (κᵢ_val ⋅ ∇ϕₘ) * dΩ
+            end
+        end
+    end
+    IterativeSolvers.cg!(ϕₑ, op.A, f, Pl=p)
 end
 
 """
@@ -228,76 +278,60 @@ V(t)=\\int \\nabla Z(\\boldsymbol{x}) \\cdot \\boldsymbol{\\kappa}_i \\nabla \\p
 ```
 For more information please read the docstring for [`Geselowitz1989ECGLeadCache`](@ref)
 """
-function evaluate_ecg(method::Geselowitz1989ECGLeadCache, φₘ::Vector, κ::SpectralTensorCoefficient)
-    @unpack Z, κ∇φₘ, cv, dh = method
-    V = zeros(size(Z,1))
-    _compute_quadrature_fluxes!(κ∇φₘ, dh, cv, φₘ, κ)
-    for cell ∈ CellIterator(dh)
-        reinit!(cv, cell)
-        κ∇φₘe = @view κ∇φₘ[:, cellid(cell)]
-        Ze = @view Z[:, celldofs(cell)]
-        V .+= _evaluate_ecg_geselowitz(κ∇φₘe, Ze, cv)
-    end
-
-    return V
+function evaluate_ecg(method::Geselowitz1989ECGLeadCache, x::NTuple{2, <:Vec})
+    @unpack ∇Z, κ∇φₘ, op, electrodes, v, electrode_pairs = method
+    p₁ = findfirst(_x -> _x == x[1], electrodes)
+    p₂ = findfirst(_x -> _x == x[2], electrodes)    
+    i = findfirst(_x -> _x ∈ ((p₁, p₂),(p₂, p₁)), electrode_pairs)
+    any(isnothing.((p₁, p₂, i))) && throw(ArgumentError("There exists no electrode pairs with the provided coordinates"))
+    return v[i]
 end
 
-function evaluate_ecg(method::Geselowitz1989ECGLeadCache, x::Vec, κ)
-    throw(error("TODO: Unified interface to get value at a point"))
+function evaluate_ecg(method::Geselowitz1989ECGLeadCache, x::Vec)
+    throw(ArgumentError("Lead field method by Geselowitz computes the potential difference between two points, only one point was passed"))
 end
 
-function _evaluate_ecg_geselowitz(κ∇φₘ, Z, cv)
-    V_local = zeros(size(Z,1))
+function _evaluate_ecg_geselowitz(κ∇φₘ, ∇Z, cv)
+    V_local = zeros(size(∇Z,1))
     for qp in QuadratureIterator(cv)
         dΩ = getdetJdV(cv, qp)
-        for (i, _Z) in enumerate(eachrow(Z))
-            ∇Z = function_gradient(cv, qp, _Z)
-            V_local[i] += ∇Z ⋅ κ∇φₘ[qp.i] * dΩ 
+        for (i, _Z) in enumerate(V_local)
+            V_local[i] += ∇Z[i, qp.i] ⋅ κ∇φₘ[qp.i] * dΩ 
         end
     end
     return V_local
 end
 
 """
-    evaluate_ecg(method::TODORENAMEECGPoissonReconstructionCache, φₘ, κ)
+    evaluate_ecg(method::ECGPoissonReconstructionCache, φₘ, κ)
 
 Compute ϕₑ by solving the equation:
 
 ```math
 \\nabla \\cdot \\boldsymbol{\\kappa} \\nabla \\phi_{\\mathrm{e}}=-\\nabla \\cdot\\left(\\boldsymbol{\\kappa}_{\\mathrm{i}} \\nabla \\phi_m\\right)
 ```
-For more information please read the docstring for [`TODORENAMEECGPoissonReconstructionCache`](@ref)
+For more information please read the docstring for [`ECGPoissonReconstructionCache`](@ref)
 """
-function evaluate_ecg(method::TODORENAMEECGPoissonReconstructionCache, ϕₘ, κᵢ)
-    
-    @unpack ϕₑ, dh, cv, K, f = method
+function evaluate_ecg(method::ECGPoissonReconstructionCache, x::Vec)
+    @unpack op, ϕₑ = method
+    dh = op.dh
+    ph = PointEvalHandler(dh.grid, @SVector [x]) # Cache this?
+    ϕₑ = evaluate_at_points(ph, dh, ϕₑ, :ϕₑ)[1]
+    return ϕₑ
+end
 
-    n_basefuncs = getnbasefunctions(cv)
-    fill!(f, 0.0)
-    for cell in CellIterator(dh)
-        reinit!(cv, cell)
-        φₘe = @view ϕₘ[celldofs(cell)]
-        fₑ = @view f[celldofs(cell)]
-
-        for qp in QuadratureIterator(cv)
-            dΩ = getdetJdV(cv, qp)
-            κᵢ_val = evaluate_coefficient(κᵢ, cell, qp, 0.0)
-            ∇ϕₘ = function_gradient(cv, qp, φₘe)
-            for j in 1:n_basefuncs
-                ∇Nⱼ = shape_gradient(cv, qp, j)
-                fₑ[j] -= ∇Nⱼ ⋅ (κᵢ_val ⋅ ∇ϕₘ) * dΩ
-            end
-        end
-    end
-    ml = ruge_stuben(K)
-    p = aspreconditioner(ml)
-    IterativeSolvers.cg!(ϕₑ, K, f, Pl=p)
+function evaluate_ecg(method::ECGPoissonReconstructionCache, x::NTuple{2, <:Vec})
+    @unpack op, ϕₑ = method
+    dh = op.dh
+    ph = PointEvalHandler(dh.grid, SVector(x)) # Cache this?
+    ϕₑ = evaluate_at_points(ph, dh, ϕₑ, :ϕₑ)
+    return diff(ϕₑ)
 end
 
 function _compute_quadrature_fluxes!(κ∇φₘ::AbstractArray{T},dh,cv,φₘ,D) where T
     fill!(κ∇φₘ, zero(T))
     for cell ∈ CellIterator(dh)
-        reinit!(cv, cell)
+        Ferrite.reinit!(cv, cell)
         φₘₑ = @view φₘ[celldofs(cell)]
 
         for qp in QuadratureIterator(cv)

@@ -15,9 +15,11 @@ function (iocb::IOCallback{ParaViewWriter{PVD}})(t, problem::Thunderbolt.SplitPr
     iocb.counter += 1
     (iocb.counter % 100) == 0 || return nothing
     ϕₘ = solver_cache.A_solver_cache.uₙ
-    φₑ = Thunderbolt.evaluate_ecg(iocb.ecg_reconst_cache, ϕₘ, iocb.κᵢ)
+    Thunderbolt.reinit!(iocb.ecg_reconst_cache, ϕₘ, iocb.κᵢ)
+    Thunderbolt.reinit!(iocb.lead_field, ϕₘ, iocb.κᵢ)
+    φₑ = iocb.ecg_reconst_cache.ϕₑ
     store_timestep!(iocb.io, t, problem.A.dh.grid)
-    push!(iocb.v, Thunderbolt.evaluate_ecg(iocb.lead_field, ϕₘ, iocb.κᵢ)[1]) 
+    push!(iocb.v, Thunderbolt.evaluate_ecg(iocb.lead_field, (Vec(20., 0., 0.), Vec(0., 0., 0.)))) 
     Thunderbolt.store_timestep_field!(iocb.io, t, problem.A.dh, φₑ, :φₑ)
     Thunderbolt.store_timestep_field!(iocb.io, t, problem.A.dh, ϕₘ, :φₘ)
     Thunderbolt.store_timestep_field!(iocb.io, t, problem.A.dh, solver_cache.B_solver_cache.sₙ[1:length(solver_cache.A_solver_cache.uₙ)], :s)
@@ -58,12 +60,10 @@ ms = OrthotropicMicrostructureModel(
 κᵢ = SpectralTensorCoefficient(
     ms, 
     ConstantCoefficient(SVector(0.3, 0.12, 0.12)))
-lead_field = Thunderbolt.Geselowitz1989ECGLeadCache(mesh, κ, qr_collection, ip_collection, VertexIndex(1,1), [Vec(20., 0., 0.), Vec(0., 0., 0.)], [(1,2)])
 
-ecg_reconst_cache = Thunderbolt.TODORENAMEECGPoissonReconstructionCache(mesh, κ, qr_collection, ip_collection, VertexIndex(1,1))
 
-vtk_grid("Lead", lead_field.dh) do vtk
-    vtk_point_data(vtk, lead_field.dh, lead_field.Z[1,:])
+vtk_grid("Lead", lead_field.op.dh) do vtk
+    vtk_point_data(vtk, lead_field.op.dh, lead_field.Z[1,:])
 end
 
 model = MonodomainModel(
@@ -82,6 +82,11 @@ problem = semidiscretize(
     FiniteElementDiscretization(Dict(:φₘ => ip_collection)),
     mesh
 )
+
+lead_field = Thunderbolt.Geselowitz1989ECGLeadCache(problem, κ, [Vec(20., 0., 0.), Vec(0., 0., 0.)], [(1,2)])
+
+ecg_reconst_cache = Thunderbolt.ECGPoissonReconstructionCache(problem, κ)
+
 
 solver = LTGOSSolver(
     BackwardEulerSolver(),

@@ -19,7 +19,7 @@ end
 
 function assemble_element!(Mₑ, cell, element_cache::CACHE, time) where {CACHE <: BilinearMassElementCache}
     @unpack cellvalues = element_cache
-    reinit!(element_cache.cellvalues, cell)
+    Ferrite.reinit!(element_cache.cellvalues, cell)
     n_basefuncs = getnbasefunctions(cellvalues)
     for qp in QuadratureIterator(cellvalues)
         ρ = evaluate_coefficient(element_cache.integrator.ρ, cell, qp, time)
