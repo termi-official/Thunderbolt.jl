@@ -22,7 +22,7 @@ struct Plonsey1964ECGGaussCache{BUF, CV, DH <: DofHandler, κT}
     κ::κT
 end
 
-function Plonsey1964ECGGaussCache(problem::SplitProblem{<: TransientHeatProblem}, κ::SpectralTensorCoefficient)
+function Plonsey1964ECGGaussCache(problem::SplitProblem{<: TransientHeatProblem}, κ)
     heat_problem = problem.A
     dh_ϕₘ = heat_problem.dh
     @assert length(dh_ϕₘ.subdofhandlers) == 1 "TODO subdomain support"
@@ -33,14 +33,14 @@ function Plonsey1964ECGGaussCache(problem::SplitProblem{<: TransientHeatProblem}
     qr = QuadratureRule{getrefshape(ip)}(2*Ferrite.getorder(ip)) # TODO Mabe make this part of the problem or create a wrapper for it with qr?
     cv = CellValues(qr, ip)
     
-    κ∇φₘ = zeros(Vec{sdim}, getnquadpoints(qr), getncells(dh.grid))
+    κ∇φₘ = zeros(Vec{sdim}, getnquadpoints(qr), getncells(dh_ϕₘ.grid))
 
     return Plonsey1964ECGGaussCache(κ∇φₘ, dh_ϕₘ, cv, κ)
 end
 
 function Ferrite.reinit!(cache::Plonsey1964ECGGaussCache, φₘ)
-    @unpack κ∇φₘ, dh_ϕₘ, cv, v, κ = cache
-    _compute_quadrature_fluxes!(κ∇φₘ,dh_ϕₘ,cv,φₘ,κ) # Function barrier
+    @unpack κ∇φₘ, dh, cv, κ = cache
+    _compute_quadrature_fluxes!(κ∇φₘ,dh,cv,φₘ,κ) # Function barrier
 end
 
 """
@@ -78,7 +78,7 @@ struct Geselowitz1989ECGLeadCache{T, D, ∇φₘT, ZT <: AbstractArray{T}, ∇ZT
     electrode_pairs::Vector{Tuple{Int, Int}}
 end
 
-function Geselowitz1989ECGLeadCache(problem::SplitProblem{<:TransientHeatProblem}, κ::SpectralTensorCoefficient, κᵢ::SpectralTensorCoefficient,
+function Geselowitz1989ECGLeadCache(problem::SplitProblem{<:TransientHeatProblem}, κ, κᵢ,
     electrodes::Vector{Vec{3, T}}, electrode_pairs::Vector{Tuple{Int, Int}}, zero_vertex::VertexIndex = VertexIndex(1,1)) where T
     heat_problem = problem.A
     dh_ϕₘ = heat_problem.dh
@@ -128,8 +128,6 @@ function _compute_lead_field(f, ∇Z, Z, op, p, electrodes::AbstractArray{Vec{3,
     _add_electrode(f, op.dh, electrodes[1], true)
     _add_electrode(f, op.dh, electrodes[2], false)
     IterativeSolvers.cg!(Z, op.A, f, Pl=p)
-    @info size(Z)
-    @info size(∇Z)
     _compute_quadrature_fluxes!(∇Z,op.dh,op.element_cache.cellvalues,Z,ConstantCoefficient(SymmetricTensor{2,3}((
         1, 0, 0,
            1, 0,
@@ -190,8 +188,8 @@ struct Potse2006ECGPoissonReconstructionCache{ϕT <: AbstractVector, OP, Precond
     κᵢ::κT
 end
 
-function Potse2006ECGPoissonReconstructionCache(problem::SplitProblem{<: TransientHeatProblem}, κ::SpectralTensorCoefficient,
-    κᵢ::SpectralTensorCoefficient, zero_vertex::VertexIndex = VertexIndex(1,1))
+function Potse2006ECGPoissonReconstructionCache(problem::SplitProblem{<: TransientHeatProblem}, κ,
+    κᵢ, zero_vertex::VertexIndex = VertexIndex(1,1))
 
     heat_problem = problem.A
     dh_ϕₘ = heat_problem.dh
@@ -270,7 +268,8 @@ For more information please read the docstring for [`Plonsey1964ECGGaussCache`](
 """
 function evaluate_ecg(method::Plonsey1964ECGGaussCache, x::Vec, κₜ::Real)
     φₑ = 0.0
-    @unpack κ∇φₘ, cv, grid = method
+    @unpack κ∇φₘ, cv, dh = method
+    grid = dh.grid
     for cell ∈ CellIterator(grid)
         reinit!(cv, cell)
         coords = getcoordinates(cell)
