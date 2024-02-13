@@ -1,22 +1,21 @@
 using Thunderbolt, StaticArrays, DelimitedFiles
 
 # ######################################################
-mutable struct IOCallback{IO, LF, ECGRC, VT, κT}
+mutable struct IOCallback{IO, LF, ECGRC, VT}
     io::IO
     counter::Int
     lead_field::LF
     ecg_reconst_cache::ECGRC
     v::VT
-    κᵢ::κT
 end
 
-IOCallback(io, lead_field, ecg_reconst_cache, v, κᵢ) = IOCallback(io, -1, lead_field, ecg_reconst_cache, v, κᵢ)
+IOCallback(io, lead_field, ecg_reconst_cache, v) = IOCallback(io, -1, lead_field, ecg_reconst_cache, v)
 function (iocb::IOCallback{ParaViewWriter{PVD}})(t, problem::Thunderbolt.SplitProblem, solver_cache) where {PVD}
     iocb.counter += 1
     (iocb.counter % 100) == 0 || return nothing
     ϕₘ = solver_cache.A_solver_cache.uₙ
-    Thunderbolt.reinit!(iocb.ecg_reconst_cache, ϕₘ, iocb.κᵢ)
-    Thunderbolt.reinit!(iocb.lead_field, ϕₘ, iocb.κᵢ)
+    reinit!(iocb.ecg_reconst_cache, ϕₘ)
+    reinit!(iocb.lead_field, ϕₘ)
     φₑ = iocb.ecg_reconst_cache.ϕₑ
     store_timestep!(iocb.io, t, problem.A.dh.grid)
     push!(iocb.v, Thunderbolt.evaluate_ecg(iocb.lead_field, (Vec(20., 0., 0.), Vec(0., 0., 0.)))) 
@@ -62,10 +61,6 @@ ms = OrthotropicMicrostructureModel(
     ConstantCoefficient(SVector(0.3, 0.12, 0.12)))
 
 
-vtk_grid("Lead", lead_field.op.dh) do vtk
-    vtk_point_data(vtk, lead_field.op.dh, lead_field.Z[1,:])
-end
-
 model = MonodomainModel(
     ConstantCoefficient(1),
     ConstantCoefficient(1),
@@ -83,17 +78,21 @@ problem = semidiscretize(
     mesh
 )
 
-lead_field = Thunderbolt.Geselowitz1989ECGLeadCache(problem, κ, [Vec(20., 0., 0.), Vec(0., 0., 0.)], [(1,2)])
+lead_field = Thunderbolt.Geselowitz1989ECGLeadCache(problem, κ, κᵢ, [Vec(20., 0., 0.), Vec(0., 0., 0.)], [(1,2)])
 
-ecg_reconst_cache = Thunderbolt.ECGPoissonReconstructionCache(problem, κ)
+ecg_reconst_cache = Thunderbolt.Potse2006ECGPoissonReconstructionCache(problem, κ, κᵢ)
 
+
+vtk_grid("Lead", lead_field.op.dh) do vtk
+    vtk_point_data(vtk, lead_field.op.dh, lead_field.Z[1,:])
+end
 
 solver = LTGOSSolver(
     BackwardEulerSolver(),
     ForwardEulerCellSolver()
 )
 
-iocb_ = IOCallback(ParaViewWriter("Niederer"), lead_field, ecg_reconst_cache, Float64[], κᵢ)
+iocb_ = IOCallback(ParaViewWriter("Niederer"), lead_field, ecg_reconst_cache, Float64[])
 
 # Idea: We want to solve a semidiscrete problem, with a given compatible solver, on a time interval, with a given initial condition
 # TODO iterator syntax

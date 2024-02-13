@@ -1,69 +1,76 @@
 """
-    Plonsey1964ECGGaussCache(problem, op, φₘ)
+    Plonsey1964ECGGaussCache(problem, κ)
 
-Here φₘ is the solution vector containing the transmembranepotential, op is the associated diffusion opeartor and 
-κₜ is the torso's conductivity.
 
 Returns a cache to compute the lead field with the form proposed in [Plo:1964:vcf](@cite)
 with the Gauss theorem applied to it, as for example described in [OgiBalPer:2021:ema](@cite).
 Calling [`evaluate_ecg`](@ref) with this method simply evaluates the following integral efficiently:
 
-\$\\varphi_e(x)=\\frac{1}{4 \\pi \\kappa_t} \\int_\\Omega \\frac{ \\kappa_ ∇φₘ \\cdot (\\tilde{x}-x)}{||(\\tilde{x}-x)||^3}\\mathrm{d}\\tilde{x}\$
+\$\\varphi_e(x)=\\frac{1}{4 \\pi \\kappa_\\mathrm{t}} \\int_\\Omega \\frac{ \\kappa_ \\nabla \\varphi_\\mathrm{m} \\cdot (\\tilde{x}-x)}{||(\\tilde{x}-x)||^3}\\mathrm{d}\\tilde{x}\$
+
+Where φₘ is the solution vector containing the transmembranepotential, and κₜ is the torso's conductivity.
 
 The important simplifications taken are:
    1. Surrounding volume is an infinite, homogeneous sphere with isotropic conductivity
    2. The extracellular space and surrounding volume share the same isotropic, homogeneous conductivity tensor
 """
-struct Plonsey1964ECGGaussCache{BUF, CV, G}
+struct Plonsey1964ECGGaussCache{BUF, CV, DH <: DofHandler, κT}
     # Buffer for storing "κ(x) ∇φₘ(x,t)" at the quadrature points
     κ∇φₘ::BUF
+    dh::DH
     cv::CV
-    grid::G
-end
-# TODO better abstraction layer
-function Plonsey1964ECGGaussCache(dh::DofHandler, op::AssembledBilinearOperator, φₘ)
-    @assert length(dh.subdofhandlers) == 1 "TODO subdomain support"
-    @assert length(dh.subdofhandlers[1].field_interpolations) == 1 "Problem setup might be broken..."
-    sdim = Ferrite.getdim(dh.grid)
-    # TODO https://github.com/Ferrite-FEM/Ferrite.jl/pull/806 maybe?
-    ip = dh.subdofhandlers[1].field_interpolations[1]
-    # TODO QVector
-    qr = op.element_cache.cellvalues.qr
-    κ∇φₘ = zeros(Vec{sdim}, getnquadpoints(qr), getncells(dh.grid))
-    cv = CellValues(qr, ip)
-    _compute_quadrature_fluxes!(κ∇φₘ,dh,cv,φₘ,op.element_cache.integrator.D) # Function barrier
-    Plonsey1964ECGGaussCache(κ∇φₘ, cv, dh.grid)
+    κ::κT
 end
 
-function Plonsey1964ECGGaussCache(problem::SplitProblem{<:TransientHeatProblem}, op::AssembledBilinearOperator, φₘ)
-    @unpack dh = problem.A
-    Plonsey1964ECGGaussCache(dh, op, φₘ)
+function Plonsey1964ECGGaussCache(problem::SplitProblem{<: TransientHeatProblem}, κ::SpectralTensorCoefficient)
+    heat_problem = problem.A
+    dh_ϕₘ = heat_problem.dh
+    @assert length(dh_ϕₘ.subdofhandlers) == 1 "TODO subdomain support"
+    @assert length(dh_ϕₘ.subdofhandlers[1].field_interpolations) == 1 "Problem setup might be broken..."
+    sdim = Ferrite.getdim(dh_ϕₘ.grid)
+
+    ip = dh_ϕₘ.subdofhandlers[1].field_interpolations[1]
+    qr = QuadratureRule{getrefshape(ip)}(2*Ferrite.getorder(ip)) # TODO Mabe make this part of the problem or create a wrapper for it with qr?
+    cv = CellValues(qr, ip)
+    
+    κ∇φₘ = zeros(Vec{sdim}, getnquadpoints(qr), getncells(dh.grid))
+
+    return Plonsey1964ECGGaussCache(κ∇φₘ, dh_ϕₘ, cv, κ)
+end
+
+function Ferrite.reinit!(cache::Plonsey1964ECGGaussCache, φₘ)
+    @unpack κ∇φₘ, dh_ϕₘ, cv, v, κ = cache
+    _compute_quadrature_fluxes!(κ∇φₘ,dh_ϕₘ,cv,φₘ,κ) # Function barrier
 end
 
 """
-    Geselowitz1989ECGLeadCache(mesh, κ, qr_collection, ip_collection, zero_vertex, electrodes, electrode_pairs)
+    Geselowitz1989ECGLeadCache(problem, κ, κᵢ, electordes, electrode_pairs, [zero_vertex])
 
-Here the lead field, `Z`, is computed for the given mesh using interpolations from `ip_collection` and quadrature rules from `qr_collection`.
+Here the lead field, `Z`, is computed using the discretization of `problem`.
 The lead field is computed as the solution of 
 ```math
-∇⋅(κ∇Z) = ±δ(x_{\\text{electrodes}})
+\\nabla \\cdot(\\mathbf{\\kappa} \\nabla Z)=\\left\\{\\begin{array}{cl}
+-1 & \\text { at the positive electrode } \\\\
+1 & \\text { at the negative electrode } \\\\
+0 & \\text { else where }
+\\end{array}\\right.
 ```
-Where κ is the bulk conductivity tensor, and δ being the Dirac delta function with the right hand side sign
-is positive for one electrode and negative for the other.
+Where ``\\kappa`` is the bulk conductivity tensor.
 
 Returns a cache contain the lead fields that are used to compute the lead potentials as proposed in [Ges:1989:ote](@cite).
-Calling [`evaluate_ecg`](@ref) with this method simply evaluates the following integral efficiently:
+Calling [`reinit!`](@ref) with this method simply evaluates the following integral efficiently:
 
 ```math
-V(t)=\\int \\nabla Z(\\boldsymbol{x}) \\cdot \\boldsymbol{\\kappa}_i \\nabla \\phi_m \\,\\mathrm{d}\\boldsymbol{x}.
+V(t)=\\int \\nabla Z(\\boldsymbol{x}) \\cdot \\boldsymbol{\\kappa}_\\mathrm{i} \\nabla \\varphi_\\mathrm{m} \\,\\mathrm{d}\\boldsymbol{x}.
 ```
 """
-struct Geselowitz1989ECGLeadCache{T, D, ∇φₘT, ZT <: AbstractArray{T}, ∇ZT <: AbstractArray{Vec{D, T}}, OP <: AssembledBilinearOperator, Preconditioner, V}
+struct Geselowitz1989ECGLeadCache{T, D, ∇φₘT, ZT <: AbstractArray{T}, ∇ZT <: AbstractArray{Vec{D, T}}, OP <: AssembledBilinearOperator, PreconditionerT, V, κᵢT}
     ∇Z::∇ZT
     κ∇φₘ::∇φₘT
     op::OP
-    p::Preconditioner
+    p::PreconditionerT
     v::V
+    κᵢ::κᵢT
     # Does is make sense to store these?
     Z::ZT
     zero_vertex::VertexIndex
@@ -71,7 +78,7 @@ struct Geselowitz1989ECGLeadCache{T, D, ∇φₘT, ZT <: AbstractArray{T}, ∇ZT
     electrode_pairs::Vector{Tuple{Int, Int}}
 end
 
-function Geselowitz1989ECGLeadCache(problem::SplitProblem{<:TransientHeatProblem}, κ::SpectralTensorCoefficient,
+function Geselowitz1989ECGLeadCache(problem::SplitProblem{<:TransientHeatProblem}, κ::SpectralTensorCoefficient, κᵢ::SpectralTensorCoefficient,
     electrodes::Vector{Vec{3, T}}, electrode_pairs::Vector{Tuple{Int, Int}}, zero_vertex::VertexIndex = VertexIndex(1,1)) where T
     heat_problem = problem.A
     dh_ϕₘ = heat_problem.dh
@@ -114,7 +121,7 @@ function Geselowitz1989ECGLeadCache(problem::SplitProblem{<:TransientHeatProblem
         _compute_lead_field(f, ∇Z_lead, Z_lead, op, p, electrodes[[electrode_pair[1], electrode_pair[2]]])
     end
     
-    return Geselowitz1989ECGLeadCache(∇Z, κ∇φₘ, op, p, v, Z, zero_vertex, electrodes, electrode_pairs)
+    return Geselowitz1989ECGLeadCache(∇Z, κ∇φₘ, op, p, v, κᵢ, Z, zero_vertex, electrodes, electrode_pairs)
 end
 
 function _compute_lead_field(f, ∇Z, Z, op, p, electrodes::AbstractArray{Vec{3, T}}) where T
@@ -140,14 +147,23 @@ function _add_electrode(f::AbstractVector{T}, dh::DofHandler, electrode::Vec{3,T
     return nothing
 end
 
-function reinit!(cache::Geselowitz1989ECGLeadCache, ϕₘ, κ)
-    @unpack κ∇φₘ, ∇Z, op, v = cache
+"""
+    reinit!(cache::Geselowitz1989ECGLeadCache, ϕₘ)
+
+Compute the potential between lead pairs by evaluating:
+
+```math
+V(t)=\\int \\nabla Z(\\boldsymbol{x}) \\cdot \\boldsymbol{\\kappa}_\\mathrm{i} \\nabla \\varphi_\\mathrm{m} \\,\\mathrm{d}\\boldsymbol{x}.
+```
+"""
+function Ferrite.reinit!(cache::Geselowitz1989ECGLeadCache, ϕₘ)
+    @unpack κ∇φₘ, ∇Z, op, v, κᵢ = cache
     cv = op.element_cache.cellvalues
     dh = op.dh
-    _compute_quadrature_fluxes!(κ∇φₘ, op.dh, cv, ϕₘ, κ)
+    _compute_quadrature_fluxes!(κ∇φₘ, op.dh, cv, ϕₘ, κᵢ)
     fill!(v, zero(eltype(v)))
     for cell ∈ CellIterator(dh)
-        Ferrite.reinit!(cv, cell)
+        reinit!(cv, cell)
         κ∇φₘe = @view κ∇φₘ[:, cellid(cell)]
         ∇Ze = @view ∇Z[:, :, cellid(cell)]
         v .+= _evaluate_ecg_geselowitz(κ∇φₘe, ∇Ze, cv)
@@ -155,25 +171,27 @@ function reinit!(cache::Geselowitz1989ECGLeadCache, ϕₘ, κ)
 end
 
 """
-    TODORENAMEECGPoissonReconstructionCache(mesh, κ, qr_collection, ip_collection, zero_vertex::VertexIndex)
+    Potse2006ECGPoissonReconstructionCache(mesh, κ, qr_collection, ip_collection, zero_vertex::VertexIndex)
     
-Sets up a cache for calculating ϕₑ by solving the Poisson problem
+Sets up a cache for calculating ``\\varphi_\\mathrm{e}`` by solving the Poisson problem
 ```math
-\\nabla \\cdot \\boldsymbol{\\kappa} \\nabla \\phi_{\\mathrm{e}}=-\\nabla \\cdot\\left(\\boldsymbol{\\kappa}_{\\mathrm{i}} \\nabla \\phi_m\\right)
+\\nabla \\cdot \\boldsymbol{\\kappa} \\nabla \\varphi_{\\mathrm{e}}=-\\nabla \\cdot\\left(\\boldsymbol{\\kappa}_{\\mathrm{i}} \\nabla \\varphi_\\mathrm{m}\\right)
 ```
-as mentioned in [OgiBalPer:2021:ema](@cite). Where κ is the bulk conductivity tensor, and κᵢ is the intracellular conductivity tensor. The cache includes the assembled 
-stiffness matrix with applied homogeneous Dirichlet boundary condition at the first vertex of the mesh. This should improve performance ScalarInterpolationCollection
-problem is solved for each timestep with only the right hand side changing.
+as proposed in [PotDubRicVinGul:2006:cmb](@cite) and mentioned in [OgiBalPer:2021:ema](@cite). Where κ is the bulk conductivity tensor, and κᵢ is the intracellular conductivity tensor. The cache includes the assembled 
+stiffness matrix with applied homogeneous Dirichlet boundary condition at the first vertex of the mesh. As the problem is solved for each timestep with only the right hand side changing.
+
+TODO: Implement [BisPla:2011:bes](@cite) to improve the precision.
 """
-struct ECGPoissonReconstructionCache{ϕT <: AbstractVector, OP, Preconditioner, FT <: AbstractVector}
+struct Potse2006ECGPoissonReconstructionCache{ϕT <: AbstractVector, OP, PreconditionerT, FT <: AbstractVector, κT}
     ϕₑ::ϕT
     op::OP
-    p::Preconditioner
+    p::PreconditionerT
     f::FT
+    κᵢ::κT
 end
 
-function ECGPoissonReconstructionCache(problem::SplitProblem{<: TransientHeatProblem}, κ::SpectralTensorCoefficient,
-    zero_vertex::VertexIndex = VertexIndex(1,1))
+function Potse2006ECGPoissonReconstructionCache(problem::SplitProblem{<: TransientHeatProblem}, κ::SpectralTensorCoefficient,
+    κᵢ::SpectralTensorCoefficient, zero_vertex::VertexIndex = VertexIndex(1,1))
 
     heat_problem = problem.A
     dh_ϕₘ = heat_problem.dh
@@ -204,11 +222,21 @@ function ECGPoissonReconstructionCache(problem::SplitProblem{<: TransientHeatPro
     ml = ruge_stuben(op.A)
     p = aspreconditioner(ml)
 
-    return ECGPoissonReconstructionCache(ϕₑ, op, p, f)
+    return Potse2006ECGPoissonReconstructionCache(ϕₑ, op, p, f, κᵢ)
 end
 
-function reinit!(cache::ECGPoissonReconstructionCache, ϕₘ, κᵢ)
-    @unpack ϕₑ, op, p, f = cache
+"""
+    Ferrite.reinit!(cache::Potse2006ECGPoissonReconstructionCache, ϕₘ)
+
+Compute ``\\varphi_\\mathrm{e}`` by solving the equation:
+
+```math
+\\nabla \\cdot \\boldsymbol{\\kappa} \\nabla \\phi_{\\mathrm{e}}=-\\nabla \\cdot\\left(\\boldsymbol{\\kappa}_{\\mathrm{i}} \\nabla \\varphi_\\mathrm{m}\\right)
+```
+for the given ``\\varphi_m``
+"""
+function Ferrite.reinit!(cache::Potse2006ECGPoissonReconstructionCache, ϕₘ)
+    @unpack ϕₑ, op, p, f, κᵢ = cache
     cv = op.element_cache.cellvalues
     dh = op.dh
     n_basefuncs = getnbasefunctions(cv)
@@ -236,7 +264,7 @@ end
 
 Compute the pseudo ECG at a given point x by evaluating:
 
-\$\\varphi_e(x)=\\frac{1}{4 \\pi \\kappa_t} \\int_\\Omega \\frac{ \\kappa_ ∇φₘ \\cdot (\\tilde{x}-x)}{||(\\tilde{x}-x)||^3}\\mathrm{d}\\tilde{x}\$
+\$\\varphi_\\mathrm{e}(x)=\\frac{1}{4 \\pi \\kappa_\\mathrm{t}} \\int_\\Omega \\frac{ \\kappa_ \\nabla \\varphi_\\mathrm{m} \\cdot (\\tilde{x}-x)}{||(\\tilde{x}-x)||^3}\\mathrm{d}\\tilde{x}\$
 
 For more information please read the docstring for [`Plonsey1964ECGGaussCache`](@ref)
 """
@@ -269,26 +297,22 @@ function _evaluate_ecg_plonsey_gauss(κ∇φₘ, coords::AbstractVector{Vec{dim,
 end
 
 """
-    evaluate_ecg(method::Geselowitz1989ECGLeadCache, φₘ::Vector, κ::SpectralTensorCoefficient)
+    evaluate_ecg(method::Geselowitz1989ECGLeadCache, lead_index::Int)
 
-Compute the lead potential between lead pairs by evaluating:
+Returns the potential between the lead pair associated with the index `lead_index` for a [`reinit!`](@ref)ed cache.
 
-```math
-V(t)=\\int \\nabla Z(\\boldsymbol{x}) \\cdot \\boldsymbol{\\kappa}_i \\nabla \\phi_m \\,\\mathrm{d}\\boldsymbol{x}.
-```
 For more information please read the docstring for [`Geselowitz1989ECGLeadCache`](@ref)
 """
+function evaluate_ecg(method::Geselowitz1989ECGLeadCache, lead_index::Int)
+    return method.v[lead_index]
+end
 function evaluate_ecg(method::Geselowitz1989ECGLeadCache, x::NTuple{2, <:Vec})
     @unpack ∇Z, κ∇φₘ, op, electrodes, v, electrode_pairs = method
-    p₁ = findfirst(_x -> _x == x[1], electrodes)
-    p₂ = findfirst(_x -> _x == x[2], electrodes)    
+    p₁ = findfirst(_x -> _x ≈ x[1], electrodes)
+    p₂ = findfirst(_x -> _x ≈ x[2], electrodes)    
     i = findfirst(_x -> _x ∈ ((p₁, p₂),(p₂, p₁)), electrode_pairs)
     any(isnothing.((p₁, p₂, i))) && throw(ArgumentError("There exists no electrode pairs with the provided coordinates"))
     return v[i]
-end
-
-function evaluate_ecg(method::Geselowitz1989ECGLeadCache, x::Vec)
-    throw(ArgumentError("Lead field method by Geselowitz computes the potential difference between two points, only one point was passed"))
 end
 
 function _evaluate_ecg_geselowitz(κ∇φₘ, ∇Z, cv)
@@ -303,29 +327,18 @@ function _evaluate_ecg_geselowitz(κ∇φₘ, ∇Z, cv)
 end
 
 """
-    evaluate_ecg(method::ECGPoissonReconstructionCache, φₘ, κ)
+    evaluate_ecg(method::Potse2006ECGPoissonReconstructionCache, x::Vec)
 
-Compute ϕₑ by solving the equation:
+Evaluate ``\\varphi_\\mathrm{e}`` at the point `x` using `Ferrite.PointEvalHandler`.
 
-```math
-\\nabla \\cdot \\boldsymbol{\\kappa} \\nabla \\phi_{\\mathrm{e}}=-\\nabla \\cdot\\left(\\boldsymbol{\\kappa}_{\\mathrm{i}} \\nabla \\phi_m\\right)
-```
-For more information please read the docstring for [`ECGPoissonReconstructionCache`](@ref)
+For more information please read the docstring for [`Potse2006ECGPoissonReconstructionCache`](@ref)
 """
-function evaluate_ecg(method::ECGPoissonReconstructionCache, x::Vec)
+function evaluate_ecg(method::Potse2006ECGPoissonReconstructionCache, x::Vec)
     @unpack op, ϕₑ = method
     dh = op.dh
     ph = PointEvalHandler(dh.grid, @SVector [x]) # Cache this?
     ϕₑ = evaluate_at_points(ph, dh, ϕₑ, :ϕₑ)[1]
     return ϕₑ
-end
-
-function evaluate_ecg(method::ECGPoissonReconstructionCache, x::NTuple{2, <:Vec})
-    @unpack op, ϕₑ = method
-    dh = op.dh
-    ph = PointEvalHandler(dh.grid, SVector(x)) # Cache this?
-    ϕₑ = evaluate_at_points(ph, dh, ϕₑ, :ϕₑ)
-    return diff(ϕₑ)
 end
 
 function _compute_quadrature_fluxes!(κ∇φₘ::AbstractArray{T},dh,cv,φₘ,D) where T
