@@ -46,7 +46,7 @@
         electrode_pairs = [(i,1) for i in 2:length(electrodes)]
         lead_field = Thunderbolt.Geselowitz1989ECGLeadCache(problem, κ, κ, electrodes, electrode_pairs)
 
-        ecg_reconst_cache = Thunderbolt.Potse2006ECGPoissonReconstructionCache(problem, κ, κ)
+        # ecg_reconst_cache = Thunderbolt.Potse2006ECGPoissonReconstructionCache(problem, κ, κ)
 
         u = zeros(Thunderbolt.solution_size(problem.A))
 

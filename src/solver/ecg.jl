@@ -22,7 +22,7 @@ struct Plonsey1964ECGGaussCache{BUF, CV, DH <: DofHandler, κT}
     κ::κT
 end
 
-function Plonsey1964ECGGaussCache(problem::SplitProblem{<: TransientHeatProblem}, κ::SpectralTensorCoefficient)
+function Plonsey1964ECGGaussCache(problem::SplitProblem{<: TransientHeatProblem}, κ)
     heat_problem = problem.A
     dh_ϕₘ = heat_problem.dh
     @assert length(dh_ϕₘ.subdofhandlers) == 1 "TODO subdomain support"
@@ -78,7 +78,7 @@ struct Geselowitz1989ECGLeadCache{T, D, ∇φₘT, ZT <: AbstractArray{T}, ∇ZT
     electrode_pairs::Vector{Tuple{Int, Int}}
 end
 
-function Geselowitz1989ECGLeadCache(problem::SplitProblem{<:TransientHeatProblem}, κ::SpectralTensorCoefficient, κᵢ::SpectralTensorCoefficient,
+function Geselowitz1989ECGLeadCache(problem::SplitProblem{<:TransientHeatProblem}, κ, κᵢ,
     electrodes::Vector{Vec{3, T}}, electrode_pairs::Vector{Tuple{Int, Int}}, zero_vertex::VertexIndex = VertexIndex(1,1)) where T
     heat_problem = problem.A
     dh_ϕₘ = heat_problem.dh
@@ -190,8 +190,8 @@ struct Potse2006ECGPoissonReconstructionCache{ϕT <: AbstractVector, OP, Precond
     κᵢ::κT
 end
 
-function Potse2006ECGPoissonReconstructionCache(problem::SplitProblem{<: TransientHeatProblem}, κ::SpectralTensorCoefficient,
-    κᵢ::SpectralTensorCoefficient, zero_vertex::VertexIndex = VertexIndex(1,1))
+function Potse2006ECGPoissonReconstructionCache(problem::SplitProblem{<: TransientHeatProblem}, κ,
+    κᵢ, zero_vertex::VertexIndex = VertexIndex(1,1))
 
     heat_problem = problem.A
     dh_ϕₘ = heat_problem.dh
