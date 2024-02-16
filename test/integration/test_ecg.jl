@@ -6,12 +6,6 @@
     qr_collection = QuadratureRuleCollection(2)
     ip_collection = LagrangeCollection{1}()
 
-    ms = OrthotropicMicrostructureModel(
-        ConstantCoefficient(Vec(0., 0., 1.)),
-        ConstantCoefficient(Vec(1., 0., 0.)),
-        ConstantCoefficient(Vec(0., 1., 0.))
-    )
-
     κ = ConstantCoefficient(SymmetricTensor{2,3,Float64}((1.0, 0, 0, 1.0, 0, 1.0)))
 
     # xref copy pasta from examples/leads
@@ -32,10 +26,11 @@
         FiniteElementDiscretization(Dict(:φₘ => ip_collection)),
         grid
     )
+
     @testset "Geselowitz1989 3D $geo" begin
         ground_vertex = Vec(-1., -1., -1.)
         electrodes = [
-            ground_vertex,
+            # ground_vertex,
             Vec(0., 0., -1.), 
             Vec(0., 0., 1.),
             Vec(0., 1., 0.),
@@ -46,61 +41,52 @@
         electrode_pairs = [(i,1) for i in 2:length(electrodes)]
         lead_field = Thunderbolt.Geselowitz1989ECGLeadCache(problem, κ, κ, electrodes, electrode_pairs)
 
-        # ecg_reconst_cache = Thunderbolt.Potse2006ECGPoissonReconstructionCache(problem, κ, κ)
-
         u = zeros(Thunderbolt.solution_size(problem.A))
 
         
-        # @testset "Equilibrium" begin
+        # @testset "Equilibrium" begin BROKEN
         #     u .= 0.0
         #     reinit!(lead_field, u)
         #     for i in 1:length(electrode_pairs)
-        #         @test Thunderbolt.evaluate_ecg(lead_field, 1) ≈ 0.0
+        #         @test Thunderbolt.evaluate_ecg(lead_field, i) ≈ 0.0
         #     end
         # end
+    end
 
-        # @testset "Planar wave dim=$dim" for dim in 1:3
-        #     Ferrite.apply_analytical!(u, problem.A.dh, :ϕₘ, x->x[dim]^3)
-        #     pecg = Thunderbolt.Plonsey1964ECGGaussCache(problem, κ)
-        #     reinit!(pecg, u)
-        #     @test Thunderbolt.evaluate_ecg(pecg, Vec{3}([i==dim ? 2.0 : 0.0 for i in 1:3]),1.0) > 0.1
-        #     @test Thunderbolt.evaluate_ecg(pecg, Vec{3}([i==dim ? -2.0 : 0.0 for i in 1:3]),1.0) < 0.1
-        #     for dim2 in 1:3
-        #         dim2 == dim && continue
-        #         @test Thunderbolt.evaluate_ecg(pecg, Vec{3}([i==dim2 ? 2.0 : 0.0 for i in 1:3]),1.0) ≈ 0.0 atol=1e-4
-        #         @test Thunderbolt.evaluate_ecg(pecg, Vec{3}([i==dim2 ? -2.0 : 0.0 for i in 1:3]),1.0) ≈ 0.0 atol=1e-4
-        #     end
+    @testset "Potse2006 3D $geo" begin
+        ground_vertex = Vec(-1., -1., -1.)
+        electrodes = [
+            # ground_vertex,
+            Vec(0., 0., -1.), 
+            Vec(0., 0., 1.),
+            Vec(0., 1., 0.),
+            Vec(0., -1., 0.),
+            Vec(1., 0., 0.),
+            Vec(-1., 0., 0.),
+            ]
+        electrode_pairs = [(i,1) for i in 2:length(electrodes)]
+        ecg_reconst_cache = Thunderbolt.Potse2006ECGPoissonReconstructionCache(problem, κ, ConstantCoefficient(-κ.val))
 
-        #     Ferrite.apply_analytical!(u, problem.A.dh, :ϕₘ, x->-x[dim]^3)
-        #     pecg = Thunderbolt.Plonsey1964ECGGaussCache(problem, κ)
-        #     reinit!(pecg, u)
-        #     @test Thunderbolt.evaluate_ecg(pecg, Vec{3}([i==dim ? 2.0 : 0.0 for i in 1:3]),1.0) < 0.1
-        #     @test Thunderbolt.evaluate_ecg(pecg, Vec{3}([i==dim ? -2.0 : 0.0 for i in 1:3]),1.0) > 0.1
-        #     for dim2 in 1:3
-        #         dim2 == dim && continue
-        #         @test Thunderbolt.evaluate_ecg(pecg, Vec{3}([i==dim2 ? 2.0 : 0.0 for i in 1:3]),1.0) ≈ 0.0 atol=1e-4
-        #         @test Thunderbolt.evaluate_ecg(pecg, Vec{3}([i==dim2 ? -2.0 : 0.0 for i in 1:3]),1.0) ≈ 0.0 atol=1e-4
-        #     end
-        # end
+        u = zeros(Thunderbolt.solution_size(problem.A))
 
-        # @testset "Symmetric stimuli" begin
-        #     Ferrite.apply_analytical!(u, problem.A.dh, :ϕₘ, x->sqrt(3)-norm(x))
-        #     pecg = Thunderbolt.Plonsey1964ECGGaussCache(problem, κ)
-        #     reinit!(pecg, u)
-        #     @test Thunderbolt.evaluate_ecg(pecg, Vec( 2.0,0.0,0.0),1.0) ≈ Thunderbolt.evaluate_ecg(pecg, Vec(-2.0, 0.0, 0.0),1.0) atol=1e-2
-        #     @test Thunderbolt.evaluate_ecg(pecg, Vec(-2.0,0.0,0.0),1.0) ≈ Thunderbolt.evaluate_ecg(pecg, Vec( 0.0, 2.0, 0.0),1.0) atol=1e-2
-        #     @test Thunderbolt.evaluate_ecg(pecg, Vec(0.0, 2.0,0.0),1.0) ≈ Thunderbolt.evaluate_ecg(pecg, Vec( 0.0,-2.0, 0.0),1.0) atol=1e-2
-        #     @test Thunderbolt.evaluate_ecg(pecg, Vec(0.0,-2.0,0.0),1.0) ≈ Thunderbolt.evaluate_ecg(pecg, Vec( 0.0, 0.0, 2.0),1.0) atol=1e-2
-        #     @test Thunderbolt.evaluate_ecg(pecg, Vec(0.0,0.0, 2.0),1.0) ≈ Thunderbolt.evaluate_ecg(pecg, Vec( 0.0, 0.0,-2.0),1.0) atol=1e-2
+        @testset "Equilibrium" begin
+            u .= 0.0
+            reinit!(ecg_reconst_cache, u)
+            for i in 1:length(electrode_pairs)
+                @test Thunderbolt.evaluate_ecg(ecg_reconst_cache, electrodes[i]) ≈ 0.0
+            end
+        end
 
-        #     Ferrite.apply_analytical!(u, problem.A.dh, :ϕₘ, x->x[1]^2)
-        #     pecg = Thunderbolt.Plonsey1964ECGGaussCache(problem, κ)
-        #     reinit!(pecg, u)
-        #     @test Thunderbolt.evaluate_ecg(pecg, Vec(2.0,0.0,0.0),1.0) ≈ Thunderbolt.evaluate_ecg(pecg, Vec(-2.0,0.0,0.0),1.0) atol=1e-2
-        #     @test Thunderbolt.evaluate_ecg(pecg, Vec(0.0,2.0,0.0),1.0) ≈ Thunderbolt.evaluate_ecg(pecg, Vec(0.0,-2.0,0.0),1.0) atol=1e-2
-        #     @test Thunderbolt.evaluate_ecg(pecg, Vec(0.0,-2.0,0.0),1.0) ≈ Thunderbolt.evaluate_ecg(pecg, Vec(0.0,0.0,2.0),1.0) atol=1e-2
-        #     @test Thunderbolt.evaluate_ecg(pecg, Vec(0.0,0.0,2.0),1.0) ≈ Thunderbolt.evaluate_ecg(pecg, Vec(0.0,0.0,-2.0),1.0) atol=1e-2
-        # end
+        @testset "Planar wave dim=$dim" for dim in 1:3
+            Ferrite.apply_analytical!(u, problem.A.dh, :ϕₘ, x->(x[dim] + 1)^3)
+            reinit!(ecg_reconst_cache, u)
+            @test u ≈ ecg_reconst_cache.ϕₑ atol = 1e-4
+            
+            Ferrite.apply_analytical!(u, problem.A.dh, :ϕₘ, x->-(x[dim] + 1)^3)
+            reinit!(ecg_reconst_cache, u)
+            # @info findfirst(!(isapprox.(u, ecg_reconst_cache.ϕₑ, atol = 1e-2)))
+        end
+
     end
 
     @testset "Plonsey1964 3D $geo" begin

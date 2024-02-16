@@ -33,14 +33,14 @@ function Plonsey1964ECGGaussCache(problem::SplitProblem{<: TransientHeatProblem}
     qr = QuadratureRule{getrefshape(ip)}(2*Ferrite.getorder(ip)) # TODO Mabe make this part of the problem or create a wrapper for it with qr?
     cv = CellValues(qr, ip)
     
-    κ∇φₘ = zeros(Vec{sdim}, getnquadpoints(qr), getncells(dh.grid))
+    κ∇φₘ = zeros(Vec{sdim}, getnquadpoints(qr), getncells(dh_ϕₘ.grid))
 
     return Plonsey1964ECGGaussCache(κ∇φₘ, dh_ϕₘ, cv, κ)
 end
 
 function Ferrite.reinit!(cache::Plonsey1964ECGGaussCache, φₘ)
-    @unpack κ∇φₘ, dh_ϕₘ, cv, v, κ = cache
-    _compute_quadrature_fluxes!(κ∇φₘ,dh_ϕₘ,cv,φₘ,κ) # Function barrier
+    @unpack κ∇φₘ, dh, cv, κ = cache
+    _compute_quadrature_fluxes!(κ∇φₘ,dh,cv,φₘ,κ) # Function barrier
 end
 
 """
@@ -128,8 +128,6 @@ function _compute_lead_field(f, ∇Z, Z, op, p, electrodes::AbstractArray{Vec{3,
     _add_electrode(f, op.dh, electrodes[1], true)
     _add_electrode(f, op.dh, electrodes[2], false)
     IterativeSolvers.cg!(Z, op.A, f, Pl=p)
-    @info size(Z)
-    @info size(∇Z)
     _compute_quadrature_fluxes!(∇Z,op.dh,op.element_cache.cellvalues,Z,ConstantCoefficient(SymmetricTensor{2,3}((
         1, 0, 0,
            1, 0,
@@ -209,7 +207,7 @@ function Potse2006ECGPoissonReconstructionCache(problem::SplitProblem{<: Transie
     K = create_sparsity_pattern(dh_ϕₑ)
     ϕₑ = zeros(Ferrite.ndofs(dh_ϕₑ))
     f = similar(ϕₑ)
-    integrator = BilinearDiffusionIntegrator(κ)
+    integrator = BilinearDiffusionIntegrator(ConstantCoefficient(-κ.val))
     element_cache = BilinearDiffusionElementCache(integrator, cv)
     op = AssembledBilinearOperator(K, element_cache, dh_ϕₑ)
     update_operator!(op, 0.)
@@ -218,9 +216,7 @@ function Potse2006ECGPoissonReconstructionCache(problem::SplitProblem{<: Transie
     Ferrite.add!(ch, Dirichlet(:ϕₑ, Set([zero_vertex]), (x, t) -> 0.0))
     close!(ch);
     apply!(op.A, f, ch)
-
-    ml = ruge_stuben(op.A)
-    p = aspreconditioner(ml)
+    p = aspreconditioner(ruge_stuben(op.A))
 
     return Potse2006ECGPoissonReconstructionCache(ϕₑ, op, p, f, κᵢ)
 end
@@ -256,7 +252,12 @@ function Ferrite.reinit!(cache::Potse2006ECGPoissonReconstructionCache, ϕₘ)
             end
         end
     end
-    IterativeSolvers.cg!(ϕₑ, op.A, f, Pl=p)
+    ch = ConstraintHandler(dh)
+    Ferrite.add!(ch, Dirichlet(:ϕₑ, Set([VertexIndex(1,1)]), (x, t) -> 0.0))
+    close!(ch);
+    apply_zero!(op.A, f, ch)
+    (temp, _) = Krylov.cg(op.A,f, M=p, ldiv = true)
+    ϕₑ .= temp
 end
 
 """
@@ -270,8 +271,8 @@ For more information please read the docstring for [`Plonsey1964ECGGaussCache`](
 """
 function evaluate_ecg(method::Plonsey1964ECGGaussCache, x::Vec, κₜ::Real)
     φₑ = 0.0
-    @unpack κ∇φₘ, cv, grid = method
-    for cell ∈ CellIterator(grid)
+    @unpack κ∇φₘ, cv, dh = method
+    for cell ∈ CellIterator(dh.grid)
         reinit!(cv, cell)
         coords = getcoordinates(cell)
         κ∇φₘe = @view κ∇φₘ[:, cellid(cell)]
@@ -336,7 +337,7 @@ For more information please read the docstring for [`Potse2006ECGPoissonReconstr
 function evaluate_ecg(method::Potse2006ECGPoissonReconstructionCache, x::Vec)
     @unpack op, ϕₑ = method
     dh = op.dh
-    ph = PointEvalHandler(dh.grid, @SVector [x]) # Cache this?
+    ph = PointEvalHandler(dh.grid, [x]) # Cache this?
     ϕₑ = evaluate_at_points(ph, dh, ϕₑ, :ϕₑ)[1]
     return ϕₑ
 end
