@@ -15,7 +15,7 @@ end
 function (postproc::StandardMechanicalIOPostProcessor2)(t, problem, solver_cache)
     @unpack dh = problem
     grid = Ferrite.get_grid(dh)
-    @unpack io, cv, csc = postproc
+    @unpack io, cvc, csc = postproc
 
     # Compute some elementwise measures
     E_ff = zeros(getncells(grid))
@@ -34,10 +34,12 @@ function (postproc::StandardMechanicalIOPostProcessor2)(t, problem, solver_cache
     helixanglerefdata = zero(Vector{Float64}(undef, getncells(grid)))
 
     # Compute some elementwise measures
-    for sdh ∈ dh.subdofhandlers[postproc.subdomains]
+    for sdh ∈ dh.subdofhandlers
         field_idx = Ferrite.find_field(sdh, :displacement)
         field_idx === nothing && continue 
+        cv = getcellvalues(cvc, dh.grid.cells[first(sdh.cellset)])
         for cell ∈ CellIterator(sdh)
+            
             reinit!(cv, cell)
             global_dofs = celldofs(cell)
             field_dofs  = dof_range(sdh, field_idx)
@@ -126,7 +128,7 @@ function (postproc::StandardMechanicalIOPostProcessor2)(t, problem, solver_cache
 
     # Save the solution
     Thunderbolt.store_timestep!(io, t, dh.grid)
-    Thunderbolt.store_timestep_field!(io, t, dh, solver_cache.uₙ[Block(1)], :displacement)
+    Thunderbolt.store_timestep_field!(io, t, dh, solver_cache.uₙ.blocks[1], :displacement)
     # Thunderbolt.store_timestep_field!(io, t, coordinate_system.dh, coordinate_system.u_transmural, "transmural")
     # Thunderbolt.store_timestep_field!(io, t, coordinate_system.dh, coordinate_system.u_apicobasal, "apicobasal")
     Thunderbolt.store_timestep_celldata!(io, t, hcat(frefdata...),"Reference Fiber Data")
@@ -143,13 +145,13 @@ function (postproc::StandardMechanicalIOPostProcessor2)(t, problem, solver_cache
     Thunderbolt.store_timestep_celldata!(io, t, rad2deg.(helixanglerefdata),"Helix Angle (End Diastole)")
     Thunderbolt.finalize_timestep!(io, t)
 
-    @show Thunderbolt.compute_chamber_volume(dh, solver_cache.uₙ, "Endocardium", Thunderbolt.Hirschvogel2016SurrogateVolume())
+    @show Thunderbolt.compute_chamber_volume(dh, solver_cache.uₙ, "Endocardium", Thunderbolt.Hirschvogel2017SurrogateVolume())
     # min_vol = min(min_vol, calculate_volume_deformed_mesh(uₙ,dh,cv));
     # max_vol = max(max_vol, calculate_volume_deformed_mesh(uₙ,dh,cv));
 end
 
 
-function solve_ideal_lv(name_base, constitutive_model, grid, coordinate_system, face_models, ip_mech::Thunderbolt.VectorInterpolationCollection, qr_collection::QuadratureRuleCollection, Δt = 100.0, T = 1000.0)
+function solve_ideal_lv(name_base, constitutive_model, grid, coordinate_system, face_models, ip_mech::Thunderbolt.VectorInterpolationCollection, qr_collection::QuadratureRuleCollection, Δt, T = 1000.0)
     io = ParaViewWriter(name_base);
     # io = JLD2Writer(name_base);
 
@@ -213,5 +215,5 @@ solve_ideal_lv("lv_test",
         LV_fm,
     ), LV_grid, LV_cs,
     [NormalSpringBC(0.001, "Epicardium")],
-    ip_u, qr_u
+    ip_u, qr_u, 25.0
 )

@@ -255,6 +255,8 @@ Base.size(op::DiagonalOperator, axis) = length(op.values)
 
 getJ(op::DiagonalOperator) = spdiagm(op.values)
 
+update_linearization!(::Thunderbolt.DiagonalOperator, ::Vector, ::Vector, t) = nothing
+
 """
     NullOperator <: AbstractBilinearOperator
 
@@ -270,6 +272,8 @@ Base.eltype(op::NullOperator{T}) where {T} = T
 Base.size(op::NullOperator{T,S1,S2}, axis) where {T,S1,S2} = axis == 1 ? S1 : (axis == 2 ? S2 : error("faulty axis!"))
 
 getJ(op::NullOperator{T, SIN, SOUT}) where {T, SIN, SOUT} = spzeros(T,SIN,SOUT)
+
+update_linearization!(::Thunderbolt.NullOperator, ::Vector, ::Vector, t) = nothing
 
 ###############################################################################
 abstract type AbstractLinearOperator end

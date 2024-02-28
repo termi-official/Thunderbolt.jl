@@ -73,7 +73,9 @@ export
     QuadratureRuleCollection,
     getquadraturerule,
     CellValueCollection,
+    getcellvalues,
     FaceValueCollection,
+    getfacevalues,
     # Mesh generators
     generate_mesh,
     generate_open_ring_mesh,
