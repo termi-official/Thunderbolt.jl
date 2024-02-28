@@ -202,5 +202,12 @@ struct MonodomainModel{F1,F2,F3,STIM<:TransmembraneStimulationProtocol,ION<:Abst
     ion::ION
 end
 
+"""
+Annotation for the classical reaction-diffusion split of a given model.
+"""
+struct ReactionDiffusionSplit{MODEL}
+    model::MODEL
+end
+
 include("cells/fhn.jl")
 include("cells/pcg2019.jl")

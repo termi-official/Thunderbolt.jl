@@ -110,6 +110,9 @@ function setup_boundary_cache(boundary_models, qr::FaceQuadratureRule, ip, ip_ge
     return face_caches = ntuple(i->setup_face_cache(face_models[i], fv, t₀), length(face_models))
 end
 
+"""
+    Utility constructor to get the nonlinear operator for a single field problem.
+"""
 function AssembledNonlinearOperator(dh::AbstractDofHandler, field_name::Symbol, element_model, element_qr::QuadratureRule, boundary_model, boundary_qr::QuadratureRule)
     ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], field_name)
     ip_geo = Ferrite.default_interpolation(typeof(getcells(dh.grid, 1)))
@@ -202,9 +205,6 @@ Base.size(op::AssembledNonlinearOperator, axis) = sisze(op.A, axis)
 
 
 abstract type AbstractBilinearOperator <: AbstractNonlinearOperator end
-
-update_linearization!(op::AbstractBilinearOperator, u, residual, time) = nothing # TODO REMOVEME
-update_linearization!(op::AbstractBilinearOperator, u, time) = nothing # TODO REMOVEME
 
 struct AssembledBilinearOperator{MatrixType, CacheType, DHType <: AbstractDofHandler} <: AbstractBilinearOperator
     A::MatrixType

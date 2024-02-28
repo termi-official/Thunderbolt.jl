@@ -91,7 +91,7 @@ function setup_solver_caches(coupled_problem::CoupledProblem{<:Tuple{<:QuasiStat
         face_caches,
         dh,
     )
-    error("Not implemented yet")
+    warn("Not implemented yet")
     # TODO introduce CouplingOperator
     # BlockOperator((
     #     quasi_static_operator, NullOperator{Float64,1,ndofs(dh)}(),

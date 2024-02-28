@@ -39,8 +39,11 @@ include("modeling/multiphysics.jl")
 
 include("modeling/problems.jl") # This is not really "modeling" but a glue layer to translate from model to solver via a discretization
 
+include("discretization/interface.jl")
+include("discretization/fem.jl")
+include("discretization/operator.jl")
+
 include("solver/interface.jl")
-include("solver/operator.jl")
 include("solver/newton_raphson.jl")
 include("solver/load_stepping.jl")
 include("solver/euler.jl")
@@ -48,9 +51,6 @@ include("solver/partitioned_solver.jl")
 include("solver/operator_splitting.jl")
 
 include("solver/ecg.jl")
-
-include("discretization/interface.jl")
-include("discretization/fem.jl")
 
 include("io.jl")
 

@@ -118,3 +118,10 @@ function compute_chamber_volume(dh, u, setname, method)
     end
     return volume
 end
+
+"""
+Annotation for the split described by [RegSalAfrFedDedQar:2022:cem](@citet).
+"""
+struct ReggazoniSalvadorAfricaSplit{MODEL <: CoupledModel}
+    model::MODEL
+end

@@ -116,8 +116,7 @@ function Ψ(F, f₀, s₀, n₀, mp::TransverseIsotopicNeoHookeanModel)
 
     I₄ = tr(C ⋅ f₀ ⊗ f₀)
 
-    ueval = U(I₃, mpU)
-    Ψᵖ = α₁*(Ī₁ - 3)^a₁ + ueval
+    Ψᵖ = α₁*(Ī₁ - 3)^a₁ + U(I₃, mpU)
     if I₄ ≥ 1
         Ψᵖ += α₂*(I₄ - 1)^a₂
     end
