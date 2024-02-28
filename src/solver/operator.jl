@@ -95,6 +95,36 @@ struct AssembledNonlinearOperator{MatrixType, ElementCacheType, FaceCacheType, D
     end
 end
 
+function setup_element_cache(constitutive_model, qr::QuadratureRule, ip, ip_geo)
+    cv = CellValues(qr, ip, ip_geo)
+    contraction_cache = setup_contraction_model_cache(cv, constitutive_model.contraction_model)
+    return StructuralElementCache(
+        constitutive_model,
+        contraction_cache,
+        cv
+    )
+end
+
+function setup_boundary_cache(boundary_models, qr::FaceQuadratureRule, ip, ip_geo)
+    fv = FaceValues(qr, ip, ip_geo)
+    return face_caches = ntuple(i->setup_face_cache(face_models[i], fv, t₀), length(face_models))
+end
+
+function AssembledNonlinearOperator(dh::AbstractDofHandler, field_name::Symbol, element_model, element_qr::QuadratureRule, boundary_model, boundary_qr::QuadratureRule)
+    ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], field_name)
+    ip_geo = Ferrite.default_interpolation(typeof(getcells(dh.grid, 1)))
+
+    element_cache  = setup_element_cache(constitutive_model, element_qr, ip, ip_geo)
+    boundary_cache = setup_boundary_cache(boundary_models, boundary_qr, ip, ip_geo)
+
+    AssembledNonlinearOperator(
+        create_sparsity_pattern(dh),
+        element_cache,
+        boundary_cache,
+        dh,
+    )
+end
+
 getJ(op::AssembledNonlinearOperator) = op.J
 
 function update_linearization!(op::AssembledNonlinearOperator, u::Vector, time)

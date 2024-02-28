@@ -48,30 +48,13 @@ function setup_solver_caches(problem::QuasiStaticNonlinearProblem, solver::Newto
     @unpack dh, constitutive_model, face_models = problem
     @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the load stepper."
 
-    ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], :displacement)
-    ip_geo = Ferrite.default_interpolation(typeof(getcells(dh.grid, 1)))
     intorder = 2*Ferrite.getorder(ip)
     ref_shape = Ferrite.getrefshape(ip)
     qr = QuadratureRule{ref_shape}(intorder)
     qr_face = FaceQuadratureRule{ref_shape}(intorder)
-    cv = CellValues(qr, ip, ip_geo)
-    fv = FaceValues(qr_face, ip, ip_geo)
-
-    # TODO abstraction layer around this! E.g. setup_element_cache(problem, solver)
-    contraction_cache = setup_contraction_model_cache(cv, constitutive_model.contraction_model)
-    element_cache = StructuralElementCache(
-        constitutive_model,
-        contraction_cache,
-        cv
-    )
-    # TODO abstraction layer around this! E.g. setup_face_caches(problem, solver)
-    face_caches = ntuple(i->setup_face_cache(face_models[i], fv, t₀), length(face_models))
 
     quasi_static_operator = AssembledNonlinearOperator(
-        create_sparsity_pattern(dh),
-        element_cache, 
-        face_caches,
-        dh,
+        dh, :displacement, constitutive_model, qr, face_models, qr_face
     )
 
     NewtonRaphsonSolverCache(quasi_static_operator, Vector{Float64}(undef, solution_size(problem)), solver)
@@ -179,10 +162,14 @@ function solve!(u, problem, solver_cache::NewtonRaphsonSolverCache, t)
 
         @timeit_debug "elimination" eliminate_constraints_from_linearization!(solver_cache, problem)
         residualnorm = residual_norm(solver_cache, problem)
+        @info newton_itr, residualnorm
         if residualnorm < solver_cache.parameters.tol
             break
         elseif newton_itr > solver_cache.parameters.max_iter
             @warn "Reached maximum Newton iterations. Aborting. ||r|| = $residualnorm"
+            return false
+        elseif any(isnan.(residualnorm))
+            @warn "Newton-Raphson diverged. Aborting. ||r|| = $residualnorm"
             return false
         end
 
