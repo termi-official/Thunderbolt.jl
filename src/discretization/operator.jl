@@ -95,7 +95,7 @@ struct AssembledNonlinearOperator{MatrixType, ElementCacheType, FaceCacheType, D
     end
 end
 
-function setup_element_cache(constitutive_model, qr::QuadratureRule, ip, ip_geo)
+function setup_element_cache(constitutive_model, qr::QuadratureRule, ip, ip_geo, t₀)
     cv = CellValues(qr, ip, ip_geo)
     contraction_cache = setup_contraction_model_cache(cv, constitutive_model.contraction_model)
     return StructuralElementCache(
@@ -105,20 +105,20 @@ function setup_element_cache(constitutive_model, qr::QuadratureRule, ip, ip_geo)
     )
 end
 
-function setup_boundary_cache(boundary_models, qr::FaceQuadratureRule, ip, ip_geo)
+function setup_boundary_cache(boundary_models, qr::FaceQuadratureRule, ip, ip_geo, t₀)
     fv = FaceValues(qr, ip, ip_geo)
-    return face_caches = ntuple(i->setup_face_cache(face_models[i], fv, t₀), length(face_models))
+    return face_caches = ntuple(i->setup_face_cache(boundary_models[i], fv, t₀), length(boundary_models))
 end
 
 """
     Utility constructor to get the nonlinear operator for a single field problem.
 """
-function AssembledNonlinearOperator(dh::AbstractDofHandler, field_name::Symbol, element_model, element_qr::QuadratureRule, boundary_model, boundary_qr::QuadratureRule)
+function AssembledNonlinearOperator(dh::AbstractDofHandler, field_name::Symbol, element_model, element_qr::QuadratureRule, boundary_model, boundary_qr::FaceQuadratureRule, t₀)
     ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], field_name)
     ip_geo = Ferrite.default_interpolation(typeof(getcells(dh.grid, 1)))
 
-    element_cache  = setup_element_cache(constitutive_model, element_qr, ip, ip_geo)
-    boundary_cache = setup_boundary_cache(boundary_models, boundary_qr, ip, ip_geo)
+    element_cache  = setup_element_cache(element_model, element_qr, ip, ip_geo, t₀)
+    boundary_cache = setup_boundary_cache(boundary_model, boundary_qr, ip, ip_geo, t₀)
 
     AssembledNonlinearOperator(
         create_sparsity_pattern(dh),

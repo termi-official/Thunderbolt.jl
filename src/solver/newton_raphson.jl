@@ -48,13 +48,14 @@ function setup_solver_caches(problem::QuasiStaticNonlinearProblem, solver::Newto
     @unpack dh, constitutive_model, face_models = problem
     @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the load stepper."
 
+    ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], :displacement)
     intorder = 2*Ferrite.getorder(ip)
     ref_shape = Ferrite.getrefshape(ip)
     qr = QuadratureRule{ref_shape}(intorder)
     qr_face = FaceQuadratureRule{ref_shape}(intorder)
 
     quasi_static_operator = AssembledNonlinearOperator(
-        dh, :displacement, constitutive_model, qr, face_models, qr_face
+        dh, :displacement, constitutive_model, qr, face_models, qr_face, t₀
     )
 
     NewtonRaphsonSolverCache(quasi_static_operator, Vector{Float64}(undef, solution_size(problem)), solver)
