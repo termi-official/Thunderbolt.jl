@@ -161,12 +161,12 @@ function solve_ideal_lv(name_base, constitutive_model, grid, coordinate_system, 
             ],
             [
                 Coupling(1,2,LumpedFluidSolidCoupler(
-                    Hirschvogel2016SurrogateVolume()
+                    Hirschvogel2017SurrogateVolume()
                 ))
             ]
         )),
         FiniteElementDiscretization(
-            Dict(:displacement => ip_collection),
+            Dict(:displacement => ip_mech),
             Dirichlet[],
             # [Dirichlet(:displacement, getfaceset(grid, "Myocardium"), (x,t) -> [0.0], [3])],
             # [Dirichlet(:displacement, getfaceset(grid, "left"), (x,t) -> [0.0], [1]),Dirichlet(:displacement, getfaceset(grid, "front"), (x,t) -> [0.0], [2]),Dirichlet(:displacement, getfaceset(grid, "bottom"), (x,t) -> [0.0], [3]), Dirichlet(:displacement, Set([1]), (x,t) -> [0.0, 0.0, 0.0], [1, 2, 3])],
@@ -206,9 +206,12 @@ solve_ideal_lv("lv_test",
     ActiveStressModel(
         passive_ho_model,
         SimpleActiveStress(10.0),
-        PelceSunLangeveld1995Model(calcium_field=CalciumHatField()),
+        PelceSunLangeveld1995Model(;calcium_field=AnalyticalCoefficient(
+            (x,t) -> t/1000.0 < 0.5 ? (1-x.transmural*0.7)*2.0*t/1000.0 : (2.0-2.0*t/1000.0)*(1-x.transmural*0.7),
+            CoordinateSystemCoefficient(LV_cs)
+        )),
         LV_fm,
     ), LV_grid, LV_cs,
     [NormalSpringBC(0.001, "Epicardium")],
-    ip_collection, qr_u
+    ip_u, qr_u
 )

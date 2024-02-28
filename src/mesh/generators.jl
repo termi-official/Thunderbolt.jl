@@ -333,6 +333,9 @@ function generate_ideal_lv_mesh(num_elements_circumferential::Int, num_elements_
     facesets["Epicardium"]   = Set{FaceIndex}(boundary[(1:length(cell_array[:,end,:][:])) .+ offset]); offset += length(cell_array[:,end,:][:])
     facesets["Base"]    = Set{FaceIndex}(boundary[(1:length(cell_array[:,:,end][:])) .+ offset]); offset += length(cell_array[:,:,end][:])
 
+    nodesets = Dict{String,Set{Int}}()
+    nodesets["Apex"] = Set{Int}()
+
     # Add apex nodes
     for radius_percent ∈ radii_in_percent
         radius = apex_inner*(1.0-radius_percent) + apex_outer*(radius_percent)
@@ -347,10 +350,12 @@ function generate_ideal_lv_mesh(num_elements_circumferential::Int, num_elements_
             singular_index , node_array[i,j,1], node_array[i_next,j,1],
             singular_index+1, node_array[i,j+1,1], node_array[i_next,j+1,1],
         )))
+        j == 1 && push!(facesets["Endocardium"], FaceIndex(length(cells), 1))
+        j == num_elements_radial && push!(facesets["Epicardium"], FaceIndex(length(cells), 5))
+        j == num_elements_radial && push!(nodesets["Apex"], singular_index+1)
     end
 
-    # return Grid(cells, nodes, nodesets=nodesets, facesets=facesets)
-    return Grid(cells, nodes, facesets=facesets)
+    return Grid(cells, nodes, nodesets=nodesets, facesets=facesets)
 end
 
 # TODO think about making Mesh = Grid+Topology+CoordinateSystem
