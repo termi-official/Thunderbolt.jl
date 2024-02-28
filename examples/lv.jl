@@ -4,7 +4,7 @@
 using Thunderbolt, FerriteGmsh, UnPack
 
 # TODO refactor this one into the framework code and put a nice abstraction layer around it
-struct StandardMechanicalIOPostProcessor{IO, CVC, CSC}
+struct StandardMechanicalIOPostProcessor2{IO, CVC, CSC}
     io::IO
     cvc::CVC
     csc::CSC
@@ -149,7 +149,7 @@ function (postproc::StandardMechanicalIOPostProcessor2)(t, problem, solver_cache
 end
 
 
-function solve_ideal_lv(name_base, constitutive_model, grid, coordinate_system, face_models, ip_mech::Thunderbolt.VetorInterpolationCollection, qr_collection::QuadratureRuleCollection, Δt = 100.0, T = 1000.0)
+function solve_ideal_lv(name_base, constitutive_model, grid, coordinate_system, face_models, ip_mech::Thunderbolt.VectorInterpolationCollection, qr_collection::QuadratureRuleCollection, Δt = 100.0, T = 1000.0)
     io = ParaViewWriter(name_base);
     # io = JLD2Writer(name_base);
 
@@ -161,12 +161,12 @@ function solve_ideal_lv(name_base, constitutive_model, grid, coordinate_system, 
             ],
             [
                 Coupling(1,2,LumpedFluidSolidCoupler(
-                    Hirschvogel2016SurrogateVolume()
+                    Hirschvogel2017SurrogateVolume()
                 ))
             ]
         )),
         FiniteElementDiscretization(
-            Dict(:displacement => ip_collection),
+            Dict(:displacement => ip_mech),
             Dirichlet[],
             # [Dirichlet(:displacement, getfaceset(grid, "Myocardium"), (x,t) -> [0.0], [3])],
             # [Dirichlet(:displacement, getfaceset(grid, "left"), (x,t) -> [0.0], [1]),Dirichlet(:displacement, getfaceset(grid, "front"), (x,t) -> [0.0], [2]),Dirichlet(:displacement, getfaceset(grid, "bottom"), (x,t) -> [0.0], [3]), Dirichlet(:displacement, Set([1]), (x,t) -> [0.0, 0.0, 0.0], [1, 2, 3])],
@@ -195,21 +195,23 @@ function solve_ideal_lv(name_base, constitutive_model, grid, coordinate_system, 
 end
 
 LV_grid = Thunderbolt.hexahedralize(Thunderbolt.generate_ideal_lv_mesh(15,2,6))
-ref_shape = RefHexahedron
 order = 1
 intorder = max(2*order-1,2)
 ip_u = LagrangeCollection{order}()^3
 qr_u = QuadratureRuleCollection(intorder-1)
 LV_cs = compute_LV_coordinate_system(LV_grid)
-LV_fm = create_simple_microstructure_model(LV_cs, ip_collection, endo_helix_angle = -60.0, epi_helix_angle = 70.0, endo_transversal_angle = 10.0, epi_transversal_angle = -20.0)
+LV_fm = create_simple_microstructure_model(LV_cs, ip_u, endo_helix_angle = -60.0, epi_helix_angle = 70.0, endo_transversal_angle = 10.0, epi_transversal_angle = -20.0)
 passive_ho_model = HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 0.28504197825657906, 4.126552003938297, 0.0, 1.0, 0.0, 1.0, SimpleCompressionPenalty(4.0))
 solve_ideal_lv("lv_test",
     ActiveStressModel(
         passive_ho_model,
         SimpleActiveStress(10.0),
-        PelceSunLangeveld1995Model(calcium_field=CalciumHatField()),
+        PelceSunLangeveld1995Model(;calcium_field=AnalyticalCoefficient(
+            (x,t) -> t/1000.0 < 0.5 ? (1-x.transmural*0.7)*2.0*t/1000.0 : (2.0-2.0*t/1000.0)*(1-x.transmural*0.7),
+            CoordinateSystemCoefficient(LV_cs)
+        )),
         LV_fm,
     ), LV_grid, LV_cs,
     [NormalSpringBC(0.001, "Epicardium")],
-    ip_collection, qr_collection
+    ip_u, qr_u
 )
