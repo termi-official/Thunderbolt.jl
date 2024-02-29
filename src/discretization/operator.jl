@@ -113,9 +113,14 @@ end
 """
     Utility constructor to get the nonlinear operator for a single field problem.
 """
-function AssembledNonlinearOperator(dh::AbstractDofHandler, field_name::Symbol, element_model, element_qr::QuadratureRule, boundary_model, boundary_qr::FaceQuadratureRule, t₀)
+function AssembledNonlinearOperator(dh::AbstractDofHandler, field_name::Symbol, element_model, element_qrc::QuadratureRuleCollection, boundary_model, boundary_qrc::FaceQuadratureRuleCollection, t₀)
+    @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the load stepper."
+
+    firstcell = dh.grid.cells[first(dh.subdofhandlers[1].cellset)]
     ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], field_name)
-    ip_geo = Ferrite.default_interpolation(typeof(getcells(dh.grid, 1)))
+    ip_geo = Ferrite.default_interpolation(typeof(firstcell))
+    element_qr = getquadraturerule(element_qrc, firstcell)
+    boundary_qr = getquadraturerule(boundary_qrc, firstcell)
 
     element_cache  = setup_element_cache(element_model, element_qr, ip, ip_geo, t₀)
     boundary_cache = setup_boundary_cache(boundary_model, boundary_qr, ip, ip_geo, t₀)

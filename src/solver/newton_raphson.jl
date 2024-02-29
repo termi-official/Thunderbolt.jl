@@ -46,13 +46,11 @@ end
 
 function setup_solver_caches(problem::QuasiStaticNonlinearProblem, solver::NewtonRaphsonSolver{T}, t₀) where {T}
     @unpack dh, constitutive_model, face_models = problem
-    @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the load stepper."
+    @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the Newton solver."
 
-    ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], :displacement)
-    intorder = 2*Ferrite.getorder(ip)
-    ref_shape = Ferrite.getrefshape(ip)
-    qr = QuadratureRule{ref_shape}(intorder)
-    qr_face = FaceQuadratureRule{ref_shape}(intorder)
+    intorder = quadrature_order(problem, :displacement)
+    qr = QuadratureRuleCollection(intorder)
+    qr_face = FaceQuadratureRuleCollection(intorder)
 
     quasi_static_operator = AssembledNonlinearOperator(
         dh, :displacement, constitutive_model, qr, face_models, qr_face, t₀
@@ -65,32 +63,14 @@ end
 function setup_solver_caches(coupled_problem::CoupledProblem{<:Tuple{<:QuasiStaticNonlinearProblem,<:NullProblem}}, solver::NewtonRaphsonSolver{T}, t₀) where {T}
     problem = coupled_problem.base_problems[1]
     @unpack dh, constitutive_model, face_models = problem
-    @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the load stepper."
+    @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the Newton solver."
 
-    ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], :displacement)
-    ip_geo = Ferrite.default_interpolation(typeof(getcells(dh.grid, 1)))
-    intorder = 2*Ferrite.getorder(ip)
-    ref_shape = Ferrite.getrefshape(ip)
-    qr = QuadratureRule{ref_shape}(intorder)
-    qr_face = FaceQuadratureRule{ref_shape}(intorder)
-    cv = CellValues(qr, ip, ip_geo)
-    fv = FaceValues(qr_face, ip, ip_geo)
-
-    # TODO abstraction layer around this! E.g. setup_element_cache(problem, solver)
-    contraction_cache = setup_contraction_model_cache(cv, constitutive_model.contraction_model)
-    element_cache = StructuralElementCache(
-        constitutive_model,
-        contraction_cache,
-        cv
-    )
-    # TODO abstraction layer around this! E.g. setup_face_caches(problem, solver)
-    face_caches = ntuple(i->setup_face_cache(face_models[i], fv, t₀), length(face_models))
+    intorder = quadrature_order(problem, :displacement)
+    qr = QuadratureRuleCollection(intorder)
+    qr_face = FaceQuadratureRuleCollection(intorder)
 
     quasi_static_operator = AssembledNonlinearOperator(
-        create_sparsity_pattern(dh),
-        element_cache, 
-        face_caches,
-        dh,
+        dh, :displacement, constitutive_model, qr, face_models, qr_face, t₀
     )
     @warn "Not implemented yet"
     # TODO introduce CouplingOperator
