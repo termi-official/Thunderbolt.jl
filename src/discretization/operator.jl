@@ -95,16 +95,6 @@ struct AssembledNonlinearOperator{MatrixType, ElementCacheType, FaceCacheType, D
     end
 end
 
-function setup_element_cache(constitutive_model, qr::QuadratureRule, ip, ip_geo, t₀)
-    cv = CellValues(qr, ip, ip_geo)
-    contraction_cache = setup_contraction_model_cache(cv, constitutive_model.contraction_model)
-    return StructuralElementCache(
-        constitutive_model,
-        contraction_cache,
-        cv
-    )
-end
-
 function setup_boundary_cache(boundary_models, qr::FaceQuadratureRule, ip, ip_geo, t₀)
     fv = FaceValues(qr, ip, ip_geo)
     return face_caches = ntuple(i->setup_face_cache(boundary_models[i], fv, t₀), length(boundary_models))
@@ -238,6 +228,9 @@ function update_operator!(op::AssembledBilinearOperator, time)
 
     #finish_assemble(assembler)
 end
+
+update_linearization!(op::AbstractBilinearOperator, u, residual, time) = update_operator!(op, time)
+update_linearization!(op::AbstractBilinearOperator, u, time) = update_operator!(op, time)
 
 mul!(out, op::AssembledBilinearOperator, in) = mul!(out, op.A, in)
 mul!(out, op::AssembledBilinearOperator, in, α, β) = mul!(out, op.A, in, α, β)

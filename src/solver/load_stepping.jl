@@ -14,8 +14,8 @@ mutable struct LoadDrivenSolverCache{ISC, T, VT <: AbstractVector{T}}
     uₙ₋₁::VT
 end
 
-# TODO revisiv if t₀ is really the right thing here to pass
-function setup_solver_caches(problem, solver::LoadDrivenSolver{IS}, t₀) where {IS}
+# TODO revisit if t₀ is really the right thing here to pass
+function setup_solver_caches(problem, solver::LoadDrivenSolver{<:NewtonRaphsonSolver}, t₀)
     inner_solver_cache = setup_solver_caches(problem, solver.inner_solver, t₀)
     LoadDrivenSolverCache(
         inner_solver_cache,
@@ -24,29 +24,27 @@ function setup_solver_caches(problem, solver::LoadDrivenSolver{IS}, t₀) where 
     )
 end
 
-setup_solver_caches(problem::CoupledProblem, solver::LoadDrivenSolver, t₀) = error("FIXME")
-# TODO FIXME
-function setup_solver_caches(problem::CoupledProblem{<:Tuple{<:QuasiStaticNonlinearProblem,<:NullProblem}}, solver::LoadDrivenSolver{IS}, t₀) where {IS}
+setup_solver_caches(problem::CoupledProblem, solver::LoadDrivenSolver, t₀) = error("Not implemented yet.")
+
+function setup_solver_caches(problem::CoupledProblem, solver::LoadDrivenSolver{<:NewtonRaphsonSolver}, t₀)
     inner_solver_cache = setup_solver_caches(problem, solver.inner_solver, t₀)
     LoadDrivenSolverCache(
         inner_solver_cache,
         mortar([
-            Vector{Float64}(undef, solution_size(problem.base_problems[1])),
-            Vector{Float64}(undef, solution_size(problem.base_problems[2]))
+            Vector{Float64}(undef, solution_size(problem.base_problems[i])) for i ∈ 1:length(problem.base_problems)
         ]),
         mortar([
-            Vector{Float64}(undef, solution_size(problem.base_problems[1])),
-            Vector{Float64}(undef, solution_size(problem.base_problems[2]))
+            Vector{Float64}(undef, solution_size(problem.base_problems[i])) for i ∈ 1:length(problem.base_problems)
         ]),
     )
 end
 
-function update_constraints!(problem, solver_cache, t)
+function update_constraints!(problem, solver_cache::LoadDrivenSolverCache, t)
     Ferrite.update!(problem.ch, t)
     apply!(solver_cache.uₙ, problem.ch)
 end
 
-function update_constraints!(problem::CoupledProblem, solver_cache, t)
+function update_constraints!(problem::CoupledProblem, solver_cache::LoadDrivenSolverCache, t)
     for (i,p) ∈ enumerate(problem.base_problems)
         update_constraints_block!(p, Block(i), solver_cache, t)
     end
