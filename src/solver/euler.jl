@@ -69,23 +69,20 @@ end
 function setup_solver_caches(problem::TransientHeatProblem, solver::BackwardEulerSolver, t₀)
     @unpack dh = problem
     @assert length(dh.field_names) == 1 # TODO relax this assumption, maybe.
-    ip = dh.subdofhandlers[1].field_interpolations[1]
-    order = Ferrite.getorder(ip)
-    sdim = Ferrite.getdim(dh.grid)
-    qr = QuadratureRuleCollection(2*order) # TODO how to pass this one down here?
+    field_name = dh.field_names[1]
+    intorder = quadrature_order(problem, field_name)
+    qr = QuadratureRuleCollection(intorder) # TODO how to pass this one down here?
 
-    # TODO abstraction layer around AssembledBilinearOperator
     mass_operator = AssembledBilinearOperator(
-        dh, dh.field_names[1], # TODO field name
+        dh, field_name, # TODO field name
         BilinearMassIntegrator(
             ConstantCoefficient(1.0)
         ),
         qr
     )
 
-    # TODO abstraction layer around AssembledBilinearOperator
     diffusion_operator = AssembledBilinearOperator(
-        dh, dh.field_names[1], # TODO field name
+        dh, field_name, # TODO field name
         BilinearDiffusionIntegrator(
             problem.diffusion_tensor_field,
         ),
