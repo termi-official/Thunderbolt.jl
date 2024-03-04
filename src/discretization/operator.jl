@@ -95,15 +95,15 @@ struct AssembledNonlinearOperator{MatrixType, ElementCacheType, FaceCacheType, D
     end
 end
 
-function setup_boundary_cache(boundary_models, qr::FaceQuadratureRule, ip, ip_geo, t₀)
+function setup_boundary_cache(boundary_models, qr::FaceQuadratureRule, ip, ip_geo)
     fv = FaceValues(qr, ip, ip_geo)
-    return face_caches = ntuple(i->setup_face_cache(boundary_models[i], fv, t₀), length(boundary_models))
+    return face_caches = ntuple(i->setup_face_cache(boundary_models[i], fv), length(boundary_models))
 end
 
 """
     Utility constructor to get the nonlinear operator for a single field problem.
 """
-function AssembledNonlinearOperator(dh::AbstractDofHandler, field_name::Symbol, element_model, element_qrc::QuadratureRuleCollection, boundary_model, boundary_qrc::FaceQuadratureRuleCollection, t₀)
+function AssembledNonlinearOperator(dh::AbstractDofHandler, field_name::Symbol, element_model, element_qrc::QuadratureRuleCollection, boundary_model, boundary_qrc::FaceQuadratureRuleCollection)
     @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the load stepper."
 
     firstcell = dh.grid.cells[first(dh.subdofhandlers[1].cellset)]
@@ -112,8 +112,8 @@ function AssembledNonlinearOperator(dh::AbstractDofHandler, field_name::Symbol, 
     element_qr = getquadraturerule(element_qrc, firstcell)
     boundary_qr = getquadraturerule(boundary_qrc, firstcell)
 
-    element_cache  = setup_element_cache(element_model, element_qr, ip, ip_geo, t₀)
-    boundary_cache = setup_boundary_cache(boundary_model, boundary_qr, ip, ip_geo, t₀)
+    element_cache  = setup_element_cache(element_model, element_qr, ip, ip_geo)
+    boundary_cache = setup_boundary_cache(boundary_model, boundary_qr, ip, ip_geo)
 
     AssembledNonlinearOperator(
         create_sparsity_pattern(dh),

@@ -44,7 +44,7 @@ mutable struct NewtonRaphsonSolverCache{OpType, ResidualType, T}
     #linear_solver_cache
 end
 
-function setup_solver_caches(problem::QuasiStaticNonlinearProblem, solver::NewtonRaphsonSolver{T}, t₀) where {T}
+function setup_operator(problem::QuasiStaticNonlinearProblem, solver::NewtonRaphsonSolver)
     @unpack dh, constitutive_model, face_models = problem
     @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the Newton solver."
 
@@ -52,39 +52,29 @@ function setup_solver_caches(problem::QuasiStaticNonlinearProblem, solver::Newto
     qr = QuadratureRuleCollection(intorder)
     qr_face = FaceQuadratureRuleCollection(intorder)
 
-    quasi_static_operator = AssembledNonlinearOperator(
-        dh, :displacement, constitutive_model, qr, face_models, qr_face, t₀
+    return AssembledNonlinearOperator(
+        dh, :displacement, constitutive_model, qr, face_models, qr_face
     )
-
-    NewtonRaphsonSolverCache(quasi_static_operator, Vector{Float64}(undef, solution_size(problem)), solver)
 end
 
-# TODO what is a cleaner solution for this?
-function setup_solver_caches(coupled_problem::CoupledProblem{<:Tuple{<:QuasiStaticNonlinearProblem,<:NullProblem}}, solver::NewtonRaphsonSolver{T}, t₀) where {T}
-    problem = coupled_problem.base_problems[1]
-    @unpack dh, constitutive_model, face_models = problem
-    @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the Newton solver."
+function setup_operator(problem::NullProblem, solver::NewtonRaphsonSolver{T}) where T
+    # return NullOperator(
+    #     solution_size(problem)
+    # )
+    return DiagonalOperator(ones(T, solution_size(problem)))
+end
 
-    intorder = quadrature_order(problem, :displacement)
-    qr = QuadratureRuleCollection(intorder)
-    qr_face = FaceQuadratureRuleCollection(intorder)
+function setup_solver_caches(problem::QuasiStaticNonlinearProblem, solver::NewtonRaphsonSolver{T}) where {T}
+    NewtonRaphsonSolverCache(setup_operator(problem, solver), Vector{T}(undef, solution_size(problem)), solver)
+end
 
-    quasi_static_operator = AssembledNonlinearOperator(
-        dh, :displacement, constitutive_model, qr, face_models, qr_face, t₀
-    )
-    @warn "Not implemented yet"
-    # TODO introduce CouplingOperator
-    # BlockOperator((
-    #     quasi_static_operator, NullOperator{Float64,1,ndofs(dh)}(),
-    #     NullOperator{Float64,ndofs(dh),1}(), NullOperator{Float64,1,1}()
-    # ))
+function setup_solver_caches(coupled_problem::CoupledProblem{<:Tuple{<:QuasiStaticNonlinearProblem,<:NullProblem}}, solver::NewtonRaphsonSolver{T}) where {T}
+    @unpack base_problems, couplers = coupled_problem
     op = BlockOperator((
-        quasi_static_operator, NullOperator{Float64,1,ndofs(dh)}(),
-        NullOperator{Float64,ndofs(dh),1}(), DiagonalOperator([1.0])
+        [i == j ? setup_operator(base_problems[i], solver) : NullOperator{T,solution_size(base_problems[j]),solution_size(base_problems[i])}()  for i in 1:length(base_problems) for j in 1:length(base_problems)]...,
     ))
     solution = mortar([
-        Vector{Float64}(undef, solution_size(coupled_problem.base_problems[1])),
-        Vector{Float64}(undef, solution_size(coupled_problem.base_problems[2]))
+        Vector{T}(undef, solution_size(base_problems[i])) for i ∈ 1:length(base_problems)
     ])
 
     NewtonRaphsonSolverCache(op, solution, solver)

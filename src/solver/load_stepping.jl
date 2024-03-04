@@ -14,27 +14,26 @@ mutable struct LoadDrivenSolverCache{ISC, T, VT <: AbstractVector{T}}
     uₙ₋₁::VT
 end
 
-# TODO revisit if t₀ is really the right thing here to pass
-function setup_solver_caches(problem, solver::LoadDrivenSolver{<:NewtonRaphsonSolver}, t₀)
-    inner_solver_cache = setup_solver_caches(problem, solver.inner_solver, t₀)
+function setup_solver_caches(problem, solver::LoadDrivenSolver{<:NewtonRaphsonSolver{T}}, t₀) where T
+    inner_solver_cache = setup_solver_caches(problem, solver.inner_solver)
     LoadDrivenSolverCache(
         inner_solver_cache,
-        Vector{Float64}(undef, solution_size(problem)),
-        Vector{Float64}(undef, solution_size(problem)),
+        Vector{T}(undef, solution_size(problem)),
+        Vector{T}(undef, solution_size(problem)),
     )
 end
 
 setup_solver_caches(problem::CoupledProblem, solver::LoadDrivenSolver, t₀) = error("Not implemented yet.")
 
-function setup_solver_caches(problem::CoupledProblem, solver::LoadDrivenSolver{<:NewtonRaphsonSolver}, t₀)
-    inner_solver_cache = setup_solver_caches(problem, solver.inner_solver, t₀)
+function setup_solver_caches(problem::CoupledProblem, solver::LoadDrivenSolver{<:NewtonRaphsonSolver{T}}, t₀) where T
+    inner_solver_cache = setup_solver_caches(problem, solver.inner_solver)
     LoadDrivenSolverCache(
         inner_solver_cache,
         mortar([
-            Vector{Float64}(undef, solution_size(problem.base_problems[i])) for i ∈ 1:length(problem.base_problems)
+            Vector{T}(undef, solution_size(problem.base_problems[i])) for i ∈ 1:length(problem.base_problems)
         ]),
         mortar([
-            Vector{Float64}(undef, solution_size(problem.base_problems[i])) for i ∈ 1:length(problem.base_problems)
+            Vector{T}(undef, solution_size(problem.base_problems[i])) for i ∈ 1:length(problem.base_problems)
         ]),
     )
 end

@@ -57,7 +57,7 @@ function assemble_element!(Kₑ::Matrix, residualₑ, uₑ, geometry_cache, elem
     end
 end
 
-function setup_element_cache(model::QuasiStaticModel, qr::QuadratureRule, ip, ip_geo, t₀)
+function setup_element_cache(model::QuasiStaticModel, qr::QuadratureRule, ip, ip_geo)
     cv = CellValues(qr, ip, ip_geo)
     return StructuralElementCache(
         model,
