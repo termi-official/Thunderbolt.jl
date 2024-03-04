@@ -142,7 +142,7 @@ function perform_step!(problem, solver_cache::ForwardEulerSolverCache, t::Float6
     @inbounds rhs!(du, uₙ, t, problem.p)
     @inbounds uₙ .= uₙ .+ Δt .* du
 
-    return true
+    return !any(isnan.(uₙ))
 end
 
 function setup_solver_caches(problem::ODEProblem, solver::ForwardEulerSolver, t₀)

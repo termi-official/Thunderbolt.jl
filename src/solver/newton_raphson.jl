@@ -58,6 +58,7 @@ function setup_operator(problem::QuasiStaticNonlinearProblem, solver::NewtonRaph
 end
 
 function setup_operator(problem::NullProblem, solver::NewtonRaphsonSolver{T}) where T
+    @warn "FIXME"
     # return NullOperator(
     #     solution_size(problem)
     # )
@@ -70,7 +71,9 @@ end
 
 function setup_solver_caches(coupled_problem::CoupledProblem{<:Tuple{<:QuasiStaticNonlinearProblem,<:NullProblem}}, solver::NewtonRaphsonSolver{T}) where {T}
     @unpack base_problems, couplers = coupled_problem
+    @warn "FIXME"
     op = BlockOperator((
+        # TODO coupler instead off null operator
         [i == j ? setup_operator(base_problems[i], solver) : NullOperator{T,solution_size(base_problems[j]),solution_size(base_problems[i])}()  for i in 1:length(base_problems) for j in 1:length(base_problems)]...,
     ))
     solution = mortar([
@@ -121,7 +124,7 @@ function eliminate_constraints_from_linearization_blocked!(solver_cache, problem
     apply_zero!(solver_cache.op.operators[1].J, solver_cache.residual[i], problem.base_problems[1].ch)
 end
 
-function solve!(u, problem, solver_cache::NewtonRaphsonSolverCache, t)
+function solve!(u::AbstractVector, problem, solver_cache::NewtonRaphsonSolverCache, t)
     @unpack op, residual = solver_cache
     newton_itr = -1
     Δu = zero(u)
