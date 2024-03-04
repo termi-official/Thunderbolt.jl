@@ -104,9 +104,9 @@ end
     Utility constructor to get the nonlinear operator for a single field problem.
 """
 function AssembledNonlinearOperator(dh::AbstractDofHandler, field_name::Symbol, element_model, element_qrc::QuadratureRuleCollection, boundary_model, boundary_qrc::FaceQuadratureRuleCollection)
-    @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the load stepper."
+    @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the nonlinear opeartor."
 
-    firstcell = dh.grid.cells[first(dh.subdofhandlers[1].cellset)]
+    firstcell = getcells(Ferrite.get_grid(dh), first(dh.subdofhandlers[1].cellset))
     ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], field_name)
     ip_geo = Ferrite.default_interpolation(typeof(firstcell))
     element_qr = getquadraturerule(element_qrc, firstcell)
@@ -209,6 +209,23 @@ struct AssembledBilinearOperator{MatrixType, CacheType, DHType <: AbstractDofHan
         check_subdomains(dh)
         return new{MatrixType, CacheType, DHType}(A, element_cache, dh)
     end
+end
+
+function AssembledBilinearOperator(dh::AbstractDofHandler, field_name::Symbol, integrator, element_qrc::QuadratureRuleCollection)
+    @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the bilinear opeartor."
+
+    firstcell = getcells(Ferrite.get_grid(dh), first(dh.subdofhandlers[1].cellset))
+    ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], field_name)
+    ip_geo = Ferrite.default_interpolation(typeof(firstcell))
+    element_qr = getquadraturerule(element_qrc, firstcell)
+
+    element_cache = setup_element_cache(integrator, element_qr, ip, ip_geo)
+
+    return AssembledBilinearOperator(
+        create_sparsity_pattern(dh),
+        element_cache,
+        dh,
+    )
 end
 
 function update_operator!(op::AssembledBilinearOperator, time)
