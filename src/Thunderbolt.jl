@@ -39,8 +39,11 @@ include("modeling/multiphysics.jl")
 
 include("modeling/problems.jl") # This is not really "modeling" but a glue layer to translate from model to solver via a discretization
 
+include("discretization/interface.jl")
+include("discretization/fem.jl")
+include("discretization/operator.jl")
+
 include("solver/interface.jl")
-include("solver/operator.jl")
 include("solver/newton_raphson.jl")
 include("solver/load_stepping.jl")
 include("solver/euler.jl")
@@ -48,9 +51,6 @@ include("solver/partitioned_solver.jl")
 include("solver/operator_splitting.jl")
 
 include("solver/ecg.jl")
-
-include("discretization/interface.jl")
-include("discretization/fem.jl")
 
 include("io.jl")
 
@@ -73,7 +73,9 @@ export
     QuadratureRuleCollection,
     getquadraturerule,
     CellValueCollection,
+    getcellvalues,
     FaceValueCollection,
+    getfacevalues,
     # Mesh generators
     generate_mesh,
     generate_open_ring_mesh,
@@ -118,9 +120,9 @@ export
     TransmembraneStimulationProtocol,
     AnalyticalTransmembraneStimulationProtocol,
     # Circuit
-    ReggazoniSalvadorAfricaLumpedCicuitModel,
+    RegazzoniSalvadorAfricaLumpedCicuitModel,
     # FSI
-    ReggazoniSalvadorAfrica2022SurrogateVolume,
+    RegazzoniSalvadorAfrica2022SurrogateVolume,
     Hirschvogel2017SurrogateVolume,
     LumpedFluidSolidCoupler,
     # Microstructure
@@ -149,7 +151,7 @@ export
     ForwardEulerCellSolver,
     LTGOSSolver,
     ReactionDiffusionSplit,
-    ReggazoniSalvadorAfricaSplit,
+    RegazzoniSalvadorAfricaSplit,
     # Utils
     default_initializer,
     calculate_volume_deformed_mesh,

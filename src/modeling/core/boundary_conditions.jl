@@ -39,7 +39,7 @@ end
 
 getboundaryname(face_cache::FC) where {FC} = face_cache.mp.boundary_name
 
-setup_face_cache(bcd::BCD, fv::FV, time) where {BCD, FV} = SimpleFaceCache(bcd, fv)
+setup_face_cache(bcd::BCD, fv::FV) where {BCD, FV} = SimpleFaceCache(bcd, fv)
 
 function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, face, cache::SimpleFaceCache{<:RobinBC}, time)
     @unpack mp, fv = cache

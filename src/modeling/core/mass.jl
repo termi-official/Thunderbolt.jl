@@ -1,5 +1,5 @@
 # @doc raw"""
-#     AssembledMassOperator{MT, CV}
+#     BilinearMassIntegrator{MT, CV}
 
 # Assembles the matrix associated to the bilinearform ``a(u,v) = -\int v(x) u(x) dx`` for ``u,v`` from the same function space.
 # """
@@ -11,13 +11,12 @@ struct BilinearMassIntegrator{CoefficientType}
     # coordinate_system
 end
 
-struct BilinearMassElementCache{IT <: BilinearMassIntegrator, T, CV}
+struct BilinearMassElementCache{IT <: BilinearMassIntegrator, CV}
     integrator::IT
-    ρq::Vector{T}
     cellvalues::CV
 end
 
-function assemble_element!(Mₑ, cell, element_cache::CACHE, time) where {CACHE <: BilinearMassElementCache}
+function assemble_element!(Mₑ, cell, element_cache::BilinearMassElementCache, time)
     @unpack cellvalues = element_cache
     reinit!(element_cache.cellvalues, cell)
     n_basefuncs = getnbasefunctions(cellvalues)
@@ -33,3 +32,5 @@ function assemble_element!(Mₑ, cell, element_cache::CACHE, time) where {CACHE 
         end
     end
 end
+
+setup_element_cache(element_model::BilinearMassIntegrator, qr, ip, ip_geo) = BilinearMassElementCache(element_model, CellValues(qr, ip, ip_geo))

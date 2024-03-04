@@ -114,7 +114,10 @@ end
 """
     ElastodynamicsModel(::QuasiStaticModel, ρ::Coefficient)
 """
-struct ElastodynamicsModel{RHSModel <: QuasiStaticModel, CoefficienType}
+struct ElastodynamicsModel{RHSModel <: QuasiStaticModel, CoefficientType}
     rhs::RHSModel
-    ρ::CoefficienType
+    ρ::CoefficientType
 end
+
+setup_internal_model_cache(cv, constitutive_model::Union{<:ActiveStressModel, <:ExtendedHillModel, <:GeneralizedHillModel}) = setup_contraction_model_cache(cv, constitutive_model.contraction_model)
+setup_internal_model_cache(cv, constitutive_model::Union{<:ElastodynamicsModel{<:ActiveStressModel}, <:ElastodynamicsModel{<:ExtendedHillModel}, <:ElastodynamicsModel{<:GeneralizedHillModel}}) = setup_contraction_model_cache(cv, constitutive_model.rhs.contraction_model)

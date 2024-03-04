@@ -1,5 +1,5 @@
 # @doc raw"""
-#     AssembledDiffusionOperator{MT, DT, CV}
+#     BilinearDiffusionIntegrator{CoefficientType}
 
 # Assembles the matrix associated to the bilinearform ``a(u,v) = -\int \nabla v(x) \cdot D(x) \nabla u(x) dx`` for a given diffusion tensor ``D(x)`` and ``u,v`` from the same function space.
 # """
@@ -16,7 +16,7 @@ struct BilinearDiffusionElementCache{IT <: BilinearDiffusionIntegrator, CV}
     cellvalues::CV
 end
 
-function assemble_element!(Kₑ, cell, element_cache::CACHE, time) where {CACHE <: BilinearDiffusionElementCache}
+function assemble_element!(Kₑ, cell, element_cache::BilinearDiffusionElementCache, time)
     @unpack cellvalues = element_cache
     n_basefuncs = getnbasefunctions(cellvalues)
 
@@ -34,3 +34,5 @@ function assemble_element!(Kₑ, cell, element_cache::CACHE, time) where {CACHE 
         end
     end
 end
+
+setup_element_cache(element_model::BilinearDiffusionIntegrator, qr, ip, ip_geo) = BilinearDiffusionElementCache(element_model, CellValues(qr, ip, ip_geo))

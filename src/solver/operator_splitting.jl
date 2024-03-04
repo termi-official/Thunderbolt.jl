@@ -1,18 +1,4 @@
 """
-Annotation for the classical reaction-diffusion split of a given model.
-"""
-struct ReactionDiffusionSplit{MODEL}
-    model::MODEL
-end
-
-"""
-Annotation for the split described by [RegSalAfrFedDedQar:2022:cem](@citet).
-"""
-struct ReggazoniSalvadorAfricaSplit{MODEL <: CoupledModel}
-    model::MODEL
-end
-
-"""
 Classical Lie-Trotter-Godunov operator splitting in time.
 """
 struct LTGOSSolver{AST,BST}

@@ -73,7 +73,7 @@ function semidiscretize(model::StructuralModel{<:QuasiStaticModel}, discretizati
     return semidiscrete_problem
 end
 
-function semidiscretize(split::ReggazoniSalvadorAfricaSplit, discretization::FiniteElementDiscretization, grid::AbstractGrid)
+function semidiscretize(split::RegazzoniSalvadorAfricaSplit, discretization::FiniteElementDiscretization, grid::AbstractGrid)
     ets = elementtypes(grid)
     @assert length(ets) == 1 "Multiple element types not supported"
     @assert length(discretization.dbcs) == 0 "Dirichlet elimination is not supported yet."

@@ -146,7 +146,7 @@ function (postproc::StandardMechanicalIOPostProcessor)(t, problem, solver_cache)
 end
 
 
-function solve_test_ring(name_base, constitutive_model, grid, cs, face_models, ip_mech::Thunderbolt.VectorInterpolationCollection, qr_collection::QuadratureRuleCollection, Δt = 100.0, T = 1000.0)
+function solve_test_ring(name_base, constitutive_model, grid, cs, face_models, ip_mech::Thunderbolt.VectorInterpolationCollection, qr_collection::QuadratureRuleCollection, Δt, T = 1000.0)
     io = ParaViewWriter(name_base);
     # io = JLD2Writer(name_base);
 
