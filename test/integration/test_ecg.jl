@@ -30,7 +30,7 @@
     @testset "Geselowitz1989 3D $geo" begin
         ground_vertex = Vec(-1., -1., -1.)
         electrodes = [
-            # ground_vertex,
+            ground_vertex,
             Vec(0., 0., -1.), 
             Vec(0., 0., 1.),
             Vec(0., 1., 0.),
@@ -44,19 +44,19 @@
         u = zeros(Thunderbolt.solution_size(problem.A))
 
         
-        # @testset "Equilibrium" begin BROKEN
-        #     u .= 0.0
-        #     reinit!(lead_field, u)
-        #     for i in 1:length(electrode_pairs)
-        #         @test Thunderbolt.evaluate_ecg(lead_field, i) ≈ 0.0
-        #     end
-        # end
+        @testset "Equilibrium" begin
+            u .= 0.0
+            reinit!(lead_field, u)
+            for i in 1:length(electrode_pairs)
+                @test Thunderbolt.evaluate_ecg(lead_field, i) ≈ 0.0
+            end
+        end
     end
 
     @testset "Potse2006 3D $geo" begin
         ground_vertex = Vec(-1., -1., -1.)
         electrodes = [
-            # ground_vertex,
+            ground_vertex,
             Vec(0., 0., -1.), 
             Vec(0., 0., 1.),
             Vec(0., 1., 0.),
@@ -84,7 +84,7 @@
             
             Ferrite.apply_analytical!(u, problem.A.dh, :ϕₘ, x->-(x[dim] + 1)^3)
             reinit!(ecg_reconst_cache, u)
-            # @info findfirst(!(isapprox.(u, ecg_reconst_cache.ϕₑ, atol = 1e-2)))
+            @test u ≈ ecg_reconst_cache.ϕₑ atol = 1e-4
         end
 
     end
