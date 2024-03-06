@@ -31,6 +31,20 @@
             grid_hex = Thunderbolt.hexahedralize(grid)
             @test all(typeof.(getcells(grid_hex)) .== Hexahedron) # Test if we really hit all elements
             test_detJ(grid_hex) # And for messed up elements
+
+            # Check for correct transfer of facesets
+            addfaceset!(grid_hex, "right_new", x -> x[1] ≈ 1.0)
+            @test getfaceset(grid_hex, "right") == getfaceset(grid_hex, "right_new")
+            addfaceset!(grid_hex, "left_new", x -> x[1] ≈ -1.0)
+            @test getfaceset(grid_hex, "left") == getfaceset(grid_hex, "left_new")
+            addfaceset!(grid_hex, "top_new", x -> x[3] ≈ 1.0)
+            @test getfaceset(grid_hex, "top") == getfaceset(grid_hex, "top_new")
+            addfaceset!(grid_hex, "bottom_new", x -> x[3] ≈ -1.0)
+            @test getfaceset(grid_hex, "bottom") == getfaceset(grid_hex, "bottom_new")
+            addfaceset!(grid_hex, "front_new", x -> x[2] ≈ -1.0)
+            @test getfaceset(grid_hex, "front") == getfaceset(grid_hex, "front_new")
+            addfaceset!(grid_hex, "back_new", x -> x[2] ≈ 1.0)
+            @test getfaceset(grid_hex, "back") == getfaceset(grid_hex, "back_new")
         end
 
         if element_type == Hexahedron
