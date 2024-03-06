@@ -103,7 +103,7 @@ function Geselowitz1989ECGLeadCache(problem::SplitProblem{<:TransientHeatProblem
     f = zeros(ndofs(dh_Z))
     v = zeros(size(Z,1))
 
-    integrator = BilinearDiffusionIntegrator(κ)
+    integrator = BilinearDiffusionIntegrator(-κ)
     element_cache = BilinearDiffusionElementCache(integrator, cv)
     op = AssembledBilinearOperator(K, element_cache, dh_Z)
     update_operator!(op, 0.)
@@ -127,7 +127,8 @@ end
 function _compute_lead_field(f, ∇Z, Z, op, p, electrodes::AbstractArray{Vec{3, T}}) where T
     _add_electrode(f, op.dh, electrodes[1], true)
     _add_electrode(f, op.dh, electrodes[2], false)
-    IterativeSolvers.cg!(Z, op.A, f, Pl=p)
+    (temp, _) = Krylov.cg(op.A,f, M=p, ldiv = true)
+    Z .= temp
     _compute_quadrature_fluxes!(∇Z,op.dh,op.element_cache.cellvalues,Z,ConstantCoefficient(SymmetricTensor{2,3}((
         1, 0, 0,
            1, 0,
@@ -207,7 +208,7 @@ function Potse2006ECGPoissonReconstructionCache(problem::SplitProblem{<: Transie
     K = create_sparsity_pattern(dh_ϕₑ)
     ϕₑ = zeros(Ferrite.ndofs(dh_ϕₑ))
     f = similar(ϕₑ)
-    integrator = BilinearDiffusionIntegrator(ConstantCoefficient(-κ.val))
+    integrator = BilinearDiffusionIntegrator(-κ)
     element_cache = BilinearDiffusionElementCache(integrator, cv)
     op = AssembledBilinearOperator(K, element_cache, dh_ϕₑ)
     update_operator!(op, 0.)
