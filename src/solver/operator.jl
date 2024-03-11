@@ -255,7 +255,7 @@ Base.eltype(op::LinearNullOperator{T,S}) where {T,S} = T
 Base.size(op::LinearNullOperator{T,S}) where {T,S} = S
 
 update_operator!(op::LinearNullOperator, time) = nothing
-add!(b::Vector, op::LinearNullOperator) = nothing
+Ferrite.add!(b::Vector, op::LinearNullOperator) = nothing
 needs_update(op::LinearNullOperator, t) = false
 
 
@@ -287,7 +287,7 @@ function update_operator!(op::LinearOperator, time)
     #finish_assemble(assembler)
 end
 
-add!(b::Vector, op::LinearOperator) = b .+= op.b
+Ferrite.add!(b::Vector, op::LinearOperator) = b .+= op.b
 Base.eltype(op::LinearOperator) = eltype(op.b)
 Base.size(op::LinearOperator) = sisze(op.b)
 
