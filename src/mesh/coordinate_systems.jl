@@ -284,23 +284,9 @@ struct BiVCoordinate{T}
     transventricular::T
 end
 
-Thunderbolt.getcoordinateinterpolation(cs::BiVCoordinateSystem, cell::Ferrite.AbstractCell) = Ferrite.getfieldinterpolation(cs.dh, (1,1))
+getcoordinateinterpolation(cs::BiVCoordinateSystem, cell::Ferrite.AbstractCell) = Ferrite.getfieldinterpolation(cs.dh, (1,1))
 
-function Thunderbolt.evaluate_coefficient(coeff::CoordinateSystemCoefficient{<:BiVCoordinateSystem}, cell_cache, qp::QuadraturePoint{ref_shape,T}, t) where {ref_shape,T}
-    x = @MVector zeros(T, 4)
-    ip = getcoordinateinterpolation(coeff.cs, getcells(cell_cache.grid, cellid(cell_cache)))
-    dofs = celldofs(coeff.cs.dh, cellid(cell_cache))
-    @inbounds for i in 1:getnbasefunctions(ip)
-        val = Ferrite.shape_value(ip, qp.ξ, i)
-        x[1] += val * coeff.cs.u_transmural[dofs[i]]
-        x[2] += val * coeff.cs.u_apicobasal[dofs[i]]
-        x[3] += val * coeff.cs.u_rotational[dofs[i]]
-        x[4] += val * coeff.cs.u_transventricular[dofs[i]]
-    end
-    return BiVCoordinate(x[1], x[2], x[3], x[4])
-end
-
-function Thunderbolt.vtk_coordinate_system(vtk, cs::BiVCoordinateSystem)
+function vtk_coordinate_system(vtk, cs::BiVCoordinateSystem)
     vtk_point_data(vtk, bivcs.dh, bivcs.u_transmural, "_transmural")
     vtk_point_data(vtk, bivcs.dh, bivcs.u_apicobasal, "_apicobasal")
     vtk_point_data(vtk, bivcs.dh, bivcs.u_rotational, "_rotational")
