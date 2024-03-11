@@ -30,7 +30,7 @@ dof handler `dh_to`, assuming that all spatial coordinates of the dofs for `dh_t
 interior or boundary of the mesh contained within dh_from. This is necessary to have valid
 interpolation values, as this operator does not have extrapolation functionality.
 
-!!! NOTE
+!!! note
     We assume a continuous coordinate field, if the interpolation of the named field is continuous.
 """
 struct NodalIntergridInterpolation{PH <: PointEvalHandler, DH1 <: AbstractDofHandler, DH2 <: AbstractDofHandler} <: AbstractTransferOperator
@@ -103,7 +103,9 @@ struct NodalIntergridInterpolation{PH <: PointEvalHandler, DH1 <: AbstractDofHan
     end
 end
 
-# This is basically a fancy matrix-vector product
+"""
+    This is basically a fancy matrix-vector product to transfer the solution from one problem to another one.
+"""
 function transfer!(u_to::AbstractArray, operator::NodalIntergridInterpolation, u_from::AbstractArray)
     # TODO non-allocating version
     u_to[operator.node_to_dof_map] .= Ferrite.evaluate_at_points(operator.ph, operator.dh_from, u_from, operator.field_name)
