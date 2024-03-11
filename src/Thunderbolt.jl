@@ -15,6 +15,8 @@ using JLD2
 import Ferrite: AbstractDofHandler, AbstractGrid, AbstractRefShape, AbstractCell
 import Ferrite: vertices, edges, faces, sortedge, sortface
 
+using ReadVTK
+
 import Krylov: CgSolver
 
 import Base: *, +, -
