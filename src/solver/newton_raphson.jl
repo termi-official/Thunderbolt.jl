@@ -167,7 +167,7 @@ function eliminate_constraints_from_linearization_blocked!(solver_cache, problem
     apply_zero!(solver_cache.op.operators[1].J, solver_cache.residual[i], problem.base_problems[1].ch)
 end
 
-function solve!(u, problem, solver_cache::NewtonRaphsonSolverCache, t)
+function solve!(u::AbstractVector, problem::AbstractProblem, solver_cache::NewtonRaphsonSolverCache, t)
     @unpack op, residual = solver_cache
     newton_itr = -1
     Δu = zero(u)

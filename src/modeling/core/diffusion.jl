@@ -20,7 +20,7 @@ function assemble_element!(Kₑ, cell, element_cache::CACHE, time) where {CACHE 
     @unpack cellvalues = element_cache
     n_basefuncs = getnbasefunctions(cellvalues)
 
-    reinit!(cellvalues, cell)
+    Ferrite.reinit!(cellvalues, cell)
 
     for qp in QuadratureIterator(cellvalues)
         D_loc = evaluate_coefficient(element_cache.integrator.D, cell, qp, time)

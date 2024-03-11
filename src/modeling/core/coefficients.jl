@@ -54,6 +54,7 @@ struct ConstantCoefficient{T}
     val::T
 end
 
+Base.:(-)(cc::ConstantCoefficient) = ConstantCoefficient(-cc.val)
 evaluate_coefficient(coeff::ConstantCoefficient, cell_cache, qp, t) = coeff.val
 
 
@@ -136,6 +137,8 @@ end
 
 @inline _eval_sdt_coefficient(M::SVector{MS}, λ::SVector{λS}) where {MS, λS} = error("Incompatible dimensions! dim(M)=$MS dim(λ)=$λS")
 @inline _eval_sdt_coefficient(M::SVector{rdim,<:Vec{sdim}}, λ::SVector{rdim}) where {rdim,sdim} = sum(i->λ[i] * M[i] ⊗ M[i], 1:rdim; init=zero(Tensor{2,sdim}))
+
+Base.:(-)(cc::SpectralTensorCoefficient) = SpectralTensorCoefficient(-cc.eigenvalues, cc.eigenvectors)
 
 function evaluate_coefficient(coeff::SpectralTensorCoefficient, cell_cache, qp::QuadraturePoint, t)
     M = evaluate_coefficient(coeff.eigenvectors, cell_cache, qp, t)
