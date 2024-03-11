@@ -10,9 +10,17 @@ struct StandardMechanicalIOPostProcessor2{IO, CVC, CSC}
     csc::CSC
 end
 
-(postproc::StandardMechanicalIOPostProcessor2)(t, problem::Thunderbolt.SplitProblem, solver_cache) = (postproc::StandardMechanicalIOPostProcessor2)(t, problem.A.base_problems[1], solver_cache.A_solver_cache)
+function (postproc::StandardMechanicalIOPostProcessor2)(t, problem::Thunderbolt.SplitProblem, solver_cache)
+    (postproc::StandardMechanicalIOPostProcessor2)(t, problem.A.base_problems[1], solver_cache.A_solver_cache)
+    (postproc::StandardMechanicalIOPostProcessor2)(t, problem.B, solver_cache.B_solver_cache)
+end
 
-function (postproc::StandardMechanicalIOPostProcessor2)(t, problem, solver_cache)
+
+function (postproc::StandardMechanicalIOPostProcessor2)(t, problem::Thunderbolt.ODEProblem, solver_cache)
+    @show solver_cache.uₙ
+end
+
+function (postproc::StandardMechanicalIOPostProcessor2)(t, problem::Thunderbolt.QuasiStaticNonlinearProblem, solver_cache)
     @unpack dh = problem
     grid = Ferrite.get_grid(dh)
     @unpack io, cvc, csc = postproc
@@ -39,7 +47,7 @@ function (postproc::StandardMechanicalIOPostProcessor2)(t, problem, solver_cache
         field_idx === nothing && continue 
         cv = getcellvalues(cvc, dh.grid.cells[first(sdh.cellset)])
         for cell ∈ CellIterator(sdh)
-            
+
             reinit!(cv, cell)
             global_dofs = celldofs(cell)
             field_dofs  = dof_range(sdh, field_idx)
@@ -157,15 +165,15 @@ function solve_ideal_lv(name_base, constitutive_model, grid, coordinate_system, 
 
     problem = semidiscretize(
         ReggazoniSalvadorAfricaSplit(CoupledModel(
-            [
+            (
                 StructuralModel(constitutive_model, face_models),
                 ReggazoniSalvadorAfricaLumpedCicuitModel{Float64,Float64,Float64,Float64,Float64}()
-            ],
-            [
+            ),
+            (
                 Coupling(1,2,LumpedFluidSolidCoupler(
                     Hirschvogel2017SurrogateVolume()
                 ))
-            ]
+            )
         )),
         FiniteElementDiscretization(
             Dict(:displacement => ip_mech),
@@ -202,12 +210,12 @@ intorder = max(2*order-1,2)
 ip_u = LagrangeCollection{order}()^3
 qr_u = QuadratureRuleCollection(intorder-1)
 LV_cs = compute_LV_coordinate_system(LV_grid)
-LV_fm = create_simple_microstructure_model(LV_cs, ip_u, endo_helix_angle = -60.0, epi_helix_angle = 70.0, endo_transversal_angle = 10.0, epi_transversal_angle = -20.0)
-passive_ho_model = HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 0.28504197825657906, 4.126552003938297, 0.0, 1.0, 0.0, 1.0, SimpleCompressionPenalty(4.0))
+LV_fm = create_simple_microstructure_model(LV_cs, ip_u, endo_helix_angle = deg2rad(-60.0), epi_helix_angle = deg2rad(70.0), endo_transversal_angle = deg2rad(10.0), epi_transversal_angle = deg2rad(-20.0))
+passive_ho_model = HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 0.28504197825657906, 4.126552003938297, 0.0, 1.0, 0.0, 1.0, SimpleCompressionPenalty(40.0))
 solve_ideal_lv("lv_test",
     ActiveStressModel(
         passive_ho_model,
-        SimpleActiveStress(10.0),
+        PiersantiActiveStress(100.0, 0.8, 0.5, 0.0),
         PelceSunLangeveld1995Model(;calcium_field=AnalyticalCoefficient(
             (x,t) -> t/1000.0 < 0.5 ? (1-x.transmural*0.7)*2.0*t/1000.0 : (2.0-2.0*t/1000.0)*(1-x.transmural*0.7),
             CoordinateSystemCoefficient(LV_cs)
