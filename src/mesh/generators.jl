@@ -360,3 +360,20 @@ end
 
 # TODO think about making Mesh = Grid+Topology+CoordinateSystem
 generate_mesh(args...) = to_mesh(generate_grid(args...))
+
+function generate_simple_disc_mesh(::Type{Quadrilateral}, n; radius= 1.0)
+    nnodes = 2n + 1
+    θ = deg2rad(360/2n)
+
+    nodepos = Vec((0.0,radius))
+    nodes = [rotate(nodepos, θ*i) for i ∈ 0:(2n-1)]
+    push!(nodes, Vec((0.0,0.0)))
+
+    elements = [Quadrilateral((2i-1==0 ? nnodes-1 : 2i-1,2i,2i+1 == nnodes ? 1 : 2i+1,nnodes)) for i ∈ 1:n]
+
+    facesets = Dict(
+        "boundary" => Set([FaceIndex(i,1) for i ∈ 1:n]) ∪ Set([FaceIndex(i,2) for i ∈ 1:n]),
+    )
+
+    return to_mesh(Grid(elements, Node.(nodes); facesets=facesets))
+end
