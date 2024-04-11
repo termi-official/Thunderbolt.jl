@@ -48,10 +48,19 @@ function assemble_element!(Kₑ::Matrix, residualₑ, uₑ, geometry_cache, elem
             residualₑ[i] += ∇δui ⊡ P * dΩ
 
             ∇δui∂P∂F = ∇δui ⊡ ∂P∂F # Hoisted computation
-            for j in 1:ndofs
+            for j in i:ndofs
                 ∇δuj = shape_gradient(cv, qp, j)
                 # Add contribution to the tangent
                 Kₑ[i, j] += ( ∇δui∂P∂F ⊡ ∇δuj ) * dΩ
+            end
+        end
+
+        # Symmetrize
+        for i in 2:ndofs
+            for j in 1:i
+                ∇δuj = shape_gradient(cv, qp, j)
+                # Add contribution to the tangent
+                Kₑ[i, j] = Kₑ[j, i]
             end
         end
     end

@@ -157,16 +157,18 @@ end
 function update_linearization!(op::AssembledNonlinearOperator, u::Vector, residual::Vector, time)
     @unpack J, element_cache, face_caches, dh  = op
 
-    assembler = start_assemble(J)
+    assembler = start_assemble(J, residual)
 
     ndofs = ndofs_per_cell(dh)
     Jₑ = zeros(ndofs, ndofs)
     rₑ = zeros(ndofs)
+    uₑ = zeros(ndofs)
 
     @inbounds for cell in CellIterator(dh)
+        dofs = celldofs(cell)
         fill!(Jₑ, 0)
         fill!(rₑ, 0)
-        uₑ = @view u[celldofs(cell)]
+        uₑ .= @view u[dofs]
         # TODO instead of "cell" pass object with geometry information only
         @timeit_debug "assemble element" assemble_element!(Jₑ, rₑ, uₑ, cell, element_cache, time)
         # TODO maybe it makes sense to merge this into the element routine in a modular fasion?
@@ -179,8 +181,7 @@ function update_linearization!(op::AssembledNonlinearOperator, u::Vector, residu
                 end
             end
         end
-        assemble!(assembler, celldofs(cell), Jₑ)
-        residual[celldofs(cell)] += rₑ # separate because the residual might contain more external stuff
+        assemble!(assembler, dofs, Jₑ, rₑ)
     end
 
     #finish_assemble(assembler)

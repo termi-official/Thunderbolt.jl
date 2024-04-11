@@ -132,7 +132,7 @@ function solve!(u::AbstractVector, problem, solver_cache::NewtonRaphsonSolverCac
         newton_itr += 1
 
         residual .= 0.0
-        @timeit_debug "update operator" update_linearization!(solver_cache.op, u, residual, t)
+        @timeit_debug "update operator" update_linearization!(op, u, residual, t)
 
         @timeit_debug "elimination" eliminate_constraints_from_linearization!(solver_cache, problem)
         residualnorm = residual_norm(solver_cache, problem)

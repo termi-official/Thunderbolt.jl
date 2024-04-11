@@ -2,6 +2,15 @@
 include("collections.jl")
 include("quadrature_iterator.jl")
 
+function celldofsview(dh::DofHandler, i::Int)
+    if i == length(dh.cell_dofs_offset)
+        return @views dh.cell_dofs[dh.cell_dofs_offset[i]:end]
+    else
+        return @views dh.cell_dofs[dh.cell_dofs_offset[i]:(dh.cell_dofs_offset[i+1]-1)]
+    end
+end
+
+
 function calculate_element_volume(cell, cellvalues_u, uₑ)
     reinit!(cellvalues_u, cell)
     evol::Float64=0.0;

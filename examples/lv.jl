@@ -164,15 +164,15 @@ function solve_ideal_lv(name_base, constitutive_model, grid, coordinate_system, 
     # io = JLD2Writer(name_base);
 
     problem = semidiscretize(
-        ReggazoniSalvadorAfricaSplit(CoupledModel(
+        RegazzoniSalvadorAfricaSplit(CoupledModel(
             (
                 StructuralModel(constitutive_model, face_models),
-                ReggazoniSalvadorAfricaLumpedCicuitModel{Float64,Float64,Float64,Float64,Float64}()
+                RegazzoniSalvadorAfricaLumpedCicuitModel{Float64,Float64,Float64,Float64,Float64}()
             ),
             (
                 Coupling(1,2,LumpedFluidSolidCoupler(
                     Hirschvogel2017SurrogateVolume()
-                ))
+                )),
             )
         )),
         FiniteElementDiscretization(
@@ -212,6 +212,10 @@ qr_u = QuadratureRuleCollection(intorder-1)
 LV_cs = compute_LV_coordinate_system(LV_grid)
 LV_fm = create_simple_microstructure_model(LV_cs, ip_u, endo_helix_angle = deg2rad(-60.0), epi_helix_angle = deg2rad(70.0), endo_transversal_angle = deg2rad(10.0), epi_transversal_angle = deg2rad(-20.0))
 passive_ho_model = HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 0.28504197825657906, 4.126552003938297, 0.0, 1.0, 0.0, 1.0, SimpleCompressionPenalty(40.0))
+
+using Thunderbolt.TimerOutputs
+TimerOutputs.enable_debug_timings(Thunderbolt)
+TimerOutputs.reset_timer!()
 solve_ideal_lv("lv_test",
     ActiveStressModel(
         passive_ho_model,
@@ -225,3 +229,5 @@ solve_ideal_lv("lv_test",
     [NormalSpringBC(0.001, "Epicardium")],
     ip_u, qr_u, 25.0
 )
+TimerOutputs.print_timer()
+TimerOutputs.disable_debug_timings(Thunderbolt)
