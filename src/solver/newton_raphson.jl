@@ -29,7 +29,7 @@ To use the Newton-Raphson solver you have to dispatch on
 """
 Base.@kwdef struct NewtonRaphsonSolver{T}
     # Convergence tolerance
-    tol::T = 1e-8
+    tol::T = 1e-4
     # Maximum number of iterations
     max_iter::Int = 100
 end
