@@ -22,14 +22,15 @@ getcoordinateinterpolation(cs::CartesianCoordinateSystem{sdim}, cell::CellType) 
 Simplified universal ventricular coordinate on LV only, containing the transmural, apicobasal and
 circumferential coordinates. See [`compute_LV_coordinate_system`](@ref) to construct it.
 """
-struct LVCoordinateSystem{DH <: AbstractDofHandler}
+struct LVCoordinateSystem{DH <: AbstractDofHandler, IPC}
     dh::DH
+    ip_collection::IPC # TODO special dof handler with type stable interpolation
     u_transmural::Vector{Float64}
     u_apicobasal::Vector{Float64}
     u_circumferential::Vector{Float64}
-    function LVCoordinateSystem(dh::AbstractDofHandler, u_transmural::Vector{Float64}, u_apicobasal::Vector{Float64}, u_circumferential::Vector{Float64})
+    function LVCoordinateSystem(dh::AbstractDofHandler, ipc::ScalarInterpolationCollection, u_transmural::Vector{Float64}, u_apicobasal::Vector{Float64}, u_circumferential::Vector{Float64})
         check_subdomains(dh)
-        return new{typeof(dh)}(dh, u_transmural, u_apicobasal, u_circumferential)
+        return new{typeof(dh), typeof(ipc)}(dh, ipc, u_transmural, u_apicobasal, u_circumferential)
     end
 end
 
@@ -54,7 +55,7 @@ end
 
 Get interpolation function for the LV coordinate system.
 """
-getcoordinateinterpolation(cs::LVCoordinateSystem, cell::AbstractCell) = Ferrite.getfieldinterpolation(cs.dh, (1,1))
+getcoordinateinterpolation(cs::LVCoordinateSystem, cell::AbstractCell) = getinterpolation(cs.ip_collection, cell)
 
 
 """
@@ -155,7 +156,7 @@ function compute_LV_coordinate_system(grid::AbstractGrid{3})
     circumferential = zeros(ndofs(dh))
     circumferential .= NaN
 
-    return LVCoordinateSystem(dh, transmural, apicobasal, circumferential)
+    return LVCoordinateSystem(dh, ip_collection, transmural, apicobasal, circumferential)
 end
 
 """
@@ -240,7 +241,7 @@ function compute_midmyocardial_section_coordinate_system(grid::AbstractGrid{dim}
     circumferential = zeros(ndofs(dh))
     circumferential .= NaN
 
-    return LVCoordinateSystem(dh, transmural, apicobasal, circumferential)
+    return LVCoordinateSystem(dh, ip_collection, transmural, apicobasal, circumferential)
 end
 
 """

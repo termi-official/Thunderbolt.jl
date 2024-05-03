@@ -20,7 +20,13 @@ end
 """
 A descriptor for a coupled model.
 """
-struct CoupledModel{MT, CT}
+struct CoupledModel{MT <: Tuple, CT <: Tuple}
     base_models::MT
     couplers::CT
 end
+
+CoupledModel(base_models::Tuple, coupler::Coupling) = CoupledModel(base_models, (coupler,))
+CoupledModel(base_models::AbstractVector, coupler::Coupling) = CoupledModel(ntuple(i -> base_models[i], length(base_models)), (coupler,))
+CoupledModel(base_models::AbstractVector, couplers::Tuple) = CoupledModel(ntuple(i -> base_models[i], length(base_models)), couplers)
+CoupledModel(base_models::Tuple, couplers::AbstractVector) = CoupledModel(base_models, ntuple(i -> couplers[i], length(couplers)))
+CoupledModel(base_models::AbstractVector, couplers::AbstractVector) = CoupledModel(ntuple(i -> base_models[i], length(base_models)), ntuple(i -> couplers[i], length(couplers)))

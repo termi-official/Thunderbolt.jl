@@ -69,36 +69,24 @@ end
 function setup_solver_caches(problem::TransientHeatProblem, solver::BackwardEulerSolver, t₀)
     @unpack dh = problem
     @assert length(dh.field_names) == 1 # TODO relax this assumption, maybe.
-    ip = dh.subdofhandlers[1].field_interpolations[1]
-    order = Ferrite.getorder(ip)
-    refshape = Ferrite.getrefshape(ip)
-    sdim = Ferrite.getdim(dh.grid)
-    qr = QuadratureRule{refshape}(2*order) # TODO how to pass this one down here?
-    cv = CellValues(qr, ip)
+    field_name = dh.field_names[1]
+    intorder = quadrature_order(problem, field_name)
+    qr = QuadratureRuleCollection(intorder) # TODO how to pass this one down here?
 
-    # TODO abstraction layer around AssembledBilinearOperator
     mass_operator = AssembledBilinearOperator(
-        create_sparsity_pattern(dh),
-        BilinearMassElementCache(
-            BilinearMassIntegrator(
-                ConstantCoefficient(1.0)
-            ),
-            zeros(getnquadpoints(qr)),
-            cv
+        dh, field_name, # TODO field name
+        BilinearMassIntegrator(
+            ConstantCoefficient(1.0)
         ),
-        dh,
+        qr
     )
 
-    # TODO abstraction layer around AssembledBilinearOperator
     diffusion_operator = AssembledBilinearOperator(
-        create_sparsity_pattern(dh),
-        BilinearDiffusionElementCache(
-            BilinearDiffusionIntegrator(
-                problem.diffusion_tensor_field,
-            ),
-            cv,
+        dh, field_name, # TODO field name
+        BilinearDiffusionIntegrator(
+            problem.diffusion_tensor_field,
         ),
-        dh,
+        qr
     )
 
     cache = BackwardEulerSolverCache(
@@ -142,7 +130,7 @@ function perform_step!(problem, solver_cache::ForwardEulerSolverCache, t::Float6
     @inbounds rhs!(du, uₙ, t, problem.p)
     @inbounds uₙ .= uₙ .+ Δt .* du
 
-    return true
+    return !any(isnan.(uₙ))
 end
 
 function setup_solver_caches(problem::ODEProblem, solver::ForwardEulerSolver, t₀)

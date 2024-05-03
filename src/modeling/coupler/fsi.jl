@@ -18,12 +18,12 @@ as proposed by [RegSalAfrFedDedQar:2022:cem](@citet).
 !!! note 
     This integral basically measures the volume via displacement on a given axis.
 """
-Base.@kwdef struct ReggazoniSalvadorAfrica2022SurrogateVolume{T}
+Base.@kwdef struct RegazzoniSalvadorAfrica2022SurrogateVolume{T}
     h::Vec{3,T} = Vec((0.0, 0.0, 1.0))
     b::Vec{3,T} = Vec((0.0, 0.0, 0.5))
 end
 
-function volume_integral(x, d, F, N, method::ReggazoniSalvadorAfrica2022SurrogateVolume)
+function volume_integral(x, d, F, N, method::RegazzoniSalvadorAfrica2022SurrogateVolume)
     @unpack h, b = method
     -det(F) * ((h ⊗ h) ⋅ (xq + dq - b)) ⋅ (transpose(inv(F)) ⋅  N)
 end
@@ -117,4 +117,11 @@ function compute_chamber_volume(dh, u, setname, method)
         end
     end
     return volume
+end
+
+"""
+Annotation for the split described by [RegSalAfrFedDedQar:2022:cem](@citet).
+"""
+struct RegazzoniSalvadorAfricaSplit{MODEL <: CoupledModel}
+    model::MODEL
 end

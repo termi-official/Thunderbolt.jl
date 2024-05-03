@@ -10,12 +10,20 @@ struct StandardMechanicalIOPostProcessor2{IO, CVC, CSC}
     csc::CSC
 end
 
-(postproc::StandardMechanicalIOPostProcessor2)(t, problem::Thunderbolt.SplitProblem, solver_cache) = (postproc::StandardMechanicalIOPostProcessor2)(t, problem.A.base_problems[1], solver_cache.A_solver_cache)
+function (postproc::StandardMechanicalIOPostProcessor2)(t, problem::Thunderbolt.SplitProblem, solver_cache)
+    (postproc::StandardMechanicalIOPostProcessor2)(t, problem.A.base_problems[1], solver_cache.A_solver_cache)
+    (postproc::StandardMechanicalIOPostProcessor2)(t, problem.B, solver_cache.B_solver_cache)
+end
 
-function (postproc::StandardMechanicalIOPostProcessor2)(t, problem, solver_cache)
+
+function (postproc::StandardMechanicalIOPostProcessor2)(t, problem::Thunderbolt.ODEProblem, solver_cache)
+    @show solver_cache.uₙ
+end
+
+function (postproc::StandardMechanicalIOPostProcessor2)(t, problem::Thunderbolt.QuasiStaticNonlinearProblem, solver_cache)
     @unpack dh = problem
     grid = Ferrite.get_grid(dh)
-    @unpack io, cv, csc = postproc
+    @unpack io, cvc, csc = postproc
 
     # Compute some elementwise measures
     E_ff = zeros(getncells(grid))
@@ -34,10 +42,12 @@ function (postproc::StandardMechanicalIOPostProcessor2)(t, problem, solver_cache
     helixanglerefdata = zero(Vector{Float64}(undef, getncells(grid)))
 
     # Compute some elementwise measures
-    for sdh ∈ dh.subdofhandlers[postproc.subdomains]
+    for sdh ∈ dh.subdofhandlers
         field_idx = Ferrite.find_field(sdh, :displacement)
         field_idx === nothing && continue 
+        cv = getcellvalues(cvc, dh.grid.cells[first(sdh.cellset)])
         for cell ∈ CellIterator(sdh)
+
             reinit!(cv, cell)
             global_dofs = celldofs(cell)
             field_dofs  = dof_range(sdh, field_idx)
@@ -126,7 +136,7 @@ function (postproc::StandardMechanicalIOPostProcessor2)(t, problem, solver_cache
 
     # Save the solution
     Thunderbolt.store_timestep!(io, t, dh.grid)
-    Thunderbolt.store_timestep_field!(io, t, dh, solver_cache.uₙ[Block(1)], :displacement)
+    Thunderbolt.store_timestep_field!(io, t, dh, solver_cache.uₙ.blocks[1], :displacement)
     # Thunderbolt.store_timestep_field!(io, t, coordinate_system.dh, coordinate_system.u_transmural, "transmural")
     # Thunderbolt.store_timestep_field!(io, t, coordinate_system.dh, coordinate_system.u_apicobasal, "apicobasal")
     Thunderbolt.store_timestep_celldata!(io, t, hcat(frefdata...),"Reference Fiber Data")
@@ -143,27 +153,27 @@ function (postproc::StandardMechanicalIOPostProcessor2)(t, problem, solver_cache
     Thunderbolt.store_timestep_celldata!(io, t, rad2deg.(helixanglerefdata),"Helix Angle (End Diastole)")
     Thunderbolt.finalize_timestep!(io, t)
 
-    @show Thunderbolt.compute_chamber_volume(dh, solver_cache.uₙ, "Endocardium", Thunderbolt.Hirschvogel2016SurrogateVolume())
+    @show Thunderbolt.compute_chamber_volume(dh, solver_cache.uₙ, "Endocardium", Thunderbolt.Hirschvogel2017SurrogateVolume())
     # min_vol = min(min_vol, calculate_volume_deformed_mesh(uₙ,dh,cv));
     # max_vol = max(max_vol, calculate_volume_deformed_mesh(uₙ,dh,cv));
 end
 
 
-function solve_ideal_lv(name_base, constitutive_model, grid, coordinate_system, face_models, ip_mech::Thunderbolt.VectorInterpolationCollection, qr_collection::QuadratureRuleCollection, Δt = 100.0, T = 1000.0)
+function solve_ideal_lv(name_base, constitutive_model, grid, coordinate_system, face_models, ip_mech::Thunderbolt.VectorInterpolationCollection, qr_collection::QuadratureRuleCollection, Δt, T = 1000.0)
     io = ParaViewWriter(name_base);
     # io = JLD2Writer(name_base);
 
     problem = semidiscretize(
-        ReggazoniSalvadorAfricaSplit(CoupledModel(
-            [
+        RegazzoniSalvadorAfricaSplit(CoupledModel(
+            (
                 StructuralModel(constitutive_model, face_models),
-                ReggazoniSalvadorAfricaLumpedCicuitModel{Float64,Float64,Float64,Float64,Float64}()
-            ],
-            [
+                RegazzoniSalvadorAfricaLumpedCicuitModel{Float64,Float64,Float64,Float64,Float64}()
+            ),
+            (
                 Coupling(1,2,LumpedFluidSolidCoupler(
                     Hirschvogel2017SurrogateVolume()
-                ))
-            ]
+                )),
+            )
         )),
         FiniteElementDiscretization(
             Dict(:displacement => ip_mech),
@@ -200,12 +210,16 @@ intorder = max(2*order-1,2)
 ip_u = LagrangeCollection{order}()^3
 qr_u = QuadratureRuleCollection(intorder-1)
 LV_cs = compute_LV_coordinate_system(LV_grid)
-LV_fm = create_simple_microstructure_model(LV_cs, ip_u, endo_helix_angle = -60.0, epi_helix_angle = 70.0, endo_transversal_angle = 10.0, epi_transversal_angle = -20.0)
-passive_ho_model = HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 0.28504197825657906, 4.126552003938297, 0.0, 1.0, 0.0, 1.0, SimpleCompressionPenalty(4.0))
+LV_fm = create_simple_microstructure_model(LV_cs, ip_u, endo_helix_angle = deg2rad(-60.0), epi_helix_angle = deg2rad(70.0), endo_transversal_angle = deg2rad(10.0), epi_transversal_angle = deg2rad(-20.0))
+passive_ho_model = HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 0.28504197825657906, 4.126552003938297, 0.0, 1.0, 0.0, 1.0, SimpleCompressionPenalty(40.0))
+
+using Thunderbolt.TimerOutputs
+TimerOutputs.enable_debug_timings(Thunderbolt)
+TimerOutputs.reset_timer!()
 solve_ideal_lv("lv_test",
     ActiveStressModel(
         passive_ho_model,
-        SimpleActiveStress(10.0),
+        PiersantiActiveStress(100.0, 0.8, 0.5, 0.0),
         PelceSunLangeveld1995Model(;calcium_field=AnalyticalCoefficient(
             (x,t) -> t/1000.0 < 0.5 ? (1-x.transmural*0.7)*2.0*t/1000.0 : (2.0-2.0*t/1000.0)*(1-x.transmural*0.7),
             CoordinateSystemCoefficient(LV_cs)
@@ -213,5 +227,7 @@ solve_ideal_lv("lv_test",
         LV_fm,
     ), LV_grid, LV_cs,
     [NormalSpringBC(0.001, "Epicardium")],
-    ip_u, qr_u
+    ip_u, qr_u, 25.0
 )
+TimerOutputs.print_timer()
+TimerOutputs.disable_debug_timings(Thunderbolt)

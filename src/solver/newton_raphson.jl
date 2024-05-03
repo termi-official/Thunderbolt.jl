@@ -29,7 +29,7 @@ To use the Newton-Raphson solver you have to dispatch on
 """
 Base.@kwdef struct NewtonRaphsonSolver{T}
     # Convergence tolerance
-    tol::T = 1e-8
+    tol::T = 1e-4
     # Maximum number of iterations
     max_iter::Int = 100
 end
@@ -44,83 +44,40 @@ mutable struct NewtonRaphsonSolverCache{OpType, ResidualType, T}
     #linear_solver_cache
 end
 
-function setup_solver_caches(problem::QuasiStaticNonlinearProblem, solver::NewtonRaphsonSolver{T}, t₀) where {T}
+function setup_operator(problem::QuasiStaticNonlinearProblem, solver::NewtonRaphsonSolver)
     @unpack dh, constitutive_model, face_models = problem
-    @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the load stepper."
+    @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the Newton solver."
 
-    ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], :displacement)
-    ip_geo = Ferrite.default_interpolation(typeof(getcells(dh.grid, 1)))
-    intorder = 2*Ferrite.getorder(ip)
-    ref_shape = Ferrite.getrefshape(ip)
-    qr = QuadratureRule{ref_shape}(intorder)
-    qr_face = FaceQuadratureRule{ref_shape}(intorder)
-    cv = CellValues(qr, ip, ip_geo)
-    fv = FaceValues(qr_face, ip, ip_geo)
+    intorder = quadrature_order(problem, :displacement)
+    qr = QuadratureRuleCollection(intorder)
+    qr_face = FaceQuadratureRuleCollection(intorder)
 
-    # TODO abstraction layer around this! E.g. setup_element_cache(problem, solver)
-    contraction_cache = setup_contraction_model_cache(cv, constitutive_model.contraction_model)
-    element_cache = StructuralElementCache(
-        constitutive_model,
-        contraction_cache,
-        cv
+    return AssembledNonlinearOperator(
+        dh, :displacement, constitutive_model, qr, face_models, qr_face
     )
-    # TODO abstraction layer around this! E.g. setup_face_caches(problem, solver)
-    face_caches = ntuple(i->setup_face_cache(face_models[i], fv, t₀), length(face_models))
-
-    quasi_static_operator = AssembledNonlinearOperator(
-        create_sparsity_pattern(dh),
-        element_cache, 
-        face_caches,
-        dh,
-    )
-
-    NewtonRaphsonSolverCache(quasi_static_operator, Vector{Float64}(undef, solution_size(problem)), solver)
 end
 
-# TODO what is a cleaner solution for this?
-function setup_solver_caches(coupled_problem::CoupledProblem{<:Tuple{<:QuasiStaticNonlinearProblem,<:NullProblem}}, solver::NewtonRaphsonSolver{T}, t₀) where {T}
-    problem = coupled_problem.base_problems[1]
-    @unpack dh, constitutive_model, face_models = problem
-    @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the load stepper."
+function setup_operator(problem::NullProblem, solver::NewtonRaphsonSolver{T}) where T
+    @warn "FIXME"
+    # return NullOperator(
+    #     solution_size(problem)
+    # )
+    return DiagonalOperator(ones(T, solution_size(problem)))
+end
 
-    ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], :displacement)
-    ip_geo = Ferrite.default_interpolation(typeof(getcells(dh.grid, 1)))
-    intorder = 2*Ferrite.getorder(ip)
-    ref_shape = Ferrite.getrefshape(ip)
-    qr = QuadratureRule{ref_shape}(intorder)
-    qr_face = FaceQuadratureRule{ref_shape}(intorder)
-    cv = CellValues(qr, ip, ip_geo)
-    fv = FaceValues(qr_face, ip, ip_geo)
+function setup_solver_caches(problem::QuasiStaticNonlinearProblem, solver::NewtonRaphsonSolver{T}) where {T}
+    NewtonRaphsonSolverCache(setup_operator(problem, solver), Vector{T}(undef, solution_size(problem)), solver)
+end
 
-    # TODO abstraction layer around this! E.g. setup_element_cache(problem, solver)
-    contraction_cache = setup_contraction_model_cache(cv, constitutive_model.contraction_model)
-    element_cache = StructuralElementCache(
-        constitutive_model,
-        contraction_cache,
-        cv
-    )
-    # TODO abstraction layer around this! E.g. setup_face_caches(problem, solver)
-    face_caches = ntuple(i->setup_face_cache(face_models[i], fv, t₀), length(face_models))
-
-    quasi_static_operator = AssembledNonlinearOperator(
-        create_sparsity_pattern(dh),
-        element_cache, 
-        face_caches,
-        dh,
-    )
-    error("Not implemented yet")
-    # TODO introduce CouplingOperator
-    # BlockOperator((
-    #     quasi_static_operator, NullOperator{Float64,1,ndofs(dh)}(),
-    #     NullOperator{Float64,ndofs(dh),1}(), NullOperator{Float64,1,1}()
-    # ))
+function setup_solver_caches(coupled_problem::CoupledProblem{<:Tuple{<:QuasiStaticNonlinearProblem,<:NullProblem}}, solver::NewtonRaphsonSolver{T}) where {T}
+    @unpack base_problems, couplers = coupled_problem
+    @warn "FIXME"
     op = BlockOperator((
-        quasi_static_operator, NullOperator{Float64,1,ndofs(dh)}(),
-        NullOperator{Float64,ndofs(dh),1}(), DiagonalOperator([1.0])
+        # TODO coupler instead off null operator
+        [i == j ? setup_operator(base_problems[i], solver) : NullOperator{T,solution_size(base_problems[j]),solution_size(base_problems[i])}()  for i in 1:length(base_problems) for j in 1:length(base_problems)]...,
     ))
     solution = mortar([
-        Vector{Float64}(undef, solution_size(coupled_problem.base_problems[1])),
-        Vector{Float64}(undef, solution_size(coupled_problem.base_problems[2]))
+        Vector{T}(undef, solution_size(base_problems[i])) for i ∈ 1:length(base_problems)
     ])
 
     NewtonRaphsonSolverCache(op, solution, solver)
@@ -167,7 +124,7 @@ function eliminate_constraints_from_linearization_blocked!(solver_cache, problem
     apply_zero!(solver_cache.op.operators[1].J, solver_cache.residual[i], problem.base_problems[1].ch)
 end
 
-function solve!(u, problem, solver_cache::NewtonRaphsonSolverCache, t)
+function solve!(u::AbstractVector, problem, solver_cache::NewtonRaphsonSolverCache, t)
     @unpack op, residual = solver_cache
     newton_itr = -1
     Δu = zero(u)
@@ -175,14 +132,18 @@ function solve!(u, problem, solver_cache::NewtonRaphsonSolverCache, t)
         newton_itr += 1
 
         residual .= 0.0
-        @timeit_debug "update operator" update_linearization!(solver_cache.op, u, residual, t)
+        @timeit_debug "update operator" update_linearization!(op, u, residual, t)
 
         @timeit_debug "elimination" eliminate_constraints_from_linearization!(solver_cache, problem)
         residualnorm = residual_norm(solver_cache, problem)
+        @info newton_itr, residualnorm
         if residualnorm < solver_cache.parameters.tol
             break
         elseif newton_itr > solver_cache.parameters.max_iter
             @warn "Reached maximum Newton iterations. Aborting. ||r|| = $residualnorm"
+            return false
+        elseif any(isnan.(residualnorm))
+            @warn "Newton-Raphson diverged. Aborting. ||r|| = $residualnorm"
             return false
         end
 

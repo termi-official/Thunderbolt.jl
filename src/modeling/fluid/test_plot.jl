@@ -1,5 +1,5 @@
 function test_solve_lumped()
-    p = Thunderbolt.ReggazoniSalvadorAfricaLumpedCicuitModel{Float64,Float64,Float64,Float64,Float64}()
+    p = Thunderbolt.RegazzoniSalvadorAfricaLumpedCicuitModel{Float64,Float64,Float64,Float64,Float64}()
 
     V_LV(t) = 80 + -(-abs(2*(mod(t-0.5*p.THB,p.THB))/p.THB)+1)
     p_LV(t) = 10.0 + (sin(2*π*mod(t,p.THB)/p.THB)+1)
@@ -21,7 +21,7 @@ end
 
 
 function plot_solution(solution)
-    p = Thunderbolt.ReggazoniSalvadorAfricaLumpedCicuitModel{Float64,Float64,Float64,Float64,Float64}()
+    p = Thunderbolt.RegazzoniSalvadorAfricaLumpedCicuitModel{Float64,Float64,Float64,Float64,Float64}()
 
     Δt = 0.001
     τ = collect(0.0:Δt:10*p.THB)
@@ -29,9 +29,9 @@ function plot_solution(solution)
     # V_LV(t) = 80 + -(-abs(2*(mod(t-0.5*p.THB,p.THB))/p.THB)+1)
     p_LV(t) = 10.0 + (sin(2*π*mod(t,p.THB)/p.THB)+1)
 
-    @inline Eₗₐ(p,t) = Thunderbolt.elastance_ReggazoniSalvadorAfrica(t, p.Epassₗₐ, p.Eactmaxₗₐ, p.tCₗₐ, p.tCₗₐ + p.TCₗₐ, p.TCₗₐ, p.TRₗₐ, p.THB)
-    @inline Eᵣₐ(p,t) = Thunderbolt.elastance_ReggazoniSalvadorAfrica(t, p.Epassᵣₐ, p.Eactmaxᵣₐ, p.tCᵣₐ, p.tCᵣₐ + p.TCᵣₐ, p.TCᵣₐ, p.TRᵣₐ, p.THB)
-    @inline Eᵣᵥ(p,t) = Thunderbolt.elastance_ReggazoniSalvadorAfrica(t, p.Epassᵣᵥ, p.Eactmaxᵣᵥ, p.tCᵣᵥ, p.tCᵣᵥ + p.TCᵣᵥ, p.TCᵣᵥ, p.TRᵣᵥ, p.THB)
+    @inline Eₗₐ(p,t) = Thunderbolt.elastance_RegazzoniSalvadorAfrica(t, p.Epassₗₐ, p.Eactmaxₗₐ, p.tCₗₐ, p.tCₗₐ + p.TCₗₐ, p.TCₗₐ, p.TRₗₐ, p.THB)
+    @inline Eᵣₐ(p,t) = Thunderbolt.elastance_RegazzoniSalvadorAfrica(t, p.Epassᵣₐ, p.Eactmaxᵣₐ, p.tCᵣₐ, p.tCᵣₐ + p.TCᵣₐ, p.TCᵣₐ, p.TRᵣₐ, p.THB)
+    @inline Eᵣᵥ(p,t) = Thunderbolt.elastance_RegazzoniSalvadorAfrica(t, p.Epassᵣᵥ, p.Eactmaxᵣᵥ, p.tCᵣᵥ, p.tCᵣᵥ + p.TCᵣᵥ, p.TCᵣᵥ, p.TRᵣᵥ, p.THB)
 
     Vₗₐ = @view solution[1,:]
     Vₗᵥ = @view solution[2,:]

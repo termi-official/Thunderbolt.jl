@@ -1,6 +1,6 @@
 
 """
-    ΦReggazoniSalvadorAfrica(t,tC,tR,TC,TR,THB)
+    ΦRegazzoniSalvadorAfrica(t,tC,tR,TC,TR,THB)
 
 Activation transient from the paper [RegSalAfrFedDedQar:2022:cem](@citet).
 
@@ -9,8 +9,7 @@ Activation transient from the paper [RegSalAfrFedDedQar:2022:cem](@citet).
 [tC,TC] = contraction period
 [tR,TR] = relaxation period
 """
-function Φ_ReggazoniSalvadorAfrica(t,tC,tR,TC,TR,THB)
-    @show t
+function Φ_RegazzoniSalvadorAfrica(t,tC,tR,TC,TR,THB)
     tnow = mod(t - tC, THB)
     if 0 ≤ tnow < TC
         return 1/2 * (1+cos(π/TC * tnow)) 
@@ -22,15 +21,15 @@ function Φ_ReggazoniSalvadorAfrica(t,tC,tR,TC,TR,THB)
     return 0.0
 end
 
-elastance_ReggazoniSalvadorAfrica(t,Epass,Emax,tC,tR,TC,TR,THB) = Epass + Emax*Φ_ReggazoniSalvadorAfrica(t,tC,tR,TC,TR,THB)
+elastance_RegazzoniSalvadorAfrica(t,Epass,Emax,tC,tR,TC,TR,THB) = Epass + Emax*Φ_RegazzoniSalvadorAfrica(t,tC,tR,TC,TR,THB)
 
 
 """
-    ReggazoniSalvadorAfricaLumpedCicuitModel
+    RegazzoniSalvadorAfricaLumpedCicuitModel
 
 A lumped (0D) circulatory model for LV simulations as presented in [RegSalAfrFedDedQar:2022:cem](@citet).
 """
-Base.@kwdef struct ReggazoniSalvadorAfricaLumpedCicuitModel{
+Base.@kwdef struct RegazzoniSalvadorAfricaLumpedCicuitModel{
     T1, # mmHg s mL^-1
     T2, # mL mmHg^-1
     T3, # mL
@@ -79,16 +78,16 @@ Base.@kwdef struct ReggazoniSalvadorAfricaLumpedCicuitModel{
     TRᵣᵥ::T4 = T4(0.12)
     THB::T4 = T4(0.8) # 75 beats per minute
     # Prescribed functions
-    # pₑₓ::PEX = (p::ReggazoniSalvadorAfricaLumpedCicuitModel,t) -> 0.0
-    # Eₗₐ::ELA = (p::ReggazoniSalvadorAfricaLumpedCicuitModel,t) -> elastance_ReggazoniSalvadorAfrica(t, p.Epassₗₐ, Eactmaxₗₐ, p.tCₗₐ, p.tCₗₐ + p.TCₗₐ, p.TCₗₐ, p.TRₗₐ, p.THB)
-    # Eᵣₐ::ERA = (p::ReggazoniSalvadorAfricaLumpedCicuitModel,t) -> elastance_ReggazoniSalvadorAfrica(t, p.Epassᵣₐ, Eactmaxᵣₐ, p.tCᵣₐ, p.tCᵣₐ + p.TCᵣₐ, p.TCᵣₐ, p.TRᵣₐ, p.THB)
-    # Eᵣᵥ::ERV = (p::ReggazoniSalvadorAfricaLumpedCicuitModel,t) -> elastance_ReggazoniSalvadorAfrica(t, p.Epassᵣᵥ, Eactmaxᵣᵥ, p.tCᵣᵥ, p.tCᵣᵥ + p.TCᵣᵥ, p.TCᵣᵥ, p.TRᵣᵥ, p.THB)
+    # pₑₓ::PEX = (p::RegazzoniSalvadorAfricaLumpedCicuitModel,t) -> 0.0
+    # Eₗₐ::ELA = (p::RegazzoniSalvadorAfricaLumpedCicuitModel,t) -> elastance_RegazzoniSalvadorAfrica(t, p.Epassₗₐ, Eactmaxₗₐ, p.tCₗₐ, p.tCₗₐ + p.TCₗₐ, p.TCₗₐ, p.TRₗₐ, p.THB)
+    # Eᵣₐ::ERA = (p::RegazzoniSalvadorAfricaLumpedCicuitModel,t) -> elastance_RegazzoniSalvadorAfrica(t, p.Epassᵣₐ, Eactmaxᵣₐ, p.tCᵣₐ, p.tCᵣₐ + p.TCᵣₐ, p.TCᵣₐ, p.TRᵣₐ, p.THB)
+    # Eᵣᵥ::ERV = (p::RegazzoniSalvadorAfricaLumpedCicuitModel,t) -> elastance_RegazzoniSalvadorAfrica(t, p.Epassᵣᵥ, Eactmaxᵣᵥ, p.tCᵣᵥ, p.tCᵣᵥ + p.TCᵣᵥ, p.TCᵣᵥ, p.TRᵣᵥ, p.THB)
 end
 
-# ReggazoniSalvadorAfricaLumpedCicuitModel() = ReggazoniSalvadorAfricaLumpedCicuitModel{Float64,Float64,Float64,Float64,Float64}()
+# RegazzoniSalvadorAfricaLumpedCicuitModel() = RegazzoniSalvadorAfricaLumpedCicuitModel{Float64,Float64,Float64,Float64,Float64}()
 
-num_states(::ReggazoniSalvadorAfricaLumpedCicuitModel) = 12
-function initial_condition!(u, p::ReggazoniSalvadorAfricaLumpedCicuitModel)
+num_states(::RegazzoniSalvadorAfricaLumpedCicuitModel) = 12
+function initial_condition!(u, p::RegazzoniSalvadorAfricaLumpedCicuitModel)
     @unpack V0ₗₐ, V0ᵣₐ, V0ᵣᵥ = p
     u .= 0.0
     u[1] = V0ₗₐ
@@ -102,7 +101,7 @@ end
 # Q = flow rates
 # E = elastance
 # [x]v = ventricle [x]
-function lumped_driver_lv!(du, u, t, pₗᵥ, model::ReggazoniSalvadorAfricaLumpedCicuitModel)
+function lumped_driver_lv!(du, u, t, pₗᵥ, model::RegazzoniSalvadorAfricaLumpedCicuitModel)
     Vₗₐ, vₗᵥ, Vᵣₐ, Vᵣᵥ, psysₐᵣ, psysᵥₑₙ, ppulₐᵣ, ppulᵥₑₙ, Qsysₐᵣ, Qsysᵥₑₙ, Qpulₐᵣ, Qpulᵥₑₙ = u
 
     @unpack Rsysₐᵣ, Rpulₐᵣ, Rsysᵥₑₙ, Rpulᵥₑₙ = model
@@ -112,9 +111,9 @@ function lumped_driver_lv!(du, u, t, pₗᵥ, model::ReggazoniSalvadorAfricaLump
     # @unpack Epassₗₐ, Epassᵣₐ, Epassᵣᵥ = model
     # @unpack Eactmaxₗₐ, Eactmaxᵣₐ, Eactmaxᵣᵥ = model
     # @unpack Eₗₐ, Eᵣₐ, Eᵣᵥ = model
-    @inline Eₗₐ(p::ReggazoniSalvadorAfricaLumpedCicuitModel,t) = elastance_ReggazoniSalvadorAfrica(t, p.Epassₗₐ, p.Eactmaxₗₐ, p.tCₗₐ, p.tCₗₐ + p.TCₗₐ, p.TCₗₐ, p.TRₗₐ, p.THB)
-    @inline Eᵣₐ(p::ReggazoniSalvadorAfricaLumpedCicuitModel,t) = elastance_ReggazoniSalvadorAfrica(t, p.Epassᵣₐ, p.Eactmaxᵣₐ, p.tCᵣₐ, p.tCᵣₐ + p.TCᵣₐ, p.TCᵣₐ, p.TRᵣₐ, p.THB)
-    @inline Eᵣᵥ(p::ReggazoniSalvadorAfricaLumpedCicuitModel,t) = elastance_ReggazoniSalvadorAfrica(t, p.Epassᵣᵥ, p.Eactmaxᵣᵥ, p.tCᵣᵥ, p.tCᵣᵥ + p.TCᵣᵥ, p.TCᵣᵥ, p.TRᵣᵥ, p.THB)
+    @inline Eₗₐ(p::RegazzoniSalvadorAfricaLumpedCicuitModel,t) = elastance_RegazzoniSalvadorAfrica(t, p.Epassₗₐ, p.Eactmaxₗₐ, p.tCₗₐ, p.tCₗₐ + p.TCₗₐ, p.TCₗₐ, p.TRₗₐ, p.THB)
+    @inline Eᵣₐ(p::RegazzoniSalvadorAfricaLumpedCicuitModel,t) = elastance_RegazzoniSalvadorAfrica(t, p.Epassᵣₐ, p.Eactmaxᵣₐ, p.tCᵣₐ, p.tCᵣₐ + p.TCᵣₐ, p.TCᵣₐ, p.TRᵣₐ, p.THB)
+    @inline Eᵣᵥ(p::RegazzoniSalvadorAfricaLumpedCicuitModel,t) = elastance_RegazzoniSalvadorAfrica(t, p.Epassᵣᵥ, p.Eactmaxᵣᵥ, p.tCᵣᵥ, p.tCᵣᵥ + p.TCᵣᵥ, p.TCᵣᵥ, p.TRᵣᵥ, p.THB)
 
     @unpack V0ₗₐ, V0ᵣₐ, V0ᵣᵥ = model
     @unpack tCₗₐ, TCₗₐ, TRₗₐ, TRᵣₐ, tCᵣₐ, TCᵣₐ, tCᵣᵥ, TCᵣᵥ, TRᵣᵥ = model

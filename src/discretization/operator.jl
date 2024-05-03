@@ -95,6 +95,34 @@ struct AssembledNonlinearOperator{MatrixType, ElementCacheType, FaceCacheType, D
     end
 end
 
+function setup_boundary_cache(boundary_models, qr::FaceQuadratureRule, ip, ip_geo)
+    fv = FaceValues(qr, ip, ip_geo)
+    return face_caches = ntuple(i->setup_face_cache(boundary_models[i], fv), length(boundary_models))
+end
+
+"""
+    Utility constructor to get the nonlinear operator for a single field problem.
+"""
+function AssembledNonlinearOperator(dh::AbstractDofHandler, field_name::Symbol, element_model, element_qrc::QuadratureRuleCollection, boundary_model, boundary_qrc::FaceQuadratureRuleCollection)
+    @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the nonlinear opeartor."
+
+    firstcell = getcells(Ferrite.get_grid(dh), first(dh.subdofhandlers[1].cellset))
+    ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], field_name)
+    ip_geo = Ferrite.default_interpolation(typeof(firstcell))
+    element_qr = getquadraturerule(element_qrc, firstcell)
+    boundary_qr = getquadraturerule(boundary_qrc, firstcell)
+
+    element_cache  = setup_element_cache(element_model, element_qr, ip, ip_geo)
+    boundary_cache = setup_boundary_cache(boundary_model, boundary_qr, ip, ip_geo)
+
+    AssembledNonlinearOperator(
+        create_sparsity_pattern(dh),
+        element_cache,
+        boundary_cache,
+        dh,
+    )
+end
+
 getJ(op::AssembledNonlinearOperator) = op.J
 
 function update_linearization!(op::AssembledNonlinearOperator, u::Vector, time)
@@ -129,16 +157,18 @@ end
 function update_linearization!(op::AssembledNonlinearOperator, u::Vector, residual::Vector, time)
     @unpack J, element_cache, face_caches, dh  = op
 
-    assembler = start_assemble(J)
+    assembler = start_assemble(J, residual)
 
     ndofs = ndofs_per_cell(dh)
     Jₑ = zeros(ndofs, ndofs)
     rₑ = zeros(ndofs)
+    uₑ = zeros(ndofs)
 
     @inbounds for cell in CellIterator(dh)
+        dofs = celldofs(cell)
         fill!(Jₑ, 0)
         fill!(rₑ, 0)
-        uₑ = @view u[celldofs(cell)]
+        uₑ .= @view u[dofs]
         # TODO instead of "cell" pass object with geometry information only
         @timeit_debug "assemble element" assemble_element!(Jₑ, rₑ, uₑ, cell, element_cache, time)
         # TODO maybe it makes sense to merge this into the element routine in a modular fasion?
@@ -151,8 +181,7 @@ function update_linearization!(op::AssembledNonlinearOperator, u::Vector, residu
                 end
             end
         end
-        assemble!(assembler, celldofs(cell), Jₑ)
-        residual[celldofs(cell)] += rₑ # separate because the residual might contain more external stuff
+        assemble!(assembler, dofs, Jₑ, rₑ)
     end
 
     #finish_assemble(assembler)
@@ -173,9 +202,6 @@ Base.size(op::AssembledNonlinearOperator, axis) = sisze(op.A, axis)
 
 abstract type AbstractBilinearOperator <: AbstractNonlinearOperator end
 
-update_linearization!(op::AbstractBilinearOperator, u, residual, time) = nothing # TODO REMOVEME
-update_linearization!(op::AbstractBilinearOperator, u, time) = nothing # TODO REMOVEME
-
 struct AssembledBilinearOperator{MatrixType, CacheType, DHType <: AbstractDofHandler} <: AbstractBilinearOperator
     A::MatrixType
     element_cache::CacheType
@@ -184,6 +210,23 @@ struct AssembledBilinearOperator{MatrixType, CacheType, DHType <: AbstractDofHan
         check_subdomains(dh)
         return new{MatrixType, CacheType, DHType}(A, element_cache, dh)
     end
+end
+
+function AssembledBilinearOperator(dh::AbstractDofHandler, field_name::Symbol, integrator, element_qrc::QuadratureRuleCollection)
+    @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the bilinear opeartor."
+
+    firstcell = getcells(Ferrite.get_grid(dh), first(dh.subdofhandlers[1].cellset))
+    ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], field_name)
+    ip_geo = Ferrite.default_interpolation(typeof(firstcell))
+    element_qr = getquadraturerule(element_qrc, firstcell)
+
+    element_cache = setup_element_cache(integrator, element_qr, ip, ip_geo)
+
+    return AssembledBilinearOperator(
+        create_sparsity_pattern(dh),
+        element_cache,
+        dh,
+    )
 end
 
 function update_operator!(op::AssembledBilinearOperator, time)
@@ -203,6 +246,9 @@ function update_operator!(op::AssembledBilinearOperator, time)
 
     #finish_assemble(assembler)
 end
+
+update_linearization!(op::AbstractBilinearOperator, u, residual, time) = update_operator!(op, time)
+update_linearization!(op::AbstractBilinearOperator, u, time) = update_operator!(op, time)
 
 mul!(out, op::AssembledBilinearOperator, in) = mul!(out, op.A, in)
 mul!(out, op::AssembledBilinearOperator, in, α, β) = mul!(out, op.A, in, α, β)
@@ -225,6 +271,8 @@ Base.size(op::DiagonalOperator, axis) = length(op.values)
 
 getJ(op::DiagonalOperator) = spdiagm(op.values)
 
+update_linearization!(::Thunderbolt.DiagonalOperator, ::Vector, ::Vector, t) = nothing
+
 """
     NullOperator <: AbstractBilinearOperator
 
@@ -240,6 +288,8 @@ Base.eltype(op::NullOperator{T}) where {T} = T
 Base.size(op::NullOperator{T,S1,S2}, axis) where {T,S1,S2} = axis == 1 ? S1 : (axis == 2 ? S2 : error("faulty axis!"))
 
 getJ(op::NullOperator{T, SIN, SOUT}) where {T, SIN, SOUT} = spzeros(T,SIN,SOUT)
+
+update_linearization!(::Thunderbolt.NullOperator, ::Vector, ::Vector, t) = nothing
 
 ###############################################################################
 abstract type AbstractLinearOperator end
