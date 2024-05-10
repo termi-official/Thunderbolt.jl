@@ -17,6 +17,7 @@ function solve(problem::AbstractProblem, solver, Δt₀, (t₀, T), initial_cond
     while t < T
         @info t, Δt
         if !perform_step!(problem, solver_cache, t, Δt)
+            @warn "Time step $t failed."
             return false
         end
 
@@ -27,6 +28,7 @@ function solve(problem::AbstractProblem, solver, Δt₀, (t₀, T), initial_cond
 
     @info T
     if !perform_step!(problem, solver_cache, t, T-t)
+        @warn "Time step $t failed."
         return false
     end
 
