@@ -169,7 +169,7 @@ function solve_ideal_lv(name_base, constitutive_model, grid, coordinate_system, 
         RegazzoniSalvadorAfricaSplit(CoupledModel(
             (
                 StructuralModel(constitutive_model, face_models),
-                Thunderbolt.DummyLumpedCircuitModel(t->6.0),
+                Thunderbolt.DummyLumpedCircuitModel(t->1.16),
                 # RegazzoniSalvadorAfricaLumpedCicuitModel{Float64,Float64,Float64,Float64,Float64}()
             ),
             (

@@ -33,6 +33,14 @@ struct BlockOperator{OPS <: Tuple}
     operators::OPS # stored row by row as in [1 2; 3 4]
 end
 
+# TODO optimize
+function getJ(op::BlockOperator, i::Block)
+    @assert length(i.n) == 2
+    mJs = reshape([getJ(opi) for opi ∈ op.operators], (isqrt(length(op.operators)), isqrt(length(op.operators))))
+    return mJs[i.n[1], i.n[2]]
+end
+
+# TODO optimize
 getJ(op::BlockOperator) = mortar(reshape([getJ(opi) for opi ∈ op.operators], (isqrt(length(op.operators)), isqrt(length(op.operators)))))
 
 function *(op::BlockOperator, x::AbstractVector)

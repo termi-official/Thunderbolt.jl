@@ -111,18 +111,29 @@ function eliminate_constraints_from_linearization!(solver_cache, problem::Couple
     end
 end
 
-# TODO FIXME this only works if the problem to eliminate is in the first block
-function eliminate_constraints_from_linearization_blocked!(solver_cache, problem::CoupledProblem, i::Block)
-    if i.n[1] > 1
-        if typeof(problem.base_problems[2]) != NullProblem
-            @error "Block elimination not working for block $i"
+function eliminate_constraints_from_linearization_blocked!(solver_cache, problem::CoupledProblem, i_::Block)
+    @assert length(i_.n) == 1
+    i = i_.n[1]
+    hasproperty(problem.base_problems[i], :ch) || return nothing
+    ch = problem.base_problems[i].ch # TODO abstraction layer
+    # TODO optimize this
+    for j in 1:length(problem.base_problems)
+        if i == j
+            jacobian_block = getJ(solver_cache.op, Block((i,i)))
+            # Eliminate diagonal entry only
+            residual_block = @view solver_cache.residual[i_]
+            apply_zero!(jacobian_block, residual_block, ch)
         else
-            return nothing 
+            # Eliminate rows
+            jacobian_block = getJ(solver_cache.op, Block((i,j)))
+            jacobian_block[ch.prescribed_dofs, :] .= 0.0
+            # Eliminate columns
+            jacobian_block = getJ(solver_cache.op, Block((j,i)))
+            jacobian_block[:, ch.prescribed_dofs] .= 0.0
         end
     end
-    # TODO more performant block elimination
-    rb = view(solver_cache.residual, i)
-    apply_zero!(solver_cache.op.operators[1].J, rb, problem.base_problems[1].ch)
+
+    return nothing
 end
 
 function solve!(u::AbstractVector, problem, solver_cache::NewtonRaphsonSolverCache, t)
