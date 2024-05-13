@@ -76,7 +76,6 @@ end
 function semidiscretize(split::RegazzoniSalvadorAfricaSplit, discretization::FiniteElementDiscretization, grid::AbstractGrid)
     ets = elementtypes(grid)
     @assert length(ets) == 1 "Multiple element types not supported"
-    @assert length(discretization.dbcs) == 0 "Dirichlet elimination is not supported yet."
     @assert length(split.model.base_models) == 2 "I can only handle pure mechanics coupled to pure circuit."
 
     semidiscrete_problem = SplitProblem(
@@ -90,7 +89,7 @@ function semidiscretize(split::RegazzoniSalvadorAfricaSplit, discretization::Fin
         ODEProblem(
             split.model.base_models[2],
             (du,u,t,pₗᵥ) -> lumped_driver_lv!(du, u, t, pₗᵥ[1], split.model.base_models[2]),
-            [0.0] #pₗᵥ TODO better design
+            [0.01] #pₗᵥ TODO better design
         )
     )
 

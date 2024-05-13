@@ -1,4 +1,21 @@
 """
+Keep the volume at a certain level.
+"""
+struct DummyLumpedCircuitModel{F}
+    volume_fun::F
+end
+
+num_states(::DummyLumpedCircuitModel) = 1
+
+function initial_condition!(u, p::DummyLumpedCircuitModel)
+    u .= p.volume_fun(0.0)
+end
+
+function lumped_driver_lv!(du, u, t, pₗᵥ, model::DummyLumpedCircuitModel)
+    du[1] = model.volume_fun(0.0)-u[1]
+end
+
+"""
     ΦRegazzoniSalvadorAfrica(t,tC,tR,TC,TR,THB)
 
 Activation transient from the paper [RegSalAfrFedDedQar:2022:cem](@citet).
@@ -146,6 +163,7 @@ end
 # Q = flow rates
 # E = elastance
 # [x]v = ventricle [x]
+# TODO generalize to multiple chambers
 function lumped_driver_lv!(du, u, t, pₗᵥ, model::RegazzoniSalvadorAfricaLumpedCicuitModel)
     Vₗₐ, Vₗᵥ, Vᵣₐ, Vᵣᵥ, psysₐᵣ, psysᵥₑₙ, ppulₐᵣ, ppulᵥₑₙ, Qsysₐᵣ, Qsysᵥₑₙ, Qpulₐᵣ, Qpulᵥₑₙ = u
 

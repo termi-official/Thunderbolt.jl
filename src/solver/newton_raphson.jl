@@ -121,7 +121,8 @@ function eliminate_constraints_from_linearization_blocked!(solver_cache, problem
         end
     end
     # TODO more performant block elimination
-    apply_zero!(solver_cache.op.operators[1].J, solver_cache.residual[i], problem.base_problems[1].ch)
+    rb = view(solver_cache.residual, i)
+    apply_zero!(solver_cache.op.operators[1].J, rb, problem.base_problems[1].ch)
 end
 
 function solve!(u::AbstractVector, problem, solver_cache::NewtonRaphsonSolverCache, t)

@@ -10,6 +10,17 @@ struct LumpedFluidSolidCoupler{CVM} <: AbstractCoupler
 end
 
 """
+    Debug helper for FSI. Just keeps the chamber volume constant.
+"""
+struct ConstantChamberVolume
+    volume::Float64
+end
+
+function volume_integral(x, d, F, N, method::ConstantChamberVolume)
+    method.volume
+end
+
+"""
 Compute the chamber volume as a surface integral via the integral
   -∫ det(F) ((h ⊗ h)(x + d - b)) adj(F) N ∂Ωendo
 
@@ -67,6 +78,7 @@ function assemble_LFSI_coupling_contribution_row_inner!(C, R, u, p, face, dh, fv
 
         x = spatial_coordinate(fv, qp, coords)
 
+        R[1] += volume_integral(x, u, F, N, method)
         # Via chain rule we obtain:
         #   δV(u,F(u)) = δu ⋅ dVdu + δF : dVdF
         ∂V∂u = Tensors.gradient(u -> volume_integral(x, u, F, N, method), d)
@@ -84,7 +96,7 @@ Chamber volume contribution for the 3D-0D constraint
     ∫ V³ᴰ(u) ∂Ω = V⁰ᴰ(c)
 where u are the unkowns in the 3D problem and c the unkowns in the 0D problem.
 """
-function assemble_LFSI_coupling_contribution_row!(C, R, dh, u, p, setname, method)
+function assemble_LFSI_coupling_contribution_row!(C, R, dh, u, p, V⁰ᴰ, setname, method)
     grid = dh.grid
     ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], :displacement)
     ip_geo = Ferrite.default_interpolation(typeof(getcells(grid, 1)))
@@ -96,6 +108,8 @@ function assemble_LFSI_coupling_contribution_row!(C, R, dh, u, p, setname, metho
     for face ∈ FaceIterator(dh, getfaceset(grid, setname))
         assemble_LFSI_coupling_contribution_row_inner!(C, R, u, p, face, dh, fv)
     end
+
+    R[1] -= V⁰ᴰ
 end
 
 function assemble_LFSI_coupling_contribution_col_inner!(C, R, u, p, face, dh, fv)
