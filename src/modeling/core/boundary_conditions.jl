@@ -215,7 +215,7 @@ end
 
 function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, face, cache::SimpleFaceCache{<:PressureFieldBC}, time)
     @unpack mp, fv = cache
-    @unpack p = mp
+    @unpack pc = mp
 
     reinit!(fv, face[1], face[2])
 
@@ -228,24 +228,28 @@ function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, face, cache::SimpleFace
         ∇u = function_gradient(fv, qp, uₑ)
         F = one(∇u) + ∇u
 
-        # ∂P∂F = Tensors.gradient(
-        #     F_ad -> p * det(F_ad) * transpose(inv(F_ad)),
-        # F)
-
         # Add contribution to the residual from this test function
-        cofF = transpose(inv(F))
         # TODO fix the "nothing" here
-        neumann_term = evaluate_coefficient(p, nothing, qp, time) * det(F) * cofF
-        for i in 1:ndofs_face
+        p = evaluate_coefficient(pc, nothing, qp, time)
+        invF = inv(F)
+        cofF = transpose(invF)
+        J = det(F)
+        neumann_term = p * J * cofF
+        for i in 1:J
             δuᵢ = shape_value(fv, qp, i)
             residualₑ[i] += neumann_term ⋅ n₀ ⋅ δuᵢ * dΓ
 
-            # ∂P∂Fδui =   ∂P∂F ⊡ (n₀ ⊗ δuᵢ) # Hoisted computation
             for j in 1:ndofs_face
                 ∇δuⱼ = shape_gradient(fv, qp, j)
                 # Add contribution to the tangent
                 # Kₑ[i, j] += (n₀ ⊗ δuⱼ) ⊡ ∂P∂Fδui * dΓ
-                Kₑ[i, j] += δuᵢ ⋅ (((cofF ⊡ ∇δuⱼ) * one(cofF) - cofF ⋅ transpose(∇δuⱼ)) ⋅ neumann_term) ⋅ n₀ * dΓ
+                #   δF^-1 = -F^-1 δF F^-1
+                #   δJ = J tr(δF F^-1)
+                # Product rule
+                δcofF = -transpose(invF ⋅ ∇δuⱼ ⋅ invF)
+                δJ = J * tr(∇δuⱼ ⋅ invF)
+                δJcofF = δJ * cofF + J * δcofF
+                Kₑ[i, j] += p * (δJcofF ⋅ n₀) ⋅ δuᵢ * dΓ
             end
         end
     end
@@ -254,36 +258,39 @@ end
 
 function assemble_face!(Kₑ::Matrix, uₑ, face, cache::SimpleFaceCache{<:PressureFieldBC}, time)
     @unpack mp, fv = cache
-    @unpack p = mp
+    @unpack pc = mp
 
     reinit!(fv, face[1], face[2])
 
     ndofs_face = getnbasefunctions(fv)
     for qp in QuadratureIterator(fv)
         dΓ = getdetJdV(fv, qp)
-    
+
         n₀ = getnormal(fv, qp)
-    
+
         ∇u = function_gradient(fv, qp, uₑ)
         F = one(∇u) + ∇u
-    
-        # ∂P∂F = Tensors.gradient(
-        #     F_ad -> p * det(F_ad) * transpose(inv(F_ad)),
-        # F)
-    
+
         # Add contribution to the residual from this test function
-        cofF = transpose(inv(F))
         # TODO fix the "nothing" here
-        neumann_term = evaluate_coefficient(p, nothing, qp, time) * det(F) * cofF
-        for i in 1:ndofs_face
+        p = evaluate_coefficient(pc, nothing, qp, time)
+        invF = inv(F)
+        cofF = transpose(invF)
+        J = det(F)
+        for i in 1:J
             δuᵢ = shape_value(fv, qp, i)
-    
-            # ∂P∂Fδui =   ∂P∂F ⊡ (n₀ ⊗ δuᵢ) # Hoisted computation
+
             for j in 1:ndofs_face
                 ∇δuⱼ = shape_gradient(fv, qp, j)
                 # Add contribution to the tangent
                 # Kₑ[i, j] += (n₀ ⊗ δuⱼ) ⊡ ∂P∂Fδui * dΓ
-                Kₑ[i, j] += δuᵢ ⋅ (((cofF ⊡ ∇δuⱼ) * one(cofF) - cofF ⋅ transpose(∇δuⱼ)) ⋅ neumann_term) ⋅ n₀ * dΓ
+                #   δF^-1 = -F^-1 δF F^-1
+                #   δJ = J tr(δF F^-1)
+                # Product rule
+                δcofF = -transpose(invF ⋅ ∇δuⱼ ⋅ invF)
+                δJ = J * tr(∇δuⱼ ⋅ invF)
+                δJcofF = δJ * cofF + J * δcofF
+                Kₑ[i, j] += p * (δJcofF ⋅ n₀) ⋅ δuᵢ * dΓ
             end
         end
     end
@@ -310,18 +317,26 @@ function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, face, cache::SimpleFace
         # F)
 
         # Add contribution to the residual from this test function
-        cofF = transpose(inv(F))
-        neumann_term = p * det(F) * cofF
+        invF = inv(F)
+        cofF = transpose(invF)
+        J = det(F)
+        neumann_term = p * J * cofF
         for i in 1:ndofs_face
             δuᵢ = shape_value(fv, qp, i)
             residualₑ[i] += neumann_term ⋅ n₀ ⋅ δuᵢ * dΓ
 
-            # ∂P∂Fδui =   ∂P∂F ⊡ (n₀ ⊗ δuᵢ) # Hoisted computation
             for j in 1:ndofs_face
                 ∇δuⱼ = shape_gradient(fv, qp, j)
                 # Add contribution to the tangent
                 # Kₑ[i, j] += (n₀ ⊗ δuⱼ) ⊡ ∂P∂Fδui * dΓ
-                Kₑ[i, j] += δuᵢ ⋅ (((cofF ⊡ ∇δuⱼ) * one(cofF) - cofF ⋅ transpose(∇δuⱼ)) ⋅ neumann_term) ⋅ n₀ * dΓ
+                #   δF^-1 = -F^-1 δF F^-1
+                #   δJ = J tr(δF F^-1)
+                #Kₑ[i, j] += δuᵢ ⋅ (((cofF ⊡ ∇δuⱼ) * one(cofF) - cofF ⋅ transpose(∇δuⱼ)) ⋅ neumann_term) ⋅ n₀ * dΓ
+                # Product rule
+                δcofF = -transpose(invF ⋅ ∇δuⱼ ⋅ invF)
+                δJ = J * tr(∇δuⱼ ⋅ invF)
+                δJcofF = δJ * cofF + J * δcofF
+                Kₑ[i, j] += p * (δJcofF ⋅ n₀) ⋅ δuᵢ * dΓ
             end
         end
     end
@@ -346,19 +361,28 @@ function assemble_face!(Kₑ::Matrix, uₑ, face, cache::SimpleFaceCache{<:Const
         # ∂P∂F = Tensors.gradient(
         #     F_ad -> p * det(F_ad) * transpose(inv(F_ad)),
         # F)
-    
+
         # Add contribution to the residual from this test function
-        cofF = transpose(inv(F))
-        neumann_term = p * det(F) * cofF
+        invF = inv(F)
+        cofF = transpose(invF)
+        J = det(F)
+        neumann_term = p * J * cofF
         for i in 1:ndofs_face
+            @show i
             δuᵢ = shape_value(fv, qp, i)
-    
-            # ∂P∂Fδui =   ∂P∂F ⊡ (n₀ ⊗ δuᵢ) # Hoisted computation
+
             for j in 1:ndofs_face
                 ∇δuⱼ = shape_gradient(fv, qp, j)
                 # Add contribution to the tangent
                 # Kₑ[i, j] += (n₀ ⊗ δuⱼ) ⊡ ∂P∂Fδui * dΓ
-                Kₑ[i, j] += δuᵢ ⋅ (((cofF ⊡ ∇δuⱼ) * one(cofF) - cofF ⋅ transpose(∇δuⱼ)) ⋅ neumann_term) ⋅ n₀ * dΓ
+                #   δF^-1 = -F^-1 δF F^-1
+                #   δJ = J tr(δF F^-1)
+                #Kₑ[i, j] += δuᵢ ⋅ (((cofF ⊡ ∇δuⱼ) * one(cofF) - cofF ⋅ transpose(∇δuⱼ)) ⋅ neumann_term) ⋅ n₀ * dΓ
+                # Product rule
+                δcofF = -transpose(invF ⋅ ∇δuⱼ ⋅ invF)
+                δJ = J * tr(∇δuⱼ ⋅ invF)
+                δJcofF = δJ * cofF + J * δcofF
+                Kₑ[i, j] += p * (δJcofF ⋅ n₀) ⋅ δuᵢ * dΓ
             end
         end
     end

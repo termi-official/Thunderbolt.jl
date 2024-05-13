@@ -1,4 +1,3 @@
-
 """
     ΦRegazzoniSalvadorAfrica(t,tC,tR,TC,TR,THB)
 

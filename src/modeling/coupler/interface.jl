@@ -1,17 +1,19 @@
+abstract type AbstractCoupler end
+
 """
 Abstract supertype for all interface coupling schemes.
 """
-abstract type InterfaceCoupler end
+abstract type InterfaceCoupler <: AbstractCoupler end
 
 """
 Abstract supertype for all volume coupling schemes.
 """
-abstract type VolumeCoupler end
+abstract type VolumeCoupler <: AbstractCoupler end
 
 """
 Helper to describe the coupling between problems.
 """
-struct Coupling{CouplerType}
+struct Coupling{CouplerType <: AbstractCoupler}
     problem_1_index::Int
     problem_2_index::Int
     coupler::CouplerType
