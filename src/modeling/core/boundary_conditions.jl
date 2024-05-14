@@ -37,6 +37,7 @@ end
 struct EmtpyFaceCache
 end
 
+assemble_face!(Kₑ::Matrix, residualₑ, uₑ, cell, local_face_index, face_caches::EmtpyFaceCache, time) = nothing
 assemble_face!(Kₑ::Matrix, uₑ, cell, local_face_index, face_caches::EmtpyFaceCache, time) = nothing
 
 

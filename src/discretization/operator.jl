@@ -25,21 +25,21 @@ abstract type AbstractNonlinearOperator end
 Setup the linearized operator `Jᵤ(u) := dᵤF(u)` in op and its residual `F(u)` in 
 preparation to solve for the increment `Δu` with the linear problem `J(u) Δu = F(u)`.
 """
-update_linearization!(Jᵤ::AbstractNonlinearOperator, residual::AbstractVector, u::AbstractVector, t) = error("Not overloaded")
+update_linearization!(Jᵤ::AbstractNonlinearOperator, residual::AbstractVector, u::AbstractVector, t)
 
 """
     update_linearization!(op, u, t)
 
 Setup the linearized operator `Jᵤ(u)` in op.
 """
-update_linearization!(Jᵤ::AbstractNonlinearOperator, u::AbstractVector, t) = error("Not overloaded")
+update_linearization!(Jᵤ::AbstractNonlinearOperator, u::AbstractVector, t)
 
 """
     update_residual!(op, residual, u, problem, t)
 
 Evaluate the residual `F(u)` of the problem.
 """
-update_residual!(op::AbstractNonlinearOperator, residual::AbstractVector, u::AbstractVector, t) = error("Not overloaded")
+update_residual!(op::AbstractNonlinearOperator, residual::AbstractVector, u::AbstractVector, t)
 
 
 abstract type AbstractBlockOperator <: AbstractNonlinearOperator end
@@ -53,20 +53,35 @@ function *(op::AbstractNonlinearOperator, x::AbstractVector)
 end
 
 # TODO constructor which checks for axis compat
-struct BlockOperator{OPS <: Tuple} <: AbstractBlockOperator
+struct BlockOperator{OPS <: Tuple, JT} <: AbstractBlockOperator
     # TODO custom "square matrix tuple"
     operators::OPS # stored row by row as in [1 2; 3 4]
+    J::JT
 end
 
-# TODO optimize
+function BlockOperator(operators::Tuple)
+    nblocks = isqrt(length(operators))
+    mJs = reshape([getJ(opi) for opi ∈ operators], (nblocks, nblocks))
+    block_sizes = [size(op,1) for op in mJs[:,1]]
+    total_size = sum(block_sizes)
+    # First we define an empty dummy block array
+    J = BlockArray(spzeros(total_size,total_size), block_sizes, block_sizes)
+    # Then we move the local Js into the dummy to transfer ownership
+    for i in 1:nblocks
+        for j in 1:nblocks
+            J[Block(i,j)] = mJs[i,j]
+        end
+    end
+
+    return BlockOperator(operators, J)
+end
+
 function getJ(op::BlockOperator, i::Block)
     @assert length(i.n) == 2
-    mJs = reshape([getJ(opi) for opi ∈ op.operators], (isqrt(length(op.operators)), isqrt(length(op.operators))))
-    return mJs[i.n[1], i.n[2]]
+    return @view op.J[i]
 end
 
-# TODO optimize
-getJ(op::BlockOperator) = mortar(reshape([getJ(opi) for opi ∈ op.operators], (isqrt(length(op.operators)), isqrt(length(op.operators)))))
+getJ(op::BlockOperator) = op.J
 
 function *(op::BlockOperator, x::AbstractVector)
     y = similar(x)
@@ -74,12 +89,10 @@ function *(op::BlockOperator, x::AbstractVector)
     return y
 end
 
-# TODO optimize
 mul!(y, op::BlockOperator, x) = mul!(y, getJ(op), x)
 
 # TODO can we be clever with broadcasting here?
 function update_linearization!(op::BlockOperator, u::BlockVector, time)
-    @warn "linearization not functional for actually coupled problems!" maxlog=1
     for opi ∈ op.operators
         update_linearization!(opi, u, time)
     end
@@ -87,14 +100,13 @@ end
 
 # TODO can we be clever with broadcasting here?
 function update_linearization!(op::BlockOperator, u::BlockVector, residual::BlockVector, time)
-    @warn "linearization not functional for actually coupled problems!" maxlog=1
     nops = length(op.operators)
     nrows = isqrt(nops)
     for i ∈ 1:nops
-        i1 = Block(div(i-1, nrows) + 1) # index shift due to 1-based indices
+        row, col = divrem(i-1, nrows) .+ 1 # index shift due to 1-based indices
+        i1 = Block(row) 
         row_residual = @view residual[i1]
-        u_ = @view u[Block(rem(i-1, nrows) + 1)] # TODO REMOVEME
-        @timeit_debug "update block $i1" update_linearization!(op.operators[i], u_, row_residual, time)
+        @timeit_debug "update block ($row,$col)" update_linearization!(op.operators[i], u, row_residual, time) # :)
     end
 end
 
@@ -209,7 +221,7 @@ end
 
 getJ(op::AssembledNonlinearOperator) = op.J
 
-function update_linearization!(op::AssembledNonlinearOperator, u::Vector, time)
+function update_linearization!(op::AssembledNonlinearOperator, u::AbstractVector, time)
     @unpack J, element_cache, face_cache, tying_cache, dh  = op
 
     assembler = start_assemble(J)
@@ -233,17 +245,17 @@ function update_linearization!(op::AssembledNonlinearOperator, u::Vector, time)
     #finish_assemble(assembler)
 end
 
-function update_linearization!(op::AssembledNonlinearOperator, u::Vector, residual::Vector, time)
+function update_linearization!(op::AssembledNonlinearOperator, u::AbstractVector, residual::AbstractVector, time)
     @unpack J, element_cache, face_cache, tying_cache, dh  = op
-
+    
     assembler = start_assemble(J, residual)
-
+    
     ndofs = ndofs_per_cell(dh)
     Jₑ = zeros(ndofs, ndofs)
     rₑ = zeros(ndofs)
     uₑ = zeros(ndofs)
     uₜ = get_tying_dofs(tying_cache, u)
-    @inbounds for cell in CellIterator(dh)
+    @timeit_debug "loop" @inbounds for cell in CellIterator(dh)
         dofs = celldofs(cell)
         fill!(Jₑ, 0)
         fill!(rₑ, 0)
@@ -270,8 +282,8 @@ Apply the (scaled) action of the linearization of the contained nonlinear form t
 mul!(out, op::AssembledNonlinearOperator, in) = mul!(out, op.J, in)
 mul!(out, op::AssembledNonlinearOperator, in, α, β) = mul!(out, op.J, in, α, β)
 
-Base.eltype(op::AssembledNonlinearOperator) = eltype(op.A)
-Base.size(op::AssembledNonlinearOperator, axis) = sisze(op.A, axis)
+Base.eltype(op::AssembledNonlinearOperator) = eltype(op.J)
+Base.size(op::AssembledNonlinearOperator, axis) = size(op.J, axis)
 
 
 abstract type AbstractBilinearOperator <: AbstractNonlinearOperator end

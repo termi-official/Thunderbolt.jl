@@ -38,11 +38,14 @@ function setup_solver_cache(coupled_problem::CoupledProblem, solver::NewtonRaphs
     NewtonRaphsonSolverCache(op, solution, solver)
 end
 
+residual_norm(solver_cache::NewtonRaphsonSolverCache, problem) = norm(solver_cache.residual[Ferrite.free_dofs(problem.ch)])
+residual_norm(solver_cache::NewtonRaphsonSolverCache, problem, i::Block) = norm(solver_cache.residual[i][Ferrite.free_dofs(problem.ch)])
+residual_norm(solver_cache::NewtonRaphsonSolverCache, problem::NullProblem, i::Block) = 0.0
+
 ###########################################################################################################
 
 eliminate_constraints_from_linearization!(solver_cache, problem) = apply_zero!(solver_cache.op.J, solver_cache.residual, problem.ch)
 eliminate_constraints_from_increment!(Δu, problem, solver_cache) = apply_zero!(Δu, problem.ch)
-residual_norm(solver_cache::NewtonRaphsonSolverCache, problem) = norm(solver_cache.residual[Ferrite.free_dofs(problem.ch)])
 
 function eliminate_constraints_from_increment!(Δu, problem::CoupledProblem, solver_cache)
     for (i,p) ∈ enumerate(problem.base_problems)
@@ -58,9 +61,6 @@ function residual_norm(solver_cache::NewtonRaphsonSolverCache, problem::CoupledP
     end
     return val
 end
-
-residual_norm(solver_cache::NewtonRaphsonSolverCache, problem, i::Block) = norm(solver_cache.residual[i][Ferrite.free_dofs(problem.ch)])
-residual_norm(solver_cache::NewtonRaphsonSolverCache, problem::NullProblem, i::Block) = 0.0
 
 function eliminate_constraints_from_linearization!(solver_cache, problem::CoupledProblem)
     for (i,p) ∈ enumerate(problem.base_problems)
@@ -129,7 +129,32 @@ end
 
 # https://github.com/JuliaArrays/BlockArrays.jl/issues/319
 inner_solve(J, r) = J \ r
-inner_solve(J::BlockMatrix, r::BlockArray) = SparseMatrixCSC(J) \ Vector(r)
+function inner_solve_schur(J::BlockMatrix, r::BlockArray)
+    Jdd = @view J[Block(1,1)]
+    rd = @view r[Block(1)]
+    rp = @view r[Block(2)]
+    v = Jdd \ rd
+    Jdp = @view J[Block(1,2)]
+    Jpd = @view J[Block(2,1)]
+    w = Jdd \ Matrix(Jdp)
+
+    Jpdv = Jpd*v
+    Jpdw = Jpd*w
+    Δp = [(rp[i] - Jpdv[i]) / Jpdw[i] for i ∈ 1:length(Jpdw)]
+    wΔp = w*Δp
+    #Δd = -(v .+ transpose(wΔp)) # no idea how to do this correctly...
+    Δd = [-(v[i] + wΔp[i][1]) for i in 1:length(v)]
+
+    Δu = BlockVector([Δd; Δp], blocksizes(r,1))
+    return Δu
+end
+
+function inner_solve(J::BlockMatrix, r::BlockArray)
+    # if length(blocksizes(r,1)) == 2
+    #     return inner_solve_schur(J,r)
+    # end
+    SparseMatrixCSC(J) \ Vector(r)
+end
 inner_solve(J::BlockMatrix, r) = SparseMatrixCSC(J) \ r
 inner_solve(J, r::BlockArray) = J \ Vector(r)
 
