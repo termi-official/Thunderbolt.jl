@@ -73,23 +73,24 @@ function semidiscretize(model::StructuralModel{<:QuasiStaticModel}, discretizati
     return semidiscrete_problem
 end
 
-function semidiscretize(split::RegazzoniSalvadorAfricaSplit, discretization::FiniteElementDiscretization, grid::AbstractGrid)
+function semidiscretize(split::RSAFDQSplit, discretization::FiniteElementDiscretization, grid::AbstractGrid)
     ets = elementtypes(grid)
     @assert length(ets) == 1 "Multiple element types not supported"
     @assert length(split.model.base_models) == 2 "I can only handle pure mechanics coupled to pure circuit."
 
+    num_chambers = num_unknown_pressures(split.model.base_models[2])
     semidiscrete_problem = SplitProblem(
-        CoupledProblem( # Recouple mechanical problem with dummy to introduce the coupling!
+        CoupledProblem(
             (
                 semidiscretize(split.model.base_models[1], discretization, grid),
-                NullProblem(1) # 1 coupling dof (chamber pressure)
+                NullProblem(num_chambers) # one coupling dof for each chamber (chamber pressure)
             ),
-            split.model.couplers
+            split.model.couplings
         ),
         ODEProblem(
             split.model.base_models[2],
-            (du,u,t,pₗᵥ) -> lumped_driver_lv!(du, u, t, pₗᵥ[1], split.model.base_models[2]),
-            [0.01] #pₗᵥ TODO better design
+            (du,u,t,chamber_pressures) -> lumped_driver!(du, u, t, chamber_pressures, split.model.base_models[2]),
+            zeros(num_chambers) # Initialize with 0 pressure in the chambers
         )
     )
 

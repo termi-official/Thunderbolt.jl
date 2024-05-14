@@ -1,40 +1,18 @@
 """
-    update_linearization!(Jᵤ, residual, u)
-
-Setup the linearized operator `Jᵤ(u) := dᵤF(u)` and its residual `F(u)` in 
-preparation to solve for the increment `Δu` with the linear problem `J(u) Δu = F(u)`.
-"""
-update_linearization!(Jᵤ, residual, u) = error("Not overloaded")
-
-"""
-    update_linearization!(Jᵤ, u, problem)
-
-Setup the linearized operator `Jᵤ(u)``.
-"""
-update_linearization!(Jᵤ, u) = error("Not overloaded")
-
-"""
-    update_residual!(residual, u, problem)
-
-Evaluate the residual `F(u)` of the problem.
-"""
-update_residual!(residual, u) = error("Not overloaded")
-
-"""
     NewtonRaphsonSolver{T}
 
 Classical Newton-Raphson solver to solve nonlinear problems of the form `F(u) = 0`.
 To use the Newton-Raphson solver you have to dispatch on
 * [update_linearization!](@ref)
 """
-Base.@kwdef struct NewtonRaphsonSolver{T}
+Base.@kwdef struct NewtonRaphsonSolver{T} <: AbstractNonlinearSolver
     # Convergence tolerance
     tol::T = 1e-4
     # Maximum number of iterations
     max_iter::Int = 100
 end
 
-mutable struct NewtonRaphsonSolverCache{OpType, ResidualType, T}
+mutable struct NewtonRaphsonSolverCache{OpType, ResidualType, T} <: AbstractNonlinearSolverCache
     # The nonlinear operator
     op::OpType
     # Cache for the right hand side f(u)
@@ -44,37 +22,14 @@ mutable struct NewtonRaphsonSolverCache{OpType, ResidualType, T}
     #linear_solver_cache
 end
 
-function setup_operator(problem::QuasiStaticNonlinearProblem, solver::NewtonRaphsonSolver)
-    @unpack dh, constitutive_model, face_models = problem
-    @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the Newton solver."
-
-    intorder = quadrature_order(problem, :displacement)
-    qr = QuadratureRuleCollection(intorder)
-    qr_face = FaceQuadratureRuleCollection(intorder)
-
-    return AssembledNonlinearOperator(
-        dh, :displacement, constitutive_model, qr, face_models, qr_face
-    )
-end
-
-function setup_operator(problem::NullProblem, solver::NewtonRaphsonSolver{T}) where T
-    @warn "FIXME"
-    # return NullOperator(
-    #     solution_size(problem)
-    # )
-    return DiagonalOperator(ones(T, solution_size(problem)))
-end
-
-function setup_solver_caches(problem::QuasiStaticNonlinearProblem, solver::NewtonRaphsonSolver{T}) where {T}
+function setup_solver_cache(problem, solver::NewtonRaphsonSolver{T}) where {T}
     NewtonRaphsonSolverCache(setup_operator(problem, solver), Vector{T}(undef, solution_size(problem)), solver)
 end
 
-function setup_solver_caches(coupled_problem::CoupledProblem{<:Tuple{<:QuasiStaticNonlinearProblem,<:NullProblem}}, solver::NewtonRaphsonSolver{T}) where {T}
-    @unpack base_problems, couplers = coupled_problem
-    @warn "FIXME"
+function setup_solver_cache(coupled_problem::CoupledProblem, solver::NewtonRaphsonSolver{T}) where {T}
+    @unpack base_problems = coupled_problem
     op = BlockOperator((
-        # TODO coupler instead off null operator
-        [i == j ? setup_operator(base_problems[i], solver) : NullOperator{T,solution_size(base_problems[j]),solution_size(base_problems[i])}()  for i in 1:length(base_problems) for j in 1:length(base_problems)]...,
+        [i == j ? setup_operator(coupled_problem, i, solver) : setup_coupling_operator(coupled_problem, i, j, solver) for i in 1:length(base_problems) for j in 1:length(base_problems)]...,
     ))
     solution = mortar([
         Vector{T}(undef, solution_size(base_problems[i])) for i ∈ 1:length(base_problems)
@@ -82,6 +37,8 @@ function setup_solver_caches(coupled_problem::CoupledProblem{<:Tuple{<:QuasiStat
 
     NewtonRaphsonSolverCache(op, solution, solver)
 end
+
+###########################################################################################################
 
 eliminate_constraints_from_linearization!(solver_cache, problem) = apply_zero!(solver_cache.op.J, solver_cache.residual, problem.ch)
 eliminate_constraints_from_increment!(Δu, problem, solver_cache) = apply_zero!(Δu, problem.ch)
@@ -136,7 +93,9 @@ function eliminate_constraints_from_linearization_blocked!(solver_cache, problem
     return nothing
 end
 
-function solve!(u::AbstractVector, problem, solver_cache::NewtonRaphsonSolverCache, t)
+#######################################################################################
+
+function solve!(u::AbstractVector, problem::AbstractProblem, solver_cache::NewtonRaphsonSolverCache, t)
     @unpack op, residual = solver_cache
     newton_itr = -1
     Δu = zero(u)

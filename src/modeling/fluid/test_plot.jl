@@ -8,7 +8,7 @@ function p_LV(t,p)
 end
 
 function test_solve_lumped()
-    p = Thunderbolt.RegazzoniSalvadorAfricaLumpedCicuitModel{Float64,Float64,Float64,Float64,Float64,Float64}()
+    p = Thunderbolt.RSAFDQLumpedCicuitModel{Float64,Float64,Float64,Float64,Float64,Float64}()
 
     # V_LV(t) = 140 + -20*(-abs(2*(mod(t-0.5*p.THB,p.THB))/p.THB)+1)
 
@@ -18,13 +18,13 @@ function test_solve_lumped()
     # τ = 0.0:Δt:(0.275-Δt)
     solutions = zeros(Thunderbolt.num_states(p), length(τ)+1)
     u₀ = @view solutions[:, 1]
-    Thunderbolt.initial_condition!(u₀, p)
+    Thunderbolt.default_initial_condition!(u₀, p)
     # solutions[2, 1] = 140.0
     du = zeros(Thunderbolt.num_states(p))
     for (i,t) ∈ enumerate(τ)
         # solutions[2, i] = V_LV(t)
         solutions[:, i+1] .= solutions[:, i]
-        Thunderbolt.lumped_driver_lv!(du, solutions[:, i], t, p_LV(t,p), p)
+        Thunderbolt.lumped_driver!(du, solutions[:, i], t, p_LV(t,p), p)
         solutions[:, i+1] += Δt * du
     end
     return solutions
@@ -32,7 +32,7 @@ end
 
 
 function plot_solution(solution)
-    p = Thunderbolt.RegazzoniSalvadorAfricaLumpedCicuitModel{Float64,Float64,Float64,Float64,Float64,Float64}()
+    p = Thunderbolt.RSAFDQLumpedCicuitModel{Float64,Float64,Float64,Float64,Float64,Float64}()
 
     Δt = 0.001# 1.0
     τ = collect(0.0:Δt:100*p.THB)
@@ -41,10 +41,10 @@ function plot_solution(solution)
 
     # V_LV(t) = 80 + -(-abs(2*(mod(t-0.5*p.THB,p.THB))/p.THB)+1)
 
-    @inline Eₗᵥ(p,t) = Thunderbolt.elastance_RegazzoniSalvadorAfrica(t, p.Epassᵣₐ, 2*p.Eactmaxᵣₐ, p.tCᵣₐ, p.tCᵣₐ + p.TCᵣₐ, p.TCᵣₐ, p.TRᵣₐ, p.THB)
-    @inline Eₗₐ(p,t) = Thunderbolt.elastance_RegazzoniSalvadorAfrica(t, p.Epassₗₐ, p.Eactmaxₗₐ, p.tCₗₐ, p.tCₗₐ + p.TCₗₐ, p.TCₗₐ, p.TRₗₐ, p.THB)
-    @inline Eᵣₐ(p,t) = Thunderbolt.elastance_RegazzoniSalvadorAfrica(t, p.Epassᵣₐ, p.Eactmaxᵣₐ, p.tCᵣₐ, p.tCᵣₐ + p.TCᵣₐ, p.TCᵣₐ, p.TRᵣₐ, p.THB)
-    @inline Eᵣᵥ(p,t) = Thunderbolt.elastance_RegazzoniSalvadorAfrica(t, p.Epassᵣᵥ, p.Eactmaxᵣᵥ, p.tCᵣᵥ, p.tCᵣᵥ + p.TCᵣᵥ, p.TCᵣᵥ, p.TRᵣᵥ, p.THB)
+    @inline Eₗᵥ(p,t) = Thunderbolt.elastance_RSAFDQ(t, p.Epassᵣₐ, 2*p.Eactmaxᵣₐ, p.tCᵣₐ, p.tCᵣₐ + p.TCᵣₐ, p.TCᵣₐ, p.TRᵣₐ, p.THB)
+    @inline Eₗₐ(p,t) = Thunderbolt.elastance_RSAFDQ(t, p.Epassₗₐ, p.Eactmaxₗₐ, p.tCₗₐ, p.tCₗₐ + p.TCₗₐ, p.TCₗₐ, p.TRₗₐ, p.THB)
+    @inline Eᵣₐ(p,t) = Thunderbolt.elastance_RSAFDQ(t, p.Epassᵣₐ, p.Eactmaxᵣₐ, p.tCᵣₐ, p.tCᵣₐ + p.TCᵣₐ, p.TCᵣₐ, p.TRᵣₐ, p.THB)
+    @inline Eᵣᵥ(p,t) = Thunderbolt.elastance_RSAFDQ(t, p.Epassᵣᵥ, p.Eactmaxᵣᵥ, p.tCᵣᵥ, p.tCᵣᵥ + p.TCᵣᵥ, p.TCᵣᵥ, p.TRᵣᵥ, p.THB)
 
     Vₗₐ = @view solution[1,:]
     Vₗᵥ = @view solution[2,:]

@@ -6,17 +6,18 @@ struct DummyLumpedCircuitModel{F}
 end
 
 num_states(::DummyLumpedCircuitModel) = 1
+num_unknown_pressures(::DummyLumpedCircuitModel) = 1
 
-function initial_condition!(u, p::DummyLumpedCircuitModel)
-    u .= p.volume_fun(0.0)
+function default_initial_condition!(u, model::DummyLumpedCircuitModel)
+    u[1] = model.volume_fun(0.0)
 end
 
-function lumped_driver_lv!(du, u, t, pₗᵥ, model::DummyLumpedCircuitModel)
+function lumped_driver!(du, u, t, external_input, model::DummyLumpedCircuitModel)
     du[1] = model.volume_fun(0.0)-u[1]
 end
 
 """
-    ΦRegazzoniSalvadorAfrica(t,tC,tR,TC,TR,THB)
+    ΦRSAFDQ(t,tC,tR,TC,TR,THB)
 
 Activation transient from the paper [RegSalAfrFedDedQar:2022:cem](@citet).
 
@@ -25,7 +26,7 @@ Activation transient from the paper [RegSalAfrFedDedQar:2022:cem](@citet).
 [tC,TC] = contraction period
 [tR,TR] = relaxation period
 """
-function Φ_RegazzoniSalvadorAfrica(t,tC,tR,TC,TR,THB)
+function Φ_RSAFDQ(t,tC,tR,TC,TR,THB)
     tnow = mod(t - tC, THB)
     if 0 ≤ tnow < TC
         return 1/2 * (1-cos(π/TC * tnow)) 
@@ -37,15 +38,15 @@ function Φ_RegazzoniSalvadorAfrica(t,tC,tR,TC,TR,THB)
     return 0.0
 end
 
-elastance_RegazzoniSalvadorAfrica(t,Epass,Emax,tC,tR,TC,TR,THB) = Epass + Emax*Φ_RegazzoniSalvadorAfrica(t,tC,tR,TC,TR,THB)
+elastance_RSAFDQ(t,Epass,Emax,tC,tR,TC,TR,THB) = Epass + Emax*Φ_RSAFDQ(t,tC,tR,TC,TR,THB)
 
 
 """
-    RegazzoniSalvadorAfricaLumpedCicuitModel
+    RSAFDQLumpedCicuitModel
 
 A lumped (0D) circulatory model for LV simulations as presented in [RegSalAfrFedDedQar:2022:cem](@citet).
 """
-Base.@kwdef struct RegazzoniSalvadorAfricaLumpedCicuitModel{
+Base.@kwdef struct RSAFDQLumpedCicuitModel{
     T1, # mmHg ms mL^-1
     T2, # mL mmHg^-1
     T3, # mL
@@ -53,6 +54,10 @@ Base.@kwdef struct RegazzoniSalvadorAfricaLumpedCicuitModel{
     T5, # mmHg ms^2 mL^-1
     T6, # mmHg mL mL^-1
 }
+    lv_pressure_given::Bool = false
+    rv_pressure_given::Bool = true
+    la_pressure_given::Bool = true
+    ra_pressure_given::Bool = true
     #
     # Rsysₐᵣ::T1  = T1(0.8*1e3)
     # Rpulₐᵣ::T1  = T1(0.1625*1e3)
@@ -135,17 +140,17 @@ Base.@kwdef struct RegazzoniSalvadorAfricaLumpedCicuitModel{
     TRᵣᵥ::T4 = T4(0.12)
     THB::T4 = T4(0.8) # 75 beats per minute
     # Prescribed functions
-    # pₑₓ::PEX = (p::RegazzoniSalvadorAfricaLumpedCicuitModel,t) -> 0.0
-    # Eₗₐ::ELA = (p::RegazzoniSalvadorAfricaLumpedCicuitModel,t) -> elastance_RegazzoniSalvadorAfrica(t, p.Epassₗₐ, Eactmaxₗₐ, p.tCₗₐ, p.tCₗₐ + p.TCₗₐ, p.TCₗₐ, p.TRₗₐ, p.THB)
-    # Eᵣₐ::ERA = (p::RegazzoniSalvadorAfricaLumpedCicuitModel,t) -> elastance_RegazzoniSalvadorAfrica(t, p.Epassᵣₐ, Eactmaxᵣₐ, p.tCᵣₐ, p.tCᵣₐ + p.TCᵣₐ, p.TCᵣₐ, p.TRᵣₐ, p.THB)
-    # Eᵣᵥ::ERV = (p::RegazzoniSalvadorAfricaLumpedCicuitModel,t) -> elastance_RegazzoniSalvadorAfrica(t, p.Epassᵣᵥ, Eactmaxᵣᵥ, p.tCᵣᵥ, p.tCᵣᵥ + p.TCᵣᵥ, p.TCᵣᵥ, p.TRᵣᵥ, p.THB)
+    # pₑₓ::PEX = (p::RSAFDQLumpedCicuitModel,t) -> 0.0
+    # Eₗₐ::ELA = (p::RSAFDQLumpedCicuitModel,t) -> elastance_RSAFDQ(t, p.Epassₗₐ, Eactmaxₗₐ, p.tCₗₐ, p.tCₗₐ + p.TCₗₐ, p.TCₗₐ, p.TRₗₐ, p.THB)
+    # Eᵣₐ::ERA = (p::RSAFDQLumpedCicuitModel,t) -> elastance_RSAFDQ(t, p.Epassᵣₐ, Eactmaxᵣₐ, p.tCᵣₐ, p.tCᵣₐ + p.TCᵣₐ, p.TCᵣₐ, p.TRᵣₐ, p.THB)
+    # Eᵣᵥ::ERV = (p::RSAFDQLumpedCicuitModel,t) -> elastance_RSAFDQ(t, p.Epassᵣᵥ, Eactmaxᵣᵥ, p.tCᵣᵥ, p.tCᵣᵥ + p.TCᵣᵥ, p.TCᵣᵥ, p.TRᵣᵥ, p.THB)
 end
 
-# RegazzoniSalvadorAfricaLumpedCicuitModel() = RegazzoniSalvadorAfricaLumpedCicuitModel{Float64,Float64,Float64,Float64,Float64}()
+num_states(::RSAFDQLumpedCicuitModel) = 12
+num_unknown_pressures(::RSAFDQLumpedCicuitModel) = Int(model.lv_pressure_given) + Int(model.rv_pressure_given) + Int(model.la_pressure_given) + Int(model.ra_pressure_given)
 
-num_states(::RegazzoniSalvadorAfricaLumpedCicuitModel) = 12
-function initial_condition!(u, p::RegazzoniSalvadorAfricaLumpedCicuitModel)
-    @unpack V0ₗₐ, V0ᵣₐ, V0ᵣᵥ = p
+function default_initial_condition!(u, model::RSAFDQLumpedCicuitModel)
+    @unpack V0ₗₐ, V0ᵣₐ, V0ᵣᵥ = model
     u .= 0.0
     # u[1] = V0ₗₐ
     # u[3] = V0ᵣₐ
@@ -157,14 +162,51 @@ function initial_condition!(u, p::RegazzoniSalvadorAfricaLumpedCicuitModel)
     u[4] = 500.0
 end
 
-# Evaluate the right hand side of equation system (6) in the paper
-# V = volume
-# p = pressure
-# Q = flow rates
-# E = elastance
-# [x]v = ventricle [x]
-# TODO generalize to multiple chambers
-function lumped_driver_lv!(du, u, t, pₗᵥ, model::RegazzoniSalvadorAfricaLumpedCicuitModel)
+function lumped_circuit_relative_lv_pressure_index(model::RSAFDQLumpedCicuitModel)
+    model.lv_pressure_given && @error "Trying to query extenal LV pressure index, but LV pressure is not an external input!"
+    return 1
+end
+function lumped_circuit_relative_rv_pressure_index(model::RSAFDQLumpedCicuitModel)
+    model.rv_pressure_given && @error "Trying to query extenal RV pressure index, but RV pressure is not an external input!"
+    i = 1
+    if model.lv_pressure_given
+        i+=1
+    end
+    return i
+end
+function lumped_circuit_relative_la_pressure_index(model::RSAFDQLumpedCicuitModel)
+    model.la_pressure_given && @error "Trying to query extenal LA pressure index, but LA pressure is not an external input!"
+    i = 1
+    if model.lv_pressure_given
+        i+=1
+    end
+    if model.rv_pressure_given
+        i+=1
+    end
+    return i
+end
+function lumped_circuit_relative_ra_pressure_index(model::RSAFDQLumpedCicuitModel)
+    model.la_pressure_given && @error "Trying to query extenal RA pressure index, but RA pressure is not an external input!"
+    i = 1
+    if model.lv_pressure_given
+        i+=1
+    end
+    if model.rv_pressure_given
+        i+=1
+    end
+    if model.la_pressure_given
+        i+=1
+    end
+    return i
+end
+
+function lumped_driver!(du, u, t, external_input::AbstractVector, model::RSAFDQLumpedCicuitModel)
+    # Evaluate the right hand side of equation system (6) in the paper
+    # V = volume
+    # p = pressure
+    # Q = flow rates
+    # E = elastance
+    # [x]v = ventricle [x]
     Vₗₐ, Vₗᵥ, Vᵣₐ, Vᵣᵥ, psysₐᵣ, psysᵥₑₙ, ppulₐᵣ, ppulᵥₑₙ, Qsysₐᵣ, Qsysᵥₑₙ, Qpulₐᵣ, Qpulᵥₑₙ = u
 
     @unpack Rsysₐᵣ, Rpulₐᵣ, Rsysᵥₑₙ, Rpulᵥₑₙ = model
@@ -175,19 +217,19 @@ function lumped_driver_lv!(du, u, t, pₗᵥ, model::RegazzoniSalvadorAfricaLump
     # @unpack Eactmaxₗₐ, Eactmaxᵣₐ, Eactmaxᵣᵥ = model
     # @unpack Eₗₐ, Eᵣₐ, Eᵣᵥ = model
     # Note tR = tC+TC
-    @inline Eₗᵥ(p::RegazzoniSalvadorAfricaLumpedCicuitModel,t) = elastance_RegazzoniSalvadorAfrica(t, p.Epassᵣₐ, 2*p.Eactmaxᵣₐ, p.tCᵣₐ, p.tCᵣₐ + p.TCᵣₐ, p.TCᵣₐ, p.TRᵣₐ, p.THB)
-    @inline Eₗₐ(p::RegazzoniSalvadorAfricaLumpedCicuitModel,t) = elastance_RegazzoniSalvadorAfrica(t, p.Epassₗₐ, p.Eactmaxₗₐ, p.tCₗₐ, p.tCₗₐ + p.TCₗₐ, p.TCₗₐ, p.TRₗₐ, p.THB)
-    @inline Eᵣₐ(p::RegazzoniSalvadorAfricaLumpedCicuitModel,t) = elastance_RegazzoniSalvadorAfrica(t, p.Epassᵣₐ, p.Eactmaxᵣₐ, p.tCᵣₐ, p.tCᵣₐ + p.TCᵣₐ, p.TCᵣₐ, p.TRᵣₐ, p.THB)
-    @inline Eᵣᵥ(p::RegazzoniSalvadorAfricaLumpedCicuitModel,t) = elastance_RegazzoniSalvadorAfrica(t, p.Epassᵣᵥ, p.Eactmaxᵣᵥ, p.tCᵣᵥ, p.tCᵣᵥ + p.TCᵣᵥ, p.TCᵣᵥ, p.TRᵣᵥ, p.THB)
+    @inline Eₗᵥ(p::RSAFDQLumpedCicuitModel,t) = elastance_RSAFDQ(t, p.Epassᵣₐ, 2*p.Eactmaxᵣₐ, p.tCᵣₐ, p.tCᵣₐ + p.TCᵣₐ, p.TCᵣₐ, p.TRᵣₐ, p.THB)
+    @inline Eᵣᵥ(p::RSAFDQLumpedCicuitModel,t) = elastance_RSAFDQ(t, p.Epassᵣᵥ, p.Eactmaxᵣᵥ, p.tCᵣᵥ, p.tCᵣᵥ + p.TCᵣᵥ, p.TCᵣᵥ, p.TRᵣᵥ, p.THB)
+    @inline Eₗₐ(p::RSAFDQLumpedCicuitModel,t) = elastance_RSAFDQ(t, p.Epassₗₐ, p.Eactmaxₗₐ, p.tCₗₐ, p.tCₗₐ + p.TCₗₐ, p.TCₗₐ, p.TRₗₐ, p.THB)
+    @inline Eᵣₐ(p::RSAFDQLumpedCicuitModel,t) = elastance_RSAFDQ(t, p.Epassᵣₐ, p.Eactmaxᵣₐ, p.tCᵣₐ, p.tCᵣₐ + p.TCᵣₐ, p.TCᵣₐ, p.TRᵣₐ, p.THB)
 
     @unpack V0ₗₐ, V0ᵣₐ, V0ᵣᵥ = model
     @unpack tCₗₐ, TCₗₐ, TRₗₐ, TRᵣₐ, tCᵣₐ, TCᵣₐ, tCᵣᵥ, TCᵣᵥ, TRᵣᵥ = model
 
     #pₑₓ = 0.0 # External pressure created by organs
-    pₗᵥ = Eₗᵥ(model, t)*(Vₗᵥ - 5.0)
-    pₗₐ = Eₗₐ(model, t)*(Vₗₐ - V0ₗₐ)
-    pᵣₐ = Eᵣₐ(model, t)*(Vᵣₐ - V0ᵣₐ)
-    pᵣᵥ = Eᵣᵥ(model, t)*(Vᵣᵥ - V0ᵣᵥ)
+    pₗᵥ = model.lv_pressure_given ? Eₗᵥ(model, t)*(Vₗᵥ - 5.0)  : external_input[lumped_circuit_relative_lv_pressure_index(model)]
+    pᵣᵥ = model.rv_pressure_given ? Eᵣᵥ(model, t)*(Vᵣᵥ - V0ᵣᵥ) : external_input[lumped_circuit_relative_rv_pressure_index(model)]
+    pₗₐ = model.la_pressure_given ? Eₗₐ(model, t)*(Vₗₐ - V0ₗₐ) : external_input[lumped_circuit_relative_la_pressure_index(model)]
+    pᵣₐ = model.ra_pressure_given ? Eᵣₐ(model, t)*(Vᵣₐ - V0ᵣₐ) : external_input[lumped_circuit_relative_ra_pressure_index(model)]
 
     @inline Rᵢ(p₁, p₂, p) = p₁ < p₂ ? p.Rmin : p.Rmax # Resistance
     @inline Qᵢ(p₁, p₂, model) = (p₁ - p₂) / Rᵢ(p₁, p₂, model)

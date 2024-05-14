@@ -1,7 +1,7 @@
 #########################################################
 ########################## TIME #########################
 #########################################################
-struct BackwardEulerSolver
+struct BackwardEulerSolver <: AbstractSolver
 end
 
 # TODO decouple from heat problem via special ODEFunction (AffineODEFunction)
@@ -66,7 +66,7 @@ function perform_step!(problem::TransientHeatProblem, cache::BackwardEulerSolver
     return true
 end
 
-function setup_solver_caches(problem::TransientHeatProblem, solver::BackwardEulerSolver, t₀)
+function setup_solver_cache(problem::TransientHeatProblem, solver::BackwardEulerSolver, t₀)
     @unpack dh = problem
     @assert length(dh.field_names) == 1 # TODO relax this assumption, maybe.
     field_name = dh.field_names[1]
@@ -117,7 +117,7 @@ function setup_solver_caches(problem::TransientHeatProblem, solver::BackwardEule
 end
 
 # Multi-rate version
-struct ForwardEulerSolver
+struct ForwardEulerSolver <: AbstractSolver
     rate::Int
 end
 
@@ -140,7 +140,7 @@ function perform_step!(problem, solver_cache::ForwardEulerSolverCache, t::Float6
     return !any(isnan.(uₙ))
 end
 
-function setup_solver_caches(problem::ODEProblem, solver::ForwardEulerSolver, t₀)
+function setup_solver_cache(problem::ODEProblem, solver::ForwardEulerSolver, t₀)
     return ForwardEulerSolverCache(
         solver.rate,
         zeros(num_states(problem.ode)),

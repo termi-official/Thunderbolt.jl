@@ -1,3 +1,5 @@
+# For the mapping against the SciML ecosystem, a "Thunderbolt problem" is essentially equivalent to a "SciML function" coupled to a specific "SciML problem".
+
 # TODO rethink interface here
 #      1. Who creates the solution vector?
 #      2. Is there a better way to pass the initial solution information?
@@ -5,6 +7,15 @@ default_initializer(problem, t) = error("No default initializer available for a 
 
 abstract type AbstractProblem end # Temporary helper for CommonSolve.jl until we have finalized the interface
 
+abstract type AbstractPointwiseProblem <: AbstractProblem end
+
+
+"""
+    NullProblem(ndofs)
+
+Utility type to describe that Jacobian and residual are zero, but ndofs dofs are present.
+This is a trick for Lagrange-type couplings to describe the Lagrange dofs.
+"""
 struct NullProblem <: AbstractProblem
     ndofs::Int
 end
@@ -13,9 +24,15 @@ solution_size(problem::NullProblem) = problem.ndofs
 
 default_initializer(problem::NullProblem, t) = zeros(problem.ndofs)
 
+
+"""
+    CoupledProblem{MT, CT}
+
+Generic description of a coupled problem.
+"""
 struct CoupledProblem{MT, CT} <: AbstractProblem
     base_problems::MT
-    couplers::CT
+    couplings::CT
 end
 
 solution_size(problem::CoupledProblem) = sum([solution_size(p) for p ∈ problem.base_problems])
@@ -23,6 +40,17 @@ solution_size(problem::CoupledProblem) = sum([solution_size(p) for p ∈ problem
 function default_initializer(problem::CoupledProblem, t)
     mortar([default_initializer(p,t) for p ∈ problem.base_problems])
 end
+
+function get_coupler(problem::CoupledProblem, i::Int, j::Int)
+    for coupling in problem.couplers
+        @unpack coupler = coupling
+        is_correct_coupler(coupling.coupler, i, j) && return
+    end
+    return NullCoupler()
+end
+
+relevant_couplings(problem::CoupledProblem, i::Int) = [coupling for coupling in problem.couplings if is_relevant_coupling(coupling)]
+
 
 # TODO support arbitrary splits
 struct SplitProblem{APT, BPT} <: AbstractProblem
@@ -34,6 +62,8 @@ solution_size(problem::SplitProblem) = (solution_size(problem.A), solution_size(
 
 default_initializer(problem::SplitProblem, t) = (default_initializer(problem.A, t), default_initializer(problem.B, t))
 
+
+
 # TODO support arbitrary partitioning
 struct PartitionedProblem{APT, BPT} <: AbstractProblem
     A::APT
@@ -42,7 +72,6 @@ end
 
 solution_size(problem::PartitionedProblem) = solution_size(problem.A) + solution_size(problem.B)
 
-abstract type AbstractPointwiseProblem <: AbstractProblem end
 
 struct ODEProblem{ODET,F,P} <: AbstractProblem
     ode::ODET
@@ -54,7 +83,7 @@ solution_size(problem::ODEProblem) = num_states(problem.ode)
 
 function default_initializer(problem::ODEProblem, t) 
     u = zeros(num_states(problem.ode))
-    initial_condition!(u, problem.ode)
+    default_initial_condition!(u, problem.ode)
     u
 end
 
@@ -67,7 +96,7 @@ solution_size(problem::PointwiseODEProblem) = problem.npoints*num_states(problem
 
 default_initializer(problem::PointwiseODEProblem, t) = default_initializer(problem.ode, t)
 
-struct TransientHeatProblem{DTF, ST, DH}
+struct TransientHeatProblem{DTF, ST, DH} <: AbstractProblem
     diffusion_tensor_field::DTF
     source_term::ST
     dh::DH

@@ -4,7 +4,7 @@
 Solve the nonlinear problem `F(u,t)=0` with given time increments `Δt`on some interval `[t_begin, t_end]`
 where `t` is some pseudo-time parameter.
 """
-mutable struct LoadDrivenSolver{IS}
+mutable struct LoadDrivenSolver{IS} <: AbstractSolver
     inner_solver::IS
 end
 
@@ -14,8 +14,8 @@ mutable struct LoadDrivenSolverCache{ISC, T, VT <: AbstractVector{T}}
     uₙ₋₁::VT
 end
 
-function setup_solver_caches(problem, solver::LoadDrivenSolver{<:NewtonRaphsonSolver{T}}, t₀) where T
-    inner_solver_cache = setup_solver_caches(problem, solver.inner_solver)
+function setup_solver_cache(problem, solver::LoadDrivenSolver{<:NewtonRaphsonSolver{T}}, t₀) where T
+    inner_solver_cache = setup_solver_cache(problem, solver.inner_solver)
     LoadDrivenSolverCache(
         inner_solver_cache,
         Vector{T}(undef, solution_size(problem)),
@@ -23,10 +23,10 @@ function setup_solver_caches(problem, solver::LoadDrivenSolver{<:NewtonRaphsonSo
     )
 end
 
-setup_solver_caches(problem::CoupledProblem, solver::LoadDrivenSolver, t₀) = error("Not implemented yet.")
+setup_solver_cache(problem::CoupledProblem, solver::LoadDrivenSolver, t₀) = error("Not implemented yet.")
 
-function setup_solver_caches(problem::CoupledProblem, solver::LoadDrivenSolver{<:NewtonRaphsonSolver{T}}, t₀) where T
-    inner_solver_cache = setup_solver_caches(problem, solver.inner_solver)
+function setup_solver_cache(problem::CoupledProblem, solver::LoadDrivenSolver{<:NewtonRaphsonSolver{T}}, t₀) where T
+    inner_solver_cache = setup_solver_cache(problem, solver.inner_solver)
     LoadDrivenSolverCache(
         inner_solver_cache,
         mortar([

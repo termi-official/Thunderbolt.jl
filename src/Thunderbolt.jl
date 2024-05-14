@@ -122,9 +122,9 @@ export
     TransmembraneStimulationProtocol,
     AnalyticalTransmembraneStimulationProtocol,
     # Circuit
-    RegazzoniSalvadorAfricaLumpedCicuitModel,
+    RSAFDQLumpedCicuitModel,
     # FSI
-    RegazzoniSalvadorAfrica2022SurrogateVolume,
+    RSAFDQ2022SurrogateVolume,
     Hirschvogel2017SurrogateVolume,
     LumpedFluidSolidCoupler,
     # Microstructure
@@ -153,7 +153,7 @@ export
     ForwardEulerCellSolver,
     LTGOSSolver,
     ReactionDiffusionSplit,
-    RegazzoniSalvadorAfricaSplit,
+    RSAFDQSplit,
     # Utils
     default_initializer,
     calculate_volume_deformed_mesh,

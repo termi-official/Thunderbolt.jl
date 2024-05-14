@@ -9,6 +9,8 @@ struct LumpedFluidSolidCoupler{CVM} <: AbstractCoupler
     chamber_volume_method::CVM
 end
 
+is_bidrectional(::LumpedFluidSolidCoupler) = true
+
 """
     Debug helper for FSI. Just keeps the chamber volume constant.
 """
@@ -29,12 +31,12 @@ as proposed by [RegSalAfrFedDedQar:2022:cem](@citet).
 !!! note 
     This integral basically measures the volume via displacement on a given axis.
 """
-Base.@kwdef struct RegazzoniSalvadorAfrica2022SurrogateVolume{T}
+Base.@kwdef struct RSAFDQ2022SurrogateVolume{T}
     h::Vec{3,T} = Vec((0.0, 0.0, 1.0))
     b::Vec{3,T} = Vec((0.0, 0.0, 0.5))
 end
 
-function volume_integral(x, d, F, N, method::RegazzoniSalvadorAfrica2022SurrogateVolume)
+function volume_integral(x, d, F, N, method::RSAFDQ2022SurrogateVolume)
     @unpack h, b = method
     -det(F) * ((h ⊗ h) ⋅ (xq + dq - b)) ⋅ (transpose(inv(F)) ⋅  N)
 end
@@ -263,6 +265,6 @@ end
 """
 Annotation for the split described by [RegSalAfrFedDedQar:2022:cem](@citet).
 """
-struct RegazzoniSalvadorAfricaSplit{MODEL <: CoupledModel}
+struct RSAFDQSplit{MODEL <: CoupledModel}
     model::MODEL
 end

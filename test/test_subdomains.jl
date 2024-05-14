@@ -51,7 +51,7 @@
     @test_throws subdomain_error Thunderbolt.compute_chamber_volume(dh, [0.], "top", Thunderbolt.Hirschvogel2017SurrogateVolume)
     @test_throws subdomain_error Thunderbolt.TransientHeatProblem(Thunderbolt.ConductivityToDiffusivityCoefficient(0., 0., 0.), protocol, dh)
     @test_throws subdomain_error Thunderbolt.QuasiStaticNonlinearProblem(dh, ch, qsm, [])
-    @test_throws subdomain_error Thunderbolt.AssembledNonlinearOperator([0. 0.;0. 0.], element_cache, (), dh)
+    @test_throws subdomain_error Thunderbolt.AssembledNonlinearOperator([0. 0.;0. 0.], element_cache, (), (), dh)
     @test_throws subdomain_error Thunderbolt.AssembledBilinearOperator([0. 0.;0. 0.], element_cache, dh)
     @test_throws subdomain_error Thunderbolt.LinearOperator([0.], element_cache, dh)
     @test_throws subdomain_error Thunderbolt.create_linear_operator(dh, NoStimulationProtocol()) 

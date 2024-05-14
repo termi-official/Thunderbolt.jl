@@ -166,7 +166,7 @@ function solve_ideal_lv(name_base, constitutive_model, grid, coordinate_system, 
 
     problem = semidiscretize(
         # StructuralModel(constitutive_model, face_models),
-        RegazzoniSalvadorAfricaSplit(CoupledModel(
+        RSAFDQSplit(CoupledModel(
             (
                 StructuralModel(constitutive_model, face_models),
                 Thunderbolt.DummyLumpedCircuitModel(t->1.16),

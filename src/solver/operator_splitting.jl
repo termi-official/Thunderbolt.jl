@@ -1,7 +1,7 @@
 """
 Classical Lie-Trotter-Godunov operator splitting in time.
 """
-struct LTGOSSolver{AST,BST}
+struct LTGOSSolver{AST,BST} <: AbstractSolver
     A_solver::AST
     B_solver::BST
 end
@@ -9,15 +9,15 @@ end
 """
 Caches for the classical Lie-Trotter-Godunov operator splitting scheme.
 """
-struct LTGOSSolverCache{ASCT, BSCT}
+struct LTGOSSolverCache{ASCT, BSCT} <: AbstractSolver
     A_solver_cache::ASCT
     B_solver_cache::BSCT
 end
 
-function setup_solver_caches(problem::SplitProblem, solver::LTGOSSolver, t₀)
+function setup_solver_cache(problem::SplitProblem, solver::LTGOSSolver, t₀)
     return LTGOSSolverCache(
-        setup_solver_caches(problem.A, solver.A_solver, t₀),
-        setup_solver_caches(problem.B, solver.B_solver, t₀),
+        setup_solver_cache(problem.A, solver.A_solver, t₀),
+        setup_solver_cache(problem.B, solver.B_solver, t₀),
     )
 end
 
@@ -35,19 +35,19 @@ function perform_step!(problem::SplitProblem, cache::LTGOSSolverCache, t, Δt)
     return true
 end
 
-function setup_solver_caches(problem::SplitProblem, solver::LTGOSSolver{<:BackwardEulerSolver,<:AbstractPointwiseSolver}, t₀)
+function setup_solver_cache(problem::SplitProblem, solver::LTGOSSolver{<:BackwardEulerSolver,<:AbstractPointwiseSolver}, t₀)
     cache = LTGOSSolverCache(
-        setup_solver_caches(problem.A, solver.A_solver, t₀),
-        setup_solver_caches(problem.B, solver.B_solver, t₀),
+        setup_solver_cache(problem.A, solver.A_solver, t₀),
+        setup_solver_cache(problem.B, solver.B_solver, t₀),
     )
     cache.B_solver_cache.uₙ = cache.A_solver_cache.uₙ
     return cache
 end
 
-function setup_solver_caches(problem::SplitProblem, solver::LTGOSSolver{<:AbstractPointwiseSolver,<:BackwardEulerSolver}, t₀)
+function setup_solver_cache(problem::SplitProblem, solver::LTGOSSolver{<:AbstractPointwiseSolver,<:BackwardEulerSolver}, t₀)
     cache = LTGOSSolverCache(
-        setup_solver_caches(problem.A, solver.A_solver, t₀),
-        setup_solver_caches(problem.B, solver.B_solver, t₀),
+        setup_solver_cache(problem.A, solver.A_solver, t₀),
+        setup_solver_cache(problem.B, solver.B_solver, t₀),
     )
     cache.B_solver_cache.uₙ = cache.A_solver_cache.uₙ
     return cache
@@ -61,8 +61,8 @@ The default behavior assumes that nothing has to be done, because both problems 
 """
 transfer_fields!(A, A_cache, B, B_cache)
 
-transfer_fields!(A, A_cache::BackwardEulerSolverCache, B, B_cache::AbstractPointwiseSolverCache) = nothing
-transfer_fields!(A, A_cache::AbstractPointwiseSolverCache, B, B_cache::BackwardEulerSolverCache) = nothing
+transfer_fields!(A, A_cache::BackwardEulerSolver, B, B_cache::AbstractPointwiseSolverCache) = nothing
+transfer_fields!(A, A_cache::AbstractPointwiseSolverCache, B, B_cache::BackwardEulerSolver) = nothing
 
 transfer_fields!(A, A_cache, B, B_cache) = @warn "IMPLEMENT ME (transfer_fields!)" maxlog=1
 

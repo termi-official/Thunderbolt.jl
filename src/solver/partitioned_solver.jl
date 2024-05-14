@@ -1,4 +1,4 @@
-abstract type AbstractPointwiseSolver end
+abstract type AbstractPointwiseSolver <: AbstractSolver end
 abstract type AbstractPointwiseSolverCache end
 
 struct ForwardEulerCellSolver <: AbstractPointwiseSolver
@@ -35,7 +35,7 @@ function perform_step!(cell_model::ION, t::Float64, Δt::Float64, solver_cache::
 end
 
 # TODO decouple the concept ForwardEuler from "CellProblem"
-function setup_solver_caches(problem, solver::ForwardEulerCellSolver, t₀)
+function setup_solver_cache(problem, solver::ForwardEulerCellSolver, t₀)
     @unpack npoints = problem # TODO what is a good abstraction layer over this?
     return ForwardEulerCellSolverCache(
         zeros(1+num_states(problem.ode)),
@@ -116,10 +116,10 @@ end
 #     scratch::Vector{CacheType}
 # end
 
-# function setup_solver_caches(problem, solver::ThreadedCellSolver{InnerSolverType}, t₀) where {InnerSolverType}
+# function setup_solver_cache(problem, solver::ThreadedCellSolver{InnerSolverType}, t₀) where {InnerSolverType}
 #     @unpack npoints = problem # TODO what is a good abstraction layer over this?
 #     return ThreadedCellSolverCache(
-#         [setup_solver_caches(problem, solver.inner_solver, t₀) for i ∈ 1:solver.cells_per_thread]
+#         [setup_solver_cache(problem, solver.inner_solver, t₀) for i ∈ 1:solver.cells_per_thread]
 #     )
 # end
 
@@ -136,19 +136,19 @@ end
 # end
 
 # # TODO better abstraction layer
-# function setup_solver_caches(problem::SplitProblem{APT, BPT}, solver::LTGOSSolver{BackwardEulerSolver,BST}, t₀) where {APT <: TransientHeatProblem,BPT,BST}
+# function setup_solver_cache(problem::SplitProblem{APT, BPT}, solver::LTGOSSolver{BackwardEulerSolver,BST}, t₀) where {APT <: TransientHeatProblem,BPT,BST}
 #     cache = LTGOSSolverCache(
-#         setup_solver_caches(problem.A, solver.A_solver, t₀),
-#         setup_solver_caches(problem.B, solver.B_solver, t₀),
+#         setup_solver_cache(problem.A, solver.A_solver, t₀),
+#         setup_solver_cache(problem.B, solver.B_solver, t₀),
 #     )
 #     cache.B_solver_cache.uₙ = cache.A_solver_cache.uₙ
 #     return cache
 # end
 
-# function setup_solver_caches(problem::SplitProblem{APT, BPT}, solver::LTGOSSolver{AST,BackwardEulerSolver}, t₀) where {APT,BPT <: TransientHeatProblem,AST}
+# function setup_solver_cache(problem::SplitProblem{APT, BPT}, solver::LTGOSSolver{AST,BackwardEulerSolver}, t₀) where {APT,BPT <: TransientHeatProblem,AST}
 #     cache = LTGOSSolverCache(
-#         setup_solver_caches(problem.A, solver.A_solver, t₀),
-#         setup_solver_caches(problem.B, solver.B_solver, t₀),
+#         setup_solver_cache(problem.A, solver.A_solver, t₀),
+#         setup_solver_cache(problem.B, solver.B_solver, t₀),
 #     )
 #     cache.B_solver_cache.uₙ = cache.A_solver_cache.uₙ
 #     return cache
@@ -192,7 +192,7 @@ function perform_step!(cell_model::ION, t::Float64, Δt::Float64, solver_cache::
 end
 
 # TODO decouple the concept ForwardEuler from "CellProblem"
-function setup_solver_caches(problem, solver::ThreadedForwardEulerCellSolver, t₀)
+function setup_solver_cache(problem, solver::ThreadedForwardEulerCellSolver, t₀)
     @unpack npoints = problem # TODO what is a good abstraction layer over this?
     return ThreadedForwardEulerCellSolverCache(
         zeros(1+num_states(problem.ode)),
@@ -208,6 +208,6 @@ end
 struct RushLarsenSolverCache
 end
 
-function setup_solver_caches(problem::PartitionedProblem{APT, BPT}, solver::RushLarsenSolver) where {APT,BPT}
+function setup_solver_cache(problem::PartitionedProblem{APT, BPT}, solver::RushLarsenSolver) where {APT,BPT}
     return RushLarsenSolverCache()
 end
