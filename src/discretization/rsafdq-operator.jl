@@ -20,21 +20,20 @@ function AssembledRSAFDQ2022Operator(dh::AbstractDofHandler, field_name::Symbol,
     boundary_cache = setup_boundary_cache(boundary_model, boundary_qr, ip, ip_geo)
 
     Jmech = create_sparsity_pattern(dh)
-    @show size(Jmech)
 
+    num_chambers = length(tying.chambers)
     block_sizes = [ndofs(dh), length(tying.chambers)]
     total_size = sum(block_sizes)
     # First we define an empty dummy block array
     Jblock = BlockArray(spzeros(total_size,total_size), block_sizes, block_sizes)
     Jblock[Block(1,1)] = Jmech
-    Jblock[Block(2,2)] = spzeros(1,1) # FIXME
-    Jblock[Block(2,2)] .= 1.0
+    Jblock[Block(2,2)] = spzeros(num_chambers,num_chambers)
 
     AssembledRSAFDQ2022Operator(
         Jblock,
         element_cache,
         boundary_cache,
-        EmptyTyingCache(), # FIXME
+        setup_tying_cache(tying, boundary_qr, ip, ip_geo),
         dh,
     )
 end
@@ -71,28 +70,48 @@ end
 function update_linearization!(op::AssembledRSAFDQ2022Operator, u::AbstractVector, residual::AbstractVector, time)
     @unpack J, element_cache, face_cache, tying_cache, dh  = op
 
+    ud = u[Block(1)]
+    up = u[Block(2)]
+
+    residuald = residual[Block(1)]
+    residualp = residual[Block(2)]
+
     Jdd = @view J[Block(1,1)]
-    assembler = start_assemble(Jdd, residual)
+    Jpd = @view J[Block(2,1)]
+    Jdp = @view J[Block(1,2)]
+    assembler = start_assemble(Jdd, residuald)
 
     ndofs = ndofs_per_cell(dh)
     Jₑ = zeros(ndofs, ndofs)
     rₑ = zeros(ndofs)
     uₑ = zeros(ndofs)
     uₜ = get_tying_dofs(tying_cache, u)
+
     @timeit_debug "loop" @inbounds for cell in CellIterator(dh)
         dofs = celldofs(cell)
         fill!(Jₑ, 0)
         fill!(rₑ, 0)
-        uₑ .= @view u[dofs]
+        uₑ .= @view ud[dofs]
         # TODO instead of "cell" pass object with geometry information only
         @timeit_debug "assemble element" assemble_element!(Jₑ, rₑ, uₑ, cell, element_cache, time)
         # TODO maybe it makes sense to merge this into the element routine in a modular fasion?
         @timeit_debug "assemble faces" for local_face_index ∈ 1:nfaces(cell)
             assemble_face!(Jₑ, rₑ, uₑ, cell, local_face_index, face_cache, time)
         end
+        # @show cellid(cell),rₑ
         @timeit_debug "assemble tying"  assemble_tying!(Jₑ, rₑ, uₑ, uₜ, cell, tying_cache, time)
-        @show dofs
+        # @show cellid(cell),rₑ
         assemble!(assembler, dofs, Jₑ, rₑ)
+    end
+
+    # Assemble forward and backward coupling contributions
+    for (chamber_index,chamber) ∈ enumerate(tying_cache.chambers)
+        V⁰ᴰ = 1.16 #...?
+        Jpd_current = @view Jpd[chamber_index,:]
+        Jdp_current = @view Jdp[:,chamber_index]
+        @show chamber_pressure = u[chamber.pressure_dof_index] # We can also make this up[pressure_dof_index]
+        @timeit_debug "assemble forward coupler" assemble_LFSI_coupling_contribution_col!(Jdp_current, residuald, dh, ud, chamber_pressure, chamber)
+        @timeit_debug "assemble backward coupler" assemble_LFSI_coupling_contribution_row!(Jpd_current, residualp, dh, ud, chamber_pressure, V⁰ᴰ, chamber)
     end
 
     #finish_assemble(assembler)

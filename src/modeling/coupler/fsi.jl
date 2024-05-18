@@ -48,7 +48,7 @@ Base.@kwdef struct RSAFDQ2022SurrogateVolume{T}
     b::Vec{3,T} = Vec((0.0, 0.0, 0.5))
 end
 
-function volume_integral(x, d, F, N, method::RSAFDQ2022SurrogateVolume)
+function volume_integral(x::Vec, d::Vec, F::Tensor, N::Vec, method::RSAFDQ2022SurrogateVolume)
     @unpack h, b = method
     -det(F) * ((h ⊗ h) ⋅ (xq + dq - b)) ⋅ (transpose(inv(F)) ⋅  N)
 end
@@ -64,7 +64,7 @@ with the z axis, where the origin is at z=0.
 """
 struct Hirschvogel2017SurrogateVolume end
 
-function volume_integral(x, d, F, N, method::Hirschvogel2017SurrogateVolume)
+function volume_integral(x::Vec, d::Vec, F::Tensor, N::Vec, method::Hirschvogel2017SurrogateVolume)
     -det(F) * (x + d) ⋅ inv(transpose(F)) ⋅ N
 end
 
@@ -83,6 +83,7 @@ end
 struct RSAFDQ2022TyingCache{FV <: FaceValues, CVM}
     fv::FV
     chambers::Vector{RSAFDQ2022SingleChamberTying{CVM}}
+    # + view into volumetric dofs of 0D problem?
 end
 
 struct RSAFDQ2022TyingProblem{CVM} # <: AbstractProblem
@@ -99,10 +100,10 @@ function get_tying_dofs(tying_cache::RSAFDQ2022TyingCache, u)
     return [u[chamber.pressure_dof_index] for chamber in tying_cache.chambers]
 end
 
-function assemble_LFSI_coupling_contribution_row_inner!(C, R, u, p, face, dh, fv)
+function assemble_LFSI_coupling_contribution_row_inner!(C, R, u, p, face, dh, fv, method, displacement_symbol)
     reinit!(fv, face)
 
-    drange = dof_range(dh, method.displacement_symbol)
+    drange = dof_range(dh, displacement_symbol)
 
     coords = getcoordinates(face)
     ddofs = @view celldofs(face)[drange]
@@ -119,15 +120,15 @@ function assemble_LFSI_coupling_contribution_row_inner!(C, R, u, p, face, dh, fv
 
         x = spatial_coordinate(fv, qp, coords)
 
-        R[1] += volume_integral(x, u, F, N, method)
+        R[1] += volume_integral(x, d, F, N, method)
         # Via chain rule we obtain:
         #   δV(u,F(u)) = δu ⋅ dVdu + δF : dVdF
         ∂V∂u = Tensors.gradient(u -> volume_integral(x, u, F, N, method), d)
         ∂V∂F = Tensors.gradient(u -> volume_integral(x, d, u, N, method), F)
         for j ∈ 1:getnbasefunctions(fv)
             δuⱼ = shape_value(fv, qp, j)
-            ∇δuj = shape_gradient(cv, qp, j)
-            C[1, ddofs[j]] += (∂V∂u ⋅ δuⱼ + ∂V∂F ⊡ ∇δuj) * dΓ
+            ∇δuj = shape_gradient(fv, qp, j)
+            C[ddofs[j]] += (∂V∂u ⋅ δuⱼ + ∂V∂F ⊡ ∇δuj) * dΓ
         end
     end
 end
@@ -137,7 +138,7 @@ Chamber volume contribution for the 3D-0D constraint
     ∫ V³ᴰ(u) ∂Ω = V⁰ᴰ(c)
 where u are the unkowns in the 3D problem and c the unkowns in the 0D problem.
 """
-function assemble_LFSI_coupling_contribution_row!(C, R, dh, u, p, V⁰ᴰ, setname, method::RSAFDQ2022SingleChamberTying)
+function assemble_LFSI_coupling_contribution_row!(C, R, dh, u, p, V⁰ᴰ, method::RSAFDQ2022SingleChamberTying)
     grid = dh.grid
     ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], method.displacement_symbol)
     ip_geo = Ferrite.default_interpolation(typeof(getcells(grid, 1)))
@@ -146,8 +147,8 @@ function assemble_LFSI_coupling_contribution_row!(C, R, dh, u, p, V⁰ᴰ, setna
     qr_face = FaceQuadratureRule{ref_shape}(intorder)
     fv = FaceValues(qr_face, ip, ip_geo)
 
-    for face ∈ FaceIterator(dh, getfaceset(grid, setname))
-        assemble_LFSI_coupling_contribution_row_inner!(C, R, u, p, face, dh, fv)
+    for face ∈ FaceIterator(dh, method.faces)
+        assemble_LFSI_coupling_contribution_row_inner!(C, R, u, p, face, dh, fv, method.volume_method, method.displacement_symbol)
     end
 
     R[1] -= V⁰ᴰ
@@ -184,7 +185,7 @@ Pressure contribution (i.e. variation w.r.t. p) for the term
  [= ∫ p J(u) F(u)^-T n₀ δu ∂Ω₀]
 where p is the unknown chamber pressure and u contains the unknown deformation field.
 """
-function assemble_LFSI_coupling_contribution_col!(C, R, dh, u, p, setname, method::LumpedFluidSolidCoupler)
+function assemble_LFSI_coupling_contribution_col!(C, R, dh, u, p, method::RSAFDQ2022SingleChamberTying)
     grid = dh.grid
     ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], method.displacement_symbol)
     ip_geo = Ferrite.default_interpolation(typeof(getcells(grid, 1)))
@@ -193,7 +194,7 @@ function assemble_LFSI_coupling_contribution_col!(C, R, dh, u, p, setname, metho
     qr_face = FaceQuadratureRule{ref_shape}(intorder)
     fv = FaceValues(qr_face, ip, ip_geo)
 
-    for face ∈ FaceIterator(dh, getfaceset(grid, setname))
+    for face ∈ FaceIterator(dh, method.faces)
         assemble_LFSI_coupling_contribution_col_inner!(C, R, u, p, face, dh, fv, method.displacement_symbol)
     end
 end

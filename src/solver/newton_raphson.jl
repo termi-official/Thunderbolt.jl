@@ -26,6 +26,13 @@ function setup_solver_cache(problem, solver::NewtonRaphsonSolver{T}) where {T}
     NewtonRaphsonSolverCache(setup_operator(problem, solver), Vector{T}(undef, solution_size(problem)), solver)
 end
 
+function setup_solver_cache(problem::AbstractCoupledProblem, solver::NewtonRaphsonSolver{T}) where {T}
+    residual_buffer = mortar([
+        Vector{T}(undef, solution_size(base_problem)) for base_problem ∈ base_problems(problem)
+    ])
+    NewtonRaphsonSolverCache(setup_operator(problem, solver), residual_buffer, solver)
+end
+
 function setup_solver_cache(coupled_problem::CoupledProblem, solver::NewtonRaphsonSolver{T}) where {T}
     @unpack base_problems = coupled_problem
     op = BlockOperator((
