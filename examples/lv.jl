@@ -43,7 +43,7 @@ function (postproc::StandardMechanicalIOPostProcessor2)(t, problem::Thunderbolt.
 
     # Compute some elementwise measures
     for sdh ∈ dh.subdofhandlers
-        field_idx = Ferrite.find_field(sdh, :displacement)
+        field_idx = Ferrite.find_field(sdh, :displacementisplacement)
         field_idx === nothing && continue 
         cv = getcellvalues(cvc, dh.grid.cells[first(sdh.cellset)])
         for cell ∈ CellIterator(sdh)
@@ -136,8 +136,8 @@ function (postproc::StandardMechanicalIOPostProcessor2)(t, problem::Thunderbolt.
 
     # Save the solution
     Thunderbolt.store_timestep!(io, t, dh.grid)
-    # Thunderbolt.store_timestep_field!(io, t, dh, solver_cache.uₙ, :displacement)
-    Thunderbolt.store_timestep_field!(io, t, dh, solver_cache.uₙ.blocks[1], :displacement)
+    # Thunderbolt.store_timestep_field!(io, t, dh, solver_cache.uₙ, :displacementisplacement)
+    Thunderbolt.store_timestep_field!(io, t, dh, solver_cache.uₙ.blocks[1], :displacementisplacement)
     # Thunderbolt.store_timestep_field!(io, t, coordinate_system.dh, coordinate_system.u_transmural, "transmural")
     # Thunderbolt.store_timestep_field!(io, t, coordinate_system.dh, coordinate_system.u_apicobasal, "apicobasal")
     Thunderbolt.store_timestep_celldata!(io, t, hcat(frefdata...),"Reference Fiber Data")
@@ -165,19 +165,23 @@ function solve_ideal_lv(name_base, constitutive_model, grid, coordinate_system, 
     # io = JLD2Writer(name_base);
 
     problem = semidiscretize(
-        # StructuralModel(constitutive_model, face_models),
-        RSAFDQSplit(CoupledModel(
-            (
-                StructuralModel(constitutive_model, face_models),
+        # StructuralModel(:displacement, constitutive_model, face_models),
+        RSAFDQ2022Split(RSAFDQ2022Model(
+                StructuralModel(:displacement, constitutive_model, face_models),
                 Thunderbolt.DummyLumpedCircuitModel(t->1.16),
-                # RegazzoniSalvadorAfricaLumpedCicuitModel{Float64,Float64,Float64,Float64,Float64}()
-            ),
-            (
-                Coupling(1,2,LumpedFluidSolidCoupler(
-                    Hirschvogel2017SurrogateVolume()
-                )),
+                # RegazzoniSalvadorAfricaLumpedCicuitModel{Float64,Float64,Float64,Float64,Float64}(),
+                LumpedFluidSolidCoupler(
+                    [
+                        ChamberVolumeCoupling(
+                            "Endocardium",
+                            Hirschvogel2017SurrogateVolume(),
+                            :Vₗᵥ
+                        )
+                    ],
+                    :displacement
+                )
             )
-        )),
+        ),
         FiniteElementDiscretization(
             Dict(:displacement => ip_mech),
             # Dirichlet[],
@@ -219,6 +223,10 @@ LV_cs = compute_midmyocardial_section_coordinate_system(LV_grid)
 LV_fm = create_simple_microstructure_model(LV_cs, ip_u, endo_helix_angle = deg2rad(-60.0), epi_helix_angle = deg2rad(70.0), endo_transversal_angle = deg2rad(10.0), epi_transversal_angle = deg2rad(-20.0))
 passive_ho_model = HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 0.28504197825657906, 4.126552003938297, 0.0, 1.0, 0.0, 1.0, SimpleCompressionPenalty(40.0))
 
+function calcium_field_fun(x,t)
+    t/1000.0 < 0.5 ? (1-x.transmural*0.7)*2.0*t/1000.0 : (2.0-2.0*t/1000.0)*(1-x.transmural*0.7)
+end
+
 using Thunderbolt.TimerOutputs
 TimerOutputs.enable_debug_timings(Thunderbolt)
 TimerOutputs.reset_timer!()
@@ -227,13 +235,13 @@ solve_ideal_lv("lv_test",
         passive_ho_model,
         PiersantiActiveStress(10.0, 0.8, 0.5, 0.0),
         PelceSunLangeveld1995Model(;calcium_field=AnalyticalCoefficient(
-            (x,t) -> t/1000.0 < 0.5 ? (1-x.transmural*0.7)*2.0*t/1000.0 : (2.0-2.0*t/1000.0)*(1-x.transmural*0.7),
+            calcium_field_fun,
             CoordinateSystemCoefficient(LV_cs)
         )),
         LV_fm,
     ), LV_grid, LV_cs,
-    [NormalSpringBC(1.0, "Epicardium"), ConstantPressureBC(0.5, "Endocardium")],
-    ip_u, qr_u, 25.0
+    (NormalSpringBC(1.0, "Epicardium"), ConstantPressureBC(0.5, "Endocardium")),
+    ip_u, qr_u, 25.0, 100.0
 )
 TimerOutputs.print_timer()
 TimerOutputs.disable_debug_timings(Thunderbolt)

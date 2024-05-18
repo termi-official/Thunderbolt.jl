@@ -38,16 +38,16 @@ function setup_solver_cache(coupled_problem::CoupledProblem, solver::NewtonRaphs
     NewtonRaphsonSolverCache(op, solution, solver)
 end
 
-residual_norm(solver_cache::NewtonRaphsonSolverCache, problem) = norm(solver_cache.residual[Ferrite.free_dofs(problem.ch)])
-residual_norm(solver_cache::NewtonRaphsonSolverCache, problem, i::Block) = norm(solver_cache.residual[i][Ferrite.free_dofs(problem.ch)])
+residual_norm(solver_cache::NewtonRaphsonSolverCache, problem) = norm(solver_cache.residual[Ferrite.free_dofs(getch(problem))])
+residual_norm(solver_cache::NewtonRaphsonSolverCache, problem, i::Block) = norm(solver_cache.residual[i][Ferrite.free_dofs(getch(problem))])
 residual_norm(solver_cache::NewtonRaphsonSolverCache, problem::NullProblem, i::Block) = 0.0
 
 ###########################################################################################################
+# TODO deduplicate code below
+eliminate_constraints_from_linearization!(solver_cache, problem) = apply_zero!(solver_cache.op.J, solver_cache.residual, getch(problem))
+eliminate_constraints_from_increment!(Δu, problem, solver_cache) = apply_zero!(Δu, getch(problem))
 
-eliminate_constraints_from_linearization!(solver_cache, problem) = apply_zero!(solver_cache.op.J, solver_cache.residual, problem.ch)
-eliminate_constraints_from_increment!(Δu, problem, solver_cache) = apply_zero!(Δu, problem.ch)
-
-function eliminate_constraints_from_increment!(Δu, problem::CoupledProblem, solver_cache)
+function eliminate_constraints_from_increment!(Δu, problem::Union{CoupledProblem,RSAFDQ3DProblem}, solver_cache)
     for (i,p) ∈ enumerate(problem.base_problems)
         eliminate_constraints_from_increment!(Δu[Block(i)], p, solver_cache)
     end
@@ -56,7 +56,15 @@ eliminate_constraints_from_increment!(Δu, problem::NullProblem, solver_cache) =
 
 function residual_norm(solver_cache::NewtonRaphsonSolverCache, problem::CoupledProblem)
     val = 0.0
-    for (i,p) ∈ enumerate(problem.base_problems)
+    for (i,p) ∈ enumerate((problem.base_problems))
+        val += residual_norm(solver_cache, p, Block(i))
+    end
+    return val
+end
+
+function residual_norm(solver_cache::NewtonRaphsonSolverCache, problem::RSAFDQ3DProblem)
+    val = 0.0
+    for (i,p) ∈ enumerate((problem.structural_problem,))
         val += residual_norm(solver_cache, p, Block(i))
     end
     return val
@@ -68,11 +76,27 @@ function eliminate_constraints_from_linearization!(solver_cache, problem::Couple
     end
 end
 
+function eliminate_constraints_from_linearization!(solver_cache, problem::RSAFDQ3DProblem)
+    @unpack structural_problem = problem
+    @unpack op = solver_cache
+    ch = getch(structural_problem)
+    # Eliminate residual
+    residual_block = @view solver_cache.residual[Block(1)]
+    # Elimiante diagonal
+    # apply_zero!(getJ(op, Block(1,1)), residual_block, ch) # FIXME crashes
+    apply!(getJ(op, Block(1,1)), ch)
+    apply_zero!(residual_block, ch)
+    # Eliminate rows
+    getJ(op, Block((1,2)))[ch.prescribed_dofs, :] .= 0.0
+    # Eliminate columns
+    getJ(op, Block((2,1)))[:, ch.prescribed_dofs] .= 0.0
+end
+
 function eliminate_constraints_from_linearization_blocked!(solver_cache, problem::CoupledProblem, i_::Block)
     @assert length(i_.n) == 1
     i = i_.n[1]
     hasproperty(problem.base_problems[i], :ch) || return nothing
-    ch = problem.base_problems[i].ch # TODO abstraction layer
+    ch = getch(problem.base_problems[i])
     # TODO optimize this
     for j in 1:length(problem.base_problems)
         if i == j
@@ -153,7 +177,20 @@ function inner_solve(J::BlockMatrix, r::BlockArray)
     # if length(blocksizes(r,1)) == 2
     #     return inner_solve_schur(J,r)
     # end
-    SparseMatrixCSC(J) \ Vector(r)
+
+    @timeit_debug "transform J " J_ = SparseMatrixCSC(J)
+    @timeit_debug "transform r" r_ = Vector(r)
+    @timeit_debug "direct solver" Δu = J_ \ r_
+    return Δu
+
+    # For debugging purposes
+    # J11 = @view J[Block(1,1)]
+    # r1 =  @view r[Block(1)]
+    # J22 = @view J[Block(2,2)]
+    # r2 =  @view r[Block(2)]
+    # Δd = J11 \ r1
+    # Δp = J22 \ r2
+    # return [Δd; Δp]
 end
 inner_solve(J::BlockMatrix, r) = SparseMatrixCSC(J) \ r
 inner_solve(J, r::BlockArray) = J \ Vector(r)

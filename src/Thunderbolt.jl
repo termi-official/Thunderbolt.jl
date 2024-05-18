@@ -121,12 +121,16 @@ export
     NoStimulationProtocol,
     TransmembraneStimulationProtocol,
     AnalyticalTransmembraneStimulationProtocol,
+    ReactionDiffusionSplit,
     # Circuit
     RSAFDQLumpedCicuitModel,
     # FSI
+    RSAFDQ2022Model,
     RSAFDQ2022SurrogateVolume,
+    RSAFDQ2022Split,
     Hirschvogel2017SurrogateVolume,
     LumpedFluidSolidCoupler,
+    ChamberVolumeCoupling,
     # Microstructure
     AnisotropicPlanarMicrostructureModel,
     OrthotropicMicrostructureModel,
@@ -152,8 +156,6 @@ export
     BackwardEulerSolver,
     ForwardEulerCellSolver,
     LTGOSSolver,
-    ReactionDiffusionSplit,
-    RSAFDQSplit,
     # Utils
     default_initializer,
     calculate_volume_deformed_mesh,

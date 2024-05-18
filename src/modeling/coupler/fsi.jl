@@ -1,12 +1,24 @@
 """
+Descriptor for which volume to couple with which variable for the constraint.
+"""
+struct ChamberVolumeCoupling{CVM}
+    chamber_surface_setname::String
+    chamber_volume_method::CVM
+    lumped_model_symbol::Symbol
+end
+
+"""
 Enforce the constraints that
   chamber volume 3D (solid model) = chamber volume 0D (lumped circuit)
 via Lagrange multiplied, where a surface pressure integral is introduced such that
   ∫  ∂Ωendo
 Here `chamber_volume_method` is responsible to compute the 3D volume.
+
+This approach has been proposed by [RegSalAfrFedDedQar:2022:cem](@citet).
 """
 struct LumpedFluidSolidCoupler{CVM} <: AbstractCoupler
-    chamber_volume_method::CVM
+    chamber_couplings::Vector{ChamberVolumeCoupling{CVM}}
+    displacement_symbol::Symbol
 end
 
 is_bidrectional(::LumpedFluidSolidCoupler) = true
@@ -63,7 +75,7 @@ end
 function assemble_LFSI_coupling_contribution_row_inner!(C, R, u, p, face, dh, fv)
     reinit!(fv, face)
 
-    drange = dof_range(dh, :displacement)
+    drange = dof_range(dh, method.displacement_symbol)
 
     coords = getcoordinates(face)
     ddofs = @view celldofs(face)[drange]
@@ -98,9 +110,9 @@ Chamber volume contribution for the 3D-0D constraint
     ∫ V³ᴰ(u) ∂Ω = V⁰ᴰ(c)
 where u are the unkowns in the 3D problem and c the unkowns in the 0D problem.
 """
-function assemble_LFSI_coupling_contribution_row!(C, R, dh, u, p, V⁰ᴰ, setname, method)
+function assemble_LFSI_coupling_contribution_row!(C, R, dh, u, p, V⁰ᴰ, setname, method::LumpedFluidSolidCoupler)
     grid = dh.grid
-    ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], :displacement)
+    ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], method.displacement_symbol)
     ip_geo = Ferrite.default_interpolation(typeof(getcells(grid, 1)))
     intorder = 2*Ferrite.getorder(ip)
     ref_shape = Ferrite.getrefshape(ip)
@@ -114,9 +126,9 @@ function assemble_LFSI_coupling_contribution_row!(C, R, dh, u, p, V⁰ᴰ, setna
     R[1] -= V⁰ᴰ
 end
 
-function assemble_LFSI_coupling_contribution_col_inner!(C, R, u, p, face, dh, fv)
+function assemble_LFSI_coupling_contribution_col_inner!(C, R, u, p, face, dh, fv, symbol)
     reinit!(fv, face)
-    drange = dof_range(dh, :displacement)
+    drange = dof_range(dh, symbol)
 
     ddofs = @view celldofs(face)[drange]
     uₑ = @view u[ddofs]
@@ -145,9 +157,9 @@ Pressure contribution (i.e. variation w.r.t. p) for the term
  [= ∫ p J(u) F(u)^-T n₀ δu ∂Ω₀]
 where p is the unknown chamber pressure and u contains the unknown deformation field.
 """
-function assemble_LFSI_coupling_contribution_col!(C, R, dh, u, p, setname, method)
+function assemble_LFSI_coupling_contribution_col!(C, R, dh, u, p, setname, method::LumpedFluidSolidCoupler)
     grid = dh.grid
-    ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], :displacement)
+    ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], method.displacement_symbol)
     ip_geo = Ferrite.default_interpolation(typeof(getcells(grid, 1)))
     intorder = 2*Ferrite.getorder(ip)
     ref_shape = Ferrite.getrefshape(ip)
@@ -155,11 +167,11 @@ function assemble_LFSI_coupling_contribution_col!(C, R, dh, u, p, setname, metho
     fv = FaceValues(qr_face, ip, ip_geo)
 
     for face ∈ FaceIterator(dh, getfaceset(grid, setname))
-        assemble_LFSI_coupling_contribution_col_inner!(C, R, u, p, face, dh, fv)
+        assemble_LFSI_coupling_contribution_col_inner!(C, R, u, p, face, dh, fv, method.displacement_symbol)
     end
 end
 
-function assemble_LFSI_volumetric_corrector_inner!(Kₑ::Matrix, residualₑ, uₑ, p, fv, method)
+function assemble_LFSI_volumetric_corrector_inner!(Kₑ::Matrix, residualₑ, uₑ, p, fv, symbol)
     reinit!(fv, face[1], face[2])
 
     ndofs_face = getnbasefunctions(fv)
@@ -200,14 +212,14 @@ end
 
 function assemble_LFSI_volumetric_corrector!(J, residual, dh, u, p, setname, method)
     grid = dh.grid
-    ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], :displacement)
+    ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], method.displacement_symbol)
     ip_geo = Ferrite.default_interpolation(typeof(getcells(grid, 1)))
     intorder = 2*Ferrite.getorder(ip)
     ref_shape = Ferrite.getrefshape(ip)
     qr_face = FaceQuadratureRule{ref_shape}(intorder)
     fv = FaceValues(qr_face, ip, ip_geo)
 
-    drange = dof_range(dh,:displacement)
+    drange = dof_range(dh, method.displacement_symbol)
 
     assembler = start_assemble(J, residual, false)
 
@@ -221,15 +233,15 @@ function assemble_LFSI_volumetric_corrector!(J, residual, dh, u, p, setname, met
         fill!(Jₑ, 0)
         fill!(rₑ, 0)
         uₑ .= @view u[dofs]
-        assemble_LFSI_volumetric_corrector_inner!(Jₑ, rₑ, uₑ, p, fv, method)
+        assemble_LFSI_volumetric_corrector_inner!(Jₑ, rₑ, uₑ, p, fv, method.displacement_symbol)
         assemble!(assembler, dofs, Jₑ, rₑ)
     end
 end
 
-function compute_chamber_volume(dh, u, setname, method)
+function compute_chamber_volume(dh, u, setname, method::LumpedFluidSolidCoupler)
     check_subdomains(dh)
     grid = dh.grid
-    ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], :displacement)
+    ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], method.displacement_symbol)
     ip_geo = Ferrite.default_interpolation(typeof(getcells(grid, 1)))
     intorder = 2*Ferrite.getorder(ip)
     ref_shape = Ferrite.getrefshape(ip)
@@ -237,7 +249,7 @@ function compute_chamber_volume(dh, u, setname, method)
     fv = FaceValues(qr_face, ip, ip_geo)
 
     volume = 0.0
-    drange = dof_range(dh,:displacement)
+    drange = dof_range(dh,method.displacement_symbol)
     for face ∈ FaceIterator(dh, getfaceset(grid, setname))
         reinit!(fv, face)
 
@@ -263,8 +275,17 @@ function compute_chamber_volume(dh, u, setname, method)
 end
 
 """
+The split model described by [RegSalAfrFedDedQar:2022:cem](@citet) alone.
+"""
+struct RSAFDQ2022Model{SM <: StructuralModel, CM <: AbstractLumpedCirculatoryModel, CT <: LumpedFluidSolidCoupler}
+    structural_model::SM
+    circuit_model::CM
+    coupler::CT
+end
+
+"""
 Annotation for the split described by [RegSalAfrFedDedQar:2022:cem](@citet).
 """
-struct RSAFDQSplit{MODEL <: CoupledModel}
+struct RSAFDQ2022Split{MODEL <: Union{CoupledModel, RSAFDQ2022Model}}
     model::MODEL
 end

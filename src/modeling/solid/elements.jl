@@ -5,6 +5,7 @@
 A generic model for structural problems.
 """
 struct StructuralModel{MM, FM}
+    displacement_symbol::Symbol
     mechanical_model::MM
     face_models::FM
 end

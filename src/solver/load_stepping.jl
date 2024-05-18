@@ -39,8 +39,8 @@ function setup_solver_cache(problem::CoupledProblem, solver::LoadDrivenSolver{<:
 end
 
 function update_constraints!(problem, solver_cache::LoadDrivenSolverCache, t)
-    Ferrite.update!(problem.ch, t)
-    apply!(solver_cache.uₙ, problem.ch)
+    Ferrite.update!(getch(problem), t)
+    apply!(solver_cache.uₙ, getch(problem))
 end
 
 function update_constraints!(problem::CoupledProblem, solver_cache::LoadDrivenSolverCache, t)
@@ -50,9 +50,9 @@ function update_constraints!(problem::CoupledProblem, solver_cache::LoadDrivenSo
 end
 
 function update_constraints_block!(problem, i::Block, solver_cache, t)
-    Ferrite.update!(problem.ch, t)
+    Ferrite.update!(getch(problem), t)
     u = @view solver_cache.uₙ[i]
-    apply!(u, problem.ch)
+    apply!(u, getch(problem))
 end
 
 update_constraints_block!(problem::NullProblem, i::Block, solver_cache, t) = nothing

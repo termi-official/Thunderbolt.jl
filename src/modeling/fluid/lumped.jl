@@ -1,9 +1,13 @@
+abstract type AbstractLumpedCirculatoryModel end
+
 """
 Keep the volume at a certain level.
 """
-struct DummyLumpedCircuitModel{F}
+struct DummyLumpedCircuitModel{F} <: AbstractLumpedCirculatoryModel
     volume_fun::F
 end
+
+get_variable_symbol_index(model::DummyLumpedCircuitModel, symbol::Symbol) = 0
 
 num_states(::DummyLumpedCircuitModel) = 1
 num_unknown_pressures(::DummyLumpedCircuitModel) = 1
@@ -53,7 +57,7 @@ Base.@kwdef struct RSAFDQLumpedCicuitModel{
     T4, # ms
     T5, # mmHg ms^2 mL^-1
     T6, # mmHg mL mL^-1
-}
+} <: AbstractLumpedCirculatoryModel
     lv_pressure_given::Bool = false
     rv_pressure_given::Bool = true
     la_pressure_given::Bool = true
@@ -148,6 +152,23 @@ end
 
 num_states(::RSAFDQLumpedCicuitModel) = 12
 num_unknown_pressures(::RSAFDQLumpedCicuitModel) = Int(model.lv_pressure_given) + Int(model.rv_pressure_given) + Int(model.la_pressure_given) + Int(model.ra_pressure_given)
+function get_variable_symbol_index(model::RSAFDQLumpedCicuitModel, symbol::Symbol)
+    @unpack lv_pressure_given, la_pressure_given, ra_pressure_given, rv_pressure_given = model
+
+    # Try to query index
+    symbol == :Vₗₐ && return lumped_circuit_relative_la_pressure_index(model)
+    symbol == :Vₗᵥ && return lumped_circuit_relative_lv_pressure_index(model)
+    symbol == :Vᵣₐ && return lumped_circuit_relative_ra_pressure_index(model)
+    symbol == :Vᵣᵥ && return lumped_circuit_relative_rv_pressure_index(model)
+
+    # Diagnostics
+    valid_symbols = Set{Symbol}()
+    la_pressure_given && push!(valid_symbols, :Vₗₐ)
+    lv_pressure_given && push!(valid_symbols, :Vₗᵥ)
+    ra_pressure_given && push!(valid_symbols, :Vᵣₐ)
+    rv_pressure_given && push!(valid_symbols, :Vᵣᵥ)
+    @error "Variable named '$symbol' not found. The following symbols are defined and accessible: $valid_symbols."
+end
 
 function default_initial_condition!(u, model::RSAFDQLumpedCicuitModel)
     @unpack V0ₗₐ, V0ᵣₐ, V0ᵣᵥ = model

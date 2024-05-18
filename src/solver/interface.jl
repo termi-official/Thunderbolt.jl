@@ -70,44 +70,50 @@ function setup_operator(problem::QuasiStaticNonlinearProblem, solver::AbstractNo
     @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the nonlinear solver."
     @assert length(dh.field_names) == 1 "Multiple fields not yet supported in the nonlinear solver."
 
-    symbol_guess = dh.field_names[1]
+    displacement_symbol = :displacement # FIXME
 
-    intorder = quadrature_order(problem, symbol_guess)
+    intorder = quadrature_order(problem, displacement_symbol)
     qr = QuadratureRuleCollection(intorder)
     qr_face = FaceQuadratureRuleCollection(intorder)
 
     return AssembledNonlinearOperator(
-        dh, symbol_guess, constitutive_model, qr, face_models, qr_face
+        dh, displacement_symbol, constitutive_model, qr, face_models, qr_face
     )
 end
 
-function setup_operator(problem::QuasiStaticNonlinearProblem, couplings, solver::AbstractNonlinearSolver)
-    @unpack dh, constitutive_model, face_models = problem
+# function setup_operator(problem::QuasiStaticNonlinearProblem, relevant_coupler, solver::AbstractNonlinearSolver)
+#     @unpack dh, constitutive_model, face_models, displacement_symbol = problem
+#     @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the Newton solver."
+#     @assert length(dh.field_names) == 1 "Multiple fields not yet supported in the nonlinear solver."
+
+#     intorder = quadrature_order(problem, displacement_symbol)
+#     qr = QuadratureRuleCollection(intorder)
+#     qr_face = FaceQuadratureRuleCollection(intorder)
+
+#     return AssembledNonlinearOperator(
+#         dh, displacement_symbol, constitutive_model, qr, face_models, qr_face, relevant_coupler, ???, <- depending on the coupler either face or element qr
+#     )
+# end
+
+function setup_operator(problem::RSAFDQ3DProblem, solver::AbstractNonlinearSolver)
+    @unpack tying_problem, structural_problem = problem
+    # @unpack dh, constitutive_model, face_models, displacement_symbol = structural_problem
+    @unpack dh, constitutive_model, face_models = structural_problem
+    displacement_symbol = :displacement # FIXME
     @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the Newton solver."
     @assert length(dh.field_names) == 1 "Multiple fields not yet supported in the nonlinear solver."
 
-    symbol_guess = dh.field_names[1]
-
-    intorder = quadrature_order(problem, symbol_guess)
+    intorder = quadrature_order(structural_problem, displacement_symbol)
     qr = QuadratureRuleCollection(intorder)
     qr_face = FaceQuadratureRuleCollection(intorder)
 
-    # tying_models = []
-    # for coupling in couplings
-    #     if is_relevant_coupling(coupling)
-    #         relevant_couplings(coupling)
-    #     end
-    # end
-
-    # tying_models_ = length(tying_models) > 1 ? (tying_models...,) : tying_models[1]
-    tying_models_ = []
-    return AssembledNonlinearOperator(
-        dh, symbol_guess, constitutive_model, qr, face_models, qr_face, tying_models_, qr_face,
+    return AssembledRSAFDQOperator(
+        dh, displacement_symbol, constitutive_model, qr, face_models, qr_face, tying_problem
     )
 end
 
 # TODO correct dispatches
-function setup_coupling_operator(first_problem::AbstractProblem, second_problem::AbstractProblem, couplings, solver::AbstractNonlinearSolver)
+function setup_coupling_operator(first_problem::AbstractProblem, second_problem::AbstractProblem, relevant_couplings, solver::AbstractNonlinearSolver)
     NullOperator{Float64,solution_size(second_problem),solution_size(first_problem)}()
 end
 

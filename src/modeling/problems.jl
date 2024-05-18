@@ -30,7 +30,7 @@ default_initializer(problem::NullProblem, t) = zeros(problem.ndofs)
 
 Generic description of a coupled problem.
 """
-struct CoupledProblem{MT, CT} <: AbstractProblem
+struct CoupledProblem{MT <: Tuple, CT <: Tuple} <: AbstractProblem
     base_problems::MT
     couplings::CT
 end
@@ -53,7 +53,7 @@ relevant_couplings(problem::CoupledProblem, i::Int) = [coupling for coupling in 
 
 
 # TODO support arbitrary splits
-struct SplitProblem{APT, BPT} <: AbstractProblem
+struct SplitProblem{APT <: AbstractProblem, BPT <: AbstractProblem} <: AbstractProblem
     A::APT
     B::BPT
 end
@@ -65,7 +65,7 @@ default_initializer(problem::SplitProblem, t) = (default_initializer(problem.A, 
 
 
 # TODO support arbitrary partitioning
-struct PartitionedProblem{APT, BPT} <: AbstractProblem
+struct PartitionedProblem{APT <: AbstractProblem, BPT <: AbstractProblem} <: AbstractProblem
     A::APT
     B::BPT
 end
@@ -114,7 +114,7 @@ solution_size(problem::TransientHeatProblem) = ndofs(problem.dh)
 A discrete problem with time dependent terms and no time derivatives w.r.t. any solution variable.
 Abstractly written we want to solve the problem F(u, t) = 0 on some time interval [t₁, t₂].
 """
-struct QuasiStaticNonlinearProblem{CM <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler, FACE, CH} <: AbstractProblem
+struct QuasiStaticNonlinearProblem{CM <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler, FACE <: Tuple, CH <: ConstraintHandler} <: AbstractProblem
     dh::DH
     ch::CH
     constitutive_model::CM
@@ -136,7 +136,7 @@ A problem with time dependent terms and time derivatives only w.r.t. internal so
 
 TODO implement.
 """
-struct QuasiStaticODEProblem{CM <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler, FACE, CH} <: AbstractProblem
+struct QuasiStaticODEProblem{CM <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler, FACE <: Tuple, CH <: ConstraintHandler} <: AbstractProblem
     dh::DH
     ch::CH
     constitutive_model::CM
@@ -150,9 +150,26 @@ A problem with time dependent terms and time derivatives only w.r.t. internal so
 
 TODO implement.
 """
-struct QuasiStaticDAEProblem{CM <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler, FACE, CH} <: AbstractProblem
+struct QuasiStaticDAEProblem{CM <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler, FACE <: Tuple, CH <: ConstraintHandler} <: AbstractProblem
     dh::DH
     ch::CH
     constitutive_model::CM
     face_models::FACE
 end
+
+"""
+    RSAFDQProblem{MT, CT}
+
+Generic description of the problem associated with the RSAFDQModel.
+"""
+struct RSAFDQ3DProblem{MT <: QuasiStaticNonlinearProblem, TP <: RSAFDQTyingProblem} <: AbstractProblem
+    structural_problem::MT
+    tying_problem::TP
+end
+
+solution_size(problem::RSAFDQ3DProblem) = solution_size(problem.structural_problem) + solution_size(problem.tying_problem)
+
+default_initializer(problem::RSAFDQ3DProblem, t) = zeros(solution_size(problem))
+
+getch(problem) = problem.ch
+getch(problem::RSAFDQ3DProblem) = getch(problem.structural_problem)

@@ -14,21 +14,24 @@ end
 
 
 
-struct RSAFDQSingleChamberTying
+struct RSAFDQSingleChamberTying{CVM}
     pressure_dof_index::Int
     faces::Set{FaceIndex}
+    volume_method::CVM
 end
 
-struct RSAFDQTyingCache{FV <: FaceValues}
+struct RSAFDQTyingCache{FV <: FaceValues, CVM}
     fv::FV
-    chambers::Vector{RSAFDQSingleChamberTying}
+    chambers::Vector{RSAFDQSingleChamberTying{CVM}}
 end
 
-struct RSAFDQTying
-    chambers::Vector{RSAFDQSingleChamberTying}
+struct RSAFDQTyingProblem{CVM}
+    chambers::Vector{RSAFDQSingleChamberTying{CVM}}
 end
 
-function setup_tying_cache(tying_model::RSAFDQTying, qr, ip, ip_geo)
+solution_size(problem::RSAFDQTyingProblem) = length(problem.chambers)
+
+function setup_tying_cache(tying_model::RSAFDQTyingProblem, qr, ip, ip_geo)
     RSAFDQTyingCache(FaceValues(qr, ip, ip_geo), tying_model.chambers)
 end
 
