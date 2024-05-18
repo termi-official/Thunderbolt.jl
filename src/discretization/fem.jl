@@ -101,15 +101,15 @@ end
 
 function create_chamber_tyings(coupler::LumpedFluidSolidCoupler{CVM}, structural_problem, circuit_model) where CVM
     num_unknowns_structure = solution_size(structural_problem)
-
-    chamber_tyings = RSAFDQSingleChamberTying{CVM}[]
+    structural_problem
+    chamber_tyings = RSAFDQ2022SingleChamberTying{CVM}[]
     for i in 1:length(coupler.chamber_couplings)
         # Get i-th ChamberVolumeCoupling
         coupling = coupler.chamber_couplings[i]
         # The pressure dof is just the last dof index for the structurel problem + the current chamber index
         pressure_dof_index = num_unknowns_structure + i
         chamber_faceset = getfaceset(structural_problem.dh.grid, coupling.chamber_surface_setname)
-        push!(chamber_tyings, RSAFDQSingleChamberTying(pressure_dof_index, chamber_faceset, coupling.chamber_volume_method))
+        push!(chamber_tyings, RSAFDQ2022SingleChamberTying(pressure_dof_index, chamber_faceset, coupling.chamber_volume_method, coupler.displacement_symbol))
     end
     return chamber_tyings
 end
@@ -120,7 +120,7 @@ function semidiscretize(split::RSAFDQ2022Split, discretization::FiniteElementDis
 
     @unpack model = split
     @unpack structural_model, circuit_model, coupler = model
-    @assert length(coupler.chamber_couplings) ≥ 1 "Provide at least one coupling for the semi-discretization of an RSAFDQ model"
+    @assert length(coupler.chamber_couplings) ≥ 1 "Provide at least one coupling for the semi-discretization of an RSAFDQ2022 model"
     @assert coupler.displacement_symbol == structural_model.displacement_symbol "Coupler is not compatible with structural model"
 
     # Discretize individual problems
@@ -139,9 +139,9 @@ function semidiscretize(split::RSAFDQ2022Split, discretization::FiniteElementDis
     chamber_tyings = create_chamber_tyings(coupler,structural_problem, circuit_model)
     @assert num_chambers == length(chamber_tyings) "Number of chambers in structural model and circuit model differs."
     semidiscrete_problem = SplitProblem(
-        RSAFDQ3DProblem(
+        RSAFDQ20223DProblem(
             structural_problem,
-            RSAFDQTyingProblem(chamber_tyings)
+            RSAFDQ2022TyingProblem(chamber_tyings)
         ),
         flow_problem
     )

@@ -23,17 +23,17 @@ function setup_solver_cache(problem, solver::LoadDrivenSolver{<:NewtonRaphsonSol
     )
 end
 
-setup_solver_cache(problem::CoupledProblem, solver::LoadDrivenSolver, t₀) = error("Not implemented yet.")
+setup_solver_cache(problem::AbstractCoupledProblem, solver::LoadDrivenSolver, t₀) = error("Not implemented yet.")
 
-function setup_solver_cache(problem::CoupledProblem, solver::LoadDrivenSolver{<:NewtonRaphsonSolver{T}}, t₀) where T
+function setup_solver_cache(problem::AbstractCoupledProblem, solver::LoadDrivenSolver{<:NewtonRaphsonSolver{T}}, t₀) where T
     inner_solver_cache = setup_solver_cache(problem, solver.inner_solver)
     LoadDrivenSolverCache(
         inner_solver_cache,
         mortar([
-            Vector{T}(undef, solution_size(problem.base_problems[i])) for i ∈ 1:length(problem.base_problems)
+            Vector{T}(undef, solution_size(base_problem)) for base_problem ∈ base_problems(problem)
         ]),
         mortar([
-            Vector{T}(undef, solution_size(problem.base_problems[i])) for i ∈ 1:length(problem.base_problems)
+            Vector{T}(undef, solution_size(base_problem)) for base_problem ∈ base_problems(problem)
         ]),
     )
 end

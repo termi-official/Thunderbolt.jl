@@ -11,7 +11,7 @@ struct StandardMechanicalIOPostProcessor2{IO, CVC, CSC}
 end
 
 function (postproc::StandardMechanicalIOPostProcessor2)(t, problem::Thunderbolt.SplitProblem, solver_cache)
-    (postproc::StandardMechanicalIOPostProcessor2)(t, problem.A.base_problems[1], solver_cache.A_solver_cache)
+    (postproc::StandardMechanicalIOPostProcessor2)(t, problem.A, solver_cache.A_solver_cache)
     (postproc::StandardMechanicalIOPostProcessor2)(t, problem.B, solver_cache.B_solver_cache)
 end
 
@@ -20,8 +20,8 @@ function (postproc::StandardMechanicalIOPostProcessor2)(t, problem::Thunderbolt.
     @show solver_cache.uₙ
 end
 
-function (postproc::StandardMechanicalIOPostProcessor2)(t, problem::Thunderbolt.QuasiStaticNonlinearProblem, solver_cache)
-    @unpack dh = problem
+function (postproc::StandardMechanicalIOPostProcessor2)(t, problem::Thunderbolt.RSAFDQ20223DProblem, solver_cache)
+    @unpack dh, constitutive_model = problem.structural_problem
     grid = Ferrite.get_grid(dh)
     @unpack io, cvc, csc = postproc
 
@@ -43,7 +43,7 @@ function (postproc::StandardMechanicalIOPostProcessor2)(t, problem::Thunderbolt.
 
     # Compute some elementwise measures
     for sdh ∈ dh.subdofhandlers
-        field_idx = Ferrite.find_field(sdh, :displacementisplacement)
+        field_idx = Ferrite.find_field(sdh, :displacement)
         field_idx === nothing && continue 
         cv = getcellvalues(cvc, dh.grid.cells[first(sdh.cellset)])
         for cell ∈ CellIterator(sdh)
@@ -77,7 +77,7 @@ function (postproc::StandardMechanicalIOPostProcessor2)(t, problem::Thunderbolt.
 
                 C = tdot(F)
                 E = (C-one(C))/2.0
-                f₀,s₀,n₀ = evaluate_coefficient(problem.constitutive_model.microstructure_model, cell, qp, time)
+                f₀,s₀,n₀ = evaluate_coefficient(constitutive_model.microstructure_model, cell, qp, time)
 
                 E_ff_cell += f₀ ⋅ E ⋅ f₀
 
@@ -154,7 +154,7 @@ function (postproc::StandardMechanicalIOPostProcessor2)(t, problem::Thunderbolt.
     Thunderbolt.store_timestep_celldata!(io, t, rad2deg.(helixanglerefdata),"Helix Angle (End Diastole)")
     Thunderbolt.finalize_timestep!(io, t)
 
-    @show Thunderbolt.compute_chamber_volume(dh, solver_cache.uₙ, "Endocardium", Thunderbolt.Hirschvogel2017SurrogateVolume())
+    @show Thunderbolt.compute_chamber_volume(dh, solver_cache.uₙ, "Endocardium", problem.tying_problem.chambers[1])
     # min_vol = min(min_vol, calculate_volume_deformed_mesh(uₙ,dh,cv));
     # max_vol = max(max_vol, calculate_volume_deformed_mesh(uₙ,dh,cv));
 end

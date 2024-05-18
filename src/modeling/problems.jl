@@ -3,11 +3,12 @@
 # TODO rethink interface here
 #      1. Who creates the solution vector?
 #      2. Is there a better way to pass the initial solution information?
-default_initializer(problem, t) = error("No default initializer available for a problem of type $(typeof(problem))")
-
 abstract type AbstractProblem end # Temporary helper for CommonSolve.jl until we have finalized the interface
 
 abstract type AbstractPointwiseProblem <: AbstractProblem end
+
+default_initializer(problem::AbstractProblem, t) = zeros(solution_size(problem))
+default_initializer(problem::RSAFDQ2022TyingProblem, t) = zeros(solution_size(problem)) # FIXME
 
 
 """
@@ -22,23 +23,24 @@ end
 
 solution_size(problem::NullProblem) = problem.ndofs
 
-default_initializer(problem::NullProblem, t) = zeros(problem.ndofs)
-
+abstract type AbstractCoupledProblem <: AbstractProblem end
 
 """
     CoupledProblem{MT, CT}
 
 Generic description of a coupled problem.
 """
-struct CoupledProblem{MT <: Tuple, CT <: Tuple} <: AbstractProblem
+struct CoupledProblem{MT <: Tuple, CT <: Tuple} <: AbstractCoupledProblem
     base_problems::MT
     couplings::CT
 end
 
-solution_size(problem::CoupledProblem) = sum([solution_size(p) for p ∈ problem.base_problems])
+base_problems(problem::CoupledProblem) = problem.base_problems
 
-function default_initializer(problem::CoupledProblem, t)
-    mortar([default_initializer(p,t) for p ∈ problem.base_problems])
+solution_size(problem::AbstractCoupledProblem) = sum([solution_size(p) for p ∈ base_problems(problem)])
+
+function default_initializer(problem::AbstractCoupledProblem, t)
+    mortar([default_initializer(p,t) for p ∈ base_problems(problem)])
 end
 
 function get_coupler(problem::CoupledProblem, i::Int, j::Int)
@@ -158,18 +160,19 @@ struct QuasiStaticDAEProblem{CM <: QuasiStaticModel, DH <: Ferrite.AbstractDofHa
 end
 
 """
-    RSAFDQProblem{MT, CT}
+    RSAFDQ20223DProblem{MT, CT}
 
 Generic description of the problem associated with the RSAFDQModel.
 """
-struct RSAFDQ3DProblem{MT <: QuasiStaticNonlinearProblem, TP <: RSAFDQTyingProblem} <: AbstractProblem
+struct RSAFDQ20223DProblem{MT <: QuasiStaticNonlinearProblem, TP <: RSAFDQ2022TyingProblem} <: AbstractCoupledProblem
     structural_problem::MT
     tying_problem::TP
 end
 
-solution_size(problem::RSAFDQ3DProblem) = solution_size(problem.structural_problem) + solution_size(problem.tying_problem)
+base_problems(problem::RSAFDQ20223DProblem) = (problem.structural_problem, problem.tying_problem)
 
-default_initializer(problem::RSAFDQ3DProblem, t) = zeros(solution_size(problem))
+
+
 
 getch(problem) = problem.ch
-getch(problem::RSAFDQ3DProblem) = getch(problem.structural_problem)
+getch(problem::RSAFDQ20223DProblem) = getch(problem.structural_problem)

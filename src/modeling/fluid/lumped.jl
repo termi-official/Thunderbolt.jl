@@ -21,7 +21,7 @@ function lumped_driver!(du, u, t, external_input, model::DummyLumpedCircuitModel
 end
 
 """
-    ΦRSAFDQ(t,tC,tR,TC,TR,THB)
+    ΦRSAFDQ2022(t,tC,tR,TC,TR,THB)
 
 Activation transient from the paper [RegSalAfrFedDedQar:2022:cem](@citet).
 
@@ -30,7 +30,7 @@ Activation transient from the paper [RegSalAfrFedDedQar:2022:cem](@citet).
 [tC,TC] = contraction period
 [tR,TR] = relaxation period
 """
-function Φ_RSAFDQ(t,tC,tR,TC,TR,THB)
+function Φ_RSAFDQ2022(t,tC,tR,TC,TR,THB)
     tnow = mod(t - tC, THB)
     if 0 ≤ tnow < TC
         return 1/2 * (1-cos(π/TC * tnow)) 
@@ -42,15 +42,15 @@ function Φ_RSAFDQ(t,tC,tR,TC,TR,THB)
     return 0.0
 end
 
-elastance_RSAFDQ(t,Epass,Emax,tC,tR,TC,TR,THB) = Epass + Emax*Φ_RSAFDQ(t,tC,tR,TC,TR,THB)
+elastance_RSAFDQ2022(t,Epass,Emax,tC,tR,TC,TR,THB) = Epass + Emax*Φ_RSAFDQ2022(t,tC,tR,TC,TR,THB)
 
 
 """
-    RSAFDQLumpedCicuitModel
+    RSAFDQ2022LumpedCicuitModel
 
 A lumped (0D) circulatory model for LV simulations as presented in [RegSalAfrFedDedQar:2022:cem](@citet).
 """
-Base.@kwdef struct RSAFDQLumpedCicuitModel{
+Base.@kwdef struct RSAFDQ2022LumpedCicuitModel{
     T1, # mmHg ms mL^-1
     T2, # mL mmHg^-1
     T3, # mL
@@ -144,15 +144,15 @@ Base.@kwdef struct RSAFDQLumpedCicuitModel{
     TRᵣᵥ::T4 = T4(0.12)
     THB::T4 = T4(0.8) # 75 beats per minute
     # Prescribed functions
-    # pₑₓ::PEX = (p::RSAFDQLumpedCicuitModel,t) -> 0.0
-    # Eₗₐ::ELA = (p::RSAFDQLumpedCicuitModel,t) -> elastance_RSAFDQ(t, p.Epassₗₐ, Eactmaxₗₐ, p.tCₗₐ, p.tCₗₐ + p.TCₗₐ, p.TCₗₐ, p.TRₗₐ, p.THB)
-    # Eᵣₐ::ERA = (p::RSAFDQLumpedCicuitModel,t) -> elastance_RSAFDQ(t, p.Epassᵣₐ, Eactmaxᵣₐ, p.tCᵣₐ, p.tCᵣₐ + p.TCᵣₐ, p.TCᵣₐ, p.TRᵣₐ, p.THB)
-    # Eᵣᵥ::ERV = (p::RSAFDQLumpedCicuitModel,t) -> elastance_RSAFDQ(t, p.Epassᵣᵥ, Eactmaxᵣᵥ, p.tCᵣᵥ, p.tCᵣᵥ + p.TCᵣᵥ, p.TCᵣᵥ, p.TRᵣᵥ, p.THB)
+    # pₑₓ::PEX = (p::RSAFDQ2022LumpedCicuitModel,t) -> 0.0
+    # Eₗₐ::ELA = (p::RSAFDQ2022LumpedCicuitModel,t) -> elastance_RSAFDQ2022(t, p.Epassₗₐ, Eactmaxₗₐ, p.tCₗₐ, p.tCₗₐ + p.TCₗₐ, p.TCₗₐ, p.TRₗₐ, p.THB)
+    # Eᵣₐ::ERA = (p::RSAFDQ2022LumpedCicuitModel,t) -> elastance_RSAFDQ2022(t, p.Epassᵣₐ, Eactmaxᵣₐ, p.tCᵣₐ, p.tCᵣₐ + p.TCᵣₐ, p.TCᵣₐ, p.TRᵣₐ, p.THB)
+    # Eᵣᵥ::ERV = (p::RSAFDQ2022LumpedCicuitModel,t) -> elastance_RSAFDQ2022(t, p.Epassᵣᵥ, Eactmaxᵣᵥ, p.tCᵣᵥ, p.tCᵣᵥ + p.TCᵣᵥ, p.TCᵣᵥ, p.TRᵣᵥ, p.THB)
 end
 
-num_states(::RSAFDQLumpedCicuitModel) = 12
-num_unknown_pressures(::RSAFDQLumpedCicuitModel) = Int(model.lv_pressure_given) + Int(model.rv_pressure_given) + Int(model.la_pressure_given) + Int(model.ra_pressure_given)
-function get_variable_symbol_index(model::RSAFDQLumpedCicuitModel, symbol::Symbol)
+num_states(::RSAFDQ2022LumpedCicuitModel) = 12
+num_unknown_pressures(::RSAFDQ2022LumpedCicuitModel) = Int(model.lv_pressure_given) + Int(model.rv_pressure_given) + Int(model.la_pressure_given) + Int(model.ra_pressure_given)
+function get_variable_symbol_index(model::RSAFDQ2022LumpedCicuitModel, symbol::Symbol)
     @unpack lv_pressure_given, la_pressure_given, ra_pressure_given, rv_pressure_given = model
 
     # Try to query index
@@ -170,7 +170,7 @@ function get_variable_symbol_index(model::RSAFDQLumpedCicuitModel, symbol::Symbo
     @error "Variable named '$symbol' not found. The following symbols are defined and accessible: $valid_symbols."
 end
 
-function default_initial_condition!(u, model::RSAFDQLumpedCicuitModel)
+function default_initial_condition!(u, model::RSAFDQ2022LumpedCicuitModel)
     @unpack V0ₗₐ, V0ᵣₐ, V0ᵣᵥ = model
     u .= 0.0
     # u[1] = V0ₗₐ
@@ -183,11 +183,11 @@ function default_initial_condition!(u, model::RSAFDQLumpedCicuitModel)
     u[4] = 500.0
 end
 
-function lumped_circuit_relative_lv_pressure_index(model::RSAFDQLumpedCicuitModel)
+function lumped_circuit_relative_lv_pressure_index(model::RSAFDQ2022LumpedCicuitModel)
     model.lv_pressure_given && @error "Trying to query extenal LV pressure index, but LV pressure is not an external input!"
     return 1
 end
-function lumped_circuit_relative_rv_pressure_index(model::RSAFDQLumpedCicuitModel)
+function lumped_circuit_relative_rv_pressure_index(model::RSAFDQ2022LumpedCicuitModel)
     model.rv_pressure_given && @error "Trying to query extenal RV pressure index, but RV pressure is not an external input!"
     i = 1
     if model.lv_pressure_given
@@ -195,7 +195,7 @@ function lumped_circuit_relative_rv_pressure_index(model::RSAFDQLumpedCicuitMode
     end
     return i
 end
-function lumped_circuit_relative_la_pressure_index(model::RSAFDQLumpedCicuitModel)
+function lumped_circuit_relative_la_pressure_index(model::RSAFDQ2022LumpedCicuitModel)
     model.la_pressure_given && @error "Trying to query extenal LA pressure index, but LA pressure is not an external input!"
     i = 1
     if model.lv_pressure_given
@@ -206,7 +206,7 @@ function lumped_circuit_relative_la_pressure_index(model::RSAFDQLumpedCicuitMode
     end
     return i
 end
-function lumped_circuit_relative_ra_pressure_index(model::RSAFDQLumpedCicuitModel)
+function lumped_circuit_relative_ra_pressure_index(model::RSAFDQ2022LumpedCicuitModel)
     model.la_pressure_given && @error "Trying to query extenal RA pressure index, but RA pressure is not an external input!"
     i = 1
     if model.lv_pressure_given
@@ -221,7 +221,7 @@ function lumped_circuit_relative_ra_pressure_index(model::RSAFDQLumpedCicuitMode
     return i
 end
 
-function lumped_driver!(du, u, t, external_input::AbstractVector, model::RSAFDQLumpedCicuitModel)
+function lumped_driver!(du, u, t, external_input::AbstractVector, model::RSAFDQ2022LumpedCicuitModel)
     # Evaluate the right hand side of equation system (6) in the paper
     # V = volume
     # p = pressure
@@ -238,10 +238,10 @@ function lumped_driver!(du, u, t, external_input::AbstractVector, model::RSAFDQL
     # @unpack Eactmaxₗₐ, Eactmaxᵣₐ, Eactmaxᵣᵥ = model
     # @unpack Eₗₐ, Eᵣₐ, Eᵣᵥ = model
     # Note tR = tC+TC
-    @inline Eₗᵥ(p::RSAFDQLumpedCicuitModel,t) = elastance_RSAFDQ(t, p.Epassᵣₐ, 2*p.Eactmaxᵣₐ, p.tCᵣₐ, p.tCᵣₐ + p.TCᵣₐ, p.TCᵣₐ, p.TRᵣₐ, p.THB)
-    @inline Eᵣᵥ(p::RSAFDQLumpedCicuitModel,t) = elastance_RSAFDQ(t, p.Epassᵣᵥ, p.Eactmaxᵣᵥ, p.tCᵣᵥ, p.tCᵣᵥ + p.TCᵣᵥ, p.TCᵣᵥ, p.TRᵣᵥ, p.THB)
-    @inline Eₗₐ(p::RSAFDQLumpedCicuitModel,t) = elastance_RSAFDQ(t, p.Epassₗₐ, p.Eactmaxₗₐ, p.tCₗₐ, p.tCₗₐ + p.TCₗₐ, p.TCₗₐ, p.TRₗₐ, p.THB)
-    @inline Eᵣₐ(p::RSAFDQLumpedCicuitModel,t) = elastance_RSAFDQ(t, p.Epassᵣₐ, p.Eactmaxᵣₐ, p.tCᵣₐ, p.tCᵣₐ + p.TCᵣₐ, p.TCᵣₐ, p.TRᵣₐ, p.THB)
+    @inline Eₗᵥ(p::RSAFDQ2022LumpedCicuitModel,t) = elastance_RSAFDQ2022(t, p.Epassᵣₐ, 2*p.Eactmaxᵣₐ, p.tCᵣₐ, p.tCᵣₐ + p.TCᵣₐ, p.TCᵣₐ, p.TRᵣₐ, p.THB)
+    @inline Eᵣᵥ(p::RSAFDQ2022LumpedCicuitModel,t) = elastance_RSAFDQ2022(t, p.Epassᵣᵥ, p.Eactmaxᵣᵥ, p.tCᵣᵥ, p.tCᵣᵥ + p.TCᵣᵥ, p.TCᵣᵥ, p.TRᵣᵥ, p.THB)
+    @inline Eₗₐ(p::RSAFDQ2022LumpedCicuitModel,t) = elastance_RSAFDQ2022(t, p.Epassₗₐ, p.Eactmaxₗₐ, p.tCₗₐ, p.tCₗₐ + p.TCₗₐ, p.TCₗₐ, p.TRₗₐ, p.THB)
+    @inline Eᵣₐ(p::RSAFDQ2022LumpedCicuitModel,t) = elastance_RSAFDQ2022(t, p.Epassᵣₐ, p.Eactmaxᵣₐ, p.tCᵣₐ, p.tCᵣₐ + p.TCᵣₐ, p.TCᵣₐ, p.TRᵣₐ, p.THB)
 
     @unpack V0ₗₐ, V0ᵣₐ, V0ᵣᵥ = model
     @unpack tCₗₐ, TCₗₐ, TRₗₐ, TRᵣₐ, tCᵣₐ, TCᵣₐ, tCᵣᵥ, TCᵣᵥ, TRᵣᵥ = model

@@ -1,5 +1,5 @@
 # TODO try to reproduce this via the BlockOperator
-struct AssembledRSAFDQOperator{MatrixType <: BlockMatrix, ElementCacheType, FaceCacheType, TyingCacheType, DHType} <: AbstractBlockOperator
+struct AssembledRSAFDQ2022Operator{MatrixType <: BlockMatrix, ElementCacheType, FaceCacheType, TyingCacheType, DHType} <: AbstractBlockOperator
     J::MatrixType
     element_cache::ElementCacheType
     face_cache::FaceCacheType
@@ -7,7 +7,7 @@ struct AssembledRSAFDQOperator{MatrixType <: BlockMatrix, ElementCacheType, Face
     dh::DHType
 end
 
-function AssembledRSAFDQOperator(dh::AbstractDofHandler, field_name::Symbol, element_model, element_qrc::QuadratureRuleCollection, boundary_model, boundary_qrc::FaceQuadratureRuleCollection, tying::RSAFDQTyingProblem)
+function AssembledRSAFDQ2022Operator(dh::AbstractDofHandler, field_name::Symbol, element_model, element_qrc::QuadratureRuleCollection, boundary_model, boundary_qrc::FaceQuadratureRuleCollection, tying::RSAFDQ2022TyingProblem)
     @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the nonlinear opeartor."
 
     firstcell = getcells(Ferrite.get_grid(dh), first(dh.subdofhandlers[1].cellset))
@@ -20,8 +20,8 @@ function AssembledRSAFDQOperator(dh::AbstractDofHandler, field_name::Symbol, ele
     boundary_cache = setup_boundary_cache(boundary_model, boundary_qr, ip, ip_geo)
 
     Jmech = create_sparsity_pattern(dh)
+    @show size(Jmech)
 
-    nblocks = 2
     block_sizes = [ndofs(dh), length(tying.chambers)]
     total_size = sum(block_sizes)
     # First we define an empty dummy block array
@@ -30,7 +30,7 @@ function AssembledRSAFDQOperator(dh::AbstractDofHandler, field_name::Symbol, ele
     Jblock[Block(2,2)] = spzeros(1,1) # FIXME
     Jblock[Block(2,2)] .= 1.0
 
-    AssembledRSAFDQOperator(
+    AssembledRSAFDQ2022Operator(
         Jblock,
         element_cache,
         boundary_cache,
@@ -39,13 +39,14 @@ function AssembledRSAFDQOperator(dh::AbstractDofHandler, field_name::Symbol, ele
     )
 end
 
-getJ(op::AssembledRSAFDQOperator) = op.J
-getJ(op::AssembledRSAFDQOperator, i::Block) = @view op.J[i]
+getJ(op::AssembledRSAFDQ2022Operator) = op.J
+getJ(op::AssembledRSAFDQ2022Operator, i::Block) = @view op.J[i]
 
-function update_linearization!(op::AssembledRSAFDQOperator, u::AbstractVector, time)
+function update_linearization!(op::AssembledRSAFDQ2022Operator, u::AbstractVector, time)
     @unpack J, element_cache, face_cache, tying_cache, dh  = op
 
-    assembler = start_assemble(J)
+    Jdd = @view J[Block(1,1)]
+    assembler = start_assemble(Jdd)
 
     ndofs = ndofs_per_cell(dh)
     Jₑ = zeros(ndofs, ndofs)
@@ -67,10 +68,11 @@ function update_linearization!(op::AssembledRSAFDQOperator, u::AbstractVector, t
     #finish_assemble(assembler)
 end
 
-function update_linearization!(op::AssembledRSAFDQOperator, u::AbstractVector, residual::AbstractVector, time)
+function update_linearization!(op::AssembledRSAFDQ2022Operator, u::AbstractVector, residual::AbstractVector, time)
     @unpack J, element_cache, face_cache, tying_cache, dh  = op
 
-    assembler = start_assemble(J, residual)
+    Jdd = @view J[Block(1,1)]
+    assembler = start_assemble(Jdd, residual)
 
     ndofs = ndofs_per_cell(dh)
     Jₑ = zeros(ndofs, ndofs)

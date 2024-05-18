@@ -72,6 +72,33 @@ end
 #      we figure out a good design on how to pass multiple
 #      variables down to the inner assembly functions
 
+struct RSAFDQ2022SingleChamberTying{CVM}
+    pressure_dof_index::Int
+    faces::Set{FaceIndex}
+    volume_method::CVM
+    displacement_symbol::Symbol
+    
+end
+
+struct RSAFDQ2022TyingCache{FV <: FaceValues, CVM}
+    fv::FV
+    chambers::Vector{RSAFDQ2022SingleChamberTying{CVM}}
+end
+
+struct RSAFDQ2022TyingProblem{CVM} # <: AbstractProblem
+    chambers::Vector{RSAFDQ2022SingleChamberTying{CVM}}
+end
+
+solution_size(problem::RSAFDQ2022TyingProblem) = length(problem.chambers)
+
+function setup_tying_cache(tying_model::RSAFDQ2022TyingProblem, qr, ip, ip_geo)
+    RSAFDQ2022TyingCache(FaceValues(qr, ip, ip_geo), tying_model.chambers)
+end
+
+function get_tying_dofs(tying_cache::RSAFDQ2022TyingCache, u)
+    return [u[chamber.pressure_dof_index] for chamber in tying_cache.chambers]
+end
+
 function assemble_LFSI_coupling_contribution_row_inner!(C, R, u, p, face, dh, fv)
     reinit!(fv, face)
 
@@ -110,7 +137,7 @@ Chamber volume contribution for the 3D-0D constraint
     ∫ V³ᴰ(u) ∂Ω = V⁰ᴰ(c)
 where u are the unkowns in the 3D problem and c the unkowns in the 0D problem.
 """
-function assemble_LFSI_coupling_contribution_row!(C, R, dh, u, p, V⁰ᴰ, setname, method::LumpedFluidSolidCoupler)
+function assemble_LFSI_coupling_contribution_row!(C, R, dh, u, p, V⁰ᴰ, setname, method::RSAFDQ2022SingleChamberTying)
     grid = dh.grid
     ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], method.displacement_symbol)
     ip_geo = Ferrite.default_interpolation(typeof(getcells(grid, 1)))
@@ -238,7 +265,7 @@ function assemble_LFSI_volumetric_corrector!(J, residual, dh, u, p, setname, met
     end
 end
 
-function compute_chamber_volume(dh, u, setname, method::LumpedFluidSolidCoupler)
+function compute_chamber_volume(dh, u, setname, method::RSAFDQ2022SingleChamberTying)
     check_subdomains(dh)
     grid = dh.grid
     ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], method.displacement_symbol)
@@ -268,7 +295,7 @@ function compute_chamber_volume(dh, u, setname, method::LumpedFluidSolidCoupler)
 
             x = spatial_coordinate(fv, qp, coords)
 
-            volume += volume_integral(x, d, F, N, method) * dΓ
+            volume += volume_integral(x, d, F, N, method.volume_method) * dΓ
         end
     end
     return volume
@@ -288,4 +315,40 @@ Annotation for the split described by [RegSalAfrFedDedQar:2022:cem](@citet).
 """
 struct RSAFDQ2022Split{MODEL <: Union{CoupledModel, RSAFDQ2022Model}}
     model::MODEL
+end
+
+function assemble_tying_face_rsadfq!(Jₑ, residualₑ, uₑ, p, cell, local_face_index, fv, time)
+    reinit!(fv, cell, local_face_index)
+
+    for qp in QuadratureIterator(fv)
+        assemble_face_pressure_qp!(Jₑ, uₑ, p, qp, fv)
+    end
+end
+
+function assemble_tying_face_rsadfq!(Jₑ, uₑ, p, cell, local_face_index, fv, time)
+    reinit!(fv, cell, local_face_index)
+
+    for qp in QuadratureIterator(fv)
+        assemble_face_pressure_qp!(Jₑ, uₑ, p, qp, fv)
+    end
+end
+
+function assemble_tying!(Jₑ, residualₑ, uₑ, uₜ, cell, tying_cache::RSAFDQ2022TyingCache, time)
+    for local_face_index ∈ 1:nfaces(cell)
+        for (chamber_index,chamber) in pairs(tying_cache.chambers)
+            if (cellid(cell), local_face_index) ∈ chamber.faces
+                assemble_tying_face_rsadfq!(Jₑ, residualₑ, uₑ, uₜ[chamber_index], cell, local_face_index, tying_cache.fv, time)
+            end
+        end
+    end
+end
+
+function assemble_tying!(Jₑ, uₑ, uₜ, cell, tying_cache::RSAFDQ2022TyingCache, time)
+    for local_face_index ∈ 1:nfaces(cell)
+        for (chamber_index,chamber) in pairs(tying_cache.chambers)
+            if (cellid(cell), local_face_index) ∈ chamber.faces
+                assemble_tying_face_rsadfq!(Jₑ, uₑ, uₜ[chamber_index], cell, local_face_index, tying_cache.fv, time)
+            end
+        end
+    end
 end

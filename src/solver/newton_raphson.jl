@@ -43,62 +43,37 @@ residual_norm(solver_cache::NewtonRaphsonSolverCache, problem, i::Block) = norm(
 residual_norm(solver_cache::NewtonRaphsonSolverCache, problem::NullProblem, i::Block) = 0.0
 
 ###########################################################################################################
-# TODO deduplicate code below
 eliminate_constraints_from_linearization!(solver_cache, problem) = apply_zero!(solver_cache.op.J, solver_cache.residual, getch(problem))
 eliminate_constraints_from_increment!(Δu, problem, solver_cache) = apply_zero!(Δu, getch(problem))
 
-function eliminate_constraints_from_increment!(Δu, problem::Union{CoupledProblem,RSAFDQ3DProblem}, solver_cache)
-    for (i,p) ∈ enumerate(problem.base_problems)
+function eliminate_constraints_from_increment!(Δu, problem::AbstractCoupledProblem, solver_cache)
+    for (i,p) ∈ enumerate(base_problems(problem))
         eliminate_constraints_from_increment!(Δu[Block(i)], p, solver_cache)
     end
 end
 eliminate_constraints_from_increment!(Δu, problem::NullProblem, solver_cache) = nothing
 
-function residual_norm(solver_cache::NewtonRaphsonSolverCache, problem::CoupledProblem)
+function residual_norm(solver_cache::NewtonRaphsonSolverCache, problem::AbstractCoupledProblem)
     val = 0.0
-    for (i,p) ∈ enumerate((problem.base_problems))
+    for (i,p) ∈ enumerate((base_problems(problem)))
         val += residual_norm(solver_cache, p, Block(i))
     end
     return val
 end
 
-function residual_norm(solver_cache::NewtonRaphsonSolverCache, problem::RSAFDQ3DProblem)
-    val = 0.0
-    for (i,p) ∈ enumerate((problem.structural_problem,))
-        val += residual_norm(solver_cache, p, Block(i))
-    end
-    return val
-end
-
-function eliminate_constraints_from_linearization!(solver_cache, problem::CoupledProblem)
-    for (i,p) ∈ enumerate(problem.base_problems)
+function eliminate_constraints_from_linearization!(solver_cache, problem::AbstractCoupledProblem)
+    for (i,p) ∈ enumerate(base_problems(problem))
         eliminate_constraints_from_linearization_blocked!(solver_cache, problem, Block(i))
     end
 end
 
-function eliminate_constraints_from_linearization!(solver_cache, problem::RSAFDQ3DProblem)
-    @unpack structural_problem = problem
-    @unpack op = solver_cache
-    ch = getch(structural_problem)
-    # Eliminate residual
-    residual_block = @view solver_cache.residual[Block(1)]
-    # Elimiante diagonal
-    # apply_zero!(getJ(op, Block(1,1)), residual_block, ch) # FIXME crashes
-    apply!(getJ(op, Block(1,1)), ch)
-    apply_zero!(residual_block, ch)
-    # Eliminate rows
-    getJ(op, Block((1,2)))[ch.prescribed_dofs, :] .= 0.0
-    # Eliminate columns
-    getJ(op, Block((2,1)))[:, ch.prescribed_dofs] .= 0.0
-end
-
-function eliminate_constraints_from_linearization_blocked!(solver_cache, problem::CoupledProblem, i_::Block)
+function eliminate_constraints_from_linearization_blocked!(solver_cache, problem::AbstractCoupledProblem, i_::Block)
     @assert length(i_.n) == 1
     i = i_.n[1]
-    hasproperty(problem.base_problems[i], :ch) || return nothing
-    ch = getch(problem.base_problems[i])
+    hasproperty(base_problems(problem)[i], :ch) || return nothing
+    ch = getch(base_problems(problem)[i])
     # TODO optimize this
-    for j in 1:length(problem.base_problems)
+    for j in 1:length(base_problems(problem))
         if i == j
             jacobian_block = getJ(solver_cache.op, Block((i,i)))
             # Eliminate diagonal entry only
@@ -116,6 +91,25 @@ function eliminate_constraints_from_linearization_blocked!(solver_cache, problem
 
     return nothing
 end
+
+residual_norm(solver_cache::NewtonRaphsonSolverCache, problem::RSAFDQ2022TyingProblem, i::Block) = 0.0 #norm(solver_cache.residual[Ferrite.free_dofs(getch(problem))]) # FIXME
+eliminate_constraints_from_increment!(Δu, problem::RSAFDQ2022TyingProblem, solver_cache) = nothing
+function eliminate_constraints_from_linearization!(solver_cache, problem::RSAFDQ20223DProblem)
+    @unpack structural_problem = problem
+    @unpack op = solver_cache
+    ch = getch(structural_problem)
+    # Eliminate residual
+    residual_block = @view solver_cache.residual[Block(1)]
+    # Elimiante diagonal
+    # apply_zero!(getJ(op, Block(1,1)), residual_block, ch) # FIXME crashes
+    apply!(getJ(op, Block(1,1)), ch)
+    apply_zero!(residual_block, ch)
+    # Eliminate rows
+    getJ(op, Block((1,2)))[ch.prescribed_dofs, :] .= 0.0
+    # Eliminate columns
+    getJ(op, Block((2,1)))[:, ch.prescribed_dofs] .= 0.0
+end
+
 
 #######################################################################################
 
@@ -198,6 +192,7 @@ inner_solve(J, r::BlockArray) = J \ Vector(r)
 function solve_inner_linear_system!(Δu, solver_cache::NewtonRaphsonSolverCache)
     J = getJ(solver_cache.op)
     r = solver_cache.residual
+    @show Matrix(J)
     try
         Δu .= inner_solve(J, r)
     catch err
