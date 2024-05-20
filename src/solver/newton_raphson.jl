@@ -49,6 +49,11 @@ residual_norm(solver_cache::NewtonRaphsonSolverCache, problem) = norm(solver_cac
 residual_norm(solver_cache::NewtonRaphsonSolverCache, problem, i::Block) = norm(solver_cache.residual[i][Ferrite.free_dofs(getch(problem))])
 residual_norm(solver_cache::NewtonRaphsonSolverCache, problem::NullProblem, i::Block) = 0.0
 
+function residual_norm(solver_cache::NewtonRaphsonSolverCache, problem::RSAFDQ2022TyingProblem, i::Block)
+    @show i, solver_cache.residual[i]
+    norm(solver_cache.residual[i])
+end
+
 ###########################################################################################################
 eliminate_constraints_from_linearization!(solver_cache, problem) = apply_zero!(solver_cache.op.J, solver_cache.residual, getch(problem))
 eliminate_constraints_from_increment!(Δu, problem, solver_cache) = apply_zero!(Δu, getch(problem))
@@ -175,9 +180,9 @@ function inner_solve_schur(J::BlockMatrix, r::BlockArray)
 end
 
 function inner_solve(J::BlockMatrix, r::BlockArray)
-    # if length(blocksizes(r,1)) == 2
-    #     return inner_solve_schur(J,r)
-    # end
+    if length(blocksizes(r,1)) == 2
+        return inner_solve_schur(J,r)
+    end
 
     @timeit_debug "transform J " J_ = SparseMatrixCSC(J)
     @timeit_debug "transform r" r_ = Vector(r)
@@ -199,7 +204,6 @@ inner_solve(J, r::BlockArray) = J \ Vector(r)
 function solve_inner_linear_system!(Δu, solver_cache::NewtonRaphsonSolverCache)
     J = getJ(solver_cache.op)
     r = solver_cache.residual
-    @show Matrix(J)
     try
         Δu .= inner_solve(J, r)
     catch err

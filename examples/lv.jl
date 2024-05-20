@@ -136,8 +136,8 @@ function (postproc::StandardMechanicalIOPostProcessor2)(t, problem::Thunderbolt.
 
     # Save the solution
     Thunderbolt.store_timestep!(io, t, dh.grid)
-    # Thunderbolt.store_timestep_field!(io, t, dh, solver_cache.uₙ, :displacementisplacement)
-    Thunderbolt.store_timestep_field!(io, t, dh, solver_cache.uₙ.blocks[1], :displacementisplacement)
+    # Thunderbolt.store_timestep_field!(io, t, dh, solver_cache.uₙ, :displacement)
+    Thunderbolt.store_timestep_field!(io, t, dh, solver_cache.uₙ.blocks[1], :displacement)
     # Thunderbolt.store_timestep_field!(io, t, coordinate_system.dh, coordinate_system.u_transmural, "transmural")
     # Thunderbolt.store_timestep_field!(io, t, coordinate_system.dh, coordinate_system.u_apicobasal, "apicobasal")
     Thunderbolt.store_timestep_celldata!(io, t, hcat(frefdata...),"Reference Fiber Data")
@@ -196,7 +196,7 @@ function solve_ideal_lv(name_base, constitutive_model, grid, coordinate_system, 
 
     # Create sparse matrix and residual vector
     solver = LTGOSSolver(
-        LoadDrivenSolver(NewtonRaphsonSolver(;max_iter=100)),
+        LoadDrivenSolver(NewtonRaphsonSolver(;max_iter=100, tol=1e-3)),
         ForwardEulerSolver(1),
     )
 
@@ -213,7 +213,7 @@ function solve_ideal_lv(name_base, constitutive_model, grid, coordinate_system, 
 end
 
 # LV_grid = Thunderbolt.hexahedralize(Thunderbolt.generate_ideal_lv_mesh(15,2,6))
-LV_grid = Thunderbolt.generate_ring_mesh(4,1,1)
+LV_grid = Thunderbolt.generate_ring_mesh(16,3,3)
 order = 1
 intorder = max(2*order-1,2)
 ip_u = LagrangeCollection{order}()^3
@@ -240,7 +240,7 @@ solve_ideal_lv("lv_test",
         )),
         LV_fm,
     ), LV_grid, LV_cs,
-    (NormalSpringBC(1.0, "Epicardium"), ConstantPressureBC(0.5, "Endocardium")),
+    (NormalSpringBC(1.0, "Epicardium"),),
     ip_u, qr_u, 25.0, 100.0
 )
 TimerOutputs.print_timer()

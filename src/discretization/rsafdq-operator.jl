@@ -73,8 +73,8 @@ function update_linearization!(op::AssembledRSAFDQ2022Operator, u::AbstractVecto
     ud = u[Block(1)]
     up = u[Block(2)]
 
-    residuald = residual[Block(1)]
-    residualp = residual[Block(2)]
+    residuald = @view residual[Block(1)]
+    residualp = @view residual[Block(2)]
 
     Jdd = @view J[Block(1,1)]
     Jpd = @view J[Block(2,1)]
@@ -98,20 +98,19 @@ function update_linearization!(op::AssembledRSAFDQ2022Operator, u::AbstractVecto
         @timeit_debug "assemble faces" for local_face_index ∈ 1:nfaces(cell)
             assemble_face!(Jₑ, rₑ, uₑ, cell, local_face_index, face_cache, time)
         end
-        # @show cellid(cell),rₑ
         @timeit_debug "assemble tying"  assemble_tying!(Jₑ, rₑ, uₑ, uₜ, cell, tying_cache, time)
-        # @show cellid(cell),rₑ
         assemble!(assembler, dofs, Jₑ, rₑ)
     end
 
     # Assemble forward and backward coupling contributions
     for (chamber_index,chamber) ∈ enumerate(tying_cache.chambers)
-        V⁰ᴰ = 1.16 #...?
+        V⁰ᴰ = 1.36 #...?
         Jpd_current = @view Jpd[chamber_index,:]
         Jdp_current = @view Jdp[:,chamber_index]
-        @show chamber_pressure = u[chamber.pressure_dof_index] # We can also make this up[pressure_dof_index]
+        @show chamber_pressure = u[chamber.pressure_dof_index] # We can also make this up[pressure_dof_index] with local index
         @timeit_debug "assemble forward coupler" assemble_LFSI_coupling_contribution_col!(Jdp_current, residuald, dh, ud, chamber_pressure, chamber)
         @timeit_debug "assemble backward coupler" assemble_LFSI_coupling_contribution_row!(Jpd_current, residualp, dh, ud, chamber_pressure, V⁰ᴰ, chamber)
+        # J[chamber.pressure_dof_index,chamber.pressure_dof_index] = 1.0
     end
 
     #finish_assemble(assembler)

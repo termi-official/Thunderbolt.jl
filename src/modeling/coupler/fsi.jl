@@ -120,7 +120,7 @@ function assemble_LFSI_coupling_contribution_row_inner!(C, R, u, p, face, dh, fv
 
         x = spatial_coordinate(fv, qp, coords)
 
-        R[1] += volume_integral(x, d, F, N, method)
+        R[1] += volume_integral(x, d, F, N, method) * dΓ
         # Via chain rule we obtain:
         #   δV(u,F(u)) = δu ⋅ dVdu + δF : dVdF
         ∂V∂u = Tensors.gradient(u -> volume_integral(x, u, F, N, method), d)
@@ -232,7 +232,7 @@ function assemble_LFSI_volumetric_corrector_inner!(Kₑ::Matrix, residualₑ, u�
                 δcofF = -transpose(invF ⋅ ∇δuⱼ ⋅ invF)
                 δJ = J * tr(∇δuⱼ ⋅ invF)
                 δJcofF = δJ * cofF + J * δcofF
-                Kₑ[i, j] += p * (δJcofF ⋅ n₀) ⋅ δuᵢ * dΓ
+                Kₑ[j, i] += p * (δJcofF ⋅ n₀) ⋅ δuᵢ * dΓ
             end
         end
     end
