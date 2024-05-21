@@ -297,7 +297,7 @@ function assemble_face_pressure_qp!(Kₑ, uₑ, p, qp, fv::FaceValues)
     invF = inv(F)
     cofF = transpose(invF)
     J = det(F)
-    neumann_term = p * J * cofF
+    # neumann_term = p * J * cofF
     for i in 1:ndofs_face
         δuᵢ = shape_value(fv, qp, i)
 

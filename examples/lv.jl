@@ -174,7 +174,7 @@ function solve_ideal_lv(name_base, constitutive_model, grid, coordinate_system, 
                     [
                         ChamberVolumeCoupling(
                             "Endocardium",
-                            Hirschvogel2017SurrogateVolume(),
+                            RSAFDQ2022SurrogateVolume(),
                             :Vₗᵥ
                         )
                     ],
@@ -213,7 +213,7 @@ function solve_ideal_lv(name_base, constitutive_model, grid, coordinate_system, 
 end
 
 # LV_grid = Thunderbolt.hexahedralize(Thunderbolt.generate_ideal_lv_mesh(15,2,6))
-LV_grid = Thunderbolt.generate_ring_mesh(16,3,3)
+LV_grid = Thunderbolt.generate_ring_mesh(16,4,4)
 order = 1
 intorder = max(2*order-1,2)
 ip_u = LagrangeCollection{order}()^3
@@ -241,7 +241,7 @@ solve_ideal_lv("lv_test",
         LV_fm,
     ), LV_grid, LV_cs,
     (NormalSpringBC(1.0, "Epicardium"),),
-    ip_u, qr_u, 25.0, 100.0
+    ip_u, qr_u, 10.0, 100.0
 )
 TimerOutputs.print_timer()
 TimerOutputs.disable_debug_timings(Thunderbolt)

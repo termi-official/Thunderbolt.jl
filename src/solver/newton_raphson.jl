@@ -104,7 +104,7 @@ function eliminate_constraints_from_linearization_blocked!(solver_cache, problem
     return nothing
 end
 
-residual_norm(solver_cache::NewtonRaphsonSolverCache, problem::RSAFDQ2022TyingProblem, i::Block) = 0.0 #norm(solver_cache.residual[Ferrite.free_dofs(getch(problem))]) # FIXME
+# residual_norm(solver_cache::NewtonRaphsonSolverCache, problem::RSAFDQ2022TyingProblem, i::Block) = 0.0 #norm(solver_cache.residual[Ferrite.free_dofs(getch(problem))]) # FIXME
 eliminate_constraints_from_increment!(Δu, problem::RSAFDQ2022TyingProblem, solver_cache) = nothing
 function eliminate_constraints_from_linearization!(solver_cache, problem::RSAFDQ20223DProblem)
     @unpack structural_problem = problem
@@ -134,8 +134,11 @@ function solve!(u::AbstractVector, problem::AbstractProblem, solver_cache::Newto
 
         residual .= 0.0
         @timeit_debug "update operator" update_linearization!(op, u, residual, t)
-
         @timeit_debug "elimination" eliminate_constraints_from_linearization!(solver_cache, problem)
+        vtk_grid("newton-debug-$newton_itr", problem.structural_problem.dh) do vtk
+            vtk_point_data(vtk, problem.structural_problem.dh, u[Block(1)])
+            vtk_point_data(vtk, problem.structural_problem.dh, residual[Block(1)], :residual)
+        end
         residualnorm = residual_norm(solver_cache, problem)
         @info newton_itr, residualnorm
         if residualnorm < solver_cache.parameters.tol
@@ -163,7 +166,7 @@ function inner_solve_schur(J::BlockMatrix, r::BlockArray)
     Jdd = @view J[Block(1,1)]
     rd = @view r[Block(1)]
     rp = @view r[Block(2)]
-    v = Jdd \ rd
+    v = (Jdd \ rd)
     Jdp = @view J[Block(1,2)]
     Jpd = @view J[Block(2,1)]
     w = Jdd \ Matrix(Jdp)
@@ -180,9 +183,9 @@ function inner_solve_schur(J::BlockMatrix, r::BlockArray)
 end
 
 function inner_solve(J::BlockMatrix, r::BlockArray)
-    if length(blocksizes(r,1)) == 2
-        return inner_solve_schur(J,r)
-    end
+    # if length(blocksizes(r,1)) == 2
+    #     return inner_solve_schur(J,r)
+    # end
 
     @timeit_debug "transform J " J_ = SparseMatrixCSC(J)
     @timeit_debug "transform r" r_ = Vector(r)

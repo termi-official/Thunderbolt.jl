@@ -44,20 +44,22 @@ as proposed by [RegSalAfrFedDedQar:2022:cem](@citet).
     This integral basically measures the volume via displacement on a given axis.
 """
 Base.@kwdef struct RSAFDQ2022SurrogateVolume{T}
-    h::Vec{3,T} = Vec((0.0, 0.0, 1.0))
-    b::Vec{3,T} = Vec((0.0, 0.0, 0.5))
+    h::Vec{3,T} = Vec((0.0, 1.0, 0.0))
+    b::Vec{3,T} = Vec((0.0, 0.0, -0.1))
 end
 
 function volume_integral(x::Vec, d::Vec, F::Tensor, N::Vec, method::RSAFDQ2022SurrogateVolume)
     @unpack h, b = method
-    -det(F) * ((h ⊗ h) ⋅ (xq + dq - b)) ⋅ (transpose(inv(F)) ⋅  N)
+    val = det(F) * ((h ⊗ h) ⋅ (x + d - b)) ⋅ (transpose(inv(F)) ⋅  N)
+    # val < 0.0 && @error val, d, x, N
+    -val #det(F) * ((h ⊗ h) ⋅ (x + d - b)) ⋅ (transpose(inv(F)) ⋅  N)
 end
 
 """
 Chamber volume estimator as presented in [HirBasJagWilGee:2017:mcc](@cite).
 
 Compute the chamber volume as a surface integral via the integral
- - ∫ (x + d) det(F) adj(F) N ∂Ωendo
+   - ∫ (x + d) det(F) cof(F) N ∂Ωendo
 where it is assumed that the chamber is convex, zero displacement in
 apicobasal direction at the valvular plane occurs and the plane normal is aligned
 with the z axis, where the origin is at z=0.
@@ -67,6 +69,21 @@ struct Hirschvogel2017SurrogateVolume end
 function volume_integral(x::Vec, d::Vec, F::Tensor, N::Vec, method::Hirschvogel2017SurrogateVolume)
     -det(F) * (x + d) ⋅ inv(transpose(F)) ⋅ N
 end
+
+# function dVdu(x::Vec, d::Vec, δd::Tensor, F::Vec, δF::tensor, N::Vec, method::Hirschvogel2017SurrogateVolume)
+#     # @unpack h, b = method
+#     # f(d,F(d)) = det(F) * (x + d) ⋅ (transpose(inv(F)) ⋅  N)
+#     # δf = δfd * δd + δfF * δF
+#     J = det(F)
+#     cofF = inv(transpose(F))
+#     δcofF = -transpose(invF ⋅ δF ⋅ invF)
+#     δJ = J * tr(∇F ⋅ invF)
+
+#     δfd = det(F) * one(d) ⋅ inv(transpose(F)) ⋅ N
+#     δfF = det(F) * one(d) ⋅ inv(transpose(F)) ⋅ N
+
+#     # -det(F) * (x + d) ⋅ inv(transpose(F)) ⋅ N
+# end
 
 # TODO move these below into the opeartor interface once 
 #      we figure out a good design on how to pass multiple
@@ -100,7 +117,7 @@ function get_tying_dofs(tying_cache::RSAFDQ2022TyingCache, u)
     return [u[chamber.pressure_dof_index] for chamber in tying_cache.chambers]
 end
 
-function assemble_LFSI_coupling_contribution_row_inner!(C, R, u, p, face, dh, fv, method, displacement_symbol)
+function assemble_LFSI_coupling_contribution_row_inner!(C, R, u, p, face, dh, fv, method::RSAFDQ2022SurrogateVolume, displacement_symbol)
     reinit!(fv, face)
 
     drange = dof_range(dh, displacement_symbol)
@@ -123,12 +140,32 @@ function assemble_LFSI_coupling_contribution_row_inner!(C, R, u, p, face, dh, fv
         R[1] += volume_integral(x, d, F, N, method) * dΓ
         # Via chain rule we obtain:
         #   δV(u,F(u)) = δu ⋅ dVdu + δF : dVdF
-        ∂V∂u = Tensors.gradient(u -> volume_integral(x, u, F, N, method), d)
-        ∂V∂F = Tensors.gradient(u -> volume_integral(x, d, u, N, method), F)
+        # ∂V∂u = Tensors.gradient(u -> volume_integral(x, u, F, N, method), d)
+        # ∂V∂F = Tensors.gradient(u -> volume_integral(x, d, u, N, method), F)
+        # for j ∈ 1:getnbasefunctions(fv)
+        #     δuⱼ = shape_value(fv, qp, j)
+        #     ∇δuj = shape_gradient(fv, qp, j)
+        #     C[ddofs[j]] += (∂V∂u ⋅ δuⱼ + ∂V∂F ⊡ ∇δuj) * dΓ
+        # end
+
+        # ((h ⊗ h) ⋅ (x + d - b)) ⋅ (J(F(d)) * cofF(d) ⋅  N))
+        J = det(F)
+        invF = inv(F)
+        cofF = transpose(invF)
         for j ∈ 1:getnbasefunctions(fv)
             δuⱼ = shape_value(fv, qp, j)
-            ∇δuj = shape_gradient(fv, qp, j)
-            C[ddofs[j]] += (∂V∂u ⋅ δuⱼ + ∂V∂F ⊡ ∇δuj) * dΓ
+            ∇δuⱼ = shape_gradient(fv, qp, j)
+            # Add contribution to the tangent
+            #   δF^-1 = -F^-1 δF F^-1
+            #   δJ = J tr(δF F^-1)
+            # Product rule
+            @unpack b,h = method
+            δVd = (h ⊗ h) ⋅ δuⱼ ⋅ (J * cofF ⋅  N)
+    
+            δcofF = -transpose(invF ⋅ ∇δuⱼ ⋅ invF)
+            δJ = J * tr(∇δuⱼ ⋅ invF)
+            δJcofF = (h ⊗ h) ⋅ (x + d - b) ⋅ (δJ * cofF + J * δcofF) ⋅  N
+            C[ddofs[j]] -= (δVd + δJcofF) * dΓ
         end
     end
 end
@@ -151,6 +188,7 @@ function assemble_LFSI_coupling_contribution_row!(C, R, dh, u, p, V⁰ᴰ, metho
         assemble_LFSI_coupling_contribution_row_inner!(C, R, u, p, face, dh, fv, method.volume_method, method.displacement_symbol)
     end
 
+    # R = ∫ V³ᴰ(u) ∂Ω - V⁰ᴰ(c)
     R[1] -= V⁰ᴰ
 end
 
@@ -322,7 +360,7 @@ function assemble_tying_face_rsadfq!(Jₑ, residualₑ, uₑ, p, cell, local_fac
     reinit!(fv, cell, local_face_index)
 
     for qp in QuadratureIterator(fv)
-        assemble_face_pressure_qp!(Jₑ, uₑ, p, qp, fv)
+        assemble_face_pressure_qp!(Jₑ, residualₑ, uₑ, p, qp, fv)
     end
 end
 
