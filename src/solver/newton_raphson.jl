@@ -49,11 +49,6 @@ residual_norm(solver_cache::NewtonRaphsonSolverCache, problem) = norm(solver_cac
 residual_norm(solver_cache::NewtonRaphsonSolverCache, problem, i::Block) = norm(solver_cache.residual[i][Ferrite.free_dofs(getch(problem))])
 residual_norm(solver_cache::NewtonRaphsonSolverCache, problem::NullProblem, i::Block) = 0.0
 
-function residual_norm(solver_cache::NewtonRaphsonSolverCache, problem::RSAFDQ2022TyingProblem, i::Block)
-    @show i, solver_cache.residual[i]
-    norm(solver_cache.residual[i])
-end
-
 ###########################################################################################################
 eliminate_constraints_from_linearization!(solver_cache, problem) = apply_zero!(solver_cache.op.J, solver_cache.residual, getch(problem))
 eliminate_constraints_from_increment!(Δu, problem, solver_cache) = apply_zero!(Δu, getch(problem))
@@ -104,7 +99,10 @@ function eliminate_constraints_from_linearization_blocked!(solver_cache, problem
     return nothing
 end
 
-# residual_norm(solver_cache::NewtonRaphsonSolverCache, problem::RSAFDQ2022TyingProblem, i::Block) = 0.0 #norm(solver_cache.residual[Ferrite.free_dofs(getch(problem))]) # FIXME
+function residual_norm(solver_cache::NewtonRaphsonSolverCache, problem::RSAFDQ2022TyingProblem, i::Block) 
+    @warn "RSAFDQ2022TyingProblem will not fully converge, because the Newton iteration starts to stagnate. Hence the pressure residual is ignored for now." maxlog = 1
+    0.0
+    #norm(solver_cache.residual[Ferrite.free_dofs(getch(problem))]) # FIXME
 eliminate_constraints_from_increment!(Δu, problem::RSAFDQ2022TyingProblem, solver_cache) = nothing
 function eliminate_constraints_from_linearization!(solver_cache, problem::RSAFDQ20223DProblem)
     @unpack structural_problem = problem
@@ -169,16 +167,16 @@ function inner_solve_schur(J::BlockMatrix, r::BlockArray)
     v = (Jdd \ rd)
     Jdp = @view J[Block(1,2)]
     Jpd = @view J[Block(2,1)]
-    w = Jdd \ Matrix(Jdp)
+    w = Jdd \ Vector(Jdp[:,1])
 
     Jpdv = Jpd*v
     Jpdw = Jpd*w
-    Δp = [(rp[i] - Jpdv[i]) / Jpdw[i] for i ∈ 1:length(Jpdw)]
+    # Δp = [(rp[i] - Jpdv[i]) / Jpdw[i] for i ∈ 1:length(Jpdw)]
+    Δp = (rp[1] - Jpdv[1]) / Jpdw[1]
     wΔp = w*Δp
-    #Δd = -(v .+ transpose(wΔp)) # no idea how to do this correctly...
-    Δd = [-(v[i] + wΔp[i][1]) for i in 1:length(v)]
+    Δd = -(v+wΔp) #-[-(v + wΔp[i]) for i in 1:length(v)]
 
-    Δu = BlockVector([Δd; Δp], blocksizes(r,1))
+    Δu = BlockVector([Δd; [Δp]], blocksizes(r,1))
     return Δu
 end
 

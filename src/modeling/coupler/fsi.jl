@@ -67,7 +67,8 @@ with the z axis, where the origin is at z=0.
 struct Hirschvogel2017SurrogateVolume end
 
 function volume_integral(x::Vec, d::Vec, F::Tensor, N::Vec, method::Hirschvogel2017SurrogateVolume)
-    -det(F) * (x + d) ⋅ inv(transpose(F)) ⋅ N
+    val = det(F) * (x + d) ⋅ inv(transpose(F)) ⋅ N
+    return -val
 end
 
 # function dVdu(x::Vec, d::Vec, δd::Tensor, F::Vec, δF::tensor, N::Vec, method::Hirschvogel2017SurrogateVolume)
@@ -117,7 +118,7 @@ function get_tying_dofs(tying_cache::RSAFDQ2022TyingCache, u)
     return [u[chamber.pressure_dof_index] for chamber in tying_cache.chambers]
 end
 
-function assemble_LFSI_coupling_contribution_row_inner!(C, R, u, p, face, dh, fv, method::RSAFDQ2022SurrogateVolume, displacement_symbol)
+function assemble_LFSI_coupling_contribution_row_inner!(C, R, u, p, face, dh, fv, method, displacement_symbol)
     reinit!(fv, face)
 
     drange = dof_range(dh, displacement_symbol)
@@ -140,33 +141,33 @@ function assemble_LFSI_coupling_contribution_row_inner!(C, R, u, p, face, dh, fv
         R[1] += volume_integral(x, d, F, N, method) * dΓ
         # Via chain rule we obtain:
         #   δV(u,F(u)) = δu ⋅ dVdu + δF : dVdF
-        # ∂V∂u = Tensors.gradient(u -> volume_integral(x, u, F, N, method), d)
-        # ∂V∂F = Tensors.gradient(u -> volume_integral(x, d, u, N, method), F)
-        # for j ∈ 1:getnbasefunctions(fv)
-        #     δuⱼ = shape_value(fv, qp, j)
-        #     ∇δuj = shape_gradient(fv, qp, j)
-        #     C[ddofs[j]] += (∂V∂u ⋅ δuⱼ + ∂V∂F ⊡ ∇δuj) * dΓ
-        # end
-
-        # ((h ⊗ h) ⋅ (x + d - b)) ⋅ (J(F(d)) * cofF(d) ⋅  N))
-        J = det(F)
-        invF = inv(F)
-        cofF = transpose(invF)
+        ∂V∂u = Tensors.gradient(u -> volume_integral(x, u, F, N, method), d)
+        ∂V∂F = Tensors.gradient(u -> volume_integral(x, d, u, N, method), F)
         for j ∈ 1:getnbasefunctions(fv)
             δuⱼ = shape_value(fv, qp, j)
-            ∇δuⱼ = shape_gradient(fv, qp, j)
-            # Add contribution to the tangent
-            #   δF^-1 = -F^-1 δF F^-1
-            #   δJ = J tr(δF F^-1)
-            # Product rule
-            @unpack b,h = method
-            δVd = (h ⊗ h) ⋅ δuⱼ ⋅ (J * cofF ⋅  N)
-    
-            δcofF = -transpose(invF ⋅ ∇δuⱼ ⋅ invF)
-            δJ = J * tr(∇δuⱼ ⋅ invF)
-            δJcofF = (h ⊗ h) ⋅ (x + d - b) ⋅ (δJ * cofF + J * δcofF) ⋅  N
-            C[ddofs[j]] -= (δVd + δJcofF) * dΓ
+            ∇δuj = shape_gradient(fv, qp, j)
+            C[ddofs[j]] += (∂V∂u ⋅ δuⱼ + transpose(∂V∂F) ⊡ ∇δuj) * dΓ
         end
+
+        # ((h ⊗ h) ⋅ (x + d - b)) ⋅ (J(F(d)) * cofF(d) ⋅  N))
+        # J = det(F)
+        # invF = inv(F)
+        # cofF = transpose(invF)
+        # for j ∈ 1:getnbasefunctions(fv)
+        #     δuⱼ = shape_value(fv, qp, j)
+        #     ∇δuⱼ = shape_gradient(fv, qp, j)
+        #     # Add contribution to the tangent
+        #     #   δF^-1 = -F^-1 δF F^-1
+        #     #   δJ = J tr(δF F^-1)
+        #     # Product rule
+        #     @unpack b,h = method
+        #     δVd = (h ⊗ h) ⋅ δuⱼ ⋅ (J * cofF ⋅  N)
+    
+        #     δcofF = -transpose(invF ⋅ ∇δuⱼ ⋅ invF)
+        #     δJ = J * tr(∇δuⱼ ⋅ invF)
+        #     δJcofF = (h ⊗ h) ⋅ (x + d - b) ⋅ (δJ * cofF + J * δcofF) ⋅  N
+        #     C[ddofs[j]] -= (δVd + δJcofF) * dΓ
+        # end
     end
 end
 
@@ -192,7 +193,7 @@ function assemble_LFSI_coupling_contribution_row!(C, R, dh, u, p, V⁰ᴰ, metho
     R[1] -= V⁰ᴰ
 end
 
-function assemble_LFSI_coupling_contribution_col_inner!(C, R, u, p, face, dh, fv, symbol)
+function assemble_LFSI_coupling_contribution_col_inner!(C, R, u, p, face, dh, fv::FaceValues, symbol::Symbol)
     reinit!(fv, face)
     drange = dof_range(dh, symbol)
 
@@ -217,6 +218,31 @@ function assemble_LFSI_coupling_contribution_col_inner!(C, R, u, p, face, dh, fv
     end
 end
 
+
+function assemble_LFSI_coupling_contribution_col_inner!(C, u, p, face, dh, fv::FaceValues, symbol::Symbol)
+    reinit!(fv, face)
+    drange = dof_range(dh, symbol)
+
+    ddofs = @view celldofs(face)[drange]
+    uₑ = @view u[ddofs]
+
+    for qp in QuadratureIterator(fv)
+        ∂Ω₀ = getdetJdV(fv, qp)
+        n₀ = getnormal(fv, qp)
+
+        ∇u = function_gradient(fv, qp, uₑ)
+        F = one(∇u) + ∇u
+        J = det(F)
+        invF = inv(F)
+        cofF = transpose(invF)
+
+        for j ∈ 1:getnbasefunctions(fv)
+            δuⱼ = shape_value(fv, qp, j)
+            C[ddofs[j], 1] += J * cofF ⋅ n₀ ⋅ δuⱼ * ∂Ω₀
+        end
+    end
+end
+
 """
 Pressure contribution (i.e. variation w.r.t. p) for the term
     ∫ p n(u) δu ∂Ω
@@ -234,6 +260,20 @@ function assemble_LFSI_coupling_contribution_col!(C, R, dh, u, p, method::RSAFDQ
 
     for face ∈ FaceIterator(dh, method.faces)
         assemble_LFSI_coupling_contribution_col_inner!(C, R, u, p, face, dh, fv, method.displacement_symbol)
+    end
+end
+
+function assemble_LFSI_coupling_contribution_col!(C, dh, u, p, method::RSAFDQ2022SingleChamberTying)
+    grid = dh.grid
+    ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], method.displacement_symbol)
+    ip_geo = Ferrite.default_interpolation(typeof(getcells(grid, 1)))
+    intorder = 2*Ferrite.getorder(ip)
+    ref_shape = Ferrite.getrefshape(ip)
+    qr_face = FaceQuadratureRule{ref_shape}(intorder)
+    fv = FaceValues(qr_face, ip, ip_geo)
+
+    for face ∈ FaceIterator(dh, method.faces)
+        assemble_LFSI_coupling_contribution_col_inner!(C, u, p, face, dh, fv, method.displacement_symbol)
     end
 end
 

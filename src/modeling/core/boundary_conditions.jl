@@ -210,7 +210,7 @@ function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, cell, local_face_index,
         # Add contribution to the residual from this test function
         for i in 1:ndofs_face
             ∇δui = shape_gradient(fv, qp, i)
-            residualₑ[i] -= ∇δui ⊡ ∂Ψ∂F * dΓ
+            residualₑ[i] += ∇δui ⊡ ∂Ψ∂F * dΓ
 
             ∇δui∂P∂F = ∇δui ⊡ ∂²Ψ∂F² # Hoisted computation
             for j in 1:ndofs_face
@@ -322,8 +322,7 @@ function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, cell, local_face_index,
     reinit!(fv, cell, local_face_index)
 
     for qp in QuadratureIterator(fv)
-        # TODO fix the "nothing" here
-        p = evaluate_coefficient(pc, nothing, qp, time)
+        p = evaluate_coefficient(pc, cell, qp, time)
         assemble_face_pressure_qp!(Kₑ, residualₑ, uₑ, p, qp, fv)
     end
 end
@@ -336,7 +335,7 @@ function assemble_face!(Kₑ::Matrix, uₑ, cell, local_face_index, cache::Simpl
 
     for qp in QuadratureIterator(fv)
         # Add contribution to the residual from this test function
-        p = evaluate_coefficient(pc, nothing, qp, time)
+        p = evaluate_coefficient(pc, cell, qp, time)
         assemble_face_pressure_qp!(Kₑ, uₑ, p, qp, fv)
     end
 end

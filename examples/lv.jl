@@ -174,7 +174,7 @@ function solve_ideal_lv(name_base, constitutive_model, grid, coordinate_system, 
                     [
                         ChamberVolumeCoupling(
                             "Endocardium",
-                            RSAFDQ2022SurrogateVolume(),
+                            Hirschvogel2017SurrogateVolume(),
                             :Vₗᵥ
                         )
                     ],
@@ -212,20 +212,33 @@ function solve_ideal_lv(name_base, constitutive_model, grid, coordinate_system, 
     )
 end
 
-# LV_grid = Thunderbolt.hexahedralize(Thunderbolt.generate_ideal_lv_mesh(15,2,6))
-LV_grid = Thunderbolt.generate_ring_mesh(16,4,4)
+LV_grid = Thunderbolt.hexahedralize(Thunderbolt.generate_ideal_lv_mesh(15,2,7))
+# LV_grid = Thunderbolt.generate_ring_mesh(16,4,4)
 order = 1
 intorder = max(2*order-1,2)
 ip_u = LagrangeCollection{order}()^3
 qr_u = QuadratureRuleCollection(intorder-1)
-# LV_cs = compute_LV_coordinate_system(LV_grid)
-LV_cs = compute_midmyocardial_section_coordinate_system(LV_grid)
+LV_cs = compute_LV_coordinate_system(LV_grid)
+# LV_cs = compute_midmyocardial_section_coordinate_system(LV_grid)
 LV_fm = create_simple_microstructure_model(LV_cs, ip_u, endo_helix_angle = deg2rad(-60.0), epi_helix_angle = deg2rad(70.0), endo_transversal_angle = deg2rad(10.0), epi_transversal_angle = deg2rad(-20.0))
 passive_ho_model = HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 0.28504197825657906, 4.126552003938297, 0.0, 1.0, 0.0, 1.0, SimpleCompressionPenalty(40.0))
 
 function calcium_field_fun(x,t)
     t/1000.0 < 0.5 ? (1-x.transmural*0.7)*2.0*t/1000.0 : (2.0-2.0*t/1000.0)*(1-x.transmural*0.7)
 end
+
+function pressure_field_fun(x,t)
+    t/100.0 + 0.5
+end
+
+pressure_field = AnalyticalCoefficient(
+    pressure_field_fun,
+    CoordinateSystemCoefficient(LV_cs)
+)
+
+integral_bcs = (RobinBC(1.0, "Epicardium"),)
+# integral_bcs = (RobinBC(1.0, "Epicardium"),PressureFieldBC(pressure_field, "Endocardium")))
+
 
 using Thunderbolt.TimerOutputs
 TimerOutputs.enable_debug_timings(Thunderbolt)
@@ -240,8 +253,8 @@ solve_ideal_lv("lv_test",
         )),
         LV_fm,
     ), LV_grid, LV_cs,
-    (NormalSpringBC(1.0, "Epicardium"),),
-    ip_u, qr_u, 10.0, 100.0
+    integral_bcs,
+    ip_u, qr_u, 25.0, 1000.0
 )
 TimerOutputs.print_timer()
 TimerOutputs.disable_debug_timings(Thunderbolt)

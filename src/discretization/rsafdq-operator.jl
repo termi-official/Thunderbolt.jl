@@ -80,9 +80,13 @@ function update_linearization!(op::AssembledRSAFDQ2022Operator, u::AbstractVecto
     Jpd = @view J[Block(2,1)]
     Jdp = @view J[Block(1,2)]
     assembler = start_assemble(Jdd, residuald)
+    fill!(residualp, 0.0)
+    fill!(Jdp, 0.0)
+    fill!(Jdp, 0.0)
 
     ndofs = ndofs_per_cell(dh)
     Jₑ = zeros(ndofs, ndofs)
+    Jₑdiscard = zeros(ndofs, ndofs)
     rₑ = zeros(ndofs)
     uₑ = zeros(ndofs)
     uₜ = get_tying_dofs(tying_cache, u)
@@ -104,19 +108,23 @@ function update_linearization!(op::AssembledRSAFDQ2022Operator, u::AbstractVecto
 
     # Assemble forward and backward coupling contributions
     for (chamber_index,chamber) ∈ enumerate(tying_cache.chambers)
-        V⁰ᴰ = 0.7 #...?
+        V⁰ᴰ = 5.2 #...?
+        # V⁰ᴰ = 1.0 #...?
+        @show chamber_pressure = u[chamber.pressure_dof_index] # We can also make this up[pressure_dof_index] with local index
+
         Jpd_current = @view Jpd[chamber_index,:]
         Jdp_current = @view Jdp[:,chamber_index]
-        @show chamber_pressure = u[chamber.pressure_dof_index] # We can also make this up[pressure_dof_index] with local index
-        @timeit_debug "assemble forward coupler" assemble_LFSI_coupling_contribution_col!(Jdp_current, residuald, dh, ud, chamber_pressure, chamber)
+
+        # @timeit_debug "assemble forward coupler" assemble_LFSI_coupling_contribution_col!(Jdp_current, residuald dh, ud, chamber_pressure, chamber)
+        @timeit_debug "assemble forward coupler" assemble_LFSI_coupling_contribution_col!(Jdp_current, dh, ud, chamber_pressure, chamber)
         @timeit_debug "assemble backward coupler" assemble_LFSI_coupling_contribution_row!(Jpd_current, residualp, dh, ud, chamber_pressure, V⁰ᴰ, chamber)
-        volume = 0.0
-        for i in 1:length(Jpd_current)
-            volume += Jpd_current[i]*u[i]
-        end
-        @show volume - residualp[chamber_index]
-        # J[chamber.pressure_dof_index,chamber.pressure_dof_index] = 1.0
-        # residual[chamber.pressure_dof_index] = chamber_pressure-1.0
+        # dV = 0.0
+        # for i in 1:length(Jpd_current)
+        #     dV += Jpd_current[i]*u[i]
+        # end
+        # @show dV
+        # J[chamber.pressure_dof_index,chamber.pressure_dof_index] = 0.1
+        # residual[chamber.pressure_dof_index] = 0.0#0.1*(chamber_pressure-time/100+0.5)
     end
 
     #finish_assemble(assembler)
