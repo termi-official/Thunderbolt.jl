@@ -72,15 +72,6 @@ function setup_initial_condition!(problem::SplitProblem, cache, initial_conditio
     return nothing
 end
 
-function setup_initial_condition!(problem::SplitProblem{<:CoupledProblem{<:Tuple{<:Any, <: NullProblem}}, <:AbstractPointwiseProblem}, cache, initial_condition, time)
-    # TODO cleaner implementation. We need to extract this from the types or via dispatch.
-    # u₀ = initial_condition(problem, time)
-    cache.A_solver_cache.uₙ .= zeros(ndofs(problem.A.base_problems[1].dh)) # TODO fixme :)
-    # TODO maybe we should replace n with t here
-    cache.B_solver_cache.uₙ .= zeros(problem.B.npoints*num_states(problem.B.ode))
-    return nothing
-end
-
 # TODO what exactly is the job here? How do we know where to write and what to iterate?
 function setup_initial_condition!(problem::SplitProblem{<:TransientHeatProblem, <:AbstractPointwiseProblem}, cache, initial_condition, time)
     # TODO cleaner implementation. We need to extract this from the types or via dispatch.
@@ -99,3 +90,23 @@ perform_step!(problem::PointwiseODEProblem, cache::AbstractPointwiseSolverCache,
 # TODO add guidance with helpers like
 #   const QuGarfinkel1999Solver = SMOSSolver{AdaptiveForwardEulerReactionSubCellSolver, ImplicitEulerHeatSolver}
 
+# Transfer pressure solution from structure to lumped circuit
+function transfer_fields!(A::RSAFDQ20223DProblem, A_cache, B::ODEProblem, B_cache)
+    @unpack tying_cache = A_cache.inner_solver_cache.op # op = RSAFDQ20223DOperator
+    u_structure = A_cache.uₙ
+    u_fluid = B_cache.uₙ
+    for (chamber_idx,chamber) ∈ enumerate(tying_cache.chambers)
+        p = u_structure[chamber.pressure_dof_index]
+        B.p[chamber_idx] = p # FIXME should not be chamber_idx
+    end
+end
+
+# Transfer chamber volume from lumped circuit to structure
+function transfer_fields!(A::ODEProblem, A_cache, B::RSAFDQ20223DProblem, B_cache)
+    @unpack tying_cache = B_cache.inner_solver_cache.op # op = RSAFDQ20223DOperator
+    u_structure = B_cache.uₙ
+    u_fluid = A_cache.uₙ
+    for (chamber_idx,chamber) ∈ enumerate(tying_cache.chambers)
+        chamber.V⁰ᴰval = u_fluid[chamber.V⁰ᴰidx]
+    end
+end

@@ -123,7 +123,7 @@ export
     AnalyticalTransmembraneStimulationProtocol,
     ReactionDiffusionSplit,
     # Circuit
-    RSAFDQLumpedCicuitModel,
+    RSAFDQ2022LumpedCicuitModel,
     # FSI
     RSAFDQ2022Model,
     RSAFDQ2022SurrogateVolume,

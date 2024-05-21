@@ -168,8 +168,8 @@ function solve_ideal_lv(name_base, constitutive_model, grid, coordinate_system, 
         # StructuralModel(:displacement, constitutive_model, face_models),
         RSAFDQ2022Split(RSAFDQ2022Model(
                 StructuralModel(:displacement, constitutive_model, face_models),
-                Thunderbolt.DummyLumpedCircuitModel(t->1.16),
-                # RegazzoniSalvadorAfricaLumpedCicuitModel{Float64,Float64,Float64,Float64,Float64}(),
+                # Thunderbolt.DummyLumpedCircuitModel(t->1.16),
+                RSAFDQ2022LumpedCicuitModel{Float64, Float64,Float64,Float64,Float64,Float64}(),
                 LumpedFluidSolidCoupler(
                     [
                         ChamberVolumeCoupling(
@@ -197,7 +197,7 @@ function solve_ideal_lv(name_base, constitutive_model, grid, coordinate_system, 
     # Create sparse matrix and residual vector
     solver = LTGOSSolver(
         LoadDrivenSolver(NewtonRaphsonSolver(;max_iter=100, tol=1e-3)),
-        ForwardEulerSolver(1),
+        ForwardEulerSolver(10),
     )
 
     # solver = LoadDrivenSolver(NewtonRaphsonSolver(;max_iter=20))
@@ -212,7 +212,8 @@ function solve_ideal_lv(name_base, constitutive_model, grid, coordinate_system, 
     )
 end
 
-LV_grid = Thunderbolt.hexahedralize(Thunderbolt.generate_ideal_lv_mesh(15,2,7))
+scaling_factor = 1.6
+LV_grid = Thunderbolt.hexahedralize(Thunderbolt.generate_ideal_lv_mesh(15,2,7; inner_radius = Float64(scaling_factor*0.7), outer_radius = Float64(scaling_factor*1.0), longitudinal_upper = Float64(scaling_factor*0.2), apex_inner = Float64(scaling_factor*1.3), apex_outer = Float64(scaling_factor*1.5)))
 # LV_grid = Thunderbolt.generate_ring_mesh(16,4,4)
 order = 1
 intorder = max(2*order-1,2)
@@ -221,7 +222,8 @@ qr_u = QuadratureRuleCollection(intorder-1)
 LV_cs = compute_LV_coordinate_system(LV_grid)
 # LV_cs = compute_midmyocardial_section_coordinate_system(LV_grid)
 LV_fm = create_simple_microstructure_model(LV_cs, ip_u, endo_helix_angle = deg2rad(-60.0), epi_helix_angle = deg2rad(70.0), endo_transversal_angle = deg2rad(10.0), epi_transversal_angle = deg2rad(-20.0))
-passive_ho_model = HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 0.28504197825657906, 4.126552003938297, 0.0, 1.0, 0.0, 1.0, SimpleCompressionPenalty(40.0))
+passive_model = HolzapfelOgden2009Model(1.5806251396691438e2, 5.8010248271289395, 0.28504197825657906e2, 4.126552003938297, 0.0, 1.0, 0.0, 1.0, SimpleCompressionPenalty(40.0))
+# passive_model = Guccione1991PassiveModel(;C₀ = 3e1, Bᶠᶠ = 8.0, Bˢˢ = 6.0, Bⁿⁿ = 3.0, Bᶠˢ = 12.0, Bⁿˢ = 3.0, Bᶠⁿ = 3.0, mpU = SimpleCompressionPenalty(0.8e3))
 
 function calcium_field_fun(x,t)
     t/1000.0 < 0.5 ? (1-x.transmural*0.7)*2.0*t/1000.0 : (2.0-2.0*t/1000.0)*(1-x.transmural*0.7)
@@ -245,8 +247,8 @@ TimerOutputs.enable_debug_timings(Thunderbolt)
 TimerOutputs.reset_timer!()
 solve_ideal_lv("lv_test",
     ActiveStressModel(
-        passive_ho_model,
-        PiersantiActiveStress(10.0, 0.8, 0.5, 0.0),
+        passive_model,
+        PiersantiActiveStress(5e1, 0.8, 0.5, 0.0),
         PelceSunLangeveld1995Model(;calcium_field=AnalyticalCoefficient(
             calcium_field_fun,
             CoordinateSystemCoefficient(LV_cs)
@@ -254,7 +256,7 @@ solve_ideal_lv("lv_test",
         LV_fm,
     ), LV_grid, LV_cs,
     integral_bcs,
-    ip_u, qr_u, 25.0, 1000.0
+    ip_u, qr_u, 0.01, 10.0
 )
 TimerOutputs.print_timer()
 TimerOutputs.disable_debug_timings(Thunderbolt)

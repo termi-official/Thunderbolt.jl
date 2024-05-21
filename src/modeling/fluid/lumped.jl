@@ -151,7 +151,7 @@ Base.@kwdef struct RSAFDQ2022LumpedCicuitModel{
 end
 
 num_states(::RSAFDQ2022LumpedCicuitModel) = 12
-num_unknown_pressures(::RSAFDQ2022LumpedCicuitModel) = Int(model.lv_pressure_given) + Int(model.rv_pressure_given) + Int(model.la_pressure_given) + Int(model.ra_pressure_given)
+num_unknown_pressures(model::RSAFDQ2022LumpedCicuitModel) = Int(!model.lv_pressure_given) + Int(!model.rv_pressure_given) + Int(!model.la_pressure_given) + Int(!model.ra_pressure_given)
 function get_variable_symbol_index(model::RSAFDQ2022LumpedCicuitModel, symbol::Symbol)
     @unpack lv_pressure_given, la_pressure_given, ra_pressure_given, rv_pressure_given = model
 
@@ -177,10 +177,13 @@ function default_initial_condition!(u, model::RSAFDQ2022LumpedCicuitModel)
     # u[3] = V0ᵣₐ
     # u[4] = V0ᵣᵥ
 
-    u[1] = 20.0
-    u[2] = 500.0
-    u[3] = 20.0
-    u[4] = 500.0
+    # u[1] = 20.0
+    # u[2] = 500.0
+    # u[3] = 20.0
+    # u[4] = 500.0
+
+    # TODO obtain via pre-pacing in isolation
+    u .= [31.78263930696728, 20.619293500582675, 76.99868985499684, 28.062792020353495, 5.3259599006276925, 13.308990108813674, 1.848880514855276, 3.6948263599349302, -9.974721253140004, -17.12404226311947, -11.360818019572653, -19.32908606755043]
 end
 
 function lumped_circuit_relative_lv_pressure_index(model::RSAFDQ2022LumpedCicuitModel)
@@ -238,7 +241,7 @@ function lumped_driver!(du, u, t, external_input::AbstractVector, model::RSAFDQ2
     # @unpack Eactmaxₗₐ, Eactmaxᵣₐ, Eactmaxᵣᵥ = model
     # @unpack Eₗₐ, Eᵣₐ, Eᵣᵥ = model
     # Note tR = tC+TC
-    @inline Eₗᵥ(p::RSAFDQ2022LumpedCicuitModel,t) = elastance_RSAFDQ2022(t, p.Epassᵣₐ, 2*p.Eactmaxᵣₐ, p.tCᵣₐ, p.tCᵣₐ + p.TCᵣₐ, p.TCᵣₐ, p.TRᵣₐ, p.THB)
+    @inline Eₗᵥ(p::RSAFDQ2022LumpedCicuitModel,t) = elastance_RSAFDQ2022(t, p.Epassᵣₐ, 10.0*p.Eactmaxᵣₐ, p.tCᵣₐ, p.tCᵣₐ + p.TCᵣₐ, p.TCᵣₐ, p.TRᵣₐ, p.THB)
     @inline Eᵣᵥ(p::RSAFDQ2022LumpedCicuitModel,t) = elastance_RSAFDQ2022(t, p.Epassᵣᵥ, p.Eactmaxᵣᵥ, p.tCᵣᵥ, p.tCᵣᵥ + p.TCᵣᵥ, p.TCᵣᵥ, p.TRᵣᵥ, p.THB)
     @inline Eₗₐ(p::RSAFDQ2022LumpedCicuitModel,t) = elastance_RSAFDQ2022(t, p.Epassₗₐ, p.Eactmaxₗₐ, p.tCₗₐ, p.tCₗₐ + p.TCₗₐ, p.TCₗₐ, p.TRₗₐ, p.THB)
     @inline Eᵣₐ(p::RSAFDQ2022LumpedCicuitModel,t) = elastance_RSAFDQ2022(t, p.Epassᵣₐ, p.Eactmaxᵣₐ, p.tCᵣₐ, p.tCᵣₐ + p.TCᵣₐ, p.TCᵣₐ, p.TRᵣₐ, p.THB)

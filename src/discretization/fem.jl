@@ -80,19 +80,19 @@ function semidiscretize(split::RSAFDQ2022Split{<:CoupledModel}, discretization::
     @assert length(split.model.base_models) == 2 "I can only handle pure mechanics coupled to pure circuit."
     @error "Implementation for RSAFDQ2022Split{<:CoupledModel} currently broken. 💔"
 
-    num_chambers = num_unknown_pressures(split.model.base_models[2])
+    num_chambers_lumped = num_unknown_pressures(split.model.base_models[2])
     semidiscrete_problem = SplitProblem(
         CoupledProblem(
             (
                 semidiscretize(split.model.base_models[1], discretization, grid),
-                NullProblem(num_chambers) # one coupling dof for each chamber (chamber pressure)
+                NullProblem(num_chambers_lumped) # one coupling dof for each chamber (chamber pressure)
             ),
             split.model.couplings
         ),
         ODEProblem(
             split.model.base_models[2],
             (du,u,t,chamber_pressures) -> lumped_driver!(du, u, t, chamber_pressures, split.model.base_models[2]),
-            zeros(num_chambers) # Initialize with 0 pressure in the chambers
+            zeros(num_chambers_lumped) # Initialize with 0 pressure in the chambers
         )
     )
 
@@ -109,7 +109,9 @@ function create_chamber_tyings(coupler::LumpedFluidSolidCoupler{CVM}, structural
         # The pressure dof is just the last dof index for the structurel problem + the current chamber index
         pressure_dof_index = num_unknowns_structure + i
         chamber_faceset = getfaceset(structural_problem.dh.grid, coupling.chamber_surface_setname)
-        push!(chamber_tyings, RSAFDQ2022SingleChamberTying(pressure_dof_index, chamber_faceset, coupling.chamber_volume_method, coupler.displacement_symbol))
+        chamber_volume_idx_lumped = get_variable_symbol_index(circuit_model, coupling.lumped_model_symbol)
+        initial_volume_lumped = NaN # We do this to catch initializiation issues downstream
+        push!(chamber_tyings, RSAFDQ2022SingleChamberTying(pressure_dof_index, chamber_faceset, coupling.chamber_volume_method, coupler.displacement_symbol, initial_volume_lumped, chamber_volume_idx_lumped))
     end
     return chamber_tyings
 end
@@ -125,19 +127,19 @@ function semidiscretize(split::RSAFDQ2022Split, discretization::FiniteElementDis
 
     # Discretize individual problems
     structural_problem = semidiscretize(model.structural_model, discretization, grid)
-    num_chambers = num_unknown_pressures(model.circuit_model)
+    num_chambers_lumped = num_unknown_pressures(model.circuit_model)
 
     # ODE problem for blood circuit
     flow_problem = ODEProblem(
             model.circuit_model,
         (du,u,t,chamber_pressures) -> lumped_driver!(du, u, t, chamber_pressures, model.circuit_model),
-        zeros(num_chambers) # Initialize with 0 pressure in the chambers - TODO replace this hack with a proper transfer operator!
+        zeros(num_chambers_lumped) # Initialize with 0 pressure in the chambers - TODO replace this hack with a proper transfer operator!
     )
 
     # Tie problems
     # Fix dispatch....
-    chamber_tyings = create_chamber_tyings(coupler,structural_problem, circuit_model)
-    @assert num_chambers == length(chamber_tyings) "Number of chambers in structural model and circuit model differs."
+    chamber_tyings = create_chamber_tyings(coupler, structural_problem, circuit_model)
+    @assert num_chambers_lumped == length(chamber_tyings) "Number of chambers in structural model ($(length(chamber_tyings))) and circuit model ($num_chambers_lumped) differs."
     semidiscrete_problem = SplitProblem(
         RSAFDQ20223DProblem(
             structural_problem,

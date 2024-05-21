@@ -90,18 +90,18 @@ end
 #      we figure out a good design on how to pass multiple
 #      variables down to the inner assembly functions
 
-struct RSAFDQ2022SingleChamberTying{CVM}
-    pressure_dof_index::Int
-    faces::Set{FaceIndex}
-    volume_method::CVM
-    displacement_symbol::Symbol
-    
+mutable struct RSAFDQ2022SingleChamberTying{CVM}
+    const pressure_dof_index::Int
+    const faces::Set{FaceIndex}
+    const volume_method::CVM
+    const displacement_symbol::Symbol
+    V⁰ᴰval::Float64
+    const V⁰ᴰidx::Int
 end
 
 struct RSAFDQ2022TyingCache{FV <: FaceValues, CVM}
     fv::FV
     chambers::Vector{RSAFDQ2022SingleChamberTying{CVM}}
-    # + view into volumetric dofs of 0D problem?
 end
 
 struct RSAFDQ2022TyingProblem{CVM} # <: AbstractProblem

@@ -108,13 +108,13 @@ function update_linearization!(op::AssembledRSAFDQ2022Operator, u::AbstractVecto
 
     # Assemble forward and backward coupling contributions
     for (chamber_index,chamber) ∈ enumerate(tying_cache.chambers)
-        V⁰ᴰ = 5.2 #...?
-        # V⁰ᴰ = 1.0 #...?
+        V⁰ᴰ = chamber.V⁰ᴰval
         @show chamber_pressure = u[chamber.pressure_dof_index] # We can also make this up[pressure_dof_index] with local index
 
         Jpd_current = @view Jpd[chamber_index,:]
         Jdp_current = @view Jdp[:,chamber_index]
 
+        # We cannot pass the residual for the displacement block here, because it would be assembled essentially twice.
         # @timeit_debug "assemble forward coupler" assemble_LFSI_coupling_contribution_col!(Jdp_current, residuald dh, ud, chamber_pressure, chamber)
         @timeit_debug "assemble forward coupler" assemble_LFSI_coupling_contribution_col!(Jdp_current, dh, ud, chamber_pressure, chamber)
         @timeit_debug "assemble backward coupler" assemble_LFSI_coupling_contribution_row!(Jpd_current, residualp, dh, ud, chamber_pressure, V⁰ᴰ, chamber)

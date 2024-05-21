@@ -101,8 +101,10 @@ end
 
 function residual_norm(solver_cache::NewtonRaphsonSolverCache, problem::RSAFDQ2022TyingProblem, i::Block) 
     @warn "RSAFDQ2022TyingProblem will not fully converge, because the Newton iteration starts to stagnate. Hence the pressure residual is ignored for now." maxlog = 1
-    0.0
-    #norm(solver_cache.residual[Ferrite.free_dofs(getch(problem))]) # FIXME
+    # 0.0
+    norm(solver_cache.residual[Block(2)])/1000 # FIXME
+end
+
 eliminate_constraints_from_increment!(Δu, problem::RSAFDQ2022TyingProblem, solver_cache) = nothing
 function eliminate_constraints_from_linearization!(solver_cache, problem::RSAFDQ20223DProblem)
     @unpack structural_problem = problem

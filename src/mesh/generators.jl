@@ -274,7 +274,7 @@ end
 
 
 """
-    generate_ideal_lv_mesh(num_elements_circumferential::Int, num_elements_radial::Int, num_elements_logintudinally::Int; inner_chamber_radius = 0.7, outer_wall_radius = 1.0, longitudinal_cutoff_lower::T = Float64(-1.0), longitudinal_cutoff_upper::T = Float64(0.2), longitudinal_stretch::T = Float64(1.2))
+    generate_ideal_lv_mesh(num_elements_circumferential::Int, num_elements_radial::Int, num_elements_logintudinally::Int; inner_radius::T = Float64(0.7), outer_radius::T = Float64(1.0), longitudinal_upper::T = Float64(0.2), apex_inner::T = Float64(1.3), apex_outer::T = Float64(1.5))
 
 Generate an idealized left ventricle as a truncated ellipsoid.
 The number of elements per axis are controlled by the first three parameters.
