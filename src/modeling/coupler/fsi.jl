@@ -145,8 +145,8 @@ function assemble_LFSI_coupling_contribution_row_inner!(C, R, u, p, face, dh, fv
         ∂V∂F = Tensors.gradient(u -> volume_integral(x, d, u, N, method), F)
         for j ∈ 1:getnbasefunctions(fv)
             δuⱼ = shape_value(fv, qp, j)
-            ∇δuj = shape_gradient(fv, qp, j)
-            C[ddofs[j]] += (∂V∂u ⋅ δuⱼ + transpose(∂V∂F) ⊡ ∇δuj) * dΓ
+            ∇δuⱼ = shape_gradient(fv, qp, j)
+            C[ddofs[j]] += (∂V∂u ⋅ δuⱼ + transpose(∂V∂F) ⊡ ∇δuⱼ) * dΓ
         end
 
         # ((h ⊗ h) ⋅ (x + d - b)) ⋅ (J(F(d)) * cofF(d) ⋅  N))

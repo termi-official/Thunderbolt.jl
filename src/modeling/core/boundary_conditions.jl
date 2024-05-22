@@ -262,7 +262,7 @@ function assemble_face_pressure_qp!(Kₑ, residualₑ, uₑ, p, qp, fv::FaceValu
 
     ∇u = function_gradient(fv, qp, uₑ)
     F = one(∇u) + ∇u
-    
+
     invF = inv(F)
     cofF = transpose(invF)
     J = det(F)
