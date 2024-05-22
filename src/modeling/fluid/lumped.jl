@@ -7,7 +7,7 @@ struct DummyLumpedCircuitModel{F} <: AbstractLumpedCirculatoryModel
     volume_fun::F
 end
 
-get_variable_symbol_index(model::DummyLumpedCircuitModel, symbol::Symbol) = 0
+get_variable_symbol_index(model::DummyLumpedCircuitModel, symbol::Symbol) = 1
 
 num_states(::DummyLumpedCircuitModel) = 1
 num_unknown_pressures(::DummyLumpedCircuitModel) = 1

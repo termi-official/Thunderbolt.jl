@@ -247,9 +247,9 @@ end
 
 function update_linearization!(op::AssembledNonlinearOperator, u::AbstractVector, residual::AbstractVector, time)
     @unpack J, element_cache, face_cache, tying_cache, dh  = op
-    
+
     assembler = start_assemble(J, residual)
-    
+
     ndofs = ndofs_per_cell(dh)
     Jₑ = zeros(ndofs, ndofs)
     rₑ = zeros(ndofs)

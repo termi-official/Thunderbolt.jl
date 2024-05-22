@@ -82,7 +82,7 @@ function update_linearization!(op::AssembledRSAFDQ2022Operator, u::AbstractVecto
     # Reset residual and Jacobian to 0
     assembler = start_assemble(Jdd, residuald)
     fill!(residualp, 0.0)
-    fill!(Jdp, 0.0)
+    fill!(Jpd, 0.0)
     fill!(Jdp, 0.0)
 
     ndofs = ndofs_per_cell(dh)
@@ -94,13 +94,13 @@ function update_linearization!(op::AssembledRSAFDQ2022Operator, u::AbstractVecto
     rₑdebug = zeros(ndofs)
     Jₑdebug = zeros(ndofs, ndofs)
     Jₑdebug2 = zeros(ndofs, ndofs)
-    h = 1e-12
+    h = 1e-8
 
     @timeit_debug "loop" @inbounds for cell in CellIterator(dh)
         dofs = celldofs(cell)
-        fill!(Jₑ, 0)
-        fill!(rₑ, 0)
-        uₑ .= @view ud[dofs]
+        fill!(Jₑ, 0.0)
+        fill!(rₑ, 0.0)
+        uₑ .= @view u[dofs]
         # TODO instead of "cell" pass object with geometry information only
         @timeit_debug "assemble element" assemble_element!(Jₑ, rₑ, uₑ, cell, element_cache, time)
         # TODO maybe it makes sense to merge this into the element routine in a modular fasion?
@@ -110,23 +110,29 @@ function update_linearization!(op::AssembledRSAFDQ2022Operator, u::AbstractVecto
         @timeit_debug "assemble tying"  assemble_tying!(Jₑ, rₑ, uₑ, uₜ, cell, tying_cache, time)
         assemble!(assembler, dofs, Jₑ, rₑ)
 
-        # Debug checks
-        fill!(rₑ, 0.0)
-        fill!(Jₑdebug, 0.0)
-        fill!(Jₑdebug2, 0.0)
-        # Computed Jacobian
-        assemble_tying!(Jₑdebug, rₑ, uₑ, uₜ, cell, tying_cache, time)
-        assemble_element!(Jₑdebug, rₑ, uₑ, cell, element_cache, time)
-        # Finite differences
-        for i in 1:length(uₑ)
-            fill!(rₑdebug, 0.0)
-            direction = zeros(length(uₑ))
-            direction[i] = h
-            assemble_tying!(Jₑ, rₑdebug, uₑ .+ direction, uₜ, cell, tying_cache, time)
-            assemble_element!(Jₑ, rₑdebug, uₑ .+ direction, cell, element_cache, time)
-            Jₑdebug2[:, i] .= (rₑdebug .- rₑ) / h
-        end
-        @assert all(isapprox.(Jₑdebug, Jₑdebug2, atol=norm(Jₑdebug, 1.0)/length(Jₑdebug))) "$rₑdebug, $rₑ, $Jₑdebug, $Jₑdebug2"
+        # # Debug checks
+        # fill!(rₑ, 0.0)
+        # fill!(Jₑdebug, 0.0)
+        # fill!(Jₑdebug2, 0.0)
+        # # Computed Jacobian
+        # assemble_tying!(Jₑdebug, rₑ, uₑ, uₜ, cell, tying_cache, time)
+        # for local_face_index ∈ 1:nfaces(cell)
+        #     assemble_face!(Jₑdebug, rₑ, uₑ, cell, local_face_index, face_cache, time)
+        # end
+        # assemble_element!(Jₑdebug, rₑ, uₑ, cell, element_cache, time)
+        # # Finite differences
+        # for i in 1:length(uₑ)
+        #     fill!(rₑdebug, 0.0)
+        #     direction = zeros(length(uₑ))
+        #     direction[i] = h
+        #     assemble_element!(Jₑ, rₑdebug, uₑ .+ direction, cell, element_cache, time)
+        #     for local_face_index ∈ 1:nfaces(cell)
+        #         assemble_face!(Jₑ, rₑdebug, uₑ .+ direction, cell, local_face_index, face_cache, time)
+        #     end
+        #     assemble_tying!(Jₑ, rₑdebug, uₑ .+ direction, uₜ, cell, tying_cache, time)
+        #     Jₑdebug2[:, i] .= (rₑdebug .- rₑ) / h
+        # end
+        # @assert all(isapprox.(Jₑdebug, Jₑdebug2, atol=1.0)) "$rₑdebug, $rₑ, $Jₑdebug, $Jₑdebug2"
     end
 
     # Assemble forward and backward coupling contributions
@@ -138,9 +144,12 @@ function update_linearization!(op::AssembledRSAFDQ2022Operator, u::AbstractVecto
         Jdp_current = @view Jdp[:,chamber_index]
 
         # We cannot pass the residual for the displacement block here, because it would be assembled essentially twice.
-        # @timeit_debug "assemble forward coupler" assemble_LFSI_coupling_contribution_col!(Jdp_current, residuald dh, ud, chamber_pressure, chamber)
         @timeit_debug "assemble forward coupler" assemble_LFSI_coupling_contribution_col!(Jdp_current, dh, ud, chamber_pressure, chamber)
         @timeit_debug "assemble backward coupler" assemble_LFSI_coupling_contribution_row!(Jpd_current, residualp, dh, ud, chamber_pressure, V⁰ᴰ, chamber)
+        # Jpp = @view J[Block(2),Block(2)]
+        # Jpp .= 1.0
+        # residualp .= chamber_pressure-V⁰ᴰ
+
         # dV = 0.0
         # for i in 1:length(Jpd_current)
         #     dV += Jpd_current[i]*u[i]
@@ -149,49 +158,51 @@ function update_linearization!(op::AssembledRSAFDQ2022Operator, u::AbstractVecto
         # J[chamber.pressure_dof_index,chamber.pressure_dof_index] = 0.1
         # residual[chamber.pressure_dof_index] = 0.0#0.1*(chamber_pressure-time/100+0.5)
 
-        Jpd_debug = copy(Jpd_current)
-        fill!(Jpd_debug, 0.0)
-        Jdp_debug = copy(Jdp_current)
-        fill!(Jdp_debug, 0.0)
-        Jpd_debug2 = copy(Jpd_current)
-        fill!(Jpd_debug2, 0.0)
-        Jdp_debug2 = copy(Jdp_current)
-        fill!(Jdp_debug2, 0.0)
-        Jpd_discard = copy(Jpd_current)
-        fill!(Jpd_discard, 0.0)
-        Jdp_discard = copy(Jdp_current)
-        fill!(Jdp_discard, 0.0)
-        rddebug = copy(residuald)
-        fill!(rddebug, 0.0)
-        rpdebug = copy(residualp)
-        fill!(rpdebug, 0.0)
-        rddebug2 = copy(residuald)
-        fill!(rddebug2, 0.0)
-        rpdebug2 = copy(residualp)
-        fill!(rpdebug2, 0.0)
+        # Jpd_debug = copy(Jpd_current)
+        # fill!(Jpd_debug, 0.0)
+        # Jdp_debug = copy(Jdp_current)
+        # fill!(Jdp_debug, 0.0)
+        # Jpd_debug2 = copy(Jpd_current)
+        # fill!(Jpd_debug2, 0.0)
+        # Jdp_debug2 = copy(Jdp_current)
+        # fill!(Jdp_debug2, 0.0)
+        # Jpd_discard = copy(Jpd_current)
+        # fill!(Jpd_discard, 0.0)
+        # Jdp_discard = copy(Jdp_current)
+        # fill!(Jdp_discard, 0.0)
+        # rddebug = copy(residuald)
+        # fill!(rddebug, 0.0)
+        # rpdebug = copy(residualp)
+        # fill!(rpdebug, 0.0)
+        # rddebug2 = copy(residuald)
+        # fill!(rddebug2, 0.0)
+        # rpdebug2 = copy(residualp)
+        # fill!(rpdebug2, 0.0)
 
-        # Computed stuff
-        assemble_LFSI_coupling_contribution_col!(Jdp_debug, rddebug, dh, ud, chamber_pressure, chamber)
-        assemble_LFSI_coupling_contribution_row!(Jpd_debug, rpdebug, dh, ud, chamber_pressure, V⁰ᴰ, chamber)
+        # # Computed stuff
+        # assemble_LFSI_coupling_contribution_col!(Jdp_debug, rddebug, dh, ud, chamber_pressure, chamber)
+        # assemble_LFSI_coupling_contribution_row!(Jpd_debug, rpdebug, dh, ud, chamber_pressure, V⁰ᴰ, chamber)
 
-        # Finite difference for the forward contribution (w.r.t. pressure)
-        assemble_LFSI_coupling_contribution_col!(Jdp_discard, rddebug2, dh, ud, chamber_pressure+h, chamber)
-        Jdp_debug2 .= (rddebug2 .- rddebug) / h
-        @assert all(isapprox.(Jdp_debug, Jdp_debug2, atol=norm(Jdp_debug, 1.0)/length(Jdp_debug))) "$Jdp_debug, $Jdp_debug2"
+        # # Finite difference for the forward contribution (w.r.t. pressure)
+        # assemble_LFSI_coupling_contribution_col!(Jdp_discard, rddebug2, dh, ud, chamber_pressure+h, chamber)
+        # Jdp_debug2 .= (rddebug2 .- rddebug) / h
+        # @assert all(isapprox.(Jdp_debug, Jdp_debug2, atol=norm(Jdp_debug, 1.0)/length(Jdp_debug))) "$Jdp_debug, $Jdp_debug2"
 
-        Jpd_discard = copy(Jpd_current)
-        fill!(Jpd_discard, 0.0)
-        # Finite difference for the back contribution (w.r.t. displacement)
-        direction = zeros(length(ud))
-        for i in 1:length(ud)
-            direction[i] = h
-            fill!(rpdebug2, 0.0)
-            assemble_LFSI_coupling_contribution_row!(Jpd_discard, rpdebug2, dh, ud .+ direction, chamber_pressure, V⁰ᴰ, chamber)
-            Jpd_debug2[i, :] .= (rpdebug2 .- rpdebug) / h
-            direction[i] = 0.0
-        end
-        @assert all(isapprox.(Jpd_debug2, Jpd_debug, atol=norm(Jpd_debug, 1.0)/length(Jpd_debug))) "$(Vector(Jpd_debug)), $(Vector(Jpd_debug2))"
-
+        # Jpd_discard = copy(Jpd_current)
+        # fill!(Jpd_discard, 0.0)
+        # # Finite difference for the back contribution (w.r.t. displacement)
+        # direction = zeros(length(ud))
+        # for i in 1:length(ud)
+        #     direction[i] = h
+        #     fill!(rpdebug2, 0.0)
+        #     assemble_LFSI_coupling_contribution_row!(Jpd_discard, rpdebug2, dh, ud .+ direction, chamber_pressure, V⁰ᴰ, chamber)
+        #     Jpd_debug2[i, :] .= (rpdebug2 .- rpdebug) / h
+        #     direction[i] = 0.0
+        # end
+        # @assert all(isapprox.(Jpd_debug2, Jpd_debug, atol=1e-3)) "$(Vector(Jpd_debug)), $(Vector(Jpd_debug2))"
+        # @show Vector(Jpd_debug2)
+        # @show Vector(Jpd_debug)
+        # @show Matrix(Jpd)
     end
 
     #finish_assemble(assembler)

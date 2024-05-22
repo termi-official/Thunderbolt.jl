@@ -101,8 +101,7 @@ end
 
 function residual_norm(solver_cache::NewtonRaphsonSolverCache, problem::RSAFDQ2022TyingProblem, i::Block) 
     @warn "RSAFDQ2022TyingProblem will not fully converge, because the Newton iteration starts to stagnate. Hence the pressure residual is ignored for now." maxlog = 1
-    # 0.0
-    norm(solver_cache.residual[Block(2)])/1000 # FIXME
+    norm(solver_cache.residual[Block(2)])
 end
 
 eliminate_constraints_from_increment!(Δu, problem::RSAFDQ2022TyingProblem, solver_cache) = nothing
@@ -135,13 +134,13 @@ function solve!(u::AbstractVector, problem::AbstractProblem, solver_cache::Newto
         residual .= 0.0
         @timeit_debug "update operator" update_linearization!(op, u, residual, t)
         @timeit_debug "elimination" eliminate_constraints_from_linearization!(solver_cache, problem)
-        vtk_grid("newton-debug-$newton_itr", problem.structural_problem.dh) do vtk
-            vtk_point_data(vtk, problem.structural_problem.dh, u[Block(1)])
-            vtk_point_data(vtk, problem.structural_problem.dh, residual[Block(1)], :residual)
-        end
+        # vtk_grid("newton-debug-$newton_itr", problem.structural_problem.dh) do vtk
+        #     vtk_point_data(vtk, problem.structural_problem.dh, u[Block(1)])
+        #     vtk_point_data(vtk, problem.structural_problem.dh, residual[Block(1)], :residual)
+        # end
         residualnorm = residual_norm(solver_cache, problem)
         @info newton_itr, residualnorm
-        if residualnorm < solver_cache.parameters.tol
+        if residualnorm < solver_cache.parameters.tol || (newton_itr > 0 && norm(Δu) < solver_cache.parameters.tol)
             break
         elseif newton_itr > solver_cache.parameters.max_iter
             @warn "Reached maximum Newton iterations. Aborting. ||r|| = $residualnorm"
@@ -163,10 +162,11 @@ end
 # https://github.com/JuliaArrays/BlockArrays.jl/issues/319
 inner_solve(J, r) = J \ r
 function inner_solve_schur(J::BlockMatrix, r::BlockArray)
+    # TODO optimize
     Jdd = @view J[Block(1,1)]
     rd = @view r[Block(1)]
     rp = @view r[Block(2)]
-    v = (Jdd \ rd)
+    v = -(Jdd \ rd)
     Jdp = @view J[Block(1,2)]
     Jpd = @view J[Block(2,1)]
     w = Jdd \ Vector(Jdp[:,1])
@@ -174,7 +174,7 @@ function inner_solve_schur(J::BlockMatrix, r::BlockArray)
     Jpdv = Jpd*v
     Jpdw = Jpd*w
     # Δp = [(rp[i] - Jpdv[i]) / Jpdw[i] for i ∈ 1:length(Jpdw)]
-    Δp = (rp[1] - Jpdv[1]) / Jpdw[1]
+    Δp = (-rp[1] - Jpdv[1]) / Jpdw[1]
     wΔp = w*Δp
     Δd = -(v+wΔp) #-[-(v + wΔp[i]) for i in 1:length(v)]
 
@@ -183,7 +183,7 @@ function inner_solve_schur(J::BlockMatrix, r::BlockArray)
 end
 
 function inner_solve(J::BlockMatrix, r::BlockArray)
-    # if length(blocksizes(r,1)) == 2
+    # if length(blocksizes(r,1)) == 2 # TODO control by passing down the linear solver
     #     return inner_solve_schur(J,r)
     # end
 

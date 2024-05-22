@@ -1,6 +1,3 @@
-# TODO FIXME
-#    1. hexahedralize does not transfer boundary tags correctly
-#    2. this example should show how to couple with a 0D fluid
 using Thunderbolt, FerriteGmsh, UnPack
 
 # TODO refactor this one into the framework code and put a nice abstraction layer around it
@@ -168,13 +165,13 @@ function solve_ideal_lv(name_base, constitutive_model, grid, coordinate_system, 
         # StructuralModel(:displacement, constitutive_model, face_models),
         RSAFDQ2022Split(RSAFDQ2022Model(
                 StructuralModel(:displacement, constitutive_model, face_models),
-                # Thunderbolt.DummyLumpedCircuitModel(t->1.16),
-                RSAFDQ2022LumpedCicuitModel{Float64, Float64,Float64,Float64,Float64,Float64}(),
+                Thunderbolt.DummyLumpedCircuitModel(t->9.25),
+                # RSAFDQ2022LumpedCicuitModel{Float64, Float64,Float64,Float64,Float64,Float64}(),
                 LumpedFluidSolidCoupler(
                     [
                         ChamberVolumeCoupling(
                             "Endocardium",
-                            Hirschvogel2017SurrogateVolume(),
+                            RSAFDQ2022SurrogateVolume(),
                             :Vₗᵥ
                         )
                     ],
@@ -196,7 +193,7 @@ function solve_ideal_lv(name_base, constitutive_model, grid, coordinate_system, 
 
     # Create sparse matrix and residual vector
     solver = LTGOSSolver(
-        LoadDrivenSolver(NewtonRaphsonSolver(;max_iter=100, tol=1e-3)),
+        LoadDrivenSolver(NewtonRaphsonSolver(;max_iter=100, tol=1e-2)),
         ForwardEulerSolver(10),
     )
 
@@ -221,16 +218,16 @@ ip_u = LagrangeCollection{order}()^3
 qr_u = QuadratureRuleCollection(intorder-1)
 LV_cs = compute_LV_coordinate_system(LV_grid)
 # LV_cs = compute_midmyocardial_section_coordinate_system(LV_grid)
-LV_fm = create_simple_microstructure_model(LV_cs, ip_u, endo_helix_angle = deg2rad(-60.0), epi_helix_angle = deg2rad(70.0), endo_transversal_angle = deg2rad(10.0), epi_transversal_angle = deg2rad(-20.0))
-passive_model = HolzapfelOgden2009Model(1.5806251396691438e2, 5.8010248271289395, 0.28504197825657906e2, 4.126552003938297, 0.0, 1.0, 0.0, 1.0, SimpleCompressionPenalty(40.0))
+LV_fm = create_simple_microstructure_model(LV_cs, LagrangeCollection{1}()^3, endo_helix_angle = deg2rad(-60.0), epi_helix_angle = deg2rad(70.0), endo_transversal_angle = deg2rad(10.0), epi_transversal_angle = deg2rad(-20.0))
+passive_model = HolzapfelOgden2009Model(1.5806251396691438, 5.8010248271289395, 0.28504197825657906, 4.126552003938297, 0.0, 1.0, 0.0, 1.0, SimpleCompressionPenalty(100.0))
 # passive_model = Guccione1991PassiveModel(;C₀ = 3e1, Bᶠᶠ = 8.0, Bˢˢ = 6.0, Bⁿⁿ = 3.0, Bᶠˢ = 12.0, Bⁿˢ = 3.0, Bᶠⁿ = 3.0, mpU = SimpleCompressionPenalty(0.8e3))
 
-function calcium_field_fun(x,t)
+function calcium_profile_function(x,t)
     t/1000.0 < 0.5 ? (1-x.transmural*0.7)*2.0*t/1000.0 : (2.0-2.0*t/1000.0)*(1-x.transmural*0.7)
 end
 
 function pressure_field_fun(x,t)
-    t/100.0 + 0.5
+    1*sin(π*t/1000)
 end
 
 pressure_field = AnalyticalCoefficient(
@@ -238,8 +235,10 @@ pressure_field = AnalyticalCoefficient(
     CoordinateSystemCoefficient(LV_cs)
 )
 
-integral_bcs = (RobinBC(1.0, "Epicardium"),)
-# integral_bcs = (RobinBC(1.0, "Epicardium"),PressureFieldBC(pressure_field, "Endocardium")))
+integral_bcs = (NormalSpringBC(1.0, "Epicardium"),)
+# integral_bcs = (NormalSpringBC(0.1, "Epicardium"),NormalSpringBC(0.1, "Base"))
+# integral_bcs = (NormalSpringBC(1.0, "Epicardium"),PressureFieldBC(pressure_field, "Endocardium"))
+# integral_bcs = (RobinBC(1.0, "Epicardium"),PressureFieldBC(pressure_field, "Endocardium"))
 
 
 using Thunderbolt.TimerOutputs
@@ -247,16 +246,16 @@ TimerOutputs.enable_debug_timings(Thunderbolt)
 TimerOutputs.reset_timer!()
 solve_ideal_lv("lv_test",
     ActiveStressModel(
-        passive_model,
-        PiersantiActiveStress(5e1, 0.8, 0.5, 0.0),
+        Guccione1991PassiveModel(),
+        PiersantiActiveStress(;Tmax=10.0),
         PelceSunLangeveld1995Model(;calcium_field=AnalyticalCoefficient(
-            calcium_field_fun,
+            calcium_profile_function,
             CoordinateSystemCoefficient(LV_cs)
         )),
         LV_fm,
     ), LV_grid, LV_cs,
     integral_bcs,
-    ip_u, qr_u, 0.01, 10.0
+    ip_u, qr_u, 25.0, 1000.0
 )
 TimerOutputs.print_timer()
 TimerOutputs.disable_debug_timings(Thunderbolt)

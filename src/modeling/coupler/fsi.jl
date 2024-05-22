@@ -118,14 +118,10 @@ function get_tying_dofs(tying_cache::RSAFDQ2022TyingCache, u)
     return [u[chamber.pressure_dof_index] for chamber in tying_cache.chambers]
 end
 
-function assemble_LFSI_coupling_contribution_row_inner!(C, R, u, p, face, dh, fv, method, displacement_symbol)
+function assemble_LFSI_coupling_contribution_row_inner!(Jₑ, rₑ, uₑ, p, face, dh, fv, method)
     reinit!(fv, face)
 
-    drange = dof_range(dh, displacement_symbol)
-
     coords = getcoordinates(face)
-    ddofs = @view celldofs(face)[drange]
-    uₑ = @view u[ddofs]
 
     for qp in QuadratureIterator(fv)
         dΓ = getdetJdV(fv, qp)
@@ -138,36 +134,16 @@ function assemble_LFSI_coupling_contribution_row_inner!(C, R, u, p, face, dh, fv
 
         x = spatial_coordinate(fv, qp, coords)
 
-        R[1] += volume_integral(x, d, F, N, method) * dΓ
+        rₑ[1] += volume_integral(x, d, F, N, method) * dΓ
         # Via chain rule we obtain:
         #   δV(u,F(u)) = δu ⋅ dVdu + δF : dVdF
-        ∂V∂u = Tensors.gradient(u -> volume_integral(x, u, F, N, method), d)
-        ∂V∂F = Tensors.gradient(u -> volume_integral(x, d, u, N, method), F)
+        ∂V∂u = Tensors.gradient(u_ -> volume_integral(x, u_, F, N, method), d)
+        ∂V∂F = Tensors.gradient(u_ -> volume_integral(x, d, u_, N, method), F)
         for j ∈ 1:getnbasefunctions(fv)
             δuⱼ = shape_value(fv, qp, j)
             ∇δuⱼ = shape_gradient(fv, qp, j)
-            C[ddofs[j]] += (∂V∂u ⋅ δuⱼ + transpose(∂V∂F) ⊡ ∇δuⱼ) * dΓ
+            Jₑ[j] += (∂V∂u ⋅ δuⱼ + ∂V∂F ⊡ ∇δuⱼ) * dΓ
         end
-
-        # ((h ⊗ h) ⋅ (x + d - b)) ⋅ (J(F(d)) * cofF(d) ⋅  N))
-        # J = det(F)
-        # invF = inv(F)
-        # cofF = transpose(invF)
-        # for j ∈ 1:getnbasefunctions(fv)
-        #     δuⱼ = shape_value(fv, qp, j)
-        #     ∇δuⱼ = shape_gradient(fv, qp, j)
-        #     # Add contribution to the tangent
-        #     #   δF^-1 = -F^-1 δF F^-1
-        #     #   δJ = J tr(δF F^-1)
-        #     # Product rule
-        #     @unpack b,h = method
-        #     δVd = (h ⊗ h) ⋅ δuⱼ ⋅ (J * cofF ⋅  N)
-    
-        #     δcofF = -transpose(invF ⋅ ∇δuⱼ ⋅ invF)
-        #     δJ = J * tr(∇δuⱼ ⋅ invF)
-        #     δJcofF = (h ⊗ h) ⋅ (x + d - b) ⋅ (δJ * cofF + J * δcofF) ⋅  N
-        #     C[ddofs[j]] -= (δVd + δJcofF) * dΓ
-        # end
     end
 end
 
@@ -176,20 +152,51 @@ Chamber volume contribution for the 3D-0D constraint
     ∫ V³ᴰ(u) ∂Ω = V⁰ᴰ(c)
 where u are the unkowns in the 3D problem and c the unkowns in the 0D problem.
 """
-function assemble_LFSI_coupling_contribution_row!(C, R, dh, u, p, V⁰ᴰ, method::RSAFDQ2022SingleChamberTying)
+function assemble_LFSI_coupling_contribution_row!(C, R, dh, u, p, V⁰ᴰ, method)
     grid = dh.grid
-    ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], method.displacement_symbol)
+    ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], method.displacement_symbol) # TODO TYPE INSTABILITY - remove this as the interpolation query is instable
     ip_geo = Ferrite.default_interpolation(typeof(getcells(grid, 1)))
     intorder = 2*Ferrite.getorder(ip)
     ref_shape = Ferrite.getrefshape(ip)
     qr_face = FaceQuadratureRule{ref_shape}(intorder)
     fv = FaceValues(qr_face, ip, ip_geo)
 
+    ndofs = getnbasefunctions(ip)
+
+    uₑ = zeros(ndofs)
+    Jₑ = zeros(ndofs)
+    rₑ = zeros(1)
+
+    # Jₑdebug = zeros(ndofs)
+    # Jₑdiscard = zeros(ndofs)
+    # rₑdebug = zeros(1)
+    # h = 1e-8
+    # direction = zeros(ndofs)
+
+    drange = dof_range(dh, method.displacement_symbol)
+
     for face ∈ FaceIterator(dh, method.faces)
-        assemble_LFSI_coupling_contribution_row_inner!(C, R, u, p, face, dh, fv, method.volume_method, method.displacement_symbol)
+        ddofs = @view celldofs(face)[drange]
+        uₑ .= u[ddofs]
+        fill!(Jₑ, 0.0)
+        fill!(rₑ, 0.0)
+        assemble_LFSI_coupling_contribution_row_inner!(Jₑ, rₑ, uₑ, p, face, dh, fv, method.volume_method)
+        C[ddofs] .+= Jₑ
+        R[1] += rₑ[1]
+
+        # fill!(Jₑdebug, 0.0)
+        # for i in 1:ndofs
+        #     fill!(rₑdebug, 0.0)
+        #     direction[i] = h
+        #     assemble_LFSI_coupling_contribution_row_inner!(Jₑdiscard, rₑdebug, uₑ .+ direction, p, face, dh, fv, method.volume_method)
+        #     direction[i] = 0.0
+        #     Jₑdebug[i] = (rₑdebug[1]-rₑ[1])/h
+        # end
+        # @assert all(isapprox.(Jₑ, Jₑdebug; atol=1e-6)) "$Jₑ, $Jₑdebug"
     end
 
     # R = ∫ V³ᴰ(u) ∂Ω - V⁰ᴰ(c)
+    @show R[1]
     R[1] -= V⁰ᴰ
 end
 
