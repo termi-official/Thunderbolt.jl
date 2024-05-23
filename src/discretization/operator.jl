@@ -235,6 +235,7 @@ function update_linearization!(op::AssembledNonlinearOperator, u::AbstractVector
         uₑ .= @view u[celldofs(cell)]
         @timeit_debug "assemble element" assemble_element!(Jₑ, uₑ, cell, element_cache, time)
         # TODO maybe it makes sense to merge this into the element routine in a modular fasion?
+        # TODO benchmark against putting this into the FaceIterator
         @timeit_debug "assemble faces" for local_face_index ∈ 1:nfaces(cell)
             assemble_face!(Jₑ, uₑ, cell, local_face_index, face_cache, time)
         end
@@ -260,9 +261,9 @@ function update_linearization!(op::AssembledNonlinearOperator, u::AbstractVector
         fill!(Jₑ, 0)
         fill!(rₑ, 0)
         uₑ .= @view u[dofs]
-        # TODO instead of "cell" pass object with geometry information only
         @timeit_debug "assemble element" assemble_element!(Jₑ, rₑ, uₑ, cell, element_cache, time)
         # TODO maybe it makes sense to merge this into the element routine in a modular fasion?
+        # TODO benchmark against putting this into the FaceIterator
         @timeit_debug "assemble faces" for local_face_index ∈ 1:nfaces(cell)
             assemble_face!(Jₑ, rₑ, uₑ, cell, local_face_index, face_cache, time)
         end
