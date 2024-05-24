@@ -21,6 +21,10 @@ import Base: *, +, -
 
 import CommonSolve: init, solve, solve!, step!
 
+import ModelingToolkit
+import ModelingToolkit: @variables, @parameters, @component, @named,
+        compose, ODESystem, Differential
+
 include("utils.jl")
 
 include("mesh/meshes.jl")
