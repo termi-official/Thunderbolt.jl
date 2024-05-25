@@ -213,3 +213,11 @@ lines!(axs[1], RSASol[LV.V], RSASol[LV.p])
 lines!(axs[2], RSASol[RV.V], RSASol[RV.p])
 lines!(axs[3], RSASol[LA.V], RSASol[LA.p])
 lines!(axs[4], RSASol[RA.V], RSASol[RA.p])
+
+
+u₀ = prob.u0
+m = Thunderbolt.MTKLumpedCicuitModel(prob, [LV.p3D]);
+du1 = copy(u₀)
+du2 = copy(u₀)
+Thunderbolt.lumped_driver!(du1, u₀, 0.0, [0.0], m)
+Thunderbolt.lumped_driver!(du2, u₀, 0.0, [1.0], m)
