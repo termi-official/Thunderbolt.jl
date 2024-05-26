@@ -132,6 +132,7 @@ export
     RSAFDQ2022Model,
     RSAFDQ2022SurrogateVolume,
     RSAFDQ2022Split,
+    MTKLumpedCicuitModel,
     Hirschvogel2017SurrogateVolume,
     LumpedFluidSolidCoupler,
     ChamberVolumeCoupling,

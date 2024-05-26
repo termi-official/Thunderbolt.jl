@@ -1,6 +1,8 @@
 using CirculatorySystemModels.OrdinaryDiffEq, ModelingToolkit, CirculatorySystemModels, SymbolicIndexingInterface
 using GLMakie
 
+using Thunderbolt
+
 # import Thunderbolt: PressureCouplingChamber
 
 """
@@ -119,8 +121,8 @@ RA_Vt0 = 20.0
 @variables t
 
 ## Atria and ventricles
-# @named LV = ShiChamber(V₀=V0ₗᵥ, p₀=0.0, Eₘᵢₙ=Epassₗᵥ, Eₘₐₓ=Epassₗᵥ+Eactmaxₗᵥ, τ=τ, τₑₛ=TCₗᵥ, τₑₚ=TCₗᵥ+TRₗᵥ, Eshift=0.0)
-@named LV = PressureCouplingChamber()
+@named LV = ShiChamber(V₀=V0ₗᵥ, p₀=0.0, Eₘᵢₙ=Epassₗᵥ, Eₘₐₓ=Epassₗᵥ+Eactmaxₗᵥ, τ=τ, τₑₛ=TCₗᵥ, τₑₚ=TCₗᵥ+TRₗᵥ, Eshift=0.0)
+@named LVc = PressureCouplingChamber()
 @named LA = ShiChamber(V₀=V0ₗₐ, p₀=0.0, Eₘᵢₙ=Epassₗₐ, Eₘₐₓ=Epassₗₐ+Eactmaxₗₐ, τ=τ, τₑₛ=TCₗₐ, τₑₚ=TCₗₐ+TRₗₐ, Eshift=Eshiftₗₐ)
 @named RV = ShiChamber(V₀=V0ᵣᵥ, p₀=0.0, Eₘᵢₙ=Epassᵣᵥ, Eₘₐₓ=Epassᵣᵥ+Eactmaxᵣᵥ, τ=τ, τₑₛ=TCᵣᵥ, τₑₚ=TCᵣᵥ+TRᵣᵥ, Eshift=0.0)
 @named RA = ShiChamber(V₀=V0ᵣₐ, p₀=0.0, Eₘᵢₙ=Epassᵣₐ, Eₘₐₓ=Epassᵣₐ+Eactmaxᵣₐ, τ=τ, τₑₛ=TCᵣₐ, τₑₚ=TCₗₐ+TRₗₐ, Eshift=Eshiftᵣₐ)
@@ -144,7 +146,7 @@ RA_Vt0 = 20.0
 @named PULVEN = CRL(C=Cpulᵥₑₙ, R=Rpulᵥₑₙ, L=Lpulᵥₑₙ)
 
 ##
-circ_eqs = [
+circ_eqs_init = [
     connect(LV.out, AV.in)
     connect(AV.out, SYSAR.in)
     connect(SYSAR.out, SYSVEN.in)
@@ -160,12 +162,12 @@ circ_eqs = [
 ]
 
 ## Compose the whole ODE system
-@named _circ_model = ODESystem(circ_eqs, t)
-@named circ_model = compose(_circ_model,
+@named _circ_model_init = ODESystem(circ_eqs_init, t)
+@named circ_model_init = compose(_circ_model_init,
     [LV, RV, LA, RA, AV, MV, PV, TV, SYSAR, SYSVEN, PULAR, PULVEN])
 
 ## And simplify it
-circ_sys = structural_simplify(circ_model)
+circ_sys_init = structural_simplify(circ_model_init)
 
 ## Setup ODE
 u0 = [
@@ -183,23 +185,9 @@ u0 = [
     PULVEN.L.q => 0.0
 ]
 
-mtk_parameter_query_filter(discard_me, sym) = false
-mtk_parameter_query_filter(param::SymbolicUtils.BasicSymbolic, sym) = true
-
-function query_mtk_parameter_by_symbol(sys, sym::Symbol)
-    symbol_list = parameter_symbols(sys)
-    idx = findfirst(param->mtk_parameter_query_filter(param,sym), parameter_symbols(sys))
-    idx === nothing && @error "Symbol $sym not found for system $sys."
-    return symbol_list[idx]
-end
-
-ps = [
-    LV.p3D => (LV_Vt0 - V0ₗᵥ) * Epassₗᵥ
-]
-
-prob = ODEProblem(circ_sys, u0, (0.0, 20.0e3), ps)
+prob = ODEProblem(circ_sys_init, u0, (0.0, 20.0e3))
 ##
-@time RSASol = solve(prob, Tsit5(), reltol=1e-9, abstol=1e-12, saveat=18e3:0.01e3:20e3)
+@time circ_sol_init = solve(prob, Tsit5(), reltol=1e-9, abstol=1e-12, saveat=18e3:0.01e3:20e3)
 
 f = Figure()
 axs = [
@@ -209,15 +197,114 @@ axs = [
     Axis(f[2, 2], title="RA")
 ]
 
-lines!(axs[1], RSASol[LV.V], RSASol[LV.p])
-lines!(axs[2], RSASol[RV.V], RSASol[RV.p])
-lines!(axs[3], RSASol[LA.V], RSASol[LA.p])
-lines!(axs[4], RSASol[RA.V], RSASol[RA.p])
+lines!(axs[1], circ_sol_init[LV.V], circ_sol_init[LV.p])
+lines!(axs[2], circ_sol_init[RV.V], circ_sol_init[RV.p])
+lines!(axs[3], circ_sol_init[LA.V], circ_sol_init[LA.p])
+lines!(axs[4], circ_sol_init[RA.V], circ_sol_init[RA.p])
 
+# Build actual system
+circ_eqs = [
+    connect(LVc.out, AV.in)
+    connect(AV.out, SYSAR.in)
+    connect(SYSAR.out, SYSVEN.in)
+    connect(SYSVEN.out, RA.in)
+    connect(RA.out, TV.in)
+    connect(TV.out, RV.in)
+    connect(RV.out, PV.in)
+    connect(PV.out,  PULAR.in)
+    connect(PULAR.out, PULVEN.in)
+    connect(PULVEN.out, LA.in)
+    connect(LA.out, MV.in)
+    connect(MV.out, LVc.in)
+]
 
-u₀ = prob.u0
-m = Thunderbolt.MTKLumpedCicuitModel(prob, [LV.p3D]);
-du1 = copy(u₀)
-du2 = copy(u₀)
-Thunderbolt.lumped_driver!(du1, u₀, 0.0, [0.0], m)
-Thunderbolt.lumped_driver!(du2, u₀, 0.0, [1.0], m)
+## Compose the whole ODE system
+@named _circ_model = ODESystem(circ_eqs, t)
+@named circ_model = compose(_circ_model,
+    [LVc, RV, LA, RA, AV, MV, PV, TV, SYSAR, SYSVEN, PULAR, PULVEN])
+
+## And simplify it
+circ_sys = structural_simplify(circ_model)
+
+# TODO how to do the transfer
+u0new = copy(circ_sol_init.u[end])
+
+function solve_ideal_lv2(name_base, constitutive_model, grid, coordinate_system, face_models, ip_mech::Thunderbolt.VectorInterpolationCollection, qr_collection::QuadratureRuleCollection, Δt, T = 1000.0)
+    io = ParaViewWriter(name_base);
+    # io = JLD2Writer(name_base);
+
+    solid = StructuralModel(:displacement, constitutive_model, face_models)
+    fluid = MTKLumpedCicuitModel(circ_sys, u0new, [LVc.p3D])
+    coupler = LumpedFluidSolidCoupler(
+        [
+            ChamberVolumeCoupling(
+                "Endocardium",
+                RSAFDQ2022SurrogateVolume(),
+                LVc.V
+            )
+        ],
+        :displacement
+    )
+
+    problem = semidiscretize(
+        RSAFDQ2022Split(RSAFDQ2022Model(solid,fluid,coupler)),
+        FiniteElementDiscretization(
+            Dict(:displacement => ip_mech),
+            # Dirichlet[],
+            [Dirichlet(:displacement, getfaceset(grid, "Base"), (x,t) -> [0.0], [3])],
+        ),
+        grid
+    )
+
+    # Postprocessor
+    cv_post = CellValueCollection(qr_collection, ip_mech)
+    standard_postproc = StandardMechanicalIOPostProcessor2(io, cv_post, CoordinateSystemCoefficient(coordinate_system))
+
+    # Create sparse matrix and residual vector
+    solver = LTGOSSolver(
+        LoadDrivenSolver(NewtonRaphsonSolver(;max_iter=100, tol=1e-2)),
+        ForwardEulerSolver(50),
+    )
+
+    Thunderbolt.solve(
+        problem,
+        solver,
+        Δt, 
+        (0.0, T),
+        default_initializer,
+        standard_postproc
+    )
+end
+
+scaling_factor = 2.7
+LV_grid = Thunderbolt.hexahedralize(Thunderbolt.generate_ideal_lv_mesh(15,2,7; inner_radius = Float64(scaling_factor*0.7), outer_radius = Float64(scaling_factor*1.0), longitudinal_upper = Float64(scaling_factor*0.2), apex_inner = Float64(scaling_factor*1.3), apex_outer = Float64(scaling_factor*1.5)))
+
+order = 1
+intorder = max(2*order-1,2)
+ip_u = LagrangeCollection{order}()^3
+qr_u = QuadratureRuleCollection(intorder-1)
+LV_cs = compute_LV_coordinate_system(LV_grid)
+# LV_cs = compute_midmyocardial_section_coordinate_system(LV_grid)
+LV_fm = create_simple_microstructure_model(LV_cs, LagrangeCollection{1}()^3, endo_helix_angle = deg2rad(-60.0), epi_helix_angle = deg2rad(70.0), endo_transversal_angle = deg2rad(10.0), epi_transversal_angle = deg2rad(-20.0))
+passive_model = HolzapfelOgden2009Model(1.5806251396691438e2, 5.8010248271289395, 0.28504197825657906, 4.126552003938297, 0.0, 1.0, 0.0, 1.0, SimpleCompressionPenalty(100.0))
+# passive_model = Guccione1991PassiveModel(;C₀ = 3e3, Bᶠᶠ = 8.0, Bˢˢ = 6.0, Bⁿⁿ = 3.0, Bᶠˢ = 12.0, Bⁿˢ = 3.0, Bᶠⁿ = 3.0, mpU = SimpleCompressionPenalty(0.8e4))
+
+integral_bcs = (NormalSpringBC(5.0, "Epicardium"),)
+
+function calcium_profile_function(x,t)
+    t/1000.0 < 0.5 ? (1-x.transmural*0.7)*2.0*t/1000.0 : (2.0-2.0*t/1000.0)*(1-x.transmural*0.7)
+end
+
+solve_ideal_lv2("lv_test2",
+    ActiveStressModel(
+        Guccione1991PassiveModel(),
+        PiersantiActiveStress(;Tmax=10.0e2),
+        PelceSunLangeveld1995Model(;calcium_field=AnalyticalCoefficient(
+            calcium_profile_function,
+            CoordinateSystemCoefficient(LV_cs)
+        )),
+        LV_fm,
+    ), LV_grid, LV_cs,
+    integral_bcs,
+    ip_u, qr_u, 2.5, 1000.0
+)

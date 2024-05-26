@@ -4,7 +4,7 @@ Descriptor for which volume to couple with which variable for the constraint.
 struct ChamberVolumeCoupling{CVM}
     chamber_surface_setname::String
     chamber_volume_method::CVM
-    lumped_model_symbol::Symbol
+    lumped_model_symbol::Union{Symbol,ModelingToolkit.Num}
 end
 
 """
@@ -18,7 +18,7 @@ This approach has been proposed by [RegSalAfrFedDedQar:2022:cem](@citet).
 """
 struct LumpedFluidSolidCoupler{CVM} <: AbstractCoupler
     chamber_couplings::Vector{ChamberVolumeCoupling{CVM}}
-    displacement_symbol::Symbol
+    displacement_symbol::Union{Symbol,ModelingToolkit.Num}
 end
 
 is_bidrectional(::LumpedFluidSolidCoupler) = true
@@ -167,12 +167,6 @@ function assemble_LFSI_coupling_contribution_row!(C, R, dh, u, p, V⁰ᴰ, metho
     Jₑ = zeros(ndofs)
     rₑ = zeros(1)
 
-    # Jₑdebug = zeros(ndofs)
-    # Jₑdiscard = zeros(ndofs)
-    # rₑdebug = zeros(1)
-    # h = 1e-8
-    # direction = zeros(ndofs)
-
     drange = dof_range(dh, method.displacement_symbol)
 
     for face ∈ FaceIterator(dh, method.faces)
@@ -183,20 +177,10 @@ function assemble_LFSI_coupling_contribution_row!(C, R, dh, u, p, V⁰ᴰ, metho
         assemble_LFSI_coupling_contribution_row_inner!(Jₑ, rₑ, uₑ, p, face, dh, fv, method.volume_method)
         C[ddofs] .+= Jₑ
         R[1] += rₑ[1]
-
-        # fill!(Jₑdebug, 0.0)
-        # for i in 1:ndofs
-        #     fill!(rₑdebug, 0.0)
-        #     direction[i] = h
-        #     assemble_LFSI_coupling_contribution_row_inner!(Jₑdiscard, rₑdebug, uₑ .+ direction, p, face, dh, fv, method.volume_method)
-        #     direction[i] = 0.0
-        #     Jₑdebug[i] = (rₑdebug[1]-rₑ[1])/h
-        # end
-        # @assert all(isapprox.(Jₑ, Jₑdebug; atol=1e-6)) "$Jₑ, $Jₑdebug"
     end
 
     # R = ∫ V³ᴰ(u) ∂Ω - V⁰ᴰ(c)
-    @show R[1]
+    @info "Volume 3D $(R[1])"
     R[1] -= V⁰ᴰ
 end
 

@@ -241,21 +241,21 @@ integral_bcs = (NormalSpringBC(1.0, "Epicardium"),)
 # integral_bcs = (RobinBC(1.0, "Epicardium"),PressureFieldBC(pressure_field, "Endocardium"))
 
 
-using Thunderbolt.TimerOutputs
-TimerOutputs.enable_debug_timings(Thunderbolt)
-TimerOutputs.reset_timer!()
-solve_ideal_lv("lv_test",
-    ActiveStressModel(
-        Guccione1991PassiveModel(),
-        PiersantiActiveStress(;Tmax=10.0),
-        PelceSunLangeveld1995Model(;calcium_field=AnalyticalCoefficient(
-            calcium_profile_function,
-            CoordinateSystemCoefficient(LV_cs)
-        )),
-        LV_fm,
-    ), LV_grid, LV_cs,
-    integral_bcs,
-    ip_u, qr_u, 25.0, 1000.0
-)
-TimerOutputs.print_timer()
-TimerOutputs.disable_debug_timings(Thunderbolt)
+# using Thunderbolt.TimerOutputs
+# TimerOutputs.enable_debug_timings(Thunderbolt)
+# TimerOutputs.reset_timer!()
+# solve_ideal_lv("lv_test",
+#     ActiveStressModel(
+#         Guccione1991PassiveModel(),
+#         PiersantiActiveStress(;Tmax=10.0),
+#         PelceSunLangeveld1995Model(;calcium_field=AnalyticalCoefficient(
+#             calcium_profile_function,
+#             CoordinateSystemCoefficient(LV_cs)
+#         )),
+#         LV_fm,
+#     ), LV_grid, LV_cs,
+#     integral_bcs,
+#     ip_u, qr_u, 25.0, 1000.0
+# )
+# TimerOutputs.print_timer()
+# TimerOutputs.disable_debug_timings(Thunderbolt)

@@ -100,7 +100,6 @@ function eliminate_constraints_from_linearization_blocked!(solver_cache, problem
 end
 
 function residual_norm(solver_cache::NewtonRaphsonSolverCache, problem::RSAFDQ2022TyingProblem, i::Block) 
-    @warn "RSAFDQ2022TyingProblem will not fully converge, because the Newton iteration starts to stagnate. Hence the pressure residual is ignored for now." maxlog = 1
     norm(solver_cache.residual[Block(2)])
 end
 
@@ -139,7 +138,7 @@ function solve!(u::AbstractVector, problem::AbstractProblem, solver_cache::Newto
         #     vtk_point_data(vtk, problem.structural_problem.dh, residual[Block(1)], :residual)
         # end
         residualnorm = residual_norm(solver_cache, problem)
-        @info newton_itr, residualnorm
+        @info "Newton itr $newton_itr: ||r||=$residualnorm"
         if residualnorm < solver_cache.parameters.tol || (newton_itr > 0 && norm(Δu) < solver_cache.parameters.tol)
             break
         elseif newton_itr > solver_cache.parameters.max_iter

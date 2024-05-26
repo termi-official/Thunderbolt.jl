@@ -8,13 +8,19 @@ Base.@kwdef struct MTKLumpedCicuitModel{ProbType <: ModelingToolkit.ODEProblem} 
     pressure_symbols::Vector{ModelingToolkit.Num}
 end
 
+function MTKLumpedCicuitModel(sys::ModelingToolkit.ODESystem, u0, pressure_symbols::Vector{ModelingToolkit.Num})
+    # To construct the ODEProblem we need to provide an initial value for the pressures
+    ps = [
+        sym => 0.0 for sym in pressure_symbols 
+    ]
+    prob = ModelingToolkit.ODEProblem(sys, u0, (0.0, 0.0), ps)
+    return MTKLumpedCicuitModel(prob, pressure_symbols)
+end
+
 num_states(model::MTKLumpedCicuitModel) = length(model.prob.u0)
 num_unknown_pressures(model::MTKLumpedCicuitModel) = length(model.pressure_symbols)
 function get_variable_symbol_index(model::MTKLumpedCicuitModel, symbol::ModelingToolkit.Num)
-    for (i,candidate) in enumerate(model.pressure_symbols)
-        candidate == symbol && return i
-    end
-    @error "Variable named '$symbol' not found. The following symbols are defined and accessible: $(model.pressure_symbols)."
+    ModelingToolkit.variable_index(model.prob, symbol)
 end
 
 function default_initial_condition!(u, model::MTKLumpedCicuitModel)
