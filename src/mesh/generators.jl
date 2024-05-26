@@ -320,6 +320,12 @@ function generate_ideal_lv_mesh(num_elements_circumferential::Int, num_elements_
                                  node_array[i,j,k+1], node_array[i_next,j,k+1], node_array[i_next,j+1,k+1], node_array[i,j+1,k+1])))
     end
 
+    nodesets = Dict{String,Set{Int}}()
+    nodesets["MyocardialAnchor1"] = Set{Int}([node_array[1,1,end]])
+    nodesets["MyocardialAnchor2"] = Set{Int}([node_array[1,end,end]])
+    nodesets["MyocardialAnchor3"] = Set{Int}([node_array[ceil(Int,1+n_nodes_c/4),1,end]])
+    nodesets["MyocardialAnchor4"] = Set{Int}([node_array[ceil(Int,1+3*n_nodes_c/4),1,end]])
+
     # Cell faces
     cell_array = reshape(collect(1:ne_tot),(num_elements_circumferential, num_elements_radial, num_elements_logintudinal))
     boundary = FaceIndex[[FaceIndex(cl, 2) for cl in cell_array[:,1,:][:]];
@@ -332,8 +338,6 @@ function generate_ideal_lv_mesh(num_elements_circumferential::Int, num_elements_
     facesets["Endocardium"]  = Set{FaceIndex}(boundary[(1:length(cell_array[:,1,:][:]))   .+ offset]); offset += length(cell_array[:,1,:][:])
     facesets["Epicardium"]   = Set{FaceIndex}(boundary[(1:length(cell_array[:,end,:][:])) .+ offset]); offset += length(cell_array[:,end,:][:])
     facesets["Base"]    = Set{FaceIndex}(boundary[(1:length(cell_array[:,:,end][:])) .+ offset]); offset += length(cell_array[:,:,end][:])
-
-    nodesets = Dict{String,Set{Int}}()
     nodesets["Apex"] = Set{Int}()
 
     # Add apex nodes

@@ -14,7 +14,7 @@ end
 
 
 function (postproc::StandardMechanicalIOPostProcessor2)(t, problem::Thunderbolt.ODEProblem, solver_cache)
-    @show solver_cache.uₙ
+    @info "Lumped Circuit Solution Vector: $(solver_cache.uₙ)"
 end
 
 function (postproc::StandardMechanicalIOPostProcessor2)(t, problem::Thunderbolt.RSAFDQ20223DProblem, solver_cache)
@@ -151,7 +151,6 @@ function (postproc::StandardMechanicalIOPostProcessor2)(t, problem::Thunderbolt.
     Thunderbolt.store_timestep_celldata!(io, t, rad2deg.(helixanglerefdata),"Helix Angle (End Diastole)")
     Thunderbolt.finalize_timestep!(io, t)
 
-    @show Thunderbolt.compute_chamber_volume(dh, solver_cache.uₙ, "Endocardium", problem.tying_problem.chambers[1])
     # min_vol = min(min_vol, calculate_volume_deformed_mesh(uₙ,dh,cv));
     # max_vol = max(max_vol, calculate_volume_deformed_mesh(uₙ,dh,cv));
 end

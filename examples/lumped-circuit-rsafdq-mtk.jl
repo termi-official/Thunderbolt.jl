@@ -251,7 +251,13 @@ function solve_ideal_lv2(name_base, constitutive_model, grid, coordinate_system,
         FiniteElementDiscretization(
             Dict(:displacement => ip_mech),
             # Dirichlet[],
-            [Dirichlet(:displacement, getfaceset(grid, "Base"), (x,t) -> [0.0], [3])],
+            [
+                Dirichlet(:displacement, getfaceset(grid, "Base"), (x,t) -> [0.0], [3]),
+                Dirichlet(:displacement, getnodeset(grid, "MyocardialAnchor1"), (x,t) -> (0.0, 0.0, 0.0), [1,2,3]),
+                Dirichlet(:displacement, getnodeset(grid, "MyocardialAnchor2"), (x,t) -> (0.0, 0.0), [2,3]),
+                Dirichlet(:displacement, getnodeset(grid, "MyocardialAnchor3"), (x,t) -> (0.0,), [3]),
+                Dirichlet(:displacement, getnodeset(grid, "MyocardialAnchor4"), (x,t) -> (0.0,), [3])
+            ],
         ),
         grid
     )
@@ -263,7 +269,7 @@ function solve_ideal_lv2(name_base, constitutive_model, grid, coordinate_system,
     # Create sparse matrix and residual vector
     solver = LTGOSSolver(
         LoadDrivenSolver(NewtonRaphsonSolver(;max_iter=100, tol=1e-2)),
-        ForwardEulerSolver(50),
+        ForwardEulerSolver(100),
     )
 
     Thunderbolt.solve(
@@ -286,19 +292,31 @@ qr_u = QuadratureRuleCollection(intorder-1)
 LV_cs = compute_LV_coordinate_system(LV_grid)
 # LV_cs = compute_midmyocardial_section_coordinate_system(LV_grid)
 LV_fm = create_simple_microstructure_model(LV_cs, LagrangeCollection{1}()^3, endo_helix_angle = deg2rad(-60.0), epi_helix_angle = deg2rad(70.0), endo_transversal_angle = deg2rad(10.0), epi_transversal_angle = deg2rad(-20.0))
-passive_model = HolzapfelOgden2009Model(1.5806251396691438e2, 5.8010248271289395, 0.28504197825657906, 4.126552003938297, 0.0, 1.0, 0.0, 1.0, SimpleCompressionPenalty(100.0))
+passive_model = HolzapfelOgden2009Model(1.5806251396691438e2, 5.8010248271289395, 0.28504197825657906, 4.126552003938297, 0.0, 1.0, 0.0, 1.0, SimpleCompressionPenalty(1000.0))
 # passive_model = Guccione1991PassiveModel(;C₀ = 3e3, Bᶠᶠ = 8.0, Bˢˢ = 6.0, Bⁿⁿ = 3.0, Bᶠˢ = 12.0, Bⁿˢ = 3.0, Bᶠⁿ = 3.0, mpU = SimpleCompressionPenalty(0.8e4))
 
-integral_bcs = (NormalSpringBC(5.0, "Epicardium"),)
+# integral_bcs = (NormalSpringBC(5.0, "Epicardium"),)
+integral_bcs = ()
+
+function linear_interpolation(t,y1,y2,t1,t2)
+    y1 + (t-t1) * (y2-y1)/(t2-t1)
+end
 
 function calcium_profile_function(x,t)
-    t/1000.0 < 0.5 ? (1-x.transmural*0.7)*2.0*t/1000.0 : (2.0-2.0*t/1000.0)*(1-x.transmural*0.7)
+    ca_peak = (1-x.transmural*0.7)
+    if t < 300.0
+        return linear_interpolation(t,0.0,ca_peak,0.0, 300.0)
+    elseif t < 500.0
+        return linear_interpolation(t,ca_peak,0.0,300.0, 500.0)
+    else
+        return 0.0
+    end
 end
 
 solve_ideal_lv2("lv_test2",
     ActiveStressModel(
         Guccione1991PassiveModel(),
-        PiersantiActiveStress(;Tmax=10.0e2),
+        PiersantiActiveStress(;Tmax=2.0e2),
         PelceSunLangeveld1995Model(;calcium_field=AnalyticalCoefficient(
             calcium_profile_function,
             CoordinateSystemCoefficient(LV_cs)
@@ -306,5 +324,5 @@ solve_ideal_lv2("lv_test2",
         LV_fm,
     ), LV_grid, LV_cs,
     integral_bcs,
-    ip_u, qr_u, 2.5, 1000.0
+    ip_u, qr_u, 5.0, 1000.0
 )
