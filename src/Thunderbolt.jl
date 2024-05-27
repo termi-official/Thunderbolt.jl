@@ -21,6 +21,10 @@ import Base: *, +, -
 
 import CommonSolve: init, solve, solve!, step!
 
+import ModelingToolkit
+import ModelingToolkit: @variables, @parameters, @component, @named,
+        compose, ODESystem, Differential
+
 include("utils.jl")
 
 include("mesh/meshes.jl")
@@ -55,6 +59,8 @@ include("solver/operator_splitting.jl")
 include("solver/ecg.jl")
 
 include("io.jl")
+
+include("disambiguation.jl")
 
 # TODO put exports into the individual submodules above!
 export
@@ -121,12 +127,17 @@ export
     NoStimulationProtocol,
     TransmembraneStimulationProtocol,
     AnalyticalTransmembraneStimulationProtocol,
+    ReactionDiffusionSplit,
     # Circuit
-    RegazzoniSalvadorAfricaLumpedCicuitModel,
+    RSAFDQ2022LumpedCicuitModel,
+    MTKLumpedCicuitModel,
     # FSI
-    RegazzoniSalvadorAfrica2022SurrogateVolume,
+    RSAFDQ2022Model,
+    RSAFDQ2022SurrogateVolume,
+    RSAFDQ2022Split,
     Hirschvogel2017SurrogateVolume,
     LumpedFluidSolidCoupler,
+    ChamberVolumeCoupling,
     # Microstructure
     AnisotropicPlanarMicrostructureModel,
     OrthotropicMicrostructureModel,
@@ -152,8 +163,6 @@ export
     BackwardEulerSolver,
     ForwardEulerCellSolver,
     LTGOSSolver,
-    ReactionDiffusionSplit,
-    RegazzoniSalvadorAfricaSplit,
     # Utils
     default_initializer,
     calculate_volume_deformed_mesh,

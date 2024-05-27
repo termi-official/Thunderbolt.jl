@@ -274,7 +274,7 @@ end
 
 
 """
-    generate_ideal_lv_mesh(num_elements_circumferential::Int, num_elements_radial::Int, num_elements_logintudinally::Int; inner_chamber_radius = 0.7, outer_wall_radius = 1.0, longitudinal_cutoff_lower::T = Float64(-1.0), longitudinal_cutoff_upper::T = Float64(0.2), longitudinal_stretch::T = Float64(1.2))
+    generate_ideal_lv_mesh(num_elements_circumferential::Int, num_elements_radial::Int, num_elements_logintudinally::Int; inner_radius::T = Float64(0.7), outer_radius::T = Float64(1.0), longitudinal_upper::T = Float64(0.2), apex_inner::T = Float64(1.3), apex_outer::T = Float64(1.5))
 
 Generate an idealized left ventricle as a truncated ellipsoid.
 The number of elements per axis are controlled by the first three parameters.
@@ -320,6 +320,12 @@ function generate_ideal_lv_mesh(num_elements_circumferential::Int, num_elements_
                                  node_array[i,j,k+1], node_array[i_next,j,k+1], node_array[i_next,j+1,k+1], node_array[i,j+1,k+1])))
     end
 
+    nodesets = Dict{String,Set{Int}}()
+    nodesets["MyocardialAnchor1"] = Set{Int}([node_array[1,1,end]])
+    nodesets["MyocardialAnchor2"] = Set{Int}([node_array[1,end,end]])
+    nodesets["MyocardialAnchor3"] = Set{Int}([node_array[ceil(Int,1+n_nodes_c/4),1,end]])
+    nodesets["MyocardialAnchor4"] = Set{Int}([node_array[ceil(Int,1+3*n_nodes_c/4),1,end]])
+
     # Cell faces
     cell_array = reshape(collect(1:ne_tot),(num_elements_circumferential, num_elements_radial, num_elements_logintudinal))
     boundary = FaceIndex[[FaceIndex(cl, 2) for cl in cell_array[:,1,:][:]];
@@ -332,8 +338,6 @@ function generate_ideal_lv_mesh(num_elements_circumferential::Int, num_elements_
     facesets["Endocardium"]  = Set{FaceIndex}(boundary[(1:length(cell_array[:,1,:][:]))   .+ offset]); offset += length(cell_array[:,1,:][:])
     facesets["Epicardium"]   = Set{FaceIndex}(boundary[(1:length(cell_array[:,end,:][:])) .+ offset]); offset += length(cell_array[:,end,:][:])
     facesets["Base"]    = Set{FaceIndex}(boundary[(1:length(cell_array[:,:,end][:])) .+ offset]); offset += length(cell_array[:,:,end][:])
-
-    nodesets = Dict{String,Set{Int}}()
     nodesets["Apex"] = Set{Int}()
 
     # Add apex nodes

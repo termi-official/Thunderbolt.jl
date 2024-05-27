@@ -122,11 +122,11 @@ end
 function store_green_lagrange!(io::ParaViewWriter, dh, u::AbstractVector, a_coeff, b_coeff, cv, name, t)
     check_subdomains(dh)
     # TODO subdomain support
-    field_idx = find_field(dh, :displacement) # TODO abstraction layer
+    # field_idx = find_field(dh, :displacement) # TODO abstraction layer
     for cell_cache ∈ CellIterator(dh)
         reinit!(cv, cell_cache)
         global_dofs = celldofs(cell_cache)
-        field_dofs  = dof_range(sdh, field_idx)
+        # field_dofs  = dof_range(sdh, field_idx)
         uₑ = @view u[global_dofs] # element dofs
         for qp in QuadratureIterator(cv)
             ∇u = function_gradient(cv, qp, uₑ)

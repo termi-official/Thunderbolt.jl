@@ -4,7 +4,7 @@
 Solve the nonlinear problem `F(u,t)=0` with given time increments `Δt`on some interval `[t_begin, t_end]`
 where `t` is some pseudo-time parameter.
 """
-mutable struct LoadDrivenSolver{IS}
+mutable struct LoadDrivenSolver{IS} <: AbstractSolver
     inner_solver::IS
 end
 
@@ -14,8 +14,8 @@ mutable struct LoadDrivenSolverCache{ISC, T, VT <: AbstractVector{T}}
     uₙ₋₁::VT
 end
 
-function setup_solver_caches(problem, solver::LoadDrivenSolver{<:NewtonRaphsonSolver{T}}, t₀) where T
-    inner_solver_cache = setup_solver_caches(problem, solver.inner_solver)
+function setup_solver_cache(problem, solver::LoadDrivenSolver{<:NewtonRaphsonSolver{T}}, t₀) where T
+    inner_solver_cache = setup_solver_cache(problem, solver.inner_solver)
     LoadDrivenSolverCache(
         inner_solver_cache,
         Vector{T}(undef, solution_size(problem)),
@@ -23,24 +23,24 @@ function setup_solver_caches(problem, solver::LoadDrivenSolver{<:NewtonRaphsonSo
     )
 end
 
-setup_solver_caches(problem::CoupledProblem, solver::LoadDrivenSolver, t₀) = error("Not implemented yet.")
+setup_solver_cache(problem::AbstractCoupledProblem, solver::LoadDrivenSolver, t₀) = error("Not implemented yet.")
 
-function setup_solver_caches(problem::CoupledProblem, solver::LoadDrivenSolver{<:NewtonRaphsonSolver{T}}, t₀) where T
-    inner_solver_cache = setup_solver_caches(problem, solver.inner_solver)
+function setup_solver_cache(problem::AbstractCoupledProblem, solver::LoadDrivenSolver{<:NewtonRaphsonSolver{T}}, t₀) where T
+    inner_solver_cache = setup_solver_cache(problem, solver.inner_solver)
     LoadDrivenSolverCache(
         inner_solver_cache,
         mortar([
-            Vector{T}(undef, solution_size(problem.base_problems[i])) for i ∈ 1:length(problem.base_problems)
+            Vector{T}(undef, solution_size(base_problem)) for base_problem ∈ base_problems(problem)
         ]),
         mortar([
-            Vector{T}(undef, solution_size(problem.base_problems[i])) for i ∈ 1:length(problem.base_problems)
+            Vector{T}(undef, solution_size(base_problem)) for base_problem ∈ base_problems(problem)
         ]),
     )
 end
 
 function update_constraints!(problem, solver_cache::LoadDrivenSolverCache, t)
-    Ferrite.update!(problem.ch, t)
-    apply!(solver_cache.uₙ, problem.ch)
+    Ferrite.update!(getch(problem), t)
+    apply!(solver_cache.uₙ, getch(problem))
 end
 
 function update_constraints!(problem::CoupledProblem, solver_cache::LoadDrivenSolverCache, t)
@@ -50,9 +50,9 @@ function update_constraints!(problem::CoupledProblem, solver_cache::LoadDrivenSo
 end
 
 function update_constraints_block!(problem, i::Block, solver_cache, t)
-    Ferrite.update!(problem.ch, t)
+    Ferrite.update!(getch(problem), t)
     u = @view solver_cache.uₙ[i]
-    apply!(u, problem.ch)
+    apply!(u, getch(problem))
 end
 
 update_constraints_block!(problem::NullProblem, i::Block, solver_cache, t) = nothing

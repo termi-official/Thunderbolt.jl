@@ -13,7 +13,7 @@ jobs:
     continue-on-error: ${{ matrix.julia-version == 'nightly' }}
     strategy:
       matrix:
-        julia-version: ['1.9', 'nightly']
+        julia-version: ['1.10', 'nightly']
         os: ['ubuntu-latest']
         include:
           # - os: windows-latest
@@ -30,7 +30,7 @@ jobs:
         run: |
           julia --color=yes --project=. -e '
             using Pkg
-            Pkg.add(url="https://github.com/Ferrite-FEM/Ferrite.jl.git", rev="master");
+            Pkg.add(url="https://github.com/Ferrite-FEM/Ferrite.jl.git", rev="5b42946f");
             Pkg.instantiate();
             Pkg.precompile();'
       - uses: julia-actions/julia-runtest@v1

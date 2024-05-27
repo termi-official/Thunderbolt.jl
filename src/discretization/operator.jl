@@ -4,7 +4,7 @@
 """
     AbstractNonlinearOperator
 
-Models of a nonlinear function F(u).
+Models of a nonlinear function F(u)v, where v is a test function.
 
 Interface:
     (op::AbstractNonlinearOperator)(residual::AbstractVector, in::AbstractNonlinearOperator)
@@ -12,12 +12,37 @@ Interface:
     size()
 
     # linearization
-    mul!(out, op::AbstractNonlinearOperator, in)
-    mul!(out, op::AbstractNonlinearOperator, in, α, β)
+    mul!(out::AbstractVector, op::AbstractNonlinearOperator, in::AbstractVector)
+    mul!(out::AbstractVector, op::AbstractNonlinearOperator, in::AbstractVector, α, β)
     update_linearization!(op::AbstractNonlinearOperator, u::AbstractVector, time)
     update_linearization!(op::AbstractNonlinearOperator, u::AbstractVector, residual::AbstractVector, time)
 """
 abstract type AbstractNonlinearOperator end
+
+"""
+    update_linearization!(op, residual, u, t)
+
+Setup the linearized operator `Jᵤ(u) := dᵤF(u)` in op and its residual `F(u)` in 
+preparation to solve for the increment `Δu` with the linear problem `J(u) Δu = F(u)`.
+"""
+update_linearization!(Jᵤ::AbstractNonlinearOperator, residual::AbstractVector, u::AbstractVector, t)
+
+"""
+    update_linearization!(op, u, t)
+
+Setup the linearized operator `Jᵤ(u)` in op.
+"""
+update_linearization!(Jᵤ::AbstractNonlinearOperator, u::AbstractVector, t)
+
+"""
+    update_residual!(op, residual, u, problem, t)
+
+Evaluate the residual `F(u)` of the problem.
+"""
+update_residual!(op::AbstractNonlinearOperator, residual::AbstractVector, u::AbstractVector, t)
+
+
+abstract type AbstractBlockOperator <: AbstractNonlinearOperator end
 
 getJ(op) = error("J is not explicitly accessible for given operator")
 
@@ -28,12 +53,35 @@ function *(op::AbstractNonlinearOperator, x::AbstractVector)
 end
 
 # TODO constructor which checks for axis compat
-struct BlockOperator{OPS <: Tuple}
+struct BlockOperator{OPS <: Tuple, JT} <: AbstractBlockOperator
     # TODO custom "square matrix tuple"
     operators::OPS # stored row by row as in [1 2; 3 4]
+    J::JT
 end
 
-getJ(op::BlockOperator) = mortar(reshape([getJ(opi) for opi ∈ op.operators], (isqrt(length(op.operators)), isqrt(length(op.operators)))))
+function BlockOperator(operators::Tuple)
+    nblocks = isqrt(length(operators))
+    mJs = reshape([getJ(opi) for opi ∈ operators], (nblocks, nblocks))
+    block_sizes = [size(op,1) for op in mJs[:,1]]
+    total_size = sum(block_sizes)
+    # First we define an empty dummy block array
+    J = BlockArray(spzeros(total_size,total_size), block_sizes, block_sizes)
+    # Then we move the local Js into the dummy to transfer ownership
+    for i in 1:nblocks
+        for j in 1:nblocks
+            J[Block(i,j)] = mJs[i,j]
+        end
+    end
+
+    return BlockOperator(operators, J)
+end
+
+function getJ(op::BlockOperator, i::Block)
+    @assert length(i.n) == 2
+    return @view op.J[i]
+end
+
+getJ(op::BlockOperator) = op.J
 
 function *(op::BlockOperator, x::AbstractVector)
     y = similar(x)
@@ -41,12 +89,10 @@ function *(op::BlockOperator, x::AbstractVector)
     return y
 end
 
-# TODO optimize
 mul!(y, op::BlockOperator, x) = mul!(y, getJ(op), x)
 
 # TODO can we be clever with broadcasting here?
 function update_linearization!(op::BlockOperator, u::BlockVector, time)
-    @warn "linearization not functional for actually coupled problems!" maxlog=1
     for opi ∈ op.operators
         update_linearization!(opi, u, time)
     end
@@ -54,14 +100,13 @@ end
 
 # TODO can we be clever with broadcasting here?
 function update_linearization!(op::BlockOperator, u::BlockVector, residual::BlockVector, time)
-    @warn "linearization not functional for actually coupled problems!" maxlog=1
     nops = length(op.operators)
     nrows = isqrt(nops)
     for i ∈ 1:nops
-        i1 = Block(div(i-1, nrows) + 1) # index shift due to 1-based indices
+        row, col = divrem(i-1, nrows) .+ 1 # index shift due to 1-based indices
+        i1 = Block(row) 
         row_residual = @view residual[i1]
-        u_ = @view u[Block(rem(i-1, nrows) + 1)] # TODO REMOVEME
-        @timeit_debug "update block $i1" update_linearization!(op.operators[i], u_, row_residual, time)
+        @timeit_debug "update block ($row,$col)" update_linearization!(op.operators[i], u, row_residual, time) # :)
     end
 end
 
@@ -84,25 +129,53 @@ function mul!(out::BlockVector, op::BlockOperator, in::BlockVector, α, β)
     end
 end
 
-struct AssembledNonlinearOperator{MatrixType, ElementCacheType, FaceCacheType, DHType <: AbstractDofHandler} <: AbstractNonlinearOperator
+"""
+    AssembledNonlinearOperator(J, element_cache, face_cache, tying_cache, dh)
+    TODO other signatures
+
+A model for a function with its fully assembled linearization.
+
+Comes with one entry point for each cache type to handle the most common cases:
+    assemble_element! -> update jacobian/residual contribution with internal state variables
+    assemble_face! -> update jacobian/residual contribution for boundary
+    assemble_tying! -> update jacobian/residual contribution for non-local/externally coupled unknowns within a block operator
+
+TODO
+    assemble_interface! -> update jacobian/residual contribution for interface contributions (e.g. DG or FSI)
+"""
+struct AssembledNonlinearOperator{MatrixType, ElementCacheType, FaceCacheType, TyingCacheType, DHType <: AbstractDofHandler} <: AbstractNonlinearOperator
     J::MatrixType
     element_cache::ElementCacheType
-    face_caches::FaceCacheType
+    face_cache::FaceCacheType
+    tying_cache::TyingCacheType
     dh::DHType
-    function AssembledNonlinearOperator(J::MatrixType, element_cache::ElementCacheType, face_caches::FaceCacheType, dh::DHType) where {MatrixType, ElementCacheType, FaceCacheType, DHType <: AbstractDofHandler}
+    function AssembledNonlinearOperator(J::MatrixType, element_cache::ElementCacheType, face_cache::FaceCacheType, tying_cache::TyingCacheType, dh::DHType) where {MatrixType, ElementCacheType, FaceCacheType, TyingCacheType, DHType <: AbstractDofHandler}
         check_subdomains(dh)
-        return new{MatrixType, ElementCacheType, FaceCacheType, DHType}(J, element_cache, face_caches, dh)
+        return new{MatrixType, ElementCacheType, FaceCacheType, TyingCacheType, DHType}(J, element_cache, face_cache, tying_cache, dh)
     end
 end
 
-function setup_boundary_cache(boundary_models, qr::FaceQuadratureRule, ip, ip_geo)
-    fv = FaceValues(qr, ip, ip_geo)
-    return face_caches = ntuple(i->setup_face_cache(boundary_models[i], fv), length(boundary_models))
+function AssembledNonlinearOperator(dh::AbstractDofHandler, field_name::Symbol, element_model, element_qrc::QuadratureRuleCollection)
+    @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the nonlinear opeartor."
+
+    firstcell = getcells(Ferrite.get_grid(dh), first(dh.subdofhandlers[1].cellset))
+    ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], field_name)
+    ip_geo = Ferrite.default_interpolation(typeof(firstcell))
+    element_qr = getquadraturerule(element_qrc, firstcell)
+    boundary_qr = getquadraturerule(boundary_qrc, firstcell)
+
+    element_cache  = setup_element_cache(element_model, element_qr, ip, ip_geo)
+
+    AssembledNonlinearOperator(
+        create_sparsity_pattern(dh),
+        element_cache,
+        EmtpyFaceCache(),
+        EmptyTyingCache(),
+        dh,
+    )
 end
 
-"""
-    Utility constructor to get the nonlinear operator for a single field problem.
-"""
+#Utility constructor to get the nonlinear operator for a single field problem.
 function AssembledNonlinearOperator(dh::AbstractDofHandler, field_name::Symbol, element_model, element_qrc::QuadratureRuleCollection, boundary_model, boundary_qrc::FaceQuadratureRuleCollection)
     @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the nonlinear opeartor."
 
@@ -119,43 +192,62 @@ function AssembledNonlinearOperator(dh::AbstractDofHandler, field_name::Symbol, 
         create_sparsity_pattern(dh),
         element_cache,
         boundary_cache,
+        EmptyTyingCache(),
+        dh,
+    )
+end
+
+function AssembledNonlinearOperator(dh::AbstractDofHandler, field_name::Symbol, element_model, element_qrc::QuadratureRuleCollection, boundary_model, boundary_qrc::FaceQuadratureRuleCollection, tying_model, tying_qr)
+    @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the nonlinear opeartor."
+
+    firstcell = getcells(Ferrite.get_grid(dh), first(dh.subdofhandlers[1].cellset))
+    ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], field_name)
+    ip_geo = Ferrite.default_interpolation(typeof(firstcell))
+    element_qr = getquadraturerule(element_qrc, firstcell)
+    boundary_qr = getquadraturerule(boundary_qrc, firstcell)
+
+    element_cache  = setup_element_cache(element_model, element_qr, ip, ip_geo)
+    boundary_cache = setup_boundary_cache(boundary_model, boundary_qr, ip, ip_geo)
+    tying_cache = setup_tying_cache(tying_model, tying_qr, ip, ip_geo)
+
+    AssembledNonlinearOperator(
+        create_sparsity_pattern(dh),
+        element_cache,
+        boundary_cache,
+        tying_cache,
         dh,
     )
 end
 
 getJ(op::AssembledNonlinearOperator) = op.J
 
-function update_linearization!(op::AssembledNonlinearOperator, u::Vector, time)
-    @unpack J, element_cache, face_caches, dh  = op
+function update_linearization!(op::AssembledNonlinearOperator, u::AbstractVector, time)
+    @unpack J, element_cache, face_cache, tying_cache, dh  = op
 
     assembler = start_assemble(J)
 
     ndofs = ndofs_per_cell(dh)
     Jₑ = zeros(ndofs, ndofs)
-
+    uₑ = zeros(ndofs)
+    uₜ = get_tying_dofs(tying_cache, u)
     @inbounds for cell in CellIterator(dh)
         fill!(Jₑ, 0)
-        uₑ = @view u[celldofs(cell)]
-        # TODO instead of "cell" pass object with geometry information only
+        uₑ .= @view u[celldofs(cell)]
         @timeit_debug "assemble element" assemble_element!(Jₑ, uₑ, cell, element_cache, time)
         # TODO maybe it makes sense to merge this into the element routine in a modular fasion?
+        # TODO benchmark against putting this into the FaceIterator
         @timeit_debug "assemble faces" for local_face_index ∈ 1:nfaces(cell)
-            for face_cache ∈ face_caches
-                if (cellid(cell), local_face_index) ∈ getfaceset(cell.grid, getboundaryname(face_cache))
-                    # TODO fix "(cell, local_face_index)" 
-                    assemble_face!(Jₑ, uₑ, (cell, local_face_index), face_cache, time)
-                    break # only one integrator per face allowed!
-                end
-            end
+            assemble_face!(Jₑ, uₑ, cell, local_face_index, face_cache, time)
         end
+        @timeit_debug "assemble tying"  assemble_tying!(Jₑ, uₑ, uₜ, cell, tying_cache, time)
         assemble!(assembler, celldofs(cell), Jₑ)
     end
 
     #finish_assemble(assembler)
 end
 
-function update_linearization!(op::AssembledNonlinearOperator, u::Vector, residual::Vector, time)
-    @unpack J, element_cache, face_caches, dh  = op
+function update_linearization!(op::AssembledNonlinearOperator, u::AbstractVector, residual::AbstractVector, time)
+    @unpack J, element_cache, face_cache, tying_cache, dh  = op
 
     assembler = start_assemble(J, residual)
 
@@ -163,24 +255,19 @@ function update_linearization!(op::AssembledNonlinearOperator, u::Vector, residu
     Jₑ = zeros(ndofs, ndofs)
     rₑ = zeros(ndofs)
     uₑ = zeros(ndofs)
-
-    @inbounds for cell in CellIterator(dh)
+    uₜ = get_tying_dofs(tying_cache, u)
+    @timeit_debug "loop" @inbounds for cell in CellIterator(dh)
         dofs = celldofs(cell)
         fill!(Jₑ, 0)
         fill!(rₑ, 0)
         uₑ .= @view u[dofs]
-        # TODO instead of "cell" pass object with geometry information only
         @timeit_debug "assemble element" assemble_element!(Jₑ, rₑ, uₑ, cell, element_cache, time)
         # TODO maybe it makes sense to merge this into the element routine in a modular fasion?
+        # TODO benchmark against putting this into the FaceIterator
         @timeit_debug "assemble faces" for local_face_index ∈ 1:nfaces(cell)
-            for face_cache ∈ face_caches
-                if (cellid(cell), local_face_index) ∈ getfaceset(cell.grid, getboundaryname(face_cache))
-                    # TODO fix "(cell, local_face_index)" 
-                    assemble_face!(Jₑ, rₑ, uₑ, (cell, local_face_index), face_cache, time)
-                    break # only one integrator per face allowed!
-                end
-            end
+            assemble_face!(Jₑ, rₑ, uₑ, cell, local_face_index, face_cache, time)
         end
+        @timeit_debug "assemble tying"  assemble_tying!(Jₑ, rₑ, uₑ, uₜ, cell, tying_cache, time)
         assemble!(assembler, dofs, Jₑ, rₑ)
     end
 
@@ -188,16 +275,16 @@ function update_linearization!(op::AssembledNonlinearOperator, u::Vector, residu
 end
 
 """
-    mul!(out, op::AssembledNonlinearOperator, in)
-    mul!(out, op::AssembledNonlinearOperator, in, α, β)
+    mul!(out::AbstractVector, op::AssembledNonlinearOperator, in::AbstractVector)
+    mul!(out::AbstractVector, op::AssembledNonlinearOperator, in::AbstractVector, α, β)
 
 Apply the (scaled) action of the linearization of the contained nonlinear form to the vector `in`.
 """
-mul!(out, op::AssembledNonlinearOperator, in) = mul!(out, op.J, in)
-mul!(out, op::AssembledNonlinearOperator, in, α, β) = mul!(out, op.J, in, α, β)
+mul!(out::AbstractVector, op::AssembledNonlinearOperator, in::AbstractVector) = mul!(out, op.J, in)
+mul!(out::AbstractVector, op::AssembledNonlinearOperator, in::AbstractVector, α, β) = mul!(out, op.J, in, α, β)
 
-Base.eltype(op::AssembledNonlinearOperator) = eltype(op.A)
-Base.size(op::AssembledNonlinearOperator, axis) = sisze(op.A, axis)
+Base.eltype(op::AssembledNonlinearOperator) = eltype(op.J)
+Base.size(op::AssembledNonlinearOperator, axis) = size(op.J, axis)
 
 
 abstract type AbstractBilinearOperator <: AbstractNonlinearOperator end
@@ -247,11 +334,11 @@ function update_operator!(op::AssembledBilinearOperator, time)
     #finish_assemble(assembler)
 end
 
-update_linearization!(op::AbstractBilinearOperator, u, residual, time) = update_operator!(op, time)
-update_linearization!(op::AbstractBilinearOperator, u, time) = update_operator!(op, time)
+update_linearization!(op::AbstractBilinearOperator, u::AbstractVector, residual::AbstractVector, time) = update_operator!(op, time)
+update_linearization!(op::AbstractBilinearOperator, u::AbstractVector, time) = update_operator!(op, time)
 
-mul!(out, op::AssembledBilinearOperator, in) = mul!(out, op.A, in)
-mul!(out, op::AssembledBilinearOperator, in, α, β) = mul!(out, op.A, in, α, β)
+mul!(out::AbstractVector, op::AssembledBilinearOperator, in::AbstractVector) = mul!(out, op.A, in)
+mul!(out::AbstractVector, op::AssembledBilinearOperator, in::AbstractVector, α, β) = mul!(out, op.A, in, α, β)
 Base.eltype(op::AssembledBilinearOperator) = eltype(op.A)
 Base.size(op::AssembledBilinearOperator, axis) = sisze(op.A, axis)
 
@@ -264,14 +351,14 @@ struct DiagonalOperator{TV <: AbstractVector} <: AbstractBilinearOperator
     values::TV
 end
 
-mul!(out, op::DiagonalOperator, in) = out .= op.values .* out
-mul!(out, op::DiagonalOperator, in, α, β) = out .= α * op.values .* in + β * out
+mul!(out::AbstractVector, op::DiagonalOperator, in::AbstractVector) = out .= op.values .* out
+mul!(out::AbstractVector, op::DiagonalOperator, in::AbstractVector, α, β) = out .= α * op.values .* in + β * out
 Base.eltype(op::DiagonalOperator) = eltype(op.values)
 Base.size(op::DiagonalOperator, axis) = length(op.values)
 
 getJ(op::DiagonalOperator) = spdiagm(op.values)
 
-update_linearization!(::Thunderbolt.DiagonalOperator, ::Vector, ::Vector, t) = nothing
+update_linearization!(::Thunderbolt.DiagonalOperator, ::AbstractVector, ::AbstractVector, t) = nothing
 
 """
     NullOperator <: AbstractBilinearOperator
@@ -282,16 +369,21 @@ Literally a "null matrix".
 struct NullOperator{T, SIN, SOUT} <: AbstractBilinearOperator
 end
 
-mul!(out, op::NullOperator, in) = out .= 0.0
-mul!(out, op::NullOperator, in, α, β) = out .= β*out
+mul!(out::AbstractVector, op::NullOperator, in::AbstractVector) = out .= 0.0
+mul!(out::AbstractVector, op::NullOperator, in::AbstractVector, α, β) = out .= β*out
 Base.eltype(op::NullOperator{T}) where {T} = T
 Base.size(op::NullOperator{T,S1,S2}, axis) where {T,S1,S2} = axis == 1 ? S1 : (axis == 2 ? S2 : error("faulty axis!"))
 
 getJ(op::NullOperator{T, SIN, SOUT}) where {T, SIN, SOUT} = spzeros(T,SIN,SOUT)
 
-update_linearization!(::Thunderbolt.NullOperator, ::Vector, ::Vector, t) = nothing
+update_linearization!(::Thunderbolt.NullOperator, ::AbstractVector, ::AbstractVector, t) = nothing
 
 ###############################################################################
+"""
+    AbstractLinearOperator
+
+Supertype for operators which only depend on the test space.
+"""
 abstract type AbstractLinearOperator end
 
 """
@@ -337,7 +429,7 @@ function update_operator!(op::LinearOperator, time)
     #finish_assemble(assembler)
 end
 
-Ferrite.add!(b::Vector, op::LinearOperator) = b .+= op.b
+Ferrite.add!(b::AbstractVector, op::LinearOperator) = b .+= op.b
 Base.eltype(op::LinearOperator) = eltype(op.b)
 Base.size(op::LinearOperator) = sisze(op.b)
 
@@ -398,3 +490,6 @@ function needs_update(op::LinearOperator{<:Any, <: AnalyticalCoefficientElementC
     end
     return false
 end
+
+# Advanced model-specific operators
+include("rsafdq-operator.jl")

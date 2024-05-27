@@ -1,3 +1,4 @@
+# NOTE This example is work in progress. Please consult it at a later time again.
 using Thunderbolt, UnPack
 
 import Ferrite: get_grid, find_field
@@ -151,7 +152,7 @@ function solve_test_ring(name_base, constitutive_model, grid, cs, face_models, i
     # io = JLD2Writer(name_base);
 
     problem = semidiscretize(
-        StructuralModel(constitutive_model, face_models),
+        StructuralModel(:displacement, constitutive_model, face_models),
         FiniteElementDiscretization(
             Dict(:displacement => ip_mech),
             [
@@ -192,8 +193,9 @@ TODO add an example with a calcium profile compute via cell model and Purkinje a
 calcium_profile_function(x,t) = t/1000.0 < 0.5 ? (1-x.transmural*0.7)*2.0*t/1000.0 : (2.0-2.0*t/1000.0)*(1-x.transmural*0.7)
 
 for (name, order, ring_grid) ∈ [
-    ("Linear-Ring", 1, Thunderbolt.generate_ring_mesh(40,8,8)),
-    ("Quadratic-Ring", 2, Thunderbolt.generate_quadratic_ring_mesh(20,4,4))
+    ("Debug-Ring", 1, Thunderbolt.generate_ring_mesh(16,4,4)),
+    # ("Linear-Ring", 1, Thunderbolt.generate_ring_mesh(40,8,8)),
+    # ("Quadratic-Ring", 2, Thunderbolt.generate_quadratic_ring_mesh(20,4,4))
 ]
 
 qr_collection = QuadratureRuleCollection(2*order-1)
@@ -202,6 +204,9 @@ ip_fsn = LagrangeCollection{1}()^3
 ip_u = LagrangeCollection{order}()^3
 
 ring_cs = compute_midmyocardial_section_coordinate_system(ring_grid)
+
+TimerOutputs.enable_debug_timings(Thunderbolt)
+TimerOutputs.reset_timer!()
 solve_test_ring(name,
     ActiveStressModel(
         Guccione1991PassiveModel(),
@@ -218,9 +223,12 @@ solve_test_ring(name,
             sheetlet_pseudo_angle = deg2rad(0)
         )
     ), ring_grid, ring_cs,
-    [],
+    (),
     ip_u, qr_collection,
     10.0
 )
+TimerOutputs.print_timer()
+TimerOutputs.disable_debug_timings(Thunderbolt)
+
 
 end

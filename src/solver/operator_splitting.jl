@@ -1,7 +1,7 @@
 """
 Classical Lie-Trotter-Godunov operator splitting in time.
 """
-struct LTGOSSolver{AST,BST}
+struct LTGOSSolver{AST,BST} <: AbstractSolver
     A_solver::AST
     B_solver::BST
 end
@@ -9,15 +9,15 @@ end
 """
 Caches for the classical Lie-Trotter-Godunov operator splitting scheme.
 """
-struct LTGOSSolverCache{ASCT, BSCT}
+struct LTGOSSolverCache{ASCT, BSCT} <: AbstractSolver
     A_solver_cache::ASCT
     B_solver_cache::BSCT
 end
 
-function setup_solver_caches(problem::SplitProblem, solver::LTGOSSolver, t₀)
+function setup_solver_cache(problem::SplitProblem, solver::LTGOSSolver, t₀)
     return LTGOSSolverCache(
-        setup_solver_caches(problem.A, solver.A_solver, t₀),
-        setup_solver_caches(problem.B, solver.B_solver, t₀),
+        setup_solver_cache(problem.A, solver.A_solver, t₀),
+        setup_solver_cache(problem.B, solver.B_solver, t₀),
     )
 end
 
@@ -35,19 +35,19 @@ function perform_step!(problem::SplitProblem, cache::LTGOSSolverCache, t, Δt)
     return true
 end
 
-function setup_solver_caches(problem::SplitProblem, solver::LTGOSSolver{<:BackwardEulerSolver,<:AbstractPointwiseSolver}, t₀)
+function setup_solver_cache(problem::SplitProblem, solver::LTGOSSolver{<:BackwardEulerSolver,<:AbstractPointwiseSolver}, t₀)
     cache = LTGOSSolverCache(
-        setup_solver_caches(problem.A, solver.A_solver, t₀),
-        setup_solver_caches(problem.B, solver.B_solver, t₀),
+        setup_solver_cache(problem.A, solver.A_solver, t₀),
+        setup_solver_cache(problem.B, solver.B_solver, t₀),
     )
     cache.B_solver_cache.uₙ = cache.A_solver_cache.uₙ
     return cache
 end
 
-function setup_solver_caches(problem::SplitProblem, solver::LTGOSSolver{<:AbstractPointwiseSolver,<:BackwardEulerSolver}, t₀)
+function setup_solver_cache(problem::SplitProblem, solver::LTGOSSolver{<:AbstractPointwiseSolver,<:BackwardEulerSolver}, t₀)
     cache = LTGOSSolverCache(
-        setup_solver_caches(problem.A, solver.A_solver, t₀),
-        setup_solver_caches(problem.B, solver.B_solver, t₀),
+        setup_solver_cache(problem.A, solver.A_solver, t₀),
+        setup_solver_cache(problem.B, solver.B_solver, t₀),
     )
     cache.B_solver_cache.uₙ = cache.A_solver_cache.uₙ
     return cache
@@ -61,23 +61,15 @@ The default behavior assumes that nothing has to be done, because both problems 
 """
 transfer_fields!(A, A_cache, B, B_cache)
 
-transfer_fields!(A, A_cache::BackwardEulerSolverCache, B, B_cache::AbstractPointwiseSolverCache) = nothing
-transfer_fields!(A, A_cache::AbstractPointwiseSolverCache, B, B_cache::BackwardEulerSolverCache) = nothing
+transfer_fields!(::AbstractProblem, ::Any, ::AbstractPointwiseProblem, ::AbstractPointwiseSolverCache) = nothing
+transfer_fields!(::AbstractPointwiseProblem, ::AbstractPointwiseSolverCache, ::AbstractProblem, ::Any) = nothing
+transfer_fields!(::Thunderbolt.AbstractPointwiseProblem, ::Thunderbolt.AbstractPointwiseSolverCache, ::Thunderbolt.AbstractPointwiseProblem, ::Thunderbolt.AbstractPointwiseSolverCache) = nothing
 
 transfer_fields!(A, A_cache, B, B_cache) = @warn "IMPLEMENT ME (transfer_fields!)" maxlog=1
 
 function setup_initial_condition!(problem::SplitProblem, cache, initial_condition, time)
     setup_initial_condition!(problem.A, cache.A_solver_cache, initial_condition, time)
     setup_initial_condition!(problem.B, cache.B_solver_cache, initial_condition, time)
-    return nothing
-end
-
-function setup_initial_condition!(problem::SplitProblem{<:CoupledProblem{<:Tuple{<:Any, <: NullProblem}}, <:AbstractPointwiseProblem}, cache, initial_condition, time)
-    # TODO cleaner implementation. We need to extract this from the types or via dispatch.
-    # u₀ = initial_condition(problem, time)
-    cache.A_solver_cache.uₙ .= zeros(ndofs(problem.A.base_problems[1].dh)) # TODO fixme :)
-    # TODO maybe we should replace n with t here
-    cache.B_solver_cache.uₙ .= zeros(problem.B.npoints*num_states(problem.B.ode))
     return nothing
 end
 
@@ -99,3 +91,23 @@ perform_step!(problem::PointwiseODEProblem, cache::AbstractPointwiseSolverCache,
 # TODO add guidance with helpers like
 #   const QuGarfinkel1999Solver = SMOSSolver{AdaptiveForwardEulerReactionSubCellSolver, ImplicitEulerHeatSolver}
 
+# Transfer pressure solution from structure to lumped circuit
+function transfer_fields!(A::RSAFDQ20223DProblem, A_cache::AbstractSolver, B::ODEProblem, B_cache::AbstractSolver)
+    @unpack tying_cache = A_cache.inner_solver_cache.op # op = RSAFDQ20223DOperator
+    u_structure = A_cache.uₙ
+    u_fluid = B_cache.uₙ
+    for (chamber_idx,chamber) ∈ enumerate(tying_cache.chambers)
+        p = u_structure[chamber.pressure_dof_index]
+        B.p[chamber_idx] = p # FIXME should not be chamber_idx
+    end
+end
+
+# Transfer chamber volume from lumped circuit to structure
+function transfer_fields!(A::ODEProblem, A_cache::AbstractSolver, B::RSAFDQ20223DProblem, B_cache::AbstractSolver)
+    @unpack tying_cache = B_cache.inner_solver_cache.op # op = RSAFDQ20223DOperator
+    u_structure = B_cache.uₙ
+    u_fluid = A_cache.uₙ
+    for (chamber_idx,chamber) ∈ enumerate(tying_cache.chambers)
+        chamber.V⁰ᴰval = u_fluid[chamber.V⁰ᴰidx]
+    end
+end

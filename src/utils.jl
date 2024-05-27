@@ -108,7 +108,7 @@ function ThreadedSparseMatrixCSR(a::Transpose{Tv,<:SparseMatrixCSC} where Tv)
     ThreadedSparseMatrixCSR(SparseMatrixCSR(a))
 end
 
-function mul!(y::AbstractVector, A_::ThreadedSparseMatrixCSR, x::AbstractVector, alpha::Number, beta::Number)
+function mul!(y::AbstractVector{<:Number}, A_::ThreadedSparseMatrixCSR, x::AbstractVector{<:Number}, alpha::Number, beta::Number)
     A = A_.A
     A.n == size(x, 1) || throw(DimensionMismatch())
     A.m == size(y, 1) || throw(DimensionMismatch())
@@ -127,7 +127,7 @@ function mul!(y::AbstractVector, A_::ThreadedSparseMatrixCSR, x::AbstractVector,
     return y
 end
 
-function mul!(y::AbstractVector, A_::ThreadedSparseMatrixCSR, x::AbstractVector)
+function mul!(y::AbstractVector{<:Number}, A_::ThreadedSparseMatrixCSR, x::AbstractVector{<:Number})
     A = A_.A
     A.n == size(x, 1) || throw(DimensionMismatch())
     A.m == size(y, 1) || throw(DimensionMismatch())
@@ -173,4 +173,16 @@ IndexStyle(::Type{<:ThreadedSparseMatrixCSR}) = IndexCartesian()
     @unpack dh = problem
     @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the quadrature order determination."
     2*Ferrite.getorder(Ferrite.getfieldinterpolation(dh.subdofhandlers[1], fieldname))
+end
+
+
+
+mtk_parameter_query_filter(discard_me, sym) = false
+mtk_parameter_query_filter(param::ModelingToolkit.BasicSymbolic, sym) = true
+
+function query_mtk_parameter_by_symbol(sys, sym::Symbol)
+    symbol_list = ModelingToolkit.parameter_symbols(sys)
+    idx = findfirst(param->mtk_parameter_query_filter(param,sym), symbol_list)
+    idx === nothing && @error "Symbol $sym not found for system $sys."
+    return symbol_list[idx]
 end
