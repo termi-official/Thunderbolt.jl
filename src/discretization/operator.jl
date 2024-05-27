@@ -12,8 +12,8 @@ Interface:
     size()
 
     # linearization
-    mul!(out, op::AbstractNonlinearOperator, in)
-    mul!(out, op::AbstractNonlinearOperator, in, α, β)
+    mul!(out::AbstractVector, op::AbstractNonlinearOperator, in::AbstractVector)
+    mul!(out::AbstractVector, op::AbstractNonlinearOperator, in::AbstractVector, α, β)
     update_linearization!(op::AbstractNonlinearOperator, u::AbstractVector, time)
     update_linearization!(op::AbstractNonlinearOperator, u::AbstractVector, residual::AbstractVector, time)
 """
@@ -275,13 +275,13 @@ function update_linearization!(op::AssembledNonlinearOperator, u::AbstractVector
 end
 
 """
-    mul!(out, op::AssembledNonlinearOperator, in)
-    mul!(out, op::AssembledNonlinearOperator, in, α, β)
+    mul!(out::AbstractVector, op::AssembledNonlinearOperator, in::AbstractVector)
+    mul!(out::AbstractVector, op::AssembledNonlinearOperator, in::AbstractVector, α, β)
 
 Apply the (scaled) action of the linearization of the contained nonlinear form to the vector `in`.
 """
-mul!(out, op::AssembledNonlinearOperator, in) = mul!(out, op.J, in)
-mul!(out, op::AssembledNonlinearOperator, in, α, β) = mul!(out, op.J, in, α, β)
+mul!(out::AbstractVector, op::AssembledNonlinearOperator, in::AbstractVector) = mul!(out, op.J, in)
+mul!(out::AbstractVector, op::AssembledNonlinearOperator, in::AbstractVector, α, β) = mul!(out, op.J, in, α, β)
 
 Base.eltype(op::AssembledNonlinearOperator) = eltype(op.J)
 Base.size(op::AssembledNonlinearOperator, axis) = size(op.J, axis)
@@ -337,8 +337,8 @@ end
 update_linearization!(op::AbstractBilinearOperator, u::AbstractVector, residual::AbstractVector, time) = update_operator!(op, time)
 update_linearization!(op::AbstractBilinearOperator, u::AbstractVector, time) = update_operator!(op, time)
 
-mul!(out, op::AssembledBilinearOperator, in) = mul!(out, op.A, in)
-mul!(out, op::AssembledBilinearOperator, in, α, β) = mul!(out, op.A, in, α, β)
+mul!(out::AbstractVector, op::AssembledBilinearOperator, in::AbstractVector) = mul!(out, op.A, in)
+mul!(out::AbstractVector, op::AssembledBilinearOperator, in::AbstractVector, α, β) = mul!(out, op.A, in, α, β)
 Base.eltype(op::AssembledBilinearOperator) = eltype(op.A)
 Base.size(op::AssembledBilinearOperator, axis) = sisze(op.A, axis)
 
@@ -351,8 +351,8 @@ struct DiagonalOperator{TV <: AbstractVector} <: AbstractBilinearOperator
     values::TV
 end
 
-mul!(out, op::DiagonalOperator, in) = out .= op.values .* out
-mul!(out, op::DiagonalOperator, in, α, β) = out .= α * op.values .* in + β * out
+mul!(out::AbstractVector, op::DiagonalOperator, in::AbstractVector) = out .= op.values .* out
+mul!(out::AbstractVector, op::DiagonalOperator, in::AbstractVector, α, β) = out .= α * op.values .* in + β * out
 Base.eltype(op::DiagonalOperator) = eltype(op.values)
 Base.size(op::DiagonalOperator, axis) = length(op.values)
 
@@ -369,8 +369,8 @@ Literally a "null matrix".
 struct NullOperator{T, SIN, SOUT} <: AbstractBilinearOperator
 end
 
-mul!(out, op::NullOperator, in) = out .= 0.0
-mul!(out, op::NullOperator, in, α, β) = out .= β*out
+mul!(out::AbstractVector, op::NullOperator, in::AbstractVector) = out .= 0.0
+mul!(out::AbstractVector, op::NullOperator, in::AbstractVector, α, β) = out .= β*out
 Base.eltype(op::NullOperator{T}) where {T} = T
 Base.size(op::NullOperator{T,S1,S2}, axis) where {T,S1,S2} = axis == 1 ? S1 : (axis == 2 ? S2 : error("faulty axis!"))
 

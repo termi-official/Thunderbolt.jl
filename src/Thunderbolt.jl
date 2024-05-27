@@ -60,6 +60,8 @@ include("solver/ecg.jl")
 
 include("io.jl")
 
+include("disambiguation.jl")
+
 # TODO put exports into the individual submodules above!
 export
     solve,

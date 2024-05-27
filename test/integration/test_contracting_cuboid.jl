@@ -10,20 +10,20 @@ function test_solve_contractile_cuboid(constitutive_model)
 
     # Clamp three sides
     dbcs = [
-        Dirichlet(:displacement, getfaceset(grid, "left"), (x,t) -> [0.0], [1])
-        Dirichlet(:displacement, getfaceset(grid, "front"), (x,t) -> [0.0], [2])
-        Dirichlet(:displacement, getfaceset(grid, "bottom"), (x,t) -> [0.0], [3])
-        Dirichlet(:displacement, Set([1]), (x,t) -> [0.0, 0.0, 0.0], [1, 2, 3])
+        Dirichlet(:d, getfaceset(grid, "left"), (x,t) -> [0.0], [1])
+        Dirichlet(:d, getfaceset(grid, "front"), (x,t) -> [0.0], [2])
+        Dirichlet(:d, getfaceset(grid, "bottom"), (x,t) -> [0.0], [3])
+        Dirichlet(:d, Set([1]), (x,t) -> [0.0, 0.0, 0.0], [1, 2, 3])
     ]
 
     problem = semidiscretize(
-        StructuralModel(constitutive_model, [
+        StructuralModel(:d, constitutive_model, (
             NormalSpringBC(0.0, "right"),
             ConstantPressureBC(0.0, "back"),
             PressureFieldBC(ConstantCoefficient(0.0),"top")
-        ]),
+        )),
         FiniteElementDiscretization(
-            Dict(:displacement => LagrangeCollection{1}()^3),
+            Dict(:d => LagrangeCollection{1}()^3),
             dbcs,
         ),
         grid

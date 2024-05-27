@@ -61,8 +61,9 @@ The default behavior assumes that nothing has to be done, because both problems 
 """
 transfer_fields!(A, A_cache, B, B_cache)
 
-transfer_fields!(A, A_cache::BackwardEulerSolver, B, B_cache::AbstractPointwiseSolverCache) = nothing
-transfer_fields!(A, A_cache::AbstractPointwiseSolverCache, B, B_cache::BackwardEulerSolver) = nothing
+transfer_fields!(::AbstractProblem, ::Any, ::AbstractPointwiseProblem, ::AbstractPointwiseSolverCache) = nothing
+transfer_fields!(::AbstractPointwiseProblem, ::AbstractPointwiseSolverCache, ::AbstractProblem, ::Any) = nothing
+transfer_fields!(::Thunderbolt.AbstractPointwiseProblem, ::Thunderbolt.AbstractPointwiseSolverCache, ::Thunderbolt.AbstractPointwiseProblem, ::Thunderbolt.AbstractPointwiseSolverCache) = nothing
 
 transfer_fields!(A, A_cache, B, B_cache) = @warn "IMPLEMENT ME (transfer_fields!)" maxlog=1
 
@@ -91,7 +92,7 @@ perform_step!(problem::PointwiseODEProblem, cache::AbstractPointwiseSolverCache,
 #   const QuGarfinkel1999Solver = SMOSSolver{AdaptiveForwardEulerReactionSubCellSolver, ImplicitEulerHeatSolver}
 
 # Transfer pressure solution from structure to lumped circuit
-function transfer_fields!(A::RSAFDQ20223DProblem, A_cache, B::ODEProblem, B_cache)
+function transfer_fields!(A::RSAFDQ20223DProblem, A_cache::AbstractSolver, B::ODEProblem, B_cache::AbstractSolver)
     @unpack tying_cache = A_cache.inner_solver_cache.op # op = RSAFDQ20223DOperator
     u_structure = A_cache.uₙ
     u_fluid = B_cache.uₙ
@@ -102,7 +103,7 @@ function transfer_fields!(A::RSAFDQ20223DProblem, A_cache, B::ODEProblem, B_cach
 end
 
 # Transfer chamber volume from lumped circuit to structure
-function transfer_fields!(A::ODEProblem, A_cache, B::RSAFDQ20223DProblem, B_cache)
+function transfer_fields!(A::ODEProblem, A_cache::AbstractSolver, B::RSAFDQ20223DProblem, B_cache::AbstractSolver)
     @unpack tying_cache = B_cache.inner_solver_cache.op # op = RSAFDQ20223DOperator
     u_structure = B_cache.uₙ
     u_fluid = A_cache.uₙ

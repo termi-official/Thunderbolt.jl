@@ -108,7 +108,7 @@ function ThreadedSparseMatrixCSR(a::Transpose{Tv,<:SparseMatrixCSC} where Tv)
     ThreadedSparseMatrixCSR(SparseMatrixCSR(a))
 end
 
-function mul!(y::AbstractVector, A_::ThreadedSparseMatrixCSR, x::AbstractVector, alpha::Number, beta::Number)
+function mul!(y::AbstractVector{<:Number}, A_::ThreadedSparseMatrixCSR, x::AbstractVector{<:Number}, alpha::Number, beta::Number)
     A = A_.A
     A.n == size(x, 1) || throw(DimensionMismatch())
     A.m == size(y, 1) || throw(DimensionMismatch())
@@ -127,7 +127,7 @@ function mul!(y::AbstractVector, A_::ThreadedSparseMatrixCSR, x::AbstractVector,
     return y
 end
 
-function mul!(y::AbstractVector, A_::ThreadedSparseMatrixCSR, x::AbstractVector)
+function mul!(y::AbstractVector{<:Number}, A_::ThreadedSparseMatrixCSR, x::AbstractVector{<:Number})
     A = A_.A
     A.n == size(x, 1) || throw(DimensionMismatch())
     A.m == size(y, 1) || throw(DimensionMismatch())

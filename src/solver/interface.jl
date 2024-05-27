@@ -70,7 +70,7 @@ function setup_operator(problem::QuasiStaticNonlinearProblem, solver::AbstractNo
     @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the nonlinear solver."
     @assert length(dh.field_names) == 1 "Multiple fields not yet supported in the nonlinear solver."
 
-    displacement_symbol = :displacement # FIXME
+    displacement_symbol = first(dh.field_names)
 
     intorder = quadrature_order(problem, displacement_symbol)
     qr = QuadratureRuleCollection(intorder)
@@ -99,9 +99,10 @@ function setup_operator(problem::RSAFDQ20223DProblem, solver::AbstractNonlinearS
     @unpack tying_problem, structural_problem = problem
     # @unpack dh, constitutive_model, face_models, displacement_symbol = structural_problem
     @unpack dh, constitutive_model, face_models = structural_problem
-    displacement_symbol = :displacement # FIXME
     @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the Newton solver."
     @assert length(dh.field_names) == 1 "Multiple fields not yet supported in the nonlinear solver."
+
+    displacement_symbol = first(dh.field_names)
 
     intorder = quadrature_order(structural_problem, displacement_symbol)
     qr = QuadratureRuleCollection(intorder)
