@@ -1,3 +1,4 @@
+# NOTE This example is work in progress. Please consult it at a later time again.
 using CirculatorySystemModels.OrdinaryDiffEq, ModelingToolkit, CirculatorySystemModels, SymbolicIndexingInterface
 using GLMakie
 

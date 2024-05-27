@@ -1,3 +1,4 @@
+# Taken from https://github.com/TS-CUBED/CirculatorySystemModels.jl/blob/3095ac17c9df8d51e52f9b115b0a9d0833e8be1f/test/runtests.jl
 using CirculatorySystemModels.OrdinaryDiffEq,ModelingToolkit, CirculatorySystemModels
 using GLMakie
 
@@ -148,8 +149,7 @@ RA_Vt0 = 20
 @named LA = ShiChamber(V₀=v0_la, p₀=p0_la, Eₘᵢₙ=Emin_la, Eₘₐₓ=Emax_la, τ=τ, τₑₛ=τpww_la / 2, τₑₚ=τpww_la, Eshift=τpwb_la)
 @named RV = ShiChamber(V₀=v0_rv, p₀=p0_rv, Eₘᵢₙ=Emin_rv, Eₘₐₓ=Emax_rv, τ=τ, τₑₛ=τes_rv, τₑₚ=τed_rv, Eshift=0.0)
 # The atrium can be defined either as a ShiChamber with changed timing parameters, or as defined in the paper
-# @named RA = ShiChamber(V₀=v0_ra, p₀ = p0_ra, Eₘᵢₙ=Emin_ra, Eₘₐₓ=Emax_ra, τ=τ, τₑₛ=τpww_ra/2, τₑₚ =τpww_ra, Eshift=τpwb_ra)
-@named RA = ShiAtrium(V₀=v0_ra, p₀=1, Eₘᵢₙ=Emin_ra, Eₘₐₓ=Emax_ra, τ=τ, τpwb=τpwb_ra, τpww=τpww_ra) #, Ev=Inf)
+@named RA = ShiChamber(V₀=v0_ra, p₀ = p0_ra, Eₘᵢₙ=Emin_ra, Eₘₐₓ=Emax_ra, τ=τ, τₑₛ=τpww_ra/2, τₑₚ =τpww_ra, Eshift=τpwb_ra)
 
 ## Valves as simple valves
 @named AV = OrificeValve(CQ=CQ_AV)
@@ -212,11 +212,6 @@ circ_eqs = [
 circ_sys = structural_simplify(circ_model)
 
 ## Setup ODE
-# Initial Conditions for Shi Valve
-# u0 = [LV_Vt0, RV_Vt0, LA_Vt0, RA_Vt0, pt0sas, qt0sas , pt0sat, qt0sat, pt0svn, pt0pas, qt0pas, pt0pat, qt0pat, pt0pvn, 0, 0, 0, 0,0, 0, 0, 0]
-# and for OrificeValve --- Commment this next line to use ShiValves
-# u0 = [LV_Vt0, RV_Vt0, LA_Vt0, RA_Vt0, pt0sas, qt0sas, pt0sat, qt0sat, pt0svn, pt0pas, qt0pas, pt0pat, qt0pat, pt0pvn]
-
 u0 = [
     LV.V => LV_Vt0
     LV.p => (LV_Vt0 - v0_lv) * Emin_lv + p0_lv
@@ -246,12 +241,31 @@ prob = ODAEProblem(circ_sys, u0, (0.0, 20.0))
 ##
 @time ShiSimpleSolV = solve(prob, Tsit5(), reltol=1e-9, abstol=1e-12, saveat=19:0.01:20)
 
-# lines(ShiSimpleSolV.t,ShiSimpleSolV[:LV₊V])
-# lines!(ShiSimpleSolV.t,ShiSimpleSolV[:RV₊V])
-# lines!(ShiSimpleSolV.t,ShiSimpleSolV[:LA₊V])
-# lines!(ShiSimpleSolV.t,ShiSimpleSolV[:RA₊V])
+f1 = Figure()
+axs1 = [
+    Axis(f1[1, 1], title="Volume"),
+    Axis(f1[1, 2], title="Pressure")
+]
 
-lines(ShiSimpleSolV[LV.p],ShiSimpleSolV[LV.V])
-lines!(ShiSimpleSolV[RV.p],ShiSimpleSolV[RV.V])
-lines!(ShiSimpleSolV[LA.p],ShiSimpleSolV[LA.V])
-lines!(ShiSimpleSolV[RA.p],ShiSimpleSolV[RA.V])
+lines!(axs1[1], ShiSimpleSolV.t,ShiSimpleSolV[LV.V])
+lines!(axs1[1], ShiSimpleSolV.t,ShiSimpleSolV[RV.V])
+lines!(axs1[1], ShiSimpleSolV.t,ShiSimpleSolV[LA.V])
+lines!(axs1[1], ShiSimpleSolV.t,ShiSimpleSolV[RA.V])
+
+lines!(axs1[2], ShiSimpleSolV.t,ShiSimpleSolV[LV.p])
+lines!(axs1[2], ShiSimpleSolV.t,ShiSimpleSolV[RV.p])
+lines!(axs1[2], ShiSimpleSolV.t,ShiSimpleSolV[LA.p])
+lines!(axs1[2], ShiSimpleSolV.t,ShiSimpleSolV[RA.p])
+
+f2 = Figure()
+axs2 = [
+    Axis(f2[1, 1], title="LV"),
+    Axis(f2[1, 2], title="RV"),
+    Axis(f2[2, 1], title="LA"),
+    Axis(f2[2, 2], title="RA")
+]
+
+lines!(axs2[1], ShiSimpleSolV[LV.p],ShiSimpleSolV[LV.V])
+lines!(axs2[2], ShiSimpleSolV[RV.p],ShiSimpleSolV[RV.V])
+lines!(axs2[3], ShiSimpleSolV[LA.p],ShiSimpleSolV[LA.V])
+lines!(axs2[4], ShiSimpleSolV[RA.p],ShiSimpleSolV[RA.V])

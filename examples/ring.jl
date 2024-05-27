@@ -1,3 +1,4 @@
+# NOTE This example is work in progress. Please consult it at a later time again.
 using Thunderbolt, UnPack
 
 import Ferrite: get_grid, find_field
