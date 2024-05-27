@@ -139,7 +139,7 @@ function solve!(u::AbstractVector, problem::AbstractProblem, solver_cache::Newto
         # end
         residualnorm = residual_norm(solver_cache, problem)
         @info "Newton itr $newton_itr: ||r||=$residualnorm"
-        if residualnorm < solver_cache.parameters.tol || (newton_itr > 0 && norm(Δu) < solver_cache.parameters.tol)
+        if residualnorm < solver_cache.parameters.tol #|| (newton_itr > 0 && norm(Δu) < solver_cache.parameters.tol)
             break
         elseif newton_itr > solver_cache.parameters.max_iter
             @warn "Reached maximum Newton iterations. Aborting. ||r|| = $residualnorm"

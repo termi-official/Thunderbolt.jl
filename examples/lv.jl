@@ -245,7 +245,7 @@ integral_bcs = (NormalSpringBC(1.0, "Epicardium"),)
 # TimerOutputs.reset_timer!()
 # solve_ideal_lv("lv_test",
 #     ActiveStressModel(
-#         Guccione1991PassiveModel(),
+#         passive_model,
 #         PiersantiActiveStress(;Tmax=10.0),
 #         PelceSunLangeveld1995Model(;calcium_field=AnalyticalCoefficient(
 #             calcium_profile_function,
