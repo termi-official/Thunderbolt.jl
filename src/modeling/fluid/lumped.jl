@@ -63,91 +63,46 @@ Base.@kwdef struct RSAFDQ2022LumpedCicuitModel{
     la_pressure_given::Bool = true
     ra_pressure_given::Bool = true
     #
-    # Rsysₐᵣ::T1  = T1(0.8*1e3)
-    # Rpulₐᵣ::T1  = T1(0.1625*1e3)
-    # Rsysᵥₑₙ::T1 = T1(0.26*1e3)
-    # Rpulᵥₑₙ::T1 = T1(0.1625*1e3)
-    # #
-    # Csysₐᵣ::T2  = T2(1.2)
-    # Cpulₐᵣ::T2  = T2(10.0)
-    # Csysᵥₑₙ::T2 = T2(60.0)
-    # Cpulᵥₑₙ::T2 = T2(16.0)
-    # #
-    # Lsysₐᵣ::T5  = T5(5e-3*1e6)
-    # Lpulₐᵣ::T5  = T5(5e-4*1e6)
-    # Lsysᵥₑₙ::T5 = T5(5e-4*1e6)
-    # Lpulᵥₑₙ::T5 = T5(5e-4*1e6)
-    # # Valve stuff
-    # Rmin::T1 = T1(0.0075*1e3)
-    # Rmax::T1 = T1(75000.0*1e3)
-    # # Passive elastance
-    # Epassₗₐ::T6 = T6(0.09)
-    # Epassᵣₐ::T6 = T6(0.07)
-    # Epassᵣᵥ::T6 = T6(0.05)
-    # # Active elastance
-    # Eactmaxₗₐ::T6 = T6(0.07)
-    # Eactmaxᵣₐ::T6 = T6(0.06)
-    # Eactmaxᵣᵥ::T6 = T6(0.55)
-    # # "Initial volume"
-    # V0ₗₐ::T3 = T3(4.0)
-    # V0ᵣₐ::T3 = T3(4.0)
-    # V0ᵣᵥ::T3 = T3(10.0)
-    # # Event timings
-    # tCₗₐ::T4 = T4(0.6*1e3)
-    # TCₗₐ::T4 = T4(0.104*1e3)
-    # TRₗₐ::T4 = T4(0.68*1e3)
-    # TRᵣₐ::T4 = T4(0.56*1e3)
-    # tCᵣₐ::T4 = T4(0.064*1e3)
-    # TCᵣₐ::T4 = T4(0.64*1e3)
-    # tCᵣᵥ::T4 = T4(0.0*1e3)
-    # TCᵣᵥ::T4 = T4(0.272*1e3)
-    # TRᵣᵥ::T4 = T4(0.12*1e3)
-    # THB::T4 = T4(0.8*1e3) # 75 beats per minute
-    Rsysₐᵣ::T1  = T1(0.8)
-    Rpulₐᵣ::T1  = T1(0.1625)
-    Rsysᵥₑₙ::T1 = T1(0.26)
-    Rpulᵥₑₙ::T1 = T1(0.1625)
+    Rsysₐᵣ::T1  = T1(0.8*1e3)
+    Rpulₐᵣ::T1  = T1(0.1625*1e3)
+    Rsysᵥₑₙ::T1 = T1(0.26*1e3)
+    Rpulᵥₑₙ::T1 = T1(0.1625*1e3)
     #
     Csysₐᵣ::T2  = T2(1.2)
     Cpulₐᵣ::T2  = T2(10.0)
     Csysᵥₑₙ::T2 = T2(60.0)
     Cpulᵥₑₙ::T2 = T2(16.0)
     #
-    Lsysₐᵣ::T5  = T5(5e-3)
-    Lpulₐᵣ::T5  = T5(5e-4)
-    Lsysᵥₑₙ::T5 = T5(5e-4)
-    Lpulᵥₑₙ::T5 = T5(5e-4)
+    Lsysₐᵣ::T5  = T5(5e-3*1e6)
+    Lpulₐᵣ::T5  = T5(5e-4*1e6)
+    Lsysᵥₑₙ::T5 = T5(5e-4*1e6)
+    Lpulᵥₑₙ::T5 = T5(5e-4*1e6)
     # Valve stuff
-    Rmin::T1 = T1(0.0075)
-    Rmax::T1 = T1(75000.0)
+    Rmin::T1 = T1(0.0075*1e3)
+    Rmax::T1 = T1(75000.0*1e3)
     # Passive elastance
-    Epassₗₐ::T6 = T6(0.15)
-    Epassᵣₐ::T6 = T6(0.15)
-    Epassᵣᵥ::T6 = T6(0.1)
+    Epassₗₐ::T6 = T6(0.09)
+    Epassᵣₐ::T6 = T6(0.07)
+    Epassᵣᵥ::T6 = T6(0.05)
     # Active elastance
-    Eactmaxₗₐ::T6 = T6(0.1)
-    Eactmaxᵣₐ::T6 = T6(0.1)
-    Eactmaxᵣᵥ::T6 = T6(1.4)
+    Eactmaxₗₐ::T6 = T6(0.07)
+    Eactmaxᵣₐ::T6 = T6(0.06)
+    Eactmaxᵣᵥ::T6 = T6(0.55)
     # "Initial volume"
     V0ₗₐ::T3 = T3(4.0)
     V0ᵣₐ::T3 = T3(4.0)
     V0ᵣᵥ::T3 = T3(10.0)
     # Event timings
-    tCₗₐ::T4 = T4(0.6)
-    TCₗₐ::T4 = T4(0.104)
-    TRₗₐ::T4 = T4(0.68)
-    TRᵣₐ::T4 = T4(0.56)
-    tCᵣₐ::T4 = T4(0.064)
-    TCᵣₐ::T4 = T4(0.64)
-    tCᵣᵥ::T4 = T4(0.0)
-    TCᵣᵥ::T4 = T4(0.272)
-    TRᵣᵥ::T4 = T4(0.12)
-    THB::T4 = T4(0.8) # 75 beats per minute
-    # Prescribed functions
-    # pₑₓ::PEX = (p::RSAFDQ2022LumpedCicuitModel,t) -> 0.0
-    # Eₗₐ::ELA = (p::RSAFDQ2022LumpedCicuitModel,t) -> elastance_RSAFDQ2022(t, p.Epassₗₐ, Eactmaxₗₐ, p.tCₗₐ, p.tCₗₐ + p.TCₗₐ, p.TCₗₐ, p.TRₗₐ, p.THB)
-    # Eᵣₐ::ERA = (p::RSAFDQ2022LumpedCicuitModel,t) -> elastance_RSAFDQ2022(t, p.Epassᵣₐ, Eactmaxᵣₐ, p.tCᵣₐ, p.tCᵣₐ + p.TCᵣₐ, p.TCᵣₐ, p.TRᵣₐ, p.THB)
-    # Eᵣᵥ::ERV = (p::RSAFDQ2022LumpedCicuitModel,t) -> elastance_RSAFDQ2022(t, p.Epassᵣᵥ, Eactmaxᵣᵥ, p.tCᵣᵥ, p.tCᵣᵥ + p.TCᵣᵥ, p.TCᵣᵥ, p.TRᵣᵥ, p.THB)
+    tCₗₐ::T4 = T4(0.6*1e3)
+    TCₗₐ::T4 = T4(0.104*1e3)
+    TRₗₐ::T4 = T4(0.68*1e3)
+    TRᵣₐ::T4 = T4(0.56*1e3)
+    tCᵣₐ::T4 = T4(0.064*1e3)
+    TCᵣₐ::T4 = T4(0.64*1e3)
+    tCᵣᵥ::T4 = T4(0.0*1e3)
+    TCᵣᵥ::T4 = T4(0.272*1e3)
+    TRᵣᵥ::T4 = T4(0.12*1e3)
+    THB::T4 = T4(0.8*1e3) # 75 beats per minute
 end
 
 num_states(::RSAFDQ2022LumpedCicuitModel) = 12
@@ -171,18 +126,7 @@ function get_variable_symbol_index(model::RSAFDQ2022LumpedCicuitModel, symbol::S
 end
 
 function default_initial_condition!(u, model::RSAFDQ2022LumpedCicuitModel)
-    @unpack V0ₗₐ, V0ᵣₐ, V0ᵣᵥ = model
-    u .= 0.0
-    # u[1] = V0ₗₐ
-    # u[3] = V0ᵣₐ
-    # u[4] = V0ᵣᵥ
-
-    # u[1] = 20.0
-    # u[2] = 500.0
-    # u[3] = 20.0
-    # u[4] = 500.0
-
-    # TODO obtain via pre-pacing in isolation
+    # obtain via pre-pacing in isolation
     u .= [31.78263930696728, 20.619293500582675, 76.99868985499684, 28.062792020353495, 5.3259599006276925, 13.308990108813674, 1.848880514855276, 3.6948263599349302, -9.974721253140004, -17.12404226311947, -11.360818019572653, -19.32908606755043]
 end
 

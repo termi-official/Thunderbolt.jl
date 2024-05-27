@@ -5,16 +5,16 @@ using Thunderbolt
 
 
 # TODO refactor this one into the framework code and put a nice abstraction layer around it
-struct StandardMechanicalIOPostProcessor3{IO, CVC, CSC, AX}
+struct StandardMechanicalIOPostProcessorLFSI{IO, CVC, CSC, AX}
     io::IO
     cvc::CVC
     csc::CSC
     ax::AX
 end
 
-function (postproc::StandardMechanicalIOPostProcessor3)(t, problem::Thunderbolt.SplitProblem, solver_cache)
-    (postproc::StandardMechanicalIOPostProcessor3)(t, problem.A, solver_cache.A_solver_cache)
-    (postproc::StandardMechanicalIOPostProcessor3)(t, problem.B, solver_cache.B_solver_cache)
+function (postproc::StandardMechanicalIOPostProcessorLFSI)(t, problem::Thunderbolt.SplitProblem, solver_cache)
+    (postproc::StandardMechanicalIOPostProcessorLFSI)(t, problem.A, solver_cache.A_solver_cache)
+    (postproc::StandardMechanicalIOPostProcessorLFSI)(t, problem.B, solver_cache.B_solver_cache)
 
     @unpack tying_problem = problem.A
     lv = tying_problem.chambers[1]
@@ -25,11 +25,11 @@ function (postproc::StandardMechanicalIOPostProcessor3)(t, problem::Thunderbolt.
 end
 
 
-function (postproc::StandardMechanicalIOPostProcessor3)(t, problem::Thunderbolt.ODEProblem, solver_cache)
+function (postproc::StandardMechanicalIOPostProcessorLFSI)(t, problem::Thunderbolt.ODEProblem, solver_cache)
     @info "Lumped Circuit Solution Vector: $(solver_cache.uₙ)"
 end
 
-function (postproc::StandardMechanicalIOPostProcessor3)(t, problem::Thunderbolt.RSAFDQ20223DProblem, solver_cache)
+function (postproc::StandardMechanicalIOPostProcessorLFSI)(t, problem::Thunderbolt.RSAFDQ20223DProblem, solver_cache)
     @unpack dh, constitutive_model = problem.structural_problem
     grid = Ferrite.get_grid(dh)
     @unpack io, cvc, csc = postproc
@@ -420,7 +420,7 @@ function solve_ideal_lv_with_circuit(name_base, constitutive_model, grid, coordi
 
     # Postprocessor
     cv_post = CellValueCollection(qr_collection, ip_mech)
-    standard_postproc = StandardMechanicalIOPostProcessor3(io, cv_post, CoordinateSystemCoefficient(coordinate_system), axs)
+    standard_postproc = StandardMechanicalIOPostProcessorLFSI(io, cv_post, CoordinateSystemCoefficient(coordinate_system), axs)
 
     # Create sparse matrix and residual vector
     solver = LTGOSSolver(

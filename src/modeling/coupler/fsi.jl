@@ -71,21 +71,6 @@ function volume_integral(x::Vec, d::Vec, F::Tensor, N::Vec, method::Hirschvogel2
     return -val
 end
 
-# function dVdu(x::Vec, d::Vec, δd::Tensor, F::Vec, δF::tensor, N::Vec, method::Hirschvogel2017SurrogateVolume)
-#     # @unpack h, b = method
-#     # f(d,F(d)) = det(F) * (x + d) ⋅ (transpose(inv(F)) ⋅  N)
-#     # δf = δfd * δd + δfF * δF
-#     J = det(F)
-#     cofF = inv(transpose(F))
-#     δcofF = -transpose(invF ⋅ δF ⋅ invF)
-#     δJ = J * tr(∇F ⋅ invF)
-
-#     δfd = det(F) * one(d) ⋅ inv(transpose(F)) ⋅ N
-#     δfF = det(F) * one(d) ⋅ inv(transpose(F)) ⋅ N
-
-#     # -det(F) * (x + d) ⋅ inv(transpose(F)) ⋅ N
-# end
-
 # TODO move these below into the opeartor interface once 
 #      we figure out a good design on how to pass multiple
 #      variables down to the inner assembly functions
