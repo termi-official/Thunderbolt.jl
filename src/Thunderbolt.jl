@@ -130,11 +130,11 @@ export
     ReactionDiffusionSplit,
     # Circuit
     RSAFDQ2022LumpedCicuitModel,
+    MTKLumpedCicuitModel,
     # FSI
     RSAFDQ2022Model,
     RSAFDQ2022SurrogateVolume,
     RSAFDQ2022Split,
-    MTKLumpedCicuitModel,
     Hirschvogel2017SurrogateVolume,
     LumpedFluidSolidCoupler,
     ChamberVolumeCoupling,
