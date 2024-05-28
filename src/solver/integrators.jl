@@ -19,6 +19,12 @@ struct GenericSplitFunction{fSetType <: Tuple, idxSetType <: AbstractVector} <: 
     dof_ranges::idxSetType
 end
 
+get_operator(f::GenericSplitFunction, i::Integer) = f.functions[i]
+
+recursive_null_parameters(f::AbstractOperatorSplitFunction) = @error "Not implemented"
+recursive_null_parameters(f::GenericSplitFunction) = ntuple(i->recursive_null_parameters(get_operator(f, i)), length(f.functions));
+recursive_null_parameters(f::DiffEqBase.AbstractODEFunction) = DiffEqBase.NullParameters()
+
 """
     OperatorSplittingProblem(f::AbstractOperatorSplitFunction, u0, tspan, p::Tuple)
 """
@@ -29,7 +35,7 @@ mutable struct OperatorSplittingProblem{fType <: AbstractOperatorSplitFunction, 
     p::pType
     kwargs::K
     function OperatorSplittingProblem(f::AbstractOperatorSplitFunction,
-        u0, tspan, p = ntuple(_->DiffEqBase.NullParameters(), length(f.functions));
+        u0, tspan, p = recursive_null_parameters(f);
         kwargs...)
         new{typeof(f),typeof(u0),
         typeof(tspan), typeof(p),
@@ -367,16 +373,18 @@ struct LieTrotterGodunov{AlgTupleType <: Tuple} <: AbstractOperatorSplittingAlgo
     # transfer_algs::TransferTupleType # Tuple of transfer algorithms from the master solution into the individual ones
 end
 
-struct LieTrotterGodunovCache{uType, iiType}
+struct LieTrotterGodunovCache{uType, tmpType, iiType}
     u::uType
     uprev::uType # True previous solution
-    uprev2::uType # Previous solution used during time marching
-    tmp::uType  
+    uprev2::tmpType # Previous solution used during time marching
+    tmp::tmpType # Scratch
     inner_caches::iiType
 end
 
+# Dispatch for outer construction
 function init_cache(prob::OperatorSplittingProblem, alg::LieTrotterGodunov; dt, kwargs...) # TODO
-    @assert prob.f isa GenericSplitFunction
+    @unpack f = prob
+    @assert f isa GenericSplitFunction
 
     u = copy(prob.u0)
     uprev = copy(u)
@@ -384,14 +392,14 @@ function init_cache(prob::OperatorSplittingProblem, alg::LieTrotterGodunov; dt, 
     tmp = copy(u)
 
     # Build inner integrator and connect solution vectors
-    dof_ranges = prob.f.dof_ranges
-    inner_caches = ntuple(i->construct_inner_cache(alg.inner_algs[i], @views u[dof_ranges[i]]), length(dof_ranges))
+    dof_ranges = f.dof_ranges
+    inner_caches = ntuple(i->construct_inner_cache(get_operator(f, i), alg.inner_algs[i], view(u, dof_ranges[i]), view(uprev, dof_ranges[i])), length(dof_ranges))
     return LieTrotterGodunovCache(u, uprev, uprev2, tmp, inner_caches)
 end
 
 function step_inner!(integ, cache::LieTrotterGodunovCache)
     @unpack u, uprev2, uprev, inner_caches = cache
-    @unpack t, dt = integ
+    @unpack f, p, t, dt = integ
 
     # Store current solution
     uprev .= u
@@ -401,7 +409,7 @@ function step_inner!(integ, cache::LieTrotterGodunovCache)
     for i in 1:length(inner_caches)
         # Perform transfer
         inner_cache = inner_caches[i]
-        dof_range_i = prob.f.dof_ranges[i]
+        dof_range_i = f.dof_ranges[i]
         u_i = @view u[dof_range_i]
         uprev_i = @view uprev2[dof_range_i]
 
@@ -409,12 +417,12 @@ function step_inner!(integ, cache::LieTrotterGodunovCache)
         # FIXME This is basically a combination of perform_step and solve! since I cannot figure
         # out how to reuse ODEProblem's efficiently to solve on different time intervals and how to
         # connect the ODEIntegrator with the OperatorSplittingIntegrator.
-        subinteg = SubIntegrator(integ.f.functions[i], u_i, uprev_i, integ.p[i], t, dt)
-        step_operator!(subinteg, inner_cache)
+        subinteg = SubIntegrator(get_operator(f, i), u_i, uprev_i, p[i], t, dt)
+        step_inner!(subinteg, inner_cache)
 
         # Forward transfer
         if i < length(inner_caches)
-            dof_range_next = prob.f.dof_ranges[i+1]
+            dof_range_next = f.dof_ranges[i+1]
             uprev2[dof_range_next] .= u[dof_range_next]
         end
     end
@@ -433,11 +441,19 @@ end
     return (cache.tmp,)
 end
 
-function construct_inner_cache(alg::ForwardEuler, uprev::SubArray)
+construct_inner_cache(f, alg, u::SubArray, uprev::SubArray) = @error "Function type $typeof(f) not compatible with $alg!"
+function construct_inner_cache(f::ODEFunction, alg::ForwardEuler, u::SubArray, uprev::SubArray)
     ForwardEulerCache(copy(uprev))
 end
 
-function step_operator!(integ, cache::ForwardEulerCache)
+# Dispatch for recursive construction
+function construct_inner_cache(f::AbstractOperatorSplitFunction, alg::LieTrotterGodunov, u::SubArray, uprev::SubArray)
+    dof_ranges = f.dof_ranges
+    inner_caches = ntuple(i->construct_inner_cache(get_operator(f, i), alg.inner_algs[i], view(u, dof_ranges[i]), view(uprev, dof_ranges[i])), length(dof_ranges))
+    LieTrotterGodunovCache(u, uprev, copy(uprev), copy(u), inner_caches)
+end
+
+function step_inner!(integ, cache::ForwardEulerCache)
     @unpack f, dt, u, p, t = integ
     @unpack du = cache
 
