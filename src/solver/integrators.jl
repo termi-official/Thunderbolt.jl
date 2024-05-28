@@ -1,3 +1,5 @@
+module OS
+
 import DiffEqBase, DataStructures
 
 import UnPack: @unpack
@@ -459,4 +461,8 @@ function step_inner!(integ, cache::ForwardEulerCache)
 
     f(du, u, p, t)
     u .+= dt .* du
+end
+
+export ODEFunction, GenericSplitFunction, LieTrotterGodunov, ForwardEuler, DiffEqBase, OperatorSplittingProblem
+
 end

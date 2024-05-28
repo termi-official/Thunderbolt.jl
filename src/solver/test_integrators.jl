@@ -1,4 +1,5 @@
 using .OS
+using BenchmarkTools
 
 # Operator splitting
 
@@ -86,6 +87,8 @@ end
 @assert isapprox(ufinal, integrator2.u, atol=1e-8)
 
 @btime OS.step_inner!($integrator, $(integrator.cache)) setup=(DiffEqBase.reinit!(integrator, u0; tspan))
-#   263.656 ns (3 allocations: 240 bytes)
+#   326.743 ns (8 allocations: 416 bytes)
+#   263.656 ns (3 allocations: 240 bytes) for 2
 @btime DiffEqBase.solve!($integrator) setup=(DiffEqBase.reinit!(integrator, u0; tspan));
-#   310.912 μs (3333 allocations: 260.42 KiB)
+#   431.632 μs (10000 allocations: 507.81 KiB)
+#   310.912 μs (3333 allocations: 260.42 KiB) for 2
