@@ -7,16 +7,21 @@ abstract type AbstractOperatorSplittingAlgorithm end
 
 abstract type AbstractOperatorSplitFunction <: DiffEqBase.AbstractODEFunction{true} end
 
+"""
+    GenericSplitFunction(functions::Tuple, dof_ranges::AbstractVector)
+
+This type of function describes a set of connected inner functions in mass-matrix form, as usually found in operator splitting procedures.
+"""
 struct GenericSplitFunction{fSetType <: Tuple, idxSetType <: AbstractVector} <: AbstractOperatorSplitFunction
     # The atomic ode functions
     functions::fSetType
-    # Symbols for each function
-    # function_symbols::fSymSetType
     # The ranges for the values in the solution vector.
-    # symbol_ranges::idxSetType
     dof_ranges::idxSetType
 end
 
+"""
+    OperatorSplittingProblem(f::AbstractOperatorSplitFunction, u0, tspan, p::Tuple)
+"""
 mutable struct OperatorSplittingProblem{fType <: AbstractOperatorSplitFunction, uType, tType, pType <: Tuple, K} <: DiffEqBase.AbstractODEProblem{uType, tType, true}
     f::fType
     u0::uType
