@@ -198,13 +198,13 @@ DiffEqBase.has_reinit(integrator::OperatorSplittingIntegrator) = true
 function DiffEqBase.reinit!(
     integrator::OperatorSplittingIntegrator,
     u0 = integrator.sol.prob.u0;
-    t0 = integrator.sol.prob.tspan[1],
-    tf = integrator.sol.prob.tspan[2],
+    tspan = integrator.sol.prob.tspan,
     erase_sol = true,
     tstops = integrator._tstops,
     saveat = integrator._saveat,
     reinit_callbacks = true,
 )
+    (t0,tf) = tspan
     integrator.u .= u0
     integrator.t = t0
     integrator.tstops, integrator.saveat = tstops_and_saveat_heaps(t0, tf, tstops, saveat)

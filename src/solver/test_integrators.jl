@@ -43,12 +43,12 @@ integrator = DiffEqBase.init(prob, timestepper, dt=0.01, verbose=true)
 DiffEqBase.solve!(integrator)
 ufinal = copy(integrator.u)
 
-DiffEqBase.reinit!(integrator, u0; t0=tspan[1], tf=tspan[2])
+DiffEqBase.reinit!(integrator, u0; tspan)
 for (u, t) in DiffEqBase.TimeChoiceIterator(integrator, 0.0:5.0:100.0)
 end
 @assert ufinal == integrator.u
 
-DiffEqBase.reinit!(integrator, u0; t0=tspan[1], tf=tspan[2])
+DiffEqBase.reinit!(integrator, u0; tspan)
 for (uprev, tprev, u, t) in DiffEqBase.intervals(integrator)
 end
 @assert ufinal == integrator.u
@@ -78,7 +78,7 @@ prob2 = OperatorSplittingProblem(fsplit2_outer, u0, tspan)
 integrator2 = DiffEqBase.init(prob2, timestepper2, dt=0.01, verbose=true)
 DiffEqBase.solve!(integrator2)
 
-DiffEqBase.reinit!(integrator2, u0; t0=tspan[1], tf=tspan[2])
+DiffEqBase.reinit!(integrator2, u0; tspan)
 for (u, t) in DiffEqBase.TimeChoiceIterator(integrator2, 0.0:5.0:100.0)
 end
 @assert isapprox(ufinal, integrator2.u, atol=1e-8)
