@@ -73,6 +73,7 @@ mutable struct OperatorSplittingIntegrator{
     f::fType
     alg::algType
     u::uType # Master Solution
+    uprev::uType # Master Solution
     p::pType
     t::tType # Current time
     dt::tType
@@ -154,6 +155,7 @@ function DiffEqBase.__init(
         prob.f,
         alg,
         cache.u,
+        cache.uprev,
         p,
         t0,
         dt,
@@ -239,6 +241,9 @@ function DiffEqBase.step!(integrator::OperatorSplittingIntegrator, dt, stop_at_t
     end
 end
 
+
+
+
 # TimeChoiceIterator API
 @inline function DiffEqBase.get_tmp_cache(integrator::OperatorSplittingIntegrator)
     DiffEqBase.get_tmp_cache(integrator, integrator.alg, integrator.cache)
@@ -252,12 +257,37 @@ function (integrator::OperatorSplittingIntegrator)(tmp, t)
     linear_interpolation!(tmp, t, integrator.cache.uprev, integrator.u, integrator.t-integrator.dt, integrator.t)
 end
 
+
+
 # helper functions for dealing with time-reversed integrators in the same way
 # that OrdinaryDiffEq.jl does
 tdir(integrator) = integrator.tstops.ordering isa DataStructures.FasterForward ? 1 : -1
 is_past_t(integrator, t) = tdir(integrator) * (t - integrator.t) < zero(integrator.t)
 reached_tstop(integrator, tstop, stop_at_tstop = integrator.dtchangeable) =
     integrator.t == tstop || (!stop_at_tstop && is_past_t(integrator, tstop))
+
+
+
+# Dunno stuff
+function DiffEqBase.SciMLBase.done(integrator::OperatorSplittingIntegrator)
+    if !(integrator.sol.retcode in (DiffEqBase.ReturnCode.Default, DiffEqBase.ReturnCode.Success))
+        return true
+    #elseif isempty(integrator.tstops)
+        # DiffEqBase.postamble!(integrator)
+        # return true
+    # elseif integrator.just_hit_tstop
+    #     integrator.just_hit_tstop = false
+    else
+        @error "What to do here?"
+        # if integrator.opts.stop_at_next_tstop
+        #     postamble!(integrator)
+        #     return true
+        # end
+    end
+    false
+end
+
+
 
 function __step!(integrator)
     (; _dt, dtchangeable, tstops) = integrator
@@ -313,6 +343,9 @@ end
 # not sure what this should do?
 # defined as default initialize: https://github.com/SciML/DiffEqBase.jl/blob/master/src/callbacks.jl#L3
 DiffEqBase.u_modified!(i::OperatorSplittingIntegrator, bool) = nothing
+
+
+
 
 # Lie-Trotter-Godunov Splitting Implementation
 struct LieTrotterGodunov{AlgTupleType <: Tuple} <: AbstractOperatorSplittingAlgorithm
