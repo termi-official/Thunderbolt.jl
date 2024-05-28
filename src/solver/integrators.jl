@@ -7,14 +7,6 @@ abstract type AbstractOperatorSplittingAlgorithm end
 
 abstract type AbstractOperatorSplitFunction <: DiffEqBase.AbstractODEFunction{true} end
 
-# Describes a leaf in recursive operator splittings
-# struct AtomicBlockFunction{F <: ODEFunction} <: DiffEqBase.AbstractODEFunction{true}
-#     # The actual f(du, u, p ,t) with buffers
-#     f::F
-#     # Symbols defined by the function and the range of unknowns. The split function uses these to tie together everything.
-#     # local_symbol_ranges::Vector{Pair{Symbol, StepRange{Int, Int}}}
-# end
-
 struct GenericSplitFunction{fSetType <: Tuple, idxSetType <: AbstractVector} <: AbstractOperatorSplitFunction
     # The atomic ode functions
     functions::fSetType
@@ -155,9 +147,8 @@ function DiffEqBase.__init(
     sol = DiffEqBase.build_solution(prob, alg, typeof(t0)[], typeof(save_func(u0, t0))[])
 
     callback = DiffEqBase.CallbackSet(callback)
-    # TODO how to do this properly
+
     cache = init_cache(prob, alg; dt, kwargs...)
-    cache.u .= u0
 
     integrator = OperatorSplittingIntegrator(
         prob.f,
@@ -248,6 +239,18 @@ function DiffEqBase.step!(integrator::OperatorSplittingIntegrator, dt, stop_at_t
     end
 end
 
+# TimeChoiceIterator API
+@inline function DiffEqBase.get_tmp_cache(integrator::OperatorSplittingIntegrator)
+    DiffEqBase.get_tmp_cache(integrator, integrator.alg, integrator.cache)
+end
+# Interpolation
+function linear_interpolation!(y,t,y1,y2,t1,t2)
+    y .= y1 + (t-t1) * (y2-y1)/(t2-t1)
+end
+function (integrator::OperatorSplittingIntegrator)(tmp, t)
+    linear_interpolation!(tmp, t, integrator.cache.uprev, integrator.u, integrator.t-integrator.dt, integrator.t)
+end
+
 # helper functions for dealing with time-reversed integrators in the same way
 # that OrdinaryDiffEq.jl does
 tdir(integrator) = integrator.tstops.ordering isa DataStructures.FasterForward ? 1 : -1
@@ -319,7 +322,8 @@ end
 struct LieTrotterGodunovCache{uType, iiType}
     u::uType
     uprev::uType # True previous solution
-    uprev2::uType # True previous solution
+    uprev2::uType # Previous solution used during time marching
+    tmp::uType  
     inner_caches::iiType
 end
 
@@ -327,13 +331,14 @@ function init_cache(prob::OperatorSplittingProblem, alg::LieTrotterGodunov; dt, 
     @assert prob.f isa GenericSplitFunction
 
     u = copy(prob.u0)
-    uprev = copy(prob.u0)
-    uprev2 = copy(prob.u0)
+    uprev = copy(u)
+    uprev2 = copy(u)
+    tmp = copy(u)
 
     # Build inner integrator and connect solution vectors
     dof_ranges = prob.f.dof_ranges
     inner_caches = ntuple(i->construct_inner_cache(alg.inner_algs[i], @views u[dof_ranges[i]]), length(dof_ranges))
-    return LieTrotterGodunovCache(u, uprev, uprev2, inner_caches)
+    return LieTrotterGodunovCache(u, uprev, uprev2, tmp, inner_caches)
 end
 
 function step_inner!(integ, cache::LieTrotterGodunovCache)
@@ -372,6 +377,10 @@ end
 
 mutable struct ForwardEulerCache{duType}
     du::duType
+end
+
+@inline function DiffEqBase.get_tmp_cache(integrator::OperatorSplittingIntegrator, ::AbstractOperatorSplittingAlgorithm, cache)
+    return (cache.tmp,)
 end
 
 function construct_inner_cache(alg::ForwardEuler, uprev::SubArray)

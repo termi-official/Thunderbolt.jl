@@ -24,10 +24,16 @@ timestepper = LieTrotterGodunov(
 )
 
 integrator = DiffEqBase.init(prob, timestepper, dt=0.01, verbose=true)
-DiffEqBase.solve!(integrator)
-# for (uprev, tprev, u, t) in DiffEqBase.intervals(integrator)
-#     @show tprev, t
+
+# DiffEqBase.solve!(integrator)
+
+# for (u, t) in DiffEqBase.TimeChoiceIterator(integrator, 0.0:5.0:100.0)
+#     @show u, t
 # end
+
+for (uprev, tprev, u, t) in DiffEqBase.intervals(integrator)
+    @show tprev, t
+end
 
 # Reference
 function ode_true(du, u, p, t)
