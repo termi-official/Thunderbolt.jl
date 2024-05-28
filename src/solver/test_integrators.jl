@@ -31,9 +31,15 @@ for (u, t) in DiffEqBase.TimeChoiceIterator(integrator, 0.0:5.0:100.0)
     @show u, t
 end
 
+ufinal = copy(integrator.u)
+
+DiffEqBase.reinit!(integrator, u0; t0=tspan[1], tf=tspan[2])
+
 for (uprev, tprev, u, t) in DiffEqBase.intervals(integrator)
     @show tprev, t
 end
+
+@assert ufinal == integrator.u
 
 # Reference
 function ode_true(du, u, p, t)

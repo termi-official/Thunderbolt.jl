@@ -36,6 +36,10 @@ mutable struct OperatorSplittingProblem{fType <: AbstractOperatorSplitFunction, 
     end
 end
 
+"""
+Internal helper to integrate a single inner operator
+over some time interval.
+"""
 mutable struct SubIntegrator{
     fType,
     uType,
@@ -76,6 +80,7 @@ mutable struct OperatorSplittingIntegrator{
     uprev::uType # Master Solution
     p::pType
     t::tType # Current time
+    tprev::tType
     dt::tType
     _dt::tType # argument to __init used to set dt in step!
     dtchangeable::Bool
@@ -158,6 +163,7 @@ function DiffEqBase.__init(
         cache.uprev,
         p,
         t0,
+        copy(t0),
         dt,
         _dt,
         dtchangeable,
@@ -243,7 +249,6 @@ end
 
 
 
-
 # TimeChoiceIterator API
 @inline function DiffEqBase.get_tmp_cache(integrator::OperatorSplittingIntegrator)
     DiffEqBase.get_tmp_cache(integrator, integrator.alg, integrator.cache)
@@ -272,21 +277,24 @@ reached_tstop(integrator, tstop, stop_at_tstop = integrator.dtchangeable) =
 function DiffEqBase.SciMLBase.done(integrator::OperatorSplittingIntegrator)
     if !(integrator.sol.retcode in (DiffEqBase.ReturnCode.Default, DiffEqBase.ReturnCode.Success))
         return true
-    #elseif isempty(integrator.tstops)
-        # DiffEqBase.postamble!(integrator)
-        # return true
+    elseif isempty(integrator.tstops)
+        DiffEqBase.postamble!(integrator)
+        return true
     # elseif integrator.just_hit_tstop
-    #     integrator.just_hit_tstop = false
-    else
-        @error "What to do here?"
+        # integrator.just_hit_tstop = false
         # if integrator.opts.stop_at_next_tstop
         #     postamble!(integrator)
         #     return true
         # end
+    # else
+        # @error "What to do here?"
     end
     false
 end
 
+function DiffEqBase.postamble!(integrator::OperatorSplittingIntegrator)
+    DiffEqBase.finalize!(integrator.callback, integrator.u, integrator.t, integrator)
+end
 
 
 function __step!(integrator)
@@ -308,6 +316,7 @@ function __step!(integrator)
     t_plus_dt = integrator.t + integrator.dt
     t_unit = oneunit(integrator.t)
     max_t_error = 100 * eps(float(integrator.t / t_unit)) * t_unit
+    integrator.tprev = integrator.t
     integrator.t = !isempty(tstops) && abs(first(tstops) - t_plus_dt) < max_t_error ? first(tstops) : t_plus_dt
 
     # remove tstops that were just reached
