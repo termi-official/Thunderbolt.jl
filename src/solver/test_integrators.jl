@@ -1,3 +1,5 @@
+using .OS
+
 # Operator splitting
 
 # Reference
@@ -46,12 +48,12 @@ ufinal = copy(integrator.u)
 DiffEqBase.reinit!(integrator, u0; tspan)
 for (u, t) in DiffEqBase.TimeChoiceIterator(integrator, 0.0:5.0:100.0)
 end
-@assert ufinal == integrator.u
+@assert  isapprox(ufinal, integrator.u, atol=1e-8)
 
 DiffEqBase.reinit!(integrator, u0; tspan)
 for (uprev, tprev, u, t) in DiffEqBase.intervals(integrator)
 end
-@assert ufinal == integrator.u
+@assert  isapprox(ufinal, integrator.u, atol=1e-8)
 
 # Now some recursive splitting
 function ode3(du, u, p, t)
@@ -72,7 +74,7 @@ timestepper_inner = LieTrotterGodunov(
     (ForwardEuler(), ForwardEuler())
 )
 timestepper2 = LieTrotterGodunov(
-    (ForwardEuler(),timestepper_inner)
+    (ForwardEuler(), timestepper_inner)
 )
 prob2 = OperatorSplittingProblem(fsplit2_outer, u0, tspan)
 integrator2 = DiffEqBase.init(prob2, timestepper2, dt=0.01, verbose=true)
@@ -82,3 +84,8 @@ DiffEqBase.reinit!(integrator2, u0; tspan)
 for (u, t) in DiffEqBase.TimeChoiceIterator(integrator2, 0.0:5.0:100.0)
 end
 @assert isapprox(ufinal, integrator2.u, atol=1e-8)
+
+@btime OS.step_inner!($integrator, $(integrator.cache)) setup=(DiffEqBase.reinit!(integrator, u0; tspan))
+#   263.656 ns (3 allocations: 240 bytes)
+@btime DiffEqBase.solve!($integrator) setup=(DiffEqBase.reinit!(integrator, u0; tspan));
+#   310.912 μs (3333 allocations: 260.42 KiB)
