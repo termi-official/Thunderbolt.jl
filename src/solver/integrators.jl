@@ -244,6 +244,7 @@ end
     DiffEqBase.get_tmp_cache(integrator, integrator.alg, integrator.cache)
 end
 # Interpolation
+# TODO via https://github.com/SciML/SciMLBase.jl/blob/master/src/interpolation.jl
 function linear_interpolation!(y,t,y1,y2,t1,t2)
     y .= y1 + (t-t1) * (y2-y1)/(t2-t1)
 end
@@ -355,17 +356,19 @@ function step_inner!(integ, cache::LieTrotterGodunovCache)
         inner_cache = inner_caches[i]
         dof_range_i = prob.f.dof_ranges[i]
         u_i = @view u[dof_range_i]
-        uprev_i = @view uprev[dof_range_i]
+        uprev_i = @view uprev2[dof_range_i]
 
         # Solve step
+        # FIXME This is basically a combination of perform_step and solve! since I cannot figure
+        # out how to reuse ODEProblem's efficiently to solve on different time intervals and how to
+        # connect the ODEIntegrator with the OperatorSplittingIntegrator.
         subinteg = SubIntegrator(integ.f.functions[i], u_i, uprev_i, integ.p[i], t, dt)
         step_operator!(subinteg, inner_cache)
-        u_i .= subinteg.u # FIXME
 
         # Forward transfer
         if i < length(inner_caches)
             dof_range_next = prob.f.dof_ranges[i+1]
-            uprev[dof_range_next] .= u[dof_range_next]
+            uprev2[dof_range_next] .= u[dof_range_next]
         end
     end
 end
