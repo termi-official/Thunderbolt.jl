@@ -1,5 +1,7 @@
 module OS
 
+import Unrolled: @unroll
+
 import Test: @inferred
 
 import DiffEqBase, DataStructures
@@ -407,18 +409,17 @@ function init_cache(prob::OperatorSplittingProblem, alg::LieTrotterGodunov; dt, 
 
     # Build inner integrator and connect solution vectors
     dof_ranges = f.dof_ranges
-    inner_caches = ntuple(i->construct_inner_cache(get_operator(f, i), alg.inner_algs[i], view(u, dof_ranges[i]), view(uprev, dof_ranges[i])), length(f.functions))
+    # FIXME --->                                                                                 FIXME this deepcopy is to get rid of the supurious allocations
+    inner_caches = ntuple(i->construct_inner_cache(get_operator(f, i), alg.inner_algs[i], view(u, deepcopy(dof_ranges[i])), view(uprev, deepcopy(dof_ranges[i]))), length(f.functions))
     return LieTrotterGodunovCache(u, uprev, uprev2, tmp, inner_caches)
 end
 
 function synchronize_subintegrators!(integrator::OperatorSplittingIntegrator)
-    for subintegrator in integrator.subintegrators
-        synchronize_subintegrator!(subintegrator, integrator)
-    end
+    synchronize_subintegrator!(integrator.subintegrators, integrator)
 end
 
-function synchronize_subintegrator!(subintegrators::Tuple, integrator::OperatorSplittingIntegrator)
-    for subintegrator in subintegrators
+@unroll function synchronize_subintegrator!(subintegrators::Tuple, integrator::OperatorSplittingIntegrator)
+    @unroll for subintegrator in subintegrators
         synchronize_subintegrator!(subintegrator, integrator)
     end
 end
@@ -429,53 +430,34 @@ function synchronize_subintegrator!(subintegrator::SubIntegrator, integrator::Op
     subintegrator.dt = dt
 end
 
-function sync_inner!(subintegrator::SubIntegrator)
+@inline function sync_inner!(subintegrator::SubIntegrator)
     subintegrator.uprev .= subintegrator.u
 end
 
-function sync_inner!(subintegrators::Tuple)
-    for subintegrator in subintegrators
+@unroll function sync_inner!(subintegrators::Tuple)
+    @unroll for subintegrator in subintegrators
         sync_inner!(subintegrator)
     end
 end
 
-function step_inner!(integrator::OperatorSplittingIntegrator, cache::LieTrotterGodunovCache)
-    @unpack u, uprev2, uprev, inner_caches = cache
-    @unpack subintegrators = integrator
+step_inner!(integrator::OperatorSplittingIntegrator, cache::LieTrotterGodunovCache) = step_inner!(integrator.subintegrators, cache)
 
-    # Store current solution
-    uprev .= u
-    uprev2 .= u
-
-    # For each inner operator
-    for i in 1:length(inner_caches)
-        subinteg = subintegrators[i]
-        inner_cache = inner_caches[i]
-
-        if i > 1
-            sync_inner!(subinteg)
-        end
-        step_inner!(subinteg, inner_cache)
-    end
-end
-
-function step_inner!(subintegrators::Tuple, cache::LieTrotterGodunovCache)
+@inline @unroll function step_inner!(subintegrators::Tuple, cache::LieTrotterGodunovCache)
     # We assume that the integrators are already synced
     @unpack u, uprev2, uprev, inner_caches = cache
 
     # Store current solution
     uprev .= u
-    uprev2 .= u
 
     # For each inner operator
-    for i in 1:length(inner_caches)
-        subinteg = subintegrators[i]
-        inner_cache = inner_caches[i]
+    i = 0
+    @unroll for subinteg in subintegrators
+        i += 1
 
         if i > 1
-            subinteg.uprev .= subinteg.u
+            sync_inner!(subinteg)
         end
-        step_inner!(subinteg, inner_cache)
+        step_inner!(subinteg, inner_caches[i])
     end
 end
 
@@ -499,7 +481,8 @@ end
 # Dispatch for recursive construction
 function construct_inner_cache(f::AbstractOperatorSplitFunction, alg::LieTrotterGodunov, u::SubArray, uprev::SubArray)
     dof_ranges = f.dof_ranges
-    inner_caches = ntuple(i->construct_inner_cache(get_operator(f, i), alg.inner_algs[i], view(u, dof_ranges[i]), view(uprev, dof_ranges[i])), length(dof_ranges))
+    # FIXME --->                                                                           FIXME this deepcopy is to get rid of the supurious allocations
+    inner_caches = ntuple(i->construct_inner_cache(get_operator(f, i), alg.inner_algs[i], view(u, deepcopy(dof_ranges[i])), view(uprev, deepcopy(dof_ranges[i]))), length(dof_ranges))
     LieTrotterGodunovCache(u, uprev, copy(uprev), copy(u), inner_caches)
 end
 
@@ -508,7 +491,7 @@ function step_inner!(integ, cache::ForwardEulerCache)
     @unpack du = cache
 
     f(du, u, p, t)
-    u .+= dt .* du
+    @. u += dt * du
 end
 
 
@@ -518,8 +501,9 @@ function build_subintegrators_recursive(f::GenericSplitFunction, p::Tuple, cache
             get_operator(f, i),
             p[i],
             cache.inner_caches[i],
-            view(u, f.dof_ranges[i]),
-            view(uprev, f.dof_ranges[i]),
+            # FIXME this deepcopy is to get rid of the supurious allocations
+            view(u, deepcopy(f.dof_ranges[i])),
+            view(uprev, deepcopy(f.dof_ranges[i])),
             t, dt
         ), length(f.functions)
     )

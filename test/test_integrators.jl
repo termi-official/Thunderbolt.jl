@@ -13,7 +13,7 @@ end
 # Setup individual functions
 # Diagonal components
 function ode1(du, u, p, t)
-    du .= -0.1u
+    @. du = -0.1u
 end
 # Offdiagonal components
 function ode2(du, u, p, t)
