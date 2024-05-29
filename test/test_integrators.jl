@@ -32,7 +32,10 @@ f2dofs = [1,3]
 fsplit1 = GenericSplitFunction((f1,f2), [f1dofs, f2dofs])
 
 # Now the usual setup just with our new problem type.
-u0 = rand(3)
+# u0 = rand(3)
+u0 = [0.36429708216859524
+      0.37241077688566093
+      0.9262188168674828]
 tspan = (0.0,100.0)
 prob = OperatorSplittingProblem(fsplit1, u0, tspan)
 
@@ -68,7 +71,8 @@ f3 = ODEFunction(ode3)
 f1dofs = [1,2,3]
 f2dofs = [1,3]
 f3dofs = [1,2]
-fsplit2_inner = GenericSplitFunction((f3,f3), [f3dofs, f3dofs])
+# fsplit2_inner = GenericSplitFunction((f3,f3), [f3dofs, f3dofs]) # 1 and 2
+fsplit2_inner = GenericSplitFunction((f3,f3), [f2dofs, f2dofs]) # 3
 fsplit2_outer = GenericSplitFunction((f1,fsplit2_inner), [f1dofs, f2dofs])
 
 timestepper_inner = LieTrotterGodunov(
@@ -87,8 +91,10 @@ end
 @assert isapprox(ufinal, integrator2.u, atol=1e-8)
 
 @btime OS.step_inner!($integrator, $(integrator.cache)) setup=(DiffEqBase.reinit!(integrator, u0; tspan))
-#   326.743 ns (8 allocations: 416 bytes)
-#   263.656 ns (3 allocations: 240 bytes) for 2
+#   326.743 ns (8 allocations: 416 bytes) for 1
+#   89.949 ns (0 allocations: 0 bytes) for 2
+#   82.418 ns (0 allocations: 0 bytes) for 3
 @btime DiffEqBase.solve!($integrator) setup=(DiffEqBase.reinit!(integrator, u0; tspan));
-#   431.632 μs (10000 allocations: 507.81 KiB)
-#   310.912 μs (3333 allocations: 260.42 KiB) for 2
+#   431.632 μs (10000 allocations: 507.81 KiB) for 1
+#   105.712 μs (0 allocations: 0 bytes) for 2
+#   101.061 μs (0 allocations: 0 bytes) for 3
