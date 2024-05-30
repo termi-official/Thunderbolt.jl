@@ -57,7 +57,7 @@ end
 Internal helper to integrate a single inner operator
 over some time interval.
 """
-mutable struct SubIntegrator{
+mutable struct ThunderboltSubIntegrator{
     fType,
     uType,
     uType2,
@@ -280,6 +280,9 @@ end
 @inline function DiffEqBase.get_tmp_cache(integrator::OperatorSplittingIntegrator)
     DiffEqBase.get_tmp_cache(integrator, integrator.alg, integrator.cache)
 end
+@inline function DiffEqBase.get_tmp_cache(integrator::OperatorSplittingIntegrator, ::AbstractOperatorSplittingAlgorithm, cache)
+    return (cache.tmp,)
+end
 # Interpolation
 # TODO via https://github.com/SciML/SciMLBase.jl/blob/master/src/interpolation.jl
 function linear_interpolation!(y,t,y1,y2,t1,t2)
@@ -411,6 +414,16 @@ function init_cache(prob::OperatorSplittingProblem, alg::LieTrotterGodunov; dt, 
     return construct_inner_cache(f, alg, u, uprev)
 end
 
+# Dispatch for recursive construction
+function construct_inner_cache(f::AbstractOperatorSplitFunction, alg::LieTrotterGodunov, u::AbstractArray, uprev::AbstractArray)
+    dof_ranges = f.dof_ranges
+
+    uprev2     = similar(uprev)
+    tmp        = similar(u)
+    inner_caches = ntuple(i->construct_inner_cache(get_operator(f, i), alg.inner_algs[i], similar(u, length(dof_ranges[i])), similar(u, length(dof_ranges[i]))), length(f.functions))
+    LieTrotterGodunovCache(u, uprev, uprev2, tmp, inner_caches)
+end
+
 function synchronize_subintegrators!(integrator::OperatorSplittingIntegrator)
     synchronize_subintegrator!(integrator.subintegrators, integrator)
 end
@@ -421,13 +434,13 @@ end
     end
 end
 
-function synchronize_subintegrator!(subintegrator::SubIntegrator, integrator::OperatorSplittingIntegrator)
+function synchronize_subintegrator!(subintegrator::ThunderboltSubIntegrator, integrator::OperatorSplittingIntegrator)
     @unpack t, dt = integrator
     subintegrator.t = t
     subintegrator.dt = dt
 end
 
-@inline function step_begin!(subintegrator::SubIntegrator)
+@inline function step_begin!(subintegrator::ThunderboltSubIntegrator)
     # Copy solution into subproblem
     for (i,imain) in enumerate(subintegrator.indexset)
         subintegrator.u[i] = subintegrator.umaster[imain]
@@ -436,7 +449,7 @@ end
     subintegrator.uprev .= subintegrator.u
 end
 
-@inline function step_end!(subintegrator::SubIntegrator)
+@inline function step_end!(subintegrator::ThunderboltSubIntegrator)
     # Copy solution out of subproblem
     for (i,imain) in enumerate(subintegrator.indexset)
         subintegrator.umaster[imain] = subintegrator.u[i]
@@ -483,23 +496,9 @@ mutable struct ForwardEulerCache{duType}
     du::duType
 end
 
-@inline function DiffEqBase.get_tmp_cache(integrator::OperatorSplittingIntegrator, ::AbstractOperatorSplittingAlgorithm, cache)
-    return (cache.tmp,)
-end
-
 # construct_inner_cache(f, alg, u::AbstractArray, uprev::AbstractArray) = error("Function type $typeof(f) not compatible with $alg!")
 function construct_inner_cache(f::ODEFunction, alg::ForwardEuler, u::AbstractArray, uprev::AbstractArray)
     ForwardEulerCache(copy(uprev))
-end
-
-# Dispatch for recursive construction
-function construct_inner_cache(f::AbstractOperatorSplitFunction, alg::LieTrotterGodunov, u::AbstractArray, uprev::AbstractArray)
-    dof_ranges = f.dof_ranges
-
-    uprev2     = similar(uprev)
-    tmp        = similar(u)
-    inner_caches = ntuple(i->construct_inner_cache(get_operator(f, i), alg.inner_algs[i], similar(u, length(dof_ranges[i])), similar(u, length(dof_ranges[i]))), length(f.functions))
-    LieTrotterGodunovCache(u, uprev, uprev2, tmp, inner_caches)
 end
 
 function step_inner!(integ, cache::ForwardEulerCache)
@@ -510,6 +509,11 @@ function step_inner!(integ, cache::ForwardEulerCache)
     @. u += dt * du
 end
 
+# Dispatch for leaf construction
+function build_subintegrators_recursive(f::ODEFunction, p::Any, cache::Any, u::AbstractArray, uprev::AbstractArray, t, dt, dof_range, umaster)
+    return ThunderboltSubIntegrator(f, u, umaster, uprev, dof_range, p, t, dt)
+end
+# Dispatch for tree node construction
 function build_subintegrators_recursive(f::GenericSplitFunction, p::Tuple, cache::LieTrotterGodunovCache, u::AbstractArray, uprev::AbstractArray, t, dt, dof_range, umaster)
     return ntuple(i -> 
         build_subintegrators_recursive(
@@ -521,10 +525,6 @@ function build_subintegrators_recursive(f::GenericSplitFunction, p::Tuple, cache
             t, dt, f.dof_ranges[i], umaster,
         ), length(f.functions)
     )
-end
-
-function build_subintegrators_recursive(f::ODEFunction, p::Any, cache::Any, u::AbstractArray, uprev::AbstractArray, t, dt, dof_range, umaster)
-    return SubIntegrator(f, u, umaster, uprev, dof_range, p, t, dt)
 end
 
 export ODEFunction, GenericSplitFunction, LieTrotterGodunov, ForwardEuler, DiffEqBase, OperatorSplittingProblem
