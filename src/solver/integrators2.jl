@@ -453,10 +453,7 @@ step_inner!(integrator::OperatorSplittingIntegrator, cache::LieTrotterGodunovCac
     i = 0
     @unroll for subinteg in subintegrators
         i += 1
-
-        if i > 1
-            sync_inner!(subinteg)
-        end
+        sync_inner!(subinteg)
         step_inner!(subinteg, inner_caches[i])
     end
 end
