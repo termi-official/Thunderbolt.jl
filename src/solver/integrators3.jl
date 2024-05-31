@@ -2,12 +2,12 @@ module OS
 
 import Unrolled: @unroll
 
-import Test: @inferred
+# import Test: @inferred
 
 import DiffEqBase, DataStructures
 
 import UnPack: @unpack
-import DiffEqBase: ODEFunction
+import DiffEqBase: ODEFunction, init, TimeChoiceIterator
 
 abstract type AbstractOperatorSplittingAlgorithm end
 
@@ -51,29 +51,6 @@ mutable struct OperatorSplittingProblem{fType <: AbstractOperatorSplitFunction, 
         p,
         kwargs)
     end
-end
-
-"""
-Internal helper to integrate a single inner operator
-over some time interval.
-"""
-mutable struct ThunderboltSubIntegrator{
-    fType,
-    uType,
-    uType2,
-    uprevType,
-    indexSetType,
-    tType,
-    pType,
-}  #<: DiffEqBase.AbstractODEIntegrator{algType, true, uType, tType}
-    f::fType # Right hand side
-    u::uType # Current local solution
-    umaster::uType2 # Real solution injected by OperatorSplittingIntegrator
-    uprev::uprevType
-    indexset::indexSetType
-    p::pType
-    t::tType
-    dt::tType
 end
 
 """
@@ -434,6 +411,92 @@ end
     end
 end
 
+step_inner!(integrator::OperatorSplittingIntegrator, cache::LieTrotterGodunovCache) = step_inner!(integrator.subintegrators, cache)
+
+@inline @unroll function step_inner!(subintegrators::Tuple, cache::LieTrotterGodunovCache)
+    # We assume that the integrators are already synced
+    @unpack u, uprev2, uprev, inner_caches = cache
+
+    # Store current solution
+    uprev .= u
+
+    # For each inner operator
+    i = 0
+    @unroll for subinteg in subintegrators
+        i += 1
+        step_begin!(subinteg)
+        step_inner!(subinteg, inner_caches[i])
+        step_end!(subinteg)
+    end
+end
+
+# Dispatch for tree node construction
+function build_subintegrators_recursive(f::GenericSplitFunction, p::Tuple, cache::LieTrotterGodunovCache, u::AbstractArray, uprev::AbstractArray, t, dt, dof_range, umaster)
+    return ntuple(i ->
+        build_subintegrators_recursive(
+            get_operator(f, i),
+            p[i],
+            cache.inner_caches[i],
+            similar(u, length(f.dof_ranges[i])),
+            similar(uprev, length(f.dof_ranges[i])),
+            t, dt, f.dof_ranges[i], umaster,
+        ), length(f.functions)
+    )
+end
+
+export ODEFunction, GenericSplitFunction, LieTrotterGodunov, ForwardEuler, OperatorSplittingProblem,
+    DiffEqBase, init, TimeChoiceIterator
+
+# For testing purposes
+struct ForwardEuler
+end
+
+mutable struct ForwardEulerCache{duType}
+    du::duType
+end
+
+# Dispatch for leaf construction
+function construct_inner_cache(f::ODEFunction, alg::ForwardEuler, u::AbstractArray, uprev::AbstractArray)
+    ForwardEulerCache(copy(uprev))
+end
+
+# Dispatch innermost solve
+function step_inner!(integ, cache::ForwardEulerCache)
+    @unpack f, dt, u, p, t = integ
+    @unpack du = cache
+
+    f(du, u, p, t)
+    @. u += dt * du
+end
+
+# Dispatch for leaf construction
+function build_subintegrators_recursive(f::ODEFunction, p::Any, cache::Any, u::AbstractArray, uprev::AbstractArray, t, dt, dof_range, umaster)
+    return ThunderboltSubIntegrator(f, u, umaster, uprev, dof_range, p, t, dt)
+end
+
+"""
+Internal helper to integrate a single inner operator
+over some time interval.
+"""
+mutable struct ThunderboltSubIntegrator{
+    fType,
+    uType,
+    uType2,
+    uprevType,
+    indexSetType,
+    tType,
+    pType,
+}  #<: DiffEqBase.AbstractODEIntegrator{algType, true, uType, tType}
+    f::fType # Right hand side
+    u::uType # Current local solution
+    umaster::uType2 # Real solution injected by OperatorSplittingIntegrator
+    uprev::uprevType
+    indexset::indexSetType
+    p::pType
+    t::tType
+    dt::tType
+end
+
 function synchronize_subintegrator!(subintegrator::ThunderboltSubIntegrator, integrator::OperatorSplittingIntegrator)
     @unpack t, dt = integrator
     subintegrator.t = t
@@ -468,65 +531,5 @@ end
     end
 end
 
-
-step_inner!(integrator::OperatorSplittingIntegrator, cache::LieTrotterGodunovCache) = step_inner!(integrator.subintegrators, cache)
-
-@inline @unroll function step_inner!(subintegrators::Tuple, cache::LieTrotterGodunovCache)
-    # We assume that the integrators are already synced
-    @unpack u, uprev2, uprev, inner_caches = cache
-
-    # Store current solution
-    uprev .= u
-
-    # For each inner operator
-    i = 0
-    @unroll for subinteg in subintegrators
-        i += 1
-        step_begin!(subinteg)
-        step_inner!(subinteg, inner_caches[i])
-        step_end!(subinteg)
-    end
-end
-
-# For testing purposes
-struct ForwardEuler
-end
-
-mutable struct ForwardEulerCache{duType}
-    du::duType
-end
-
-# construct_inner_cache(f, alg, u::AbstractArray, uprev::AbstractArray) = error("Function type $typeof(f) not compatible with $alg!")
-function construct_inner_cache(f::ODEFunction, alg::ForwardEuler, u::AbstractArray, uprev::AbstractArray)
-    ForwardEulerCache(copy(uprev))
-end
-
-function step_inner!(integ, cache::ForwardEulerCache)
-    @unpack f, dt, u, p, t = integ
-    @unpack du = cache
-
-    f(du, u, p, t)
-    @. u += dt * du
-end
-
-# Dispatch for leaf construction
-function build_subintegrators_recursive(f::ODEFunction, p::Any, cache::Any, u::AbstractArray, uprev::AbstractArray, t, dt, dof_range, umaster)
-    return ThunderboltSubIntegrator(f, u, umaster, uprev, dof_range, p, t, dt)
-end
-# Dispatch for tree node construction
-function build_subintegrators_recursive(f::GenericSplitFunction, p::Tuple, cache::LieTrotterGodunovCache, u::AbstractArray, uprev::AbstractArray, t, dt, dof_range, umaster)
-    return ntuple(i -> 
-        build_subintegrators_recursive(
-            get_operator(f, i),
-            p[i],
-            cache.inner_caches[i],
-            similar(u, length(f.dof_ranges[i])),
-            similar(uprev, length(f.dof_ranges[i])),
-            t, dt, f.dof_ranges[i], umaster,
-        ), length(f.functions)
-    )
-end
-
-export ODEFunction, GenericSplitFunction, LieTrotterGodunov, ForwardEuler, DiffEqBase, OperatorSplittingProblem
 
 end
