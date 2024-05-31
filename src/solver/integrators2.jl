@@ -57,7 +57,7 @@ end
 Internal helper to integrate a single inner operator
 over some time interval.
 """
-mutable struct SubIntegrator{
+mutable struct ThunderboltSubIntegrator{
     fType,
     uType,
     uprevType,
@@ -424,13 +424,13 @@ end
     end
 end
 
-function synchronize_subintegrator!(subintegrator::SubIntegrator, integrator::OperatorSplittingIntegrator)
+function synchronize_subintegrator!(subintegrator::ThunderboltSubIntegrator, integrator::OperatorSplittingIntegrator)
     @unpack t, dt = integrator
     subintegrator.t = t
     subintegrator.dt = dt
 end
 
-@inline function sync_inner!(subintegrator::SubIntegrator)
+@inline function sync_inner!(subintegrator::ThunderboltSubIntegrator)
     subintegrator.uprev .= subintegrator.u
 end
 
@@ -507,7 +507,7 @@ function build_subintegrators_recursive(f::GenericSplitFunction, p::Tuple, cache
 end
 
 function build_subintegrators_recursive(f::ODEFunction, p::Any, cache::Any, u::SubArray, uprev::SubArray, t, dt)
-    return SubIntegrator(f, u, uprev, p, t, dt)
+    return ThunderboltSubIntegrator(f, u, uprev, p, t, dt)
 end
 
 export ODEFunction, GenericSplitFunction, LieTrotterGodunov, ForwardEuler, DiffEqBase, OperatorSplittingProblem

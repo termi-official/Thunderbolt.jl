@@ -53,7 +53,7 @@ end
 Internal helper to integrate a single inner operator
 over some time interval.
 """
-mutable struct SubIntegrator{
+mutable struct ThunderboltSubIntegrator{
     fType,
     uType,
     tType,
@@ -419,7 +419,7 @@ function step_inner!(integ, cache::LieTrotterGodunovCache)
         # FIXME This is basically a combination of perform_step and solve! since I cannot figure
         # out how to reuse ODEProblem's efficiently to solve on different time intervals and how to
         # connect the ODEIntegrator with the OperatorSplittingIntegrator.
-        subinteg = SubIntegrator(get_operator(f, i), u_i, uprev_i, p[i], t, dt)
+        subinteg = ThunderboltSubIntegrator(get_operator(f, i), u_i, uprev_i, p[i], t, dt)
         step_inner!(subinteg, inner_cache)
 
         # Forward transfer
@@ -463,6 +463,7 @@ function step_inner!(integ, cache::ForwardEulerCache)
     u .+= dt .* du
 end
 
-export ODEFunction, GenericSplitFunction, LieTrotterGodunov, ForwardEuler, DiffEqBase, OperatorSplittingProblem
+export ODEFunction, GenericSplitFunction, LieTrotterGodunov, ForwardEuler, DiffEqBase, OperatorSplittingProblem,
+    DiffEqBase.init, DiffEqBase.TimeChoiceIterator
 
 end
