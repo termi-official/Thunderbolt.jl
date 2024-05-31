@@ -1,3 +1,5 @@
+include("./integrators3.jl")
+
 """
 Classical Lie-Trotter-Godunov operator splitting in time.
 """
