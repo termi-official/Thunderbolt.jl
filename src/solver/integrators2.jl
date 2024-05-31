@@ -2,12 +2,13 @@ module OS
 
 import Unrolled: @unroll
 
-import Test: @inferred
+using TimerOutputs
+# import Test: @inferred
 
 import DiffEqBase, DataStructures
 
 import UnPack: @unpack
-import DiffEqBase: ODEFunction
+import DiffEqBase: ODEFunction, init, TimeChoiceIterator
 
 abstract type AbstractOperatorSplittingAlgorithm end
 
@@ -333,7 +334,7 @@ function __step!(integrator)
         tdir(integrator) * _dt
 
     # Solve inner problems
-    step_inner!(integrator)
+    @timeit "Subintegrators" step_inner!(integrator)
 
     # increment t by dt, rounding to the first tstop if that is roughly
     # equivalent up to machine precision; the specific bound of 100 * eps...

@@ -3,7 +3,7 @@ module OS
 import DiffEqBase, DataStructures
 
 import UnPack: @unpack
-import DiffEqBase: ODEFunction
+import DiffEqBase: ODEFunction, init, TimeChoiceIterator
 
 abstract type AbstractOperatorSplittingAlgorithm end
 
