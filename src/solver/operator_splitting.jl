@@ -63,8 +63,8 @@ The default behavior assumes that nothing has to be done, because both problems 
 """
 transfer_fields!(A, A_cache, B, B_cache)
 
-transfer_fields!(::AbstractProblem, ::Any, ::AbstractPointwiseProblem, ::AbstractPointwiseSolverCache) = nothing
-transfer_fields!(::AbstractPointwiseProblem, ::AbstractPointwiseSolverCache, ::AbstractProblem, ::Any) = nothing
+transfer_fields!(::DiffEqBase.AbstractDEProblem, ::Any, ::AbstractPointwiseProblem, ::AbstractPointwiseSolverCache) = nothing
+transfer_fields!(::AbstractPointwiseProblem, ::AbstractPointwiseSolverCache, ::DiffEqBase.AbstractDEProblem, ::Any) = nothing
 transfer_fields!(::Thunderbolt.AbstractPointwiseProblem, ::Thunderbolt.AbstractPointwiseSolverCache, ::Thunderbolt.AbstractPointwiseProblem, ::Thunderbolt.AbstractPointwiseSolverCache) = nothing
 
 transfer_fields!(A, A_cache, B, B_cache) = @warn "IMPLEMENT ME (transfer_fields!)" maxlog=1

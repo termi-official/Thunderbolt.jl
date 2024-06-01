@@ -266,7 +266,7 @@ function linear_interpolation!(y,t,y1,y2,t1,t2)
     y .= y1 + (t-t1) * (y2-y1)/(t2-t1)
 end
 function (integrator::OperatorSplittingIntegrator)(tmp, t)
-    linear_interpolation!(tmp, t, integrator.cache.uprev, integrator.u, integrator.t-integrator.dt, integrator.t)
+    linear_interpolation!(tmp, t, integrator.uprev, integrator.u, integrator.t-integrator.dt, integrator.t)
 end
 
 
@@ -305,7 +305,8 @@ end
 
 
 function __step!(integrator)
-    (; _dt, dtchangeable, tstops, subintegrators) = integrator
+    (; dtchangeable, tstops) = integrator
+    _dt = getdt(integrator)
 
     # update step and dt before incrementing u; if dt is changeable and there is
     # a tstop within dt, reduce dt to tstop - t
@@ -446,78 +447,6 @@ end
 
 export ODEFunction, GenericSplitFunction, LieTrotterGodunov, ForwardEuler, OperatorSplittingProblem,
     DiffEqBase, init, TimeChoiceIterator
-
-# For testing purposes
-struct ForwardEuler
-end
-
-mutable struct ForwardEulerCache{duType}
-    du::duType
-end
-
-# Dispatch for leaf construction
-function construct_inner_cache(f::ODEFunction, alg::ForwardEuler, u::AbstractArray, uprev::AbstractArray)
-    ForwardEulerCache(copy(uprev))
-end
-
-# Dispatch innermost solve
-function step_inner!(integ, cache::ForwardEulerCache)
-    @unpack f, dt, u, p, t = integ
-    @unpack du = cache
-
-    f(du, u, p, t)
-    @. u += dt * du
-end
-
-# Dispatch for leaf construction
-function build_subintegrators_recursive(f::ODEFunction, p::Any, cache::Any, u::AbstractArray, uprev::AbstractArray, t, dt, dof_range, umaster)
-    return ThunderboltSubIntegrator(f, u, umaster, uprev, dof_range, p, t, dt)
-end
-
-"""
-Internal helper to integrate a single inner operator
-over some time interval.
-"""
-mutable struct ThunderboltSubIntegrator{
-    fType,
-    uType,
-    uType2,
-    uprevType,
-    indexSetType,
-    tType,
-    pType,
-}  #<: DiffEqBase.AbstractODEIntegrator{algType, true, uType, tType}
-    f::fType # Right hand side
-    u::uType # Current local solution
-    umaster::uType2 # Real solution injected by OperatorSplittingIntegrator
-    uprev::uprevType
-    indexset::indexSetType
-    p::pType
-    t::tType
-    dt::tType
-end
-
-function synchronize_subintegrator!(subintegrator::ThunderboltSubIntegrator, integrator::OperatorSplittingIntegrator)
-    @unpack t, dt = integrator
-    subintegrator.t = t
-    subintegrator.dt = dt
-end
-
-@inline function step_begin!(subintegrator::ThunderboltSubIntegrator)
-    # Copy solution into subproblem
-    for (i,imain) in enumerate(subintegrator.indexset)
-        subintegrator.u[i] = subintegrator.umaster[imain]
-    end
-    # Mark previous solution
-    subintegrator.uprev .= subintegrator.u
-end
-
-@inline function step_end!(subintegrator::ThunderboltSubIntegrator)
-    # Copy solution out of subproblem
-    for (i,imain) in enumerate(subintegrator.indexset)
-        subintegrator.umaster[imain] = subintegrator.u[i]
-    end
-end
 
 @unroll function step_begin!(subintegrators::Tuple)
     @unroll for subintegrator in subintegrators

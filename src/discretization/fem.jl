@@ -64,11 +64,11 @@ function semidiscretize(model::StructuralModel{<:QuasiStaticModel}, discretizati
     end
     close!(ch)
 
-    semidiscrete_problem = QuasiStaticNonlinearProblem(
+    semidiscrete_problem = QuasiStaticNonlinearFunction(
         dh,
         ch,
         model.mechanical_model,
-        model.face_models,
+        model.face_models
     )
 
     return semidiscrete_problem

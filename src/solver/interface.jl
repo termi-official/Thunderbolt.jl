@@ -4,15 +4,13 @@ abstract type AbstractNonlinearSolver <: AbstractSolver end
 abstract type AbstractNonlinearSolverCache end
 
 """
-    solve(problem, solver, Δt, time_span, initial_condition[, callback])
+    legacysolve(problem, solver, Δt, time_span, initial_condition[, callback])
 
 Main entry point for solvers in Thunderbolt.jl. The design is inspired by
 DifferentialEquations.jl. We try to upstream as much content as possible to
 make it available for packages.
-
-TODO iterator syntax instead of callback
 """
-function solve(problem::AbstractProblem, solver::AbstractSolver, Δt₀, (t₀, T), initial_condition, callback = (t,p,c) -> nothing)
+function legacysolve(problem::DiffEqBase.AbstractDEProblem, solver::AbstractSolver, Δt₀, (t₀, T), initial_condition, callback = (t,p,c) -> nothing)
     solver_cache = setup_solver_cache(problem, solver, t₀)
 
     setup_initial_condition!(problem, solver_cache, initial_condition, t₀)
@@ -65,14 +63,14 @@ function setup_operator(problem::NullProblem, couplings, solver)
     # return NullOperator{Float64,solution_size(problem),solution_size(problem)}()
 end
 
-function setup_operator(problem::QuasiStaticNonlinearProblem, solver::AbstractNonlinearSolver)
-    @unpack dh, constitutive_model, face_models = problem
+function setup_operator(problem::QuasiStaticProblem, solver::AbstractNonlinearSolver)
+    @unpack dh, constitutive_model, face_models = problem.f
     @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the nonlinear solver."
     @assert length(dh.field_names) == 1 "Multiple fields not yet supported in the nonlinear solver."
 
     displacement_symbol = first(dh.field_names)
 
-    intorder = quadrature_order(problem, displacement_symbol)
+    intorder = quadrature_order(problem.f, displacement_symbol)
     qr = QuadratureRuleCollection(intorder)
     qr_face = FaceQuadratureRuleCollection(intorder)
 
@@ -81,7 +79,7 @@ function setup_operator(problem::QuasiStaticNonlinearProblem, solver::AbstractNo
     )
 end
 
-# function setup_operator(problem::QuasiStaticNonlinearProblem, relevant_coupler, solver::AbstractNonlinearSolver)
+# function setup_operator(problem::QuasiStaticProblem, relevant_coupler, solver::AbstractNonlinearSolver)
 #     @unpack dh, constitutive_model, face_models, displacement_symbol = problem
 #     @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the Newton solver."
 #     @assert length(dh.field_names) == 1 "Multiple fields not yet supported in the nonlinear solver."
@@ -98,7 +96,7 @@ end
 function setup_operator(problem::RSAFDQ20223DProblem, solver::AbstractNonlinearSolver)
     @unpack tying_problem, structural_problem = problem
     # @unpack dh, constitutive_model, face_models, displacement_symbol = structural_problem
-    @unpack dh, constitutive_model, face_models = structural_problem
+    @unpack dh, constitutive_model, face_models = structural_problem.f
     @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the Newton solver."
     @assert length(dh.field_names) == 1 "Multiple fields not yet supported in the nonlinear solver."
 
@@ -114,7 +112,7 @@ function setup_operator(problem::RSAFDQ20223DProblem, solver::AbstractNonlinearS
 end
 
 # TODO correct dispatches
-function setup_coupling_operator(first_problem::AbstractProblem, second_problem::AbstractProblem, relevant_couplings, solver::AbstractNonlinearSolver)
+function setup_coupling_operator(first_problem::DiffEqBase.AbstractDEProblem, second_problem::DiffEqBase.AbstractDEProblem, relevant_couplings, solver::AbstractNonlinearSolver)
     NullOperator{Float64,solution_size(second_problem),solution_size(first_problem)}()
 end
 

@@ -123,7 +123,7 @@ end
 
 #######################################################################################
 
-function solve!(u::AbstractVector, problem::AbstractProblem, solver_cache::NewtonRaphsonSolverCache, t)
+function solve!(u::AbstractVector, problem::AbstractSemidiscreteFunction, solver_cache::NewtonRaphsonSolverCache, t)
     @unpack op, residual = solver_cache
     newton_itr = -1
     Δu = zero(u)

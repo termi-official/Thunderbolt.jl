@@ -1,5 +1,35 @@
 using .OS
+import Thunderbolt: ThunderboltSubIntegrator
 using BenchmarkTools
+
+
+# For testing purposes
+struct ForwardEuler
+end
+
+mutable struct ForwardEulerCache{duType}
+    du::duType
+end
+
+# Dispatch for leaf construction
+function OS.construct_inner_cache(f::ODEFunction, alg::ForwardEuler, u::AbstractArray, uprev::AbstractArray)
+    ForwardEulerCache(copy(uprev))
+end
+
+# Dispatch innermost solve
+function OS.step_inner!(integ, cache::ForwardEulerCache)
+    @unpack f, dt, u, p, t = integ
+    @unpack du = cache
+
+    f(du, u, p, t)
+    @. u += dt * du
+end
+
+# Dispatch for leaf construction
+function OS.build_subintegrators_recursive(f::ODEFunction, p::Any, cache::Any, u::AbstractArray, uprev::AbstractArray, t, dt, dof_range, umaster)
+    return ThunderboltSubIntegrator(f, u, umaster, uprev, dof_range, p, t, t, dt, cache, nothing, true)
+end
+
 
 # Operator splitting
 
