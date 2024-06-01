@@ -96,7 +96,7 @@ end
 function setup_operator(problem::RSAFDQ20223DProblem, solver::AbstractNonlinearSolver)
     @unpack tying_problem, structural_problem = problem
     # @unpack dh, constitutive_model, face_models, displacement_symbol = structural_problem
-    @unpack dh, constitutive_model, face_models = structural_problem.f
+    @unpack dh, constitutive_model, face_models = structural_problem
     @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the Newton solver."
     @assert length(dh.field_names) == 1 "Multiple fields not yet supported in the nonlinear solver."
 

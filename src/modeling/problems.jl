@@ -96,7 +96,7 @@ relevant_couplings(problem::CoupledProblem, i::Int) = [coupling for coupling in 
 
 
 # TODO replace with OS module
-struct SplitProblem{APT <: AbstractSemidiscreteODEProblem, BPT <: AbstractSemidiscreteODEProblem} <: AbstractSemidiscreteODEProblem
+struct SplitProblem{APT <: AbstractSemidiscreteProblem, BPT <: AbstractSemidiscreteProblem} <: AbstractSemidiscreteProblem
     A::APT
     B::BPT
 end

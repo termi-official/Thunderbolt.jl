@@ -80,6 +80,29 @@ function OS.synchronize_subintegrator!(subintegrator::ThunderboltIntegrator, int
 end
 OS.tdir(::ThunderboltIntegrator) = 1 # TODO remove
 
+# TODO generalize
+function OS.step_inner!(integ, cache::Union{LoadDrivenSolverCache,ForwardEulerSolverCache})
+    perform_step!(integ.f, cache, integ.t, integ.dt)
+end
+@inline function OS.step_begin!(subintegrator::ThunderboltIntegrator)
+    # Copy solution into subproblem
+    for (i,imain) in enumerate(subintegrator.indexset)
+        subintegrator.u[i] = subintegrator.umaster[imain]
+    end
+    # Mark previous solution
+    subintegrator.uprev .= subintegrator.u
+    # TODO
+    # transfer_fields_in(subintegrator, subintegrator.f, subintegrator.cache)
+end
+@inline function OS.step_end!(subintegrator::ThunderboltIntegrator)
+    # Copy solution out of subproblem
+    for (i,imain) in enumerate(subintegrator.indexset)
+        subintegrator.umaster[imain] = subintegrator.u[i]
+    end
+    # TODO
+    # transfer_fields_out(subintegrator, subintegrator.f, subintegrator.cache)
+end
+
 include("solver/ecg.jl")
 
 include("io.jl")

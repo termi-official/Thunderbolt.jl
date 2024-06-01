@@ -303,7 +303,7 @@ function DiffEqBase.postamble!(integrator::OperatorSplittingIntegrator)
     DiffEqBase.finalize!(integrator.callback, integrator.u, integrator.t, integrator)
 end
 
-
+getdt(integrator) = integrator.dt # TODO removeme
 function __step!(integrator)
     (; dtchangeable, tstops) = integrator
     _dt = getdt(integrator)
