@@ -15,6 +15,8 @@ using JLD2
 import Ferrite: AbstractDofHandler, AbstractGrid, AbstractRefShape, AbstractCell
 import Ferrite: vertices, edges, faces, sortedge, sortface
 
+import DiffEqBase#: AbstractDiffEqFunction, AbstractDEProblem
+
 import Krylov: CgSolver
 
 import Base: *, +, -
@@ -50,11 +52,33 @@ include("discretization/fem.jl")
 include("discretization/operator.jl")
 
 include("solver/interface.jl")
+include("solver/integrator.jl")
 include("solver/newton_raphson.jl")
 include("solver/load_stepping.jl")
 include("solver/euler.jl")
 include("solver/partitioned_solver.jl")
 include("solver/operator_splitting.jl")
+
+# FIXME move into integrator
+function DiffEqBase.step!(integrator::ThunderboltIntegrator, dt, stop_at_tdt = false)
+    # OridinaryDiffEq lets dt be negative if tdir is -1, but that's inconsistent
+    dt <= zero(dt) && error("dt must be positive")
+    # stop_at_tdt && !integrator.dtchangeable && error("Cannot stop at t + dt if dtchangeable is false")
+    t_plus_dt = integrator.t + dt
+    stop_at_tdt && DiffEqBase.add_tstop!(integrator, t_plus_dt)
+    while !OS.reached_tstop(integrator, t_plus_dt, stop_at_tdt)
+        # Solve inner problem
+        perform_step!(integrator.f, integrator.cache, integrator.t, integrator.dt)
+        integrator.tprev = integrator.t
+        integrator.t = integrator.t + integrator.dt
+    end
+end
+function OS.synchronize_subintegrator!(subintegrator::ThunderboltIntegrator, integrator::OS.OperatorSplittingIntegrator)
+    @unpack t, dt = integrator
+    subintegrator.t = t
+    subintegrator.dt = dt
+end
+OS.tdir(::ThunderboltIntegrator) = 1 # TODO remove
 
 include("solver/ecg.jl")
 
@@ -64,7 +88,7 @@ include("disambiguation.jl")
 
 # TODO put exports into the individual submodules above!
 export
-    solve,
+    legacysolve,
     # Coefficients
     ConstantCoefficient,
     FieldCoefficient,
