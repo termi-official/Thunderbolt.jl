@@ -49,7 +49,7 @@ odeform = semidiscretize(
 # TODO this should be done by the function above.
 splitfun = OS.GenericSplitFunction(
     (odeform.A, odeform.B),
-    [1:ndofs(odeform.A.dh), 1:2*ndofs(odeform.A.dh)]
+    (1:ndofs(odeform.A.dh), 1:2*ndofs(odeform.A.dh))
 )
 
 # TODO query with function from odeform
