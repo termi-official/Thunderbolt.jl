@@ -346,17 +346,7 @@ u₀ = [zeros(offset); u0new]
 OS.recursive_null_parameters(stuff) = OS.DiffEqBase.NullParameters()
 problem = OS.OperatorSplittingProblem(splitfun, u₀, tspan)
 
-# Dispatch for leaf construction
-function OS.construct_inner_cache(f, alg::LoadDrivenSolver, u::AbstractArray, uprev::AbstractArray)
-    Thunderbolt.setup_solver_cache(f, alg, 0.0)
-end
-function OS.construct_inner_cache(f::Thunderbolt.ODEProblem, alg::ForwardEulerSolver, ::Vector, ::Vector)
-    Thunderbolt.setup_solver_cache(f, alg, 0.0)
-end
-
-
 integrator = OS.init(problem, timestepper, dt=dt₀, verbose=true)
-integrator.subintegrators[1].f.tying_problem.chambers[1].V⁰ᴰval = 42.0 # REMOVEME
 
 io = ParaViewWriter("lv_with_lumped_circuit");
 using Thunderbolt.TimerOutputs
@@ -380,14 +370,3 @@ for (u, t) in OS.TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
 end
 TimerOutputs.print_timer()
 TimerOutputs.disable_debug_timings(Thunderbolt)
-
-# using Thunderbolt.TimerOutputs
-# TimerOutputs.enable_debug_timings(Thunderbolt)
-# TimerOutputs.reset_timer!()
-# solve_ideal_lv_with_circuit("lv_with_lumped_circuit",
-# constitutive_model, LV_grid, LV_cs,
-#     integral_bcs,
-#     ip_u, qr_u, u0new, LVc.p3D, LVc.V, 1.0, 1000.0
-# )
-# TimerOutputs.print_timer()
-# TimerOutputs.disable_debug_timings(Thunderbolt)
