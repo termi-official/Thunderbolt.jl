@@ -105,16 +105,10 @@ timestepper = LoadDrivenSolver(NewtonRaphsonSolver(;max_iter=100))
 
 integrator = OS.init(problem, timestepper, dt=dt₀, verbose=true)
 
+using Thunderbolt.TimerOutputs
+TimerOutputs.enable_debug_timings(Thunderbolt)
+TimerOutputs.reset_timer!()
 for (u, t) in OS.TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
 end
-
-# Thunderbolt.legacysolve(
-#     quasistaticform,
-#     timestepper,
-#     dt₀, 
-#     tspan,
-#     default_initializer,
-#     (args...)->nothing
-# )
-
-# end
+TimerOutputs.print_timer()
+TimerOutputs.disable_debug_timings(Thunderbolt)
