@@ -94,8 +94,7 @@ end
     end
     # Mark previous solution
     subintegrator.uprev .= subintegrator.u
-    # TODO
-    # transfer_fields_in(subintegrator, subintegrator.f, subintegrator.cache)
+    syncronize_parameters!(subintegrator, subintegrator.f, subintegrator.synchronizer)
 end
 @inline function OS.finalize_local_step!(subintegrator::ThunderboltIntegrator)
     # Copy solution out of subproblem
@@ -106,8 +105,22 @@ end
         subintegrator.uparent[imain] = subintegrator.u[i]
     end
     # TODO
-    # transfer_fields_out(subintegrator, subintegrator.f, subintegrator.cache)
 end
+# Glue code
+function OS.build_subintegrators_recursive(f, p::Any, cache::AbstractTimeSolverCache, u::AbstractArray, uprev::AbstractArray, t, dt)
+    return Thunderbolt.ThunderboltIntegrator(f, cache.uₙ, cache.uₙ₋₁, p, t, dt)
+end
+function OS.build_subintegrators_recursive(f, synchronizer, p::Any, cache::AbstractTimeSolverCache, u::AbstractArray, uprev::AbstractArray, t, dt, dof_range, uparent)
+    integrator = Thunderbolt.ThunderboltIntegrator(f, cache.uₙ, uparent, cache.uₙ₋₁, dof_range, p, t, t, dt, cache, synchronizer, nothing, true)
+    # This makes sure that the parameters are set correctly for the first time step
+    syncronize_parameters!(integrator, f, synchronizer)
+    return integrator
+end
+function OS.construct_inner_cache(f, alg::AbstractSolver, u::AbstractArray, uprev::AbstractArray)
+    return Thunderbolt.setup_solver_cache(f, alg, 0.0)
+end
+
+syncronize_parameters!(integ, f, ::OS.NoExternalSynchronization) = nothing
 
 include("solver/ecg.jl")
 

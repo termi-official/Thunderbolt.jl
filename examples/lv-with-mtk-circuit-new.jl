@@ -276,8 +276,8 @@ name_base = "lv_with_lumped_circuit"
 p3D = LVc.p3D
 V0D = LVc.V
 dt₀ = 1.0
-dtvis = 5.0
-tspan = (0.0, 10.0)
+dtvis = 25.0
+tspan = (0.0, 1000.0)
 
 io = ParaViewWriter(name_base);
 
@@ -310,8 +310,27 @@ coupledform = semidiscretize(
     LV_grid
 )
 
-struct PressureVolumeSynchronizer0D3D{TP <: Thunderbolt.RSAFDQ2022TyingProblem} <: Thunderbolt.AbstractTransferOperator
+struct VolumeTransfer0D3D{TP <: Thunderbolt.RSAFDQ2022TyingProblem} <: Thunderbolt.AbstractTransferOperator
     tying::TP
+end
+
+struct PressureTransfer3D0D{TP <: Thunderbolt.RSAFDQ2022TyingProblem} <: Thunderbolt.AbstractTransferOperator
+    tying::TP
+end
+
+function Thunderbolt.syncronize_parameters!(integ, f, syncer::VolumeTransfer0D3D)
+    @unpack tying = syncer
+    offset = length(integ.u)
+    for chamber ∈ tying.chambers
+        chamber.V⁰ᴰval = integ.uparent[offset+chamber.V⁰ᴰidx] # FIXME automatic offset
+    end
+end
+function Thunderbolt.syncronize_parameters!(integ, f, syncer::PressureTransfer3D0D)
+    @unpack tying = syncer
+    for (chamber_idx,chamber) ∈ enumerate(tying.chambers)
+        p = integ.uparent[chamber.pressure_dof_index]
+        f.p[chamber_idx] = p # FIXME should not be chamber_idx
+    end
 end
 
 offset = Thunderbolt.solution_size(coupledform.A)
@@ -320,19 +339,15 @@ splitfun = OS.GenericSplitFunction(
         coupledform.A,
         coupledform.B
     ),
-    [
+    (
         1:offset,
         (offset+1):(offset+Thunderbolt.solution_size(coupledform.B))
-    ],
-    # (
-    #     PressureVolumeSynchronizer0D3D(coupledform.A.tying_problem),
-    #     PressureVolumeSynchronizer0D3D(coupledform.A.tying_problem),
-    # ),
+    ),
+    (
+        VolumeTransfer0D3D(coupledform.A.tying_problem),
+        PressureTransfer3D0D(coupledform.A.tying_problem),
+    ),
 )
-
-# Postprocessor
-# cv_post = CellValueCollection(qr_collection, ip_mech)
-# standard_postproc = StandardMechanicalIOPostProcessorLFSI(io, cv_post, CoordinateSystemCoefficient(coordinate_system), axs)
 
 # Create sparse matrix and residual vector
 timestepper = OS.LieTrotterGodunov((
@@ -353,19 +368,9 @@ using Thunderbolt.TimerOutputs
 TimerOutputs.enable_debug_timings(Thunderbolt)
 TimerOutputs.reset_timer!()
 for (u, t) in OS.TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
-    @info t
-
     dh = coupledform.A.structural_problem.dh
-    φ = u[1:ndofs(dh)]
-    @info t,norm(u)
-    # φ = @view u[odeform.subproblems[1].indexset]
-    # sflat = ....?
     store_timestep!(io, t, dh.grid)
-    Thunderbolt.store_timestep_field!(io, t, dh, φ, :φₘ) # TODO allow views
-    # s = reshape(sflat, (Thunderbolt.num_states(ionic_model),length(φ)))
-    # for sidx in 1:Thunderbolt.num_states(ionic_model)
-    #    Thunderbolt.store_timestep_field!(io, t, dh, s[sidx,:], state_symbol(ionic_model, sidx))
-    # end
+    Thunderbolt.store_timestep_field!(io, t, dh, u[1:ndofs(dh)], :displacement) # TODO allow views
     Thunderbolt.finalize_timestep!(io, t)
 end
 TimerOutputs.print_timer()

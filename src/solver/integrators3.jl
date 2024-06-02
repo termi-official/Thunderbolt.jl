@@ -15,16 +15,30 @@ abstract type AbstractOperatorSplittingAlgorithm end
 abstract type AbstractOperatorSplitFunction <: DiffEqBase.AbstractODEFunction{true} end
 
 """
-    GenericSplitFunction(functions::Tuple, dof_ranges::AbstractVector)
+    GenericSplitFunction(functions::Tuple, dof_ranges::Tuple)
+    GenericSplitFunction(functions::Tuple, dof_ranges::Tuple, syncronizers::Tuple)
 
 This type of function describes a set of connected inner functions in mass-matrix form, as usually found in operator splitting procedures.
+
+TODO "Automatic sync"
+     we should be able to get rid of the synchronizer and handle the connection of coefficients and solutions in semidiscretize.
 """
-struct GenericSplitFunction{fSetType <: Tuple, idxSetType <: AbstractVector} <: AbstractOperatorSplitFunction
+struct GenericSplitFunction{fSetType <: Tuple, idxSetType <: Tuple, sSetType <: Tuple} <: AbstractOperatorSplitFunction
     # The atomic ode functions
     functions::fSetType
     # The ranges for the values in the solution vector.
     dof_ranges::idxSetType
+    # Operators to update the ode function parameters
+    synchronizers::sSetType
+    function GenericSplitFunction(fs::Tuple, drs::Tuple, syncers::Tuple)
+        @assert length(fs) == length(drs) == length(syncers)
+        new{typeof(fs), typeof(drs), typeof(syncers)}(fs, drs, syncers)
+    end
 end
+
+struct NoExternalSynchronization end
+
+GenericSplitFunction(fs::Tuple, drs::Tuple) = GenericSplitFunction(fs, drs, ntuple(_->NoExternalSynchronization(), length(fs)))
 
 @inline get_operator(f::GenericSplitFunction, i::Integer) = f.functions[i]
 
@@ -155,7 +169,7 @@ function DiffEqBase.__init(
 
     cache = init_cache(prob, alg; dt, kwargs...)
 
-    subintegrators = build_subintegrators_recursive(prob.f, p, cache, cache.u, cache.uprev, t0, dt, 1:length(u0), cache.u)
+    subintegrators = build_subintegrators_recursive(prob.f, prob.f.synchronizers, p, cache, cache.u, cache.uprev, t0, dt, 1:length(u0), cache.u)
 
     integrator = OperatorSplittingIntegrator(
         prob.f,
@@ -428,11 +442,12 @@ advance_solution_to!(integrator::OperatorSplittingIntegrator, cache::LieTrotterG
 end
 
 # Dispatch for tree node construction
-function build_subintegrators_recursive(f::GenericSplitFunction, p::Tuple, cache::LieTrotterGodunovCache, u::AbstractArray, uprev::AbstractArray, t, dt, dof_range, uparent)
+function build_subintegrators_recursive(f::GenericSplitFunction, synchronizers::Tuple, p::Tuple, cache::LieTrotterGodunovCache, u::AbstractArray, uprev::AbstractArray, t, dt, dof_range, uparent)
     submaster = @view uparent[dof_range]
     return ntuple(i ->
         build_subintegrators_recursive(
             get_operator(f, i),
+            synchronizers[i],
             p[i],
             cache.inner_caches[i],
             # TODO recover this

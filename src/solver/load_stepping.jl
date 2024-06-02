@@ -87,6 +87,7 @@ function DiffEqBase.__init(
     save_func = (u, t) -> copy(u), # custom kwarg
     dtchangeable = true,           # custom kwarg
     stepstop = -1,                 # custom kwarg
+    syncronizer = OS.NoExternalSynchronization(),
     kwargs...,
 )
     (; u0, p) = prob

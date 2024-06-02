@@ -12,6 +12,7 @@ mutable struct ThunderboltIntegrator{
     tType,
     pType,
     cacheType,
+    syncType,
     solType,
 }  <: DiffEqBase.SciMLBase.DEIntegrator{#=alg_type=#Nothing, true, uType, tType}
     f::fType # Right hand side
@@ -24,6 +25,7 @@ mutable struct ThunderboltIntegrator{
     tprev::tType
     dt::tType
     cache::cacheType
+    synchronizer::syncType
     sol::solType
     dtchangeable::Bool
 end
