@@ -276,7 +276,7 @@ name_base = "lv_with_lumped_circuit"
 p3D = LVc.p3D
 V0D = LVc.V
 dt₀ = 1.0
-dtvis = 25.0
+dtvis = 5.0
 tspan = (0.0, 1000.0)
 
 io = ParaViewWriter(name_base);
@@ -363,6 +363,36 @@ problem = OS.OperatorSplittingProblem(splitfun, u₀, tspan)
 
 integrator = OS.init(problem, timestepper, dt=dt₀, verbose=true)
 
+f2 = Figure()
+axs = [
+    Axis(f2[1, 1], title="LV"),
+    Axis(f2[1, 2], title="RV"),
+    Axis(f2[2, 1], title="LA"),
+    Axis(f2[2, 2], title="RA")
+]
+
+vlv = Observable(Float64[])
+plv = Observable(Float64[])
+
+vrv = Observable(Float64[])
+prv = Observable(Float64[])
+
+vla = Observable(Float64[])
+pla = Observable(Float64[])
+
+vra = Observable(Float64[])
+pra = Observable(Float64[])
+
+lines!(axs[1], vlv, plv)
+lines!(axs[2], vrv, prv)
+lines!(axs[3], vla, pla)
+lines!(axs[4], vra, pra)
+for i in 1:4
+    xlims!(axs[1], 0.0, 180.0)
+    ylims!(axs[1], 0.0, 180.0)
+end
+display(f2)
+
 io = ParaViewWriter("lv_with_lumped_circuit");
 using Thunderbolt.TimerOutputs
 TimerOutputs.enable_debug_timings(Thunderbolt)
@@ -372,6 +402,16 @@ for (u, t) in OS.TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
     store_timestep!(io, t, dh.grid)
     Thunderbolt.store_timestep_field!(io, t, dh, u[1:ndofs(dh)], :displacement) # TODO allow views
     Thunderbolt.finalize_timestep!(io, t)
+
+    if t > 0.0
+        lv = coupledform.A.tying_problem.chambers[1]
+        append!(vlv.val, lv.V⁰ᴰval)
+        append!(plv.val, u[lv.pressure_dof_index])
+        notify(vlv)
+        notify(plv)
+    end
+
+    # TODO other chambers
 end
 TimerOutputs.print_timer()
 TimerOutputs.disable_debug_timings(Thunderbolt)
