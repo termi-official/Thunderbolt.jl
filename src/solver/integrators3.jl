@@ -88,8 +88,6 @@ mutable struct OperatorSplittingIntegrator{
     _tstops::tstopsType # argument to __init used as default argument to reinit!
     saveat::heapType
     _saveat::saveatType # argument to __init used as default argument to reinit!
-    step::Int
-    stepstop::Int
     callback::callbackType
     advance_to_tstop::Bool
     u_modified::Bool # not used; field is required for compatibility with
@@ -137,7 +135,6 @@ function DiffEqBase.__init(
     advance_to_tstop = false,
     save_func = (u, t) -> copy(u), # custom kwarg
     dtchangeable = true,           # custom kwarg
-    stepstop = -1,                 # custom kwarg
     kwargs...,
 )
     (; u0, p) = prob
@@ -174,8 +171,6 @@ function DiffEqBase.__init(
         _tstops,
         saveat,
         _saveat,
-        0,
-        stepstop,
         callback,
         advance_to_tstop,
         false,
@@ -201,7 +196,6 @@ function DiffEqBase.reinit!(
     integrator.u .= u0
     integrator.t = t0
     integrator.tstops, integrator.saveat = tstops_and_saveat_heaps(t0, tf, tstops, saveat)
-    integrator.step = 0
     if erase_sol
         resize!(integrator.sol.t, 0)
         resize!(integrator.sol.u, 0)
@@ -222,7 +216,7 @@ end
 
 # either called directly (after init), or by DiffEqBase.solve (via __solve)
 function DiffEqBase.solve!(integrator::OperatorSplittingIntegrator)
-    while !isempty(integrator.tstops) && integrator.step != integrator.stepstop
+    while !isempty(integrator.tstops)
         __step!(integrator)
     end
     DiffEqBase.finalize!(integrator.callback, integrator.u, integrator.t, integrator)
@@ -303,14 +297,12 @@ function DiffEqBase.postamble!(integrator::OperatorSplittingIntegrator)
     DiffEqBase.finalize!(integrator.callback, integrator.u, integrator.t, integrator)
 end
 
-getdt(integrator) = integrator.dt # TODO removeme
 function __step!(integrator)
     (; dtchangeable, tstops) = integrator
-    _dt = getdt(integrator)
+    _dt = DiffEqBase.get_dt(integrator)
 
-    # update step and dt before incrementing u; if dt is changeable and there is
+    # update dt before incrementing u; if dt is changeable and there is
     # a tstop within dt, reduce dt to tstop - t
-    integrator.step += 1
     integrator.dt =
         !isempty(tstops) && dtchangeable ? tdir(integrator) * min(_dt, abs(first(tstops) - integrator.t)) :
         tdir(integrator) * _dt
@@ -432,7 +424,8 @@ step_inner!(integrator::OperatorSplittingIntegrator, cache::LieTrotterGodunovCac
 end
 
 # Dispatch for tree node construction
-function build_subintegrators_recursive(f::GenericSplitFunction, p::Tuple, cache::LieTrotterGodunovCache, u::AbstractArray, uprev::AbstractArray, t, dt, dof_range, umaster)
+function build_subintegrators_recursive(f::GenericSplitFunction, p::Tuple, cache::LieTrotterGodunovCache, u::AbstractArray, uprev::AbstractArray, t, dt, dof_range, uparent)
+    submaster = @view uparent[dof_range]
     return ntuple(i ->
         build_subintegrators_recursive(
             get_operator(f, i),
@@ -440,7 +433,7 @@ function build_subintegrators_recursive(f::GenericSplitFunction, p::Tuple, cache
             cache.inner_caches[i],
             similar(u, length(f.dof_ranges[i])),
             similar(uprev, length(f.dof_ranges[i])),
-            t, dt, f.dof_ranges[i], umaster,
+            t, dt, f.dof_ranges[i], submaster,
         ), length(f.functions)
     )
 end

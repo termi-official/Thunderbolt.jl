@@ -16,7 +16,7 @@ mutable struct ThunderboltIntegrator{
 }  <: DiffEqBase.SciMLBase.DEIntegrator{#=alg_type=#Nothing, true, uType, tType}
     f::fType # Right hand side
     u::uType # Current local solution
-    umaster::uType2 # Real solution injected by OperatorSplittingIntegrator
+    uparent::uType2 # Real solution injected by OperatorSplittingIntegrator
     uprev::uprevType
     indexset::indexSetType
     p::pType

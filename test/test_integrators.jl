@@ -1,7 +1,8 @@
-using .OS
-import Thunderbolt: ThunderboltSubIntegrator
+import Thunderbolt: OS, ThunderboltIntegrator
 using BenchmarkTools
-
+using UnPack
+import Thunderbolt.ModelingToolkit.OrdinaryDiffEq: ODEFunction
+using .OS
 
 # For testing purposes
 struct ForwardEuler
@@ -27,7 +28,7 @@ end
 
 # Dispatch for leaf construction
 function OS.build_subintegrators_recursive(f::ODEFunction, p::Any, cache::Any, u::AbstractArray, uprev::AbstractArray, t, dt, dof_range, umaster)
-    return ThunderboltSubIntegrator(f, u, umaster, uprev, dof_range, p, t, t, dt, cache, nothing, true)
+    return ThunderboltIntegrator(f, u, umaster, uprev, dof_range, p, t, t, dt, cache, nothing, true)
 end
 
 
@@ -63,9 +64,9 @@ fsplit1 = GenericSplitFunction((f1,f2), [f1dofs, f2dofs])
 
 # Now the usual setup just with our new problem type.
 # u0 = rand(3)
-u0 = [0.36429708216859524
-      0.37241077688566093
-      0.9262188168674828]
+u0 = [0.7611944793397108
+      0.9059606424982555
+      0.5755174199139956]
 tspan = (0.0,100.0)
 prob = OperatorSplittingProblem(fsplit1, u0, tspan)
 
@@ -78,6 +79,7 @@ timestepper = LieTrotterGodunov(
 integrator = DiffEqBase.init(prob, timestepper, dt=0.01, verbose=true)
 DiffEqBase.solve!(integrator)
 ufinal = copy(integrator.u)
+@assert ufinal ≉ u0 # Make sure the solve did something
 
 DiffEqBase.reinit!(integrator, u0; tspan)
 for (u, t) in DiffEqBase.TimeChoiceIterator(integrator, 0.0:5.0:100.0)
@@ -101,8 +103,7 @@ f3 = ODEFunction(ode3)
 f1dofs = [1,2,3]
 f2dofs = [1,3]
 f3dofs = [1,2]
-# fsplit2_inner = GenericSplitFunction((f3,f3), [f3dofs, f3dofs]) # 1 and 2
-fsplit2_inner = GenericSplitFunction((f3,f3), [f2dofs, f2dofs]) # 3
+fsplit2_inner = GenericSplitFunction((f3,f3), [f3dofs, f3dofs])
 fsplit2_outer = GenericSplitFunction((f1,fsplit2_inner), [f1dofs, f2dofs])
 
 timestepper_inner = LieTrotterGodunov(
@@ -121,10 +122,10 @@ end
 @assert isapprox(ufinal, integrator2.u, atol=1e-8)
 
 @btime OS.step_inner!($integrator, $(integrator.cache)) setup=(DiffEqBase.reinit!(integrator, u0; tspan))
-#   326.743 ns (8 allocations: 416 bytes) for 1
-#   89.949 ns (0 allocations: 0 bytes) for 2
-#   82.418 ns (0 allocations: 0 bytes) for 3
+#   326.743 ns (8 allocations: 416 bytes) for 1 (OUTDATED
+#   89.949 ns (0 allocations: 0 bytes) for 2 (OUTDATED
+#   31.418 ns (0 allocations: 0 bytes) for 3
 @btime DiffEqBase.solve!($integrator) setup=(DiffEqBase.reinit!(integrator, u0; tspan));
-#   431.632 μs (10000 allocations: 507.81 KiB) for 1
-#   105.712 μs (0 allocations: 0 bytes) for 2
-#   101.061 μs (0 allocations: 0 bytes) for 3
+#   431.632 μs (10000 allocations: 507.81 KiB) for 1 (OUTDATED
+#   105.712 μs (0 allocations: 0 bytes) for 2 (OUTDATED)
+#   1.852 μs (0 allocations: 0 bytes) for 3
