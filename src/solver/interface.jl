@@ -3,6 +3,10 @@ abstract type AbstractNonlinearSolver <: AbstractSolver end
 
 abstract type AbstractNonlinearSolverCache end
 
+abstract type AbstractTimeSolverCache end
+# TODO REMOVE ME
+perform_step!(integ, cache) = perform_step!(integ.f, cache, integ.t, integ.dt)
+
 """
     legacysolve(problem, solver, Δt, time_span, initial_condition[, callback])
 

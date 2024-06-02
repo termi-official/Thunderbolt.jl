@@ -8,7 +8,7 @@ mutable struct LoadDrivenSolver{IS} <: AbstractSolver
     inner_solver::IS
 end
 
-mutable struct LoadDrivenSolverCache{ISC, T, VT <: AbstractVector{T}}
+mutable struct LoadDrivenSolverCache{ISC, T, VT <: AbstractVector{T}} <: AbstractTimeSolverCache
     inner_solver_cache::ISC
     uₙ::VT
     uₙ₋₁::VT

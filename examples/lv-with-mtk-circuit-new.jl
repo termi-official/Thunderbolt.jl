@@ -7,28 +7,6 @@ import Thunderbolt: OS
 
 using UnPack
 
-function Thunderbolt.perform_step!(integ::Thunderbolt.ThunderboltIntegrator, cache::Thunderbolt.LoadDrivenSolverCache)
-    @unpack f, uprev, u, t = integ
-    # TODO connect cache and integ
-    uprev .= u
-    cache.uₙ .= u
-    Thunderbolt.update_constraints!(f, cache, t)
-    if !solve!(cache.uₙ, f, cache.inner_solver_cache, t) # TODO remove ,,t'' here. But how?
-        @warn "Inner solver failed."
-        return false
-    end
-    u .= cache.uₙ
-
-    return true
-end
-
-function Thunderbolt.perform_step!(integ::Thunderbolt.ThunderboltIntegrator, cache::Thunderbolt.ForwardEulerSolverCache)
-    @unpack f, uprev, u, t, dt = integ
-    # TODO connect cache and integ
-    cache.uₙ .= u
-    Thunderbolt.perform_step!(f, cache, t, dt)
-end
-
 """
     PressureCouplingChamber(;name)
 
@@ -298,8 +276,8 @@ name_base = "lv_with_lumped_circuit"
 p3D = LVc.p3D
 V0D = LVc.V
 dt₀ = 1.0
-dtvis = 25.0
-tspan = (0.0, 1000.0)
+dtvis = 5.0
+tspan = (0.0, 10.0)
 
 io = ParaViewWriter(name_base);
 
@@ -364,17 +342,6 @@ timestepper = OS.LieTrotterGodunov((
 
 u₀ = [zeros(offset); u0new]
 
-# REMOVEME
-function OS.build_subintegrators_recursive(f, p::Any, cache::Thunderbolt.LoadDrivenSolverCache, u::AbstractArray, uprev::AbstractArray, t, dt)
-    return Thunderbolt.ThunderboltIntegrator(f, u, uprev, p, t, dt)
-end
-function OS.build_subintegrators_recursive(f, p::Any, cache::Thunderbolt.LoadDrivenSolverCache, u::AbstractArray, uprev::AbstractArray, t, dt, dof_range, uparent)
-    return Thunderbolt.ThunderboltIntegrator(f, u, uparent, uprev, dof_range, p, t, t, dt, cache, nothing, true)
-end
-function OS.build_subintegrators_recursive(f, p::Any, cache::Thunderbolt.ForwardEulerSolverCache, u::AbstractArray, uprev::AbstractArray, t, dt, dof_range, uparent)
-    return Thunderbolt.ThunderboltIntegrator(f, u, uparent, uprev, dof_range, p, t, t, dt, cache, nothing, true)
-end
-
 # FIXME
 OS.recursive_null_parameters(stuff) = OS.DiffEqBase.NullParameters()
 problem = OS.OperatorSplittingProblem(splitfun, u₀, tspan)
@@ -392,6 +359,9 @@ integrator = OS.init(problem, timestepper, dt=dt₀, verbose=true)
 integrator.subintegrators[1].f.tying_problem.chambers[1].V⁰ᴰval = 42.0 # REMOVEME
 
 io = ParaViewWriter("lv_with_lumped_circuit");
+using Thunderbolt.TimerOutputs
+TimerOutputs.enable_debug_timings(Thunderbolt)
+TimerOutputs.reset_timer!()
 for (u, t) in OS.TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
     @info t
 
@@ -408,6 +378,8 @@ for (u, t) in OS.TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
     # end
     Thunderbolt.finalize_timestep!(io, t)
 end
+TimerOutputs.print_timer()
+TimerOutputs.disable_debug_timings(Thunderbolt)
 
 # using Thunderbolt.TimerOutputs
 # TimerOutputs.enable_debug_timings(Thunderbolt)

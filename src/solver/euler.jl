@@ -5,7 +5,7 @@ struct BackwardEulerSolver <: AbstractSolver
 end
 
 # TODO decouple from heat problem via special ODEFunction (AffineODEFunction)
-mutable struct BackwardEulerSolverCache{SolutionType, MassMatrixType, DiffusionMatrixType, SystemMatrixType, SourceTermType, LinSolverType, RHSType}
+mutable struct BackwardEulerSolverCache{SolutionType, MassMatrixType, DiffusionMatrixType, SystemMatrixType, SourceTermType, LinSolverType, RHSType} <: AbstractTimeSolverCache
     # Current solution buffer
     uₙ::SolutionType
     # Last solution buffer
@@ -121,10 +121,11 @@ struct ForwardEulerSolver <: AbstractSolver
     rate::Int
 end
 
-mutable struct ForwardEulerSolverCache{VT,F}
+mutable struct ForwardEulerSolverCache{VT,F} <: AbstractTimeSolverCache
     rate::Int
     du::VT
     uₙ::VT
+    uₙ₋₁::VT
     rhs!::F
 end
 
@@ -143,6 +144,7 @@ end
 function setup_solver_cache(problem::ODEProblem, solver::ForwardEulerSolver, t₀)
     return ForwardEulerSolverCache(
         solver.rate,
+        zeros(num_states(problem.ode)),
         zeros(num_states(problem.ode)),
         zeros(num_states(problem.ode)),
         problem.f

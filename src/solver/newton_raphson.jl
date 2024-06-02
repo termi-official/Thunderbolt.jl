@@ -183,9 +183,9 @@ function inner_solve_schur(J::BlockMatrix, r::BlockArray)
 end
 
 function inner_solve(J::BlockMatrix, r::BlockArray)
-    # if length(blocksizes(r,1)) == 2 # TODO control by passing down the linear solver
-    #     return inner_solve_schur(J,r)
-    # end
+    if length(blocksizes(r,1)) == 2 # TODO control by passing down the linear solver
+        return inner_solve_schur(J,r)
+    end
 
     @timeit_debug "transform J " J_ = SparseMatrixCSC(J)
     @timeit_debug "transform r" r_ = Vector(r)

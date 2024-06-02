@@ -1,46 +1,50 @@
 abstract type AbstractPointwiseSolver <: AbstractSolver end
-abstract type AbstractPointwiseSolverCache end
+abstract type AbstractPointwiseSolverCache <: AbstractTimeSolverCache end
 
 struct ForwardEulerCellSolver <: AbstractPointwiseSolver
 end
 
-mutable struct ForwardEulerCellSolverCache{VT, MT} <: AbstractPointwiseSolverCache
-    du::VT
-    #TODO merge into a helper vector
-    uₙ::VT
-    sₙ::MT
+mutable struct ForwardEulerCellSolverCache{uType, duType} <: AbstractPointwiseSolverCache
+    du::duType
+    uₙ::uType
+    uₙ₋₁::uType
 end
 
 function perform_step!(cell_model::ION, t::Float64, Δt::Float64, solver_cache::ForwardEulerCellSolverCache{VT}) where {VT, ION <: AbstractIonicModel}
     # Eval buffer
-    @unpack du, uₙ, sₙ = solver_cache
+    @unpack du, uₙ = solver_cache
+
+    ndofs_local = 1+num_states(cell_model)
+    npoints = length(uₙ)÷ndofs_local
+    u_matrix = reshape(uₙ, (npoints,ndofs_local))
 
     # TODO formulate as a kernel for GPU
-    for i ∈ 1:length(uₙ)
-        @inbounds φₘ_cell = uₙ[i]
-        @inbounds s_cell  = @view sₙ[i,:]
+    for i ∈ 1:npoints
+        u_local = @view u_matrix[i, :]
+        # TODO this should happen in rhs call below
+        @inbounds φₘ_cell = u_local[1]
+        @inbounds s_cell  = @view u_local[2:end]
 
         # #TODO get x and Cₘ
         cell_rhs!(du, φₘ_cell, s_cell, nothing, t, cell_model)
 
-        @inbounds uₙ[i] = φₘ_cell + Δt*du[1]
+        @inbounds u_local[1] = φₘ_cell + Δt*du[1]
 
         # # Non-allocating assignment
         @inbounds for j ∈ 1:num_states(cell_model)
-            sₙ[i,j] = s_cell[j] + Δt*du[j+1]
+            u_local[1+j] = s_cell[j] + Δt*du[j+1]
         end
     end
 
     return true
 end
 
-# TODO decouple the concept ForwardEuler from "CellProblem"
 function setup_solver_cache(problem, solver::ForwardEulerCellSolver, t₀)
-    @unpack npoints = problem # TODO what is a good abstraction layer over this?
+    @unpack npoints = problem
     return ForwardEulerCellSolverCache(
         zeros(1+num_states(problem.ode)),
-        zeros(npoints),
-        zeros(npoints, num_states(problem.ode))
+        zeros(npoints*(num_states(problem.ode)+1)),
+        zeros(npoints*(num_states(problem.ode)+1)),
     )
 end
 

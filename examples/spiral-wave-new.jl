@@ -60,93 +60,10 @@ spiral_wave_initializer!(u₀, odeform, 0.0)
 OS.recursive_null_parameters(stuff) = OS.DiffEqBase.NullParameters()
 problem = OS.OperatorSplittingProblem(splitfun, u₀, tspan)
 
-# TODO put this into Thunderbolt. This is essentially perform_step!
-# function OS.step_inner!(integ, cache::Thunderbolt.BackwardEulerSolverCache)
-function Thunderbolt.perform_step!(integ::Thunderbolt.ThunderboltIntegrator, cache::Thunderbolt.BackwardEulerSolverCache)
-    @unpack f, dt, u, uprev, p, t = integ
-    # TODO move Δt_last out of the cache into a preamble step
-    # TODO remove uₙ, uₙ₋₁ from cache
-    @unpack Δt_last, b, M, A, #=uₙ, uₙ₋₁,=# linsolver = cache
-
-    # Prepare right hand side b = M uₙ₋₁
-    @timeit_debug "b = M uₙ₋₁" Thunderbolt.mul!(b, M, uprev)
-    # TODO replace this section with an AffineOperator
-    # Update source term
-    @timeit_debug "update source term" begin
-        Thunderbolt.implicit_euler_heat_update_source_term!(cache, t)
-        add!(b, cache.source_term)
-    end
-    # TODO use an affine operator
-    dt ≈ Δt_last || Thunderbolt.implicit_euler_heat_solver_update_system_matrix!(cache, dt)
-    # Solve linear problem
-    # TODO abstraction layer and way to pass the solver/preconditioner pair (LinearSolve.jl?)
-    @timeit_debug "inner solve" Thunderbolt.Krylov.cg!(linsolver, A, b, uprev)
-    @inbounds u .= linsolver.x
-    @info linsolver.stats
-    return nothing
-end
-
-# function perform_step!(cell_model::ION, t::Float64, Δt::Float64, solver_cache::ForwardEulerCellSolverCache{VT}) where {VT, ION <: AbstractIonicModel}
-# function OS.step_inner!(integ, cache::Thunderbolt.ForwardEulerCellSolverCache)
-function Thunderbolt.perform_step!(integ::Thunderbolt.ThunderboltIntegrator, cache::Thunderbolt.ForwardEulerCellSolverCache)
-    @unpack f, dt, u, uprev, p, t = integ
-    # Remove these from the cache
-    @unpack du#=, uₙ, sₙ=# = cache
-    # TODO eliminate this
-    midpoint = length(u) ÷ 2
-    uₙ = @view u[1:midpoint]
-    sₙ = @view u[(midpoint+1):end]
-
-    # TODO formulate as a kernel for GPU
-    @timeit_debug "cell loop" for i ∈ 1:length(uₙ)
-        @inbounds φₘ_cell = uₙ[i]
-        @inbounds s_cell  = @view sₙ[i,:]
-
-        # Should be something like a DiffEqBase.SplitFunction
-        # instance_parameters = nothing # TODO fill with x and Cₘ
-        # f(du, φₘ_cell, s_cell, t, instance_parameters)
-        Thunderbolt.cell_rhs!(du, φₘ_cell, s_cell, nothing, t, f.ode)
-
-        # TODO subindices via f
-        @inbounds uₙ[i] = φₘ_cell + dt*du[1]
-
-        # Non-allocating assignment
-        @inbounds for j ∈ 1:Thunderbolt.num_states(f.ode)
-            sₙ[i,j] = s_cell[j] + dt*du[j+1]
-        end
-    end
-
-    return nothing
-end
-
-# REMOVEME
-# v2
-# function OS.build_subintegrators_recursive(f::Thunderbolt.TransientHeatProblem, p::Any, cache::Any, u::SubArray, uprev::SubArray, t, dt)
-#     return Thunderbolt.ThunderboltIntegrator(f, u, uprev, p, t, dt)
-# end
-# function OS.build_subintegrators_recursive(f::Thunderbolt.AbstractPointwiseProblem, p::Any, cache::Any, u::SubArray, uprev::SubArray, t, dt)
-#     return Thunderbolt.ThunderboltIntegrator(f, u, uprev, p, t, dt)
-# end
-# v3
-function OS.build_subintegrators_recursive(f, p::Any, cache::Thunderbolt.BackwardEulerSolverCache, u::AbstractArray, uprev::AbstractArray, t, dt, dof_range, uparent)
-    return Thunderbolt.ThunderboltIntegrator(f, u, uparent, uprev, dof_range, p, t, t, dt, cache, nothing, true)
-end
-function OS.build_subintegrators_recursive(f, p::Any, cache::Thunderbolt.ForwardEulerCellSolverCache, u::AbstractArray, uprev::AbstractArray, t, dt, dof_range, uparent)
-    return Thunderbolt.ThunderboltIntegrator(f, u, uparent, uprev, dof_range, p, t, t, dt, cache, nothing, true)
-end
-
 timestepper = OS.LieTrotterGodunov((
     BackwardEulerSolver(),
     ForwardEulerCellSolver(),
 ))
-
-# Dispatch for leaf construction
-function OS.construct_inner_cache(f, alg::ForwardEulerCellSolver, u::AbstractArray, uprev::AbstractArray)
-    Thunderbolt.setup_solver_cache(f, alg, 0.0)
-end
-function OS.construct_inner_cache(f, alg::BackwardEulerSolver, u::AbstractArray, uprev::AbstractArray)
-    return Thunderbolt.setup_solver_cache(f, alg, 0.0)
-end
 
 integrator = OS.init(problem, timestepper, dt=dt₀, verbose=true)
 
@@ -158,18 +75,18 @@ TimerOutputs.enable_debug_timings(Thunderbolt)
 # TimerOutputs.enable_debug_timings(Main)
 TimerOutputs.reset_timer!()
 for (u, t) in OS.TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
-    dh = odeform.A.dh
-    φ = u[1:ndofs(dh)]
-    @info t,norm(u)
-    # φ = @view u[odeform.subproblems[1].indexset]
-    # sflat = ....?
-    store_timestep!(io, t, dh.grid)
-    Thunderbolt.store_timestep_field!(io, t, dh, φ, :φₘ) # TODO allow views
-    # s = reshape(sflat, (Thunderbolt.num_states(ionic_model),length(φ)))
-    # for sidx in 1:Thunderbolt.num_states(ionic_model)
-    #    Thunderbolt.store_timestep_field!(io, t, dh, s[sidx,:], state_symbol(ionic_model, sidx))
-    # end
-    Thunderbolt.finalize_timestep!(io, t)
+    # dh = odeform.A.dh
+    # φ = u[1:ndofs(dh)]
+    # @info t,norm(u)
+    # # φ = @view u[odeform.subproblems[1].indexset]
+    # # sflat = ....?
+    # store_timestep!(io, t, dh.grid)
+    # Thunderbolt.store_timestep_field!(io, t, dh, φ, :φₘ) # TODO allow views
+    # # s = reshape(sflat, (Thunderbolt.num_states(ionic_model),length(φ)))
+    # # for sidx in 1:Thunderbolt.num_states(ionic_model)
+    # #    Thunderbolt.store_timestep_field!(io, t, dh, s[sidx,:], state_symbol(ionic_model, sidx))
+    # # end
+    # Thunderbolt.finalize_timestep!(io, t)
 end
 TimerOutputs.print_timer()
 # TimerOutputs.disable_debug_timings(Main)
