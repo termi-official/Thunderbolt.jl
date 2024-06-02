@@ -5,20 +5,20 @@ import Thunderbolt.ModelingToolkit.OrdinaryDiffEq: ODEFunction
 using .OS
 
 # For testing purposes
-struct ForwardEuler
+struct DummyForwardEuler
 end
 
-mutable struct ForwardEulerCache{duType}
+mutable struct DummyForwardEulerCache{duType}
     du::duType
 end
 
 # Dispatch for leaf construction
-function OS.construct_inner_cache(f::ODEFunction, alg::ForwardEuler, u::AbstractArray, uprev::AbstractArray)
-    ForwardEulerCache(copy(uprev))
+function OS.construct_inner_cache(f::ODEFunction, alg::DummyForwardEuler, u::AbstractArray, uprev::AbstractArray)
+    DummyForwardEulerCache(copy(uprev))
 end
 
 # Dispatch innermost solve
-function OS.step_inner!(integ, cache::ForwardEulerCache)
+function OS.step_inner!(integ, cache::DummyForwardEulerCache)
     @unpack f, dt, u, p, t = integ
     @unpack du = cache
 
@@ -72,7 +72,7 @@ prob = OperatorSplittingProblem(fsplit1, u0, tspan)
 
 # The time stepper carries the individual solver information.
 timestepper = LieTrotterGodunov(
-    (ForwardEuler(), ForwardEuler())
+    (DummyForwardEuler(), DummyForwardEuler())
 )
 
 # The remaining code works as usual.
@@ -107,10 +107,10 @@ fsplit2_inner = GenericSplitFunction((f3,f3), [f3dofs, f3dofs])
 fsplit2_outer = GenericSplitFunction((f1,fsplit2_inner), [f1dofs, f2dofs])
 
 timestepper_inner = LieTrotterGodunov(
-    (ForwardEuler(), ForwardEuler())
+    (DummyForwardEuler(), DummyForwardEuler())
 )
 timestepper2 = LieTrotterGodunov(
-    (ForwardEuler(), timestepper_inner)
+    (DummyForwardEuler(), timestepper_inner)
 )
 prob2 = OperatorSplittingProblem(fsplit2_outer, u0, tspan)
 integrator2 = DiffEqBase.init(prob2, timestepper2, dt=0.01, verbose=true)
