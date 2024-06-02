@@ -61,14 +61,13 @@ include("solver/operator_splitting.jl")
 
 # FIXME move into integrator
 function DiffEqBase.step!(integrator::ThunderboltIntegrator, dt, stop_at_tdt = false)
-    # OridinaryDiffEq lets dt be negative if tdir is -1, but that's inconsistent
     dt <= zero(dt) && error("dt must be positive")
-    # stop_at_tdt && !integrator.dtchangeable && error("Cannot stop at t + dt if dtchangeable is false")
-    t_plus_dt = integrator.t + dt
-    stop_at_tdt && DiffEqBase.add_tstop!(integrator, t_plus_dt)
-    while !OS.reached_tstop(integrator, t_plus_dt, stop_at_tdt)
+    tnext = integrator.t + dt
+    while !OS.reached_tstop(integrator, tnext, stop_at_tdt)
         # Solve inner problem
-        perform_step!(integrator.f, integrator.cache, integrator.t, integrator.dt)
+        perform_step!(integrator, integrator.cache)
+        # TODO check for solver failure
+        # Update integrator
         integrator.tprev = integrator.t
         integrator.t = integrator.t + integrator.dt
     end
@@ -80,11 +79,13 @@ function OS.synchronize_subintegrator!(subintegrator::ThunderboltIntegrator, int
 end
 OS.tdir(::ThunderboltIntegrator) = 1 # TODO remove
 
-# TODO generalize
-function OS.step_inner!(integ, cache::Union{LoadDrivenSolverCache,ForwardEulerSolverCache})
-    perform_step!(integ.f, cache, integ.t, integ.dt)
+# TODO Any -> cache supertype
+function OS.advance_solution_to!(integrator::ThunderboltIntegrator, cache::Any, tend)
+    @unpack f, t = integrator
+    dt = tend-t
+    DiffEqBase.step!(integrator, dt, true)
 end
-@inline function OS.step_begin!(subintegrator::ThunderboltIntegrator)
+@inline function OS.prepare_local_step!(subintegrator::ThunderboltIntegrator)
     # Copy solution into subproblem
     # uparentview = @view subintegrator.uparent[subintegrator.indexset]
     # subintegrator.u .= subintegrator.uparent[subintegrator.indexset]
@@ -96,7 +97,7 @@ end
     # TODO
     # transfer_fields_in(subintegrator, subintegrator.f, subintegrator.cache)
 end
-@inline function OS.step_end!(subintegrator::ThunderboltIntegrator)
+@inline function OS.finalize_local_step!(subintegrator::ThunderboltIntegrator)
     # Copy solution out of subproblem
     #
     # uparentview = @view subintegrator.uparent[subintegrator.indexset]

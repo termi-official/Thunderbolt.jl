@@ -5,6 +5,30 @@ using GLMakie
 using Thunderbolt
 import Thunderbolt: OS
 
+using UnPack
+
+function Thunderbolt.perform_step!(integ::Thunderbolt.ThunderboltIntegrator, cache::Thunderbolt.LoadDrivenSolverCache)
+    @unpack f, uprev, u, t = integ
+    # TODO connect cache and integ
+    uprev .= u
+    cache.uₙ .= u
+    Thunderbolt.update_constraints!(f, cache, t)
+    if !solve!(cache.uₙ, f, cache.inner_solver_cache, t) # TODO remove ,,t'' here. But how?
+        @warn "Inner solver failed."
+        return false
+    end
+    u .= cache.uₙ
+
+    return true
+end
+
+function Thunderbolt.perform_step!(integ::Thunderbolt.ThunderboltIntegrator, cache::Thunderbolt.ForwardEulerSolverCache)
+    @unpack f, uprev, u, t, dt = integ
+    # TODO connect cache and integ
+    cache.uₙ .= u
+    Thunderbolt.perform_step!(f, cache, t, dt)
+end
+
 """
     PressureCouplingChamber(;name)
 
@@ -308,6 +332,10 @@ coupledform = semidiscretize(
     LV_grid
 )
 
+struct PressureVolumeSynchronizer0D3D{TP <: Thunderbolt.RSAFDQ2022TyingProblem} <: Thunderbolt.AbstractTransferOperator
+    tying::TP
+end
+
 offset = Thunderbolt.solution_size(coupledform.A)
 splitfun = OS.GenericSplitFunction(
     (
@@ -318,6 +346,10 @@ splitfun = OS.GenericSplitFunction(
         1:offset,
         (offset+1):(offset+Thunderbolt.solution_size(coupledform.B))
     ],
+    # (
+    #     PressureVolumeSynchronizer0D3D(coupledform.A.tying_problem),
+    #     PressureVolumeSynchronizer0D3D(coupledform.A.tying_problem),
+    # ),
 )
 
 # Postprocessor
@@ -357,7 +389,24 @@ end
 
 
 integrator = OS.init(problem, timestepper, dt=dt₀, verbose=true)
+integrator.subintegrators[1].f.tying_problem.chambers[1].V⁰ᴰval = 42.0 # REMOVEME
+
+io = ParaViewWriter("lv_with_lumped_circuit");
 for (u, t) in OS.TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
+    @info t
+
+    dh = coupledform.A.structural_problem.dh
+    φ = u[1:ndofs(dh)]
+    @info t,norm(u)
+    # φ = @view u[odeform.subproblems[1].indexset]
+    # sflat = ....?
+    store_timestep!(io, t, dh.grid)
+    Thunderbolt.store_timestep_field!(io, t, dh, φ, :φₘ) # TODO allow views
+    # s = reshape(sflat, (Thunderbolt.num_states(ionic_model),length(φ)))
+    # for sidx in 1:Thunderbolt.num_states(ionic_model)
+    #    Thunderbolt.store_timestep_field!(io, t, dh, s[sidx,:], state_symbol(ionic_model, sidx))
+    # end
+    Thunderbolt.finalize_timestep!(io, t)
 end
 
 # using Thunderbolt.TimerOutputs

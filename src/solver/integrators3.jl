@@ -1,3 +1,4 @@
+# TODO we need to pass the time interval into the inner solvers
 module OS
 
 import Unrolled: @unroll
@@ -81,9 +82,9 @@ mutable struct OperatorSplittingIntegrator{
     p::pType
     t::tType # Current time
     tprev::tType
-    dt::tType
-    _dt::tType # argument to __init used to set dt in step!
-    dtchangeable::Bool
+    dt::tType # This is the time step length which which we intend to advance
+    _dt::tType # This is the time step length which which we use during time marching
+    dtchangeable::Bool # Indicator whether _dt can be changed
     tstops::heapType
     _tstops::tstopsType # argument to __init used as default argument to reinit!
     saveat::heapType
@@ -238,9 +239,9 @@ function DiffEqBase.step!(integrator::OperatorSplittingIntegrator, dt, stop_at_t
     # OridinaryDiffEq lets dt be negative if tdir is -1, but that's inconsistent
     dt <= zero(dt) && error("dt must be positive")
     stop_at_tdt && !integrator.dtchangeable && error("Cannot stop at t + dt if dtchangeable is false")
-    t_plus_dt = integrator.t + tdir(integrator) * dt
-    stop_at_tdt && DiffEqBase.add_tstop!(integrator, t_plus_dt)
-    while !reached_tstop(integrator, t_plus_dt, stop_at_tdt)
+    tnext = integrator.t + tdir(integrator) * dt
+    stop_at_tdt && DiffEqBase.add_tstop!(integrator, tnext)
+    while !reached_tstop(integrator, tnext, stop_at_tdt)
         __step!(integrator)
     end
 end
@@ -270,7 +271,7 @@ end
 tdir(integrator) = integrator.tstops.ordering isa DataStructures.FasterForward ? 1 : -1
 is_past_t(integrator, t) = tdir(integrator) * (t - integrator.t) < zero(integrator.t)
 reached_tstop(integrator, tstop, stop_at_tstop = integrator.dtchangeable) =
-    integrator.t == tstop || (!stop_at_tstop && is_past_t(integrator, tstop))
+    integrator.t ≈ tstop || (!stop_at_tstop && is_past_t(integrator, tstop))
 
 
 
@@ -307,18 +308,21 @@ function __step!(integrator)
         !isempty(tstops) && dtchangeable ? tdir(integrator) * min(_dt, abs(first(tstops) - integrator.t)) :
         tdir(integrator) * _dt
 
-    # Solve inner problems
-    step_inner!(integrator)
+    tnext = integrator.t + integrator.dt
 
+     # Solve inner problems
+    advance_solution_to!(integrator, tnext)
+
+    # Update integrator
     # increment t by dt, rounding to the first tstop if that is roughly
     # equivalent up to machine precision; the specific bound of 100 * eps...
     # is taken from OrdinaryDiffEq.jl
-    t_plus_dt = integrator.t + integrator.dt
     t_unit = oneunit(integrator.t)
     max_t_error = 100 * eps(float(integrator.t / t_unit)) * t_unit
     integrator.tprev = integrator.t
-    integrator.t = !isempty(tstops) && abs(first(tstops) - t_plus_dt) < max_t_error ? first(tstops) : t_plus_dt
+    integrator.t = !isempty(tstops) && abs(first(tstops) - tnext) < max_t_error ? first(tstops) : tnext
 
+    # Propagate information down into the subintegrators
     synchronize_subintegrators!(integrator)
 
     # remove tstops that were just reached
@@ -328,8 +332,8 @@ function __step!(integrator)
 end
 
 # solvers need to define this interface
-function step_inner!(integrator)
-    step_inner!(integrator, integrator.cache)
+function advance_solution_to!(integrator, tnext)
+    advance_solution_to!(integrator, integrator.cache, tnext)
 end
 
 DiffEqBase.get_dt(integrator::OperatorSplittingIntegrator) = integrator._dt
@@ -404,9 +408,9 @@ end
     end
 end
 
-step_inner!(integrator::OperatorSplittingIntegrator, cache::LieTrotterGodunovCache) = step_inner!(integrator.subintegrators, cache)
+advance_solution_to!(integrator::OperatorSplittingIntegrator, cache::LieTrotterGodunovCache, tnext::Number) = advance_solution_to!(integrator.subintegrators, cache, tnext)
 
-@inline @unroll function step_inner!(subintegrators::Tuple, cache::LieTrotterGodunovCache)
+@inline @unroll function advance_solution_to!(subintegrators::Tuple, cache::LieTrotterGodunovCache, tnext)
     # We assume that the integrators are already synced
     @unpack u, uprev2, uprev, inner_caches = cache
 
@@ -417,9 +421,9 @@ step_inner!(integrator::OperatorSplittingIntegrator, cache::LieTrotterGodunovCac
     i = 0
     @unroll for subinteg in subintegrators
         i += 1
-        step_begin!(subinteg)
-        step_inner!(subinteg, inner_caches[i])
-        step_end!(subinteg)
+        prepare_local_step!(subinteg)
+        advance_solution_to!(subinteg, inner_caches[i], tnext)
+        finalize_local_step!(subinteg)
     end
 end
 
@@ -431,6 +435,9 @@ function build_subintegrators_recursive(f::GenericSplitFunction, p::Tuple, cache
             get_operator(f, i),
             p[i],
             cache.inner_caches[i],
+            # TODO recover this
+            # cache.inner_caches[i].uₙ,
+            # cache.inner_caches[i].uₙ₋₁,
             similar(u, length(f.dof_ranges[i])),
             similar(uprev, length(f.dof_ranges[i])),
             t, dt, f.dof_ranges[i], submaster,
@@ -441,15 +448,15 @@ end
 export ODEFunction, GenericSplitFunction, LieTrotterGodunov, ForwardEuler, OperatorSplittingProblem,
     DiffEqBase, init, TimeChoiceIterator
 
-@unroll function step_begin!(subintegrators::Tuple)
+@unroll function prepare_local_step!(subintegrators::Tuple)
     @unroll for subintegrator in subintegrators
-        step_begin!(subintegrator)
+        prepare_local_step!(subintegrator)
     end
 end
 
-@unroll function step_end!(subintegrators::Tuple)
+@unroll function finalize_local_step!(subintegrators::Tuple)
     @unroll for subintegrator in subintegrators
-        step_end!(subintegrator)
+        finalize_local_step!(subintegrator)
     end
 end
 

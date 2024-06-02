@@ -18,7 +18,7 @@ function OS.construct_inner_cache(f::ODEFunction, alg::DummyForwardEuler, u::Abs
 end
 
 # Dispatch innermost solve
-function OS.step_inner!(integ, cache::DummyForwardEulerCache)
+function OS.advance_solution_to!(integ::ThunderboltIntegrator, cache::DummyForwardEulerCache, tend)
     @unpack f, dt, u, p, t = integ
     @unpack du = cache
 
@@ -121,7 +121,8 @@ for (u, t) in DiffEqBase.TimeChoiceIterator(integrator2, 0.0:5.0:100.0)
 end
 @assert isapprox(ufinal, integrator2.u, atol=1e-8)
 
-@btime OS.step_inner!($integrator, $(integrator.cache)) setup=(DiffEqBase.reinit!(integrator, u0; tspan))
+tnext = tspan[1]+0.01
+@btime OS.advance_solution_to!($integrator, $tnext) setup=(DiffEqBase.reinit!(integrator, u0; tspan))
 #   326.743 ns (8 allocations: 416 bytes) for 1 (OUTDATED
 #   89.949 ns (0 allocations: 0 bytes) for 2 (OUTDATED
 #   31.418 ns (0 allocations: 0 bytes) for 3

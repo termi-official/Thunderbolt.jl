@@ -61,7 +61,8 @@ OS.recursive_null_parameters(stuff) = OS.DiffEqBase.NullParameters()
 problem = OS.OperatorSplittingProblem(splitfun, u₀, tspan)
 
 # TODO put this into Thunderbolt. This is essentially perform_step!
-function OS.step_inner!(integ, cache::Thunderbolt.BackwardEulerSolverCache)
+# function OS.step_inner!(integ, cache::Thunderbolt.BackwardEulerSolverCache)
+function Thunderbolt.perform_step!(integ::Thunderbolt.ThunderboltIntegrator, cache::Thunderbolt.BackwardEulerSolverCache)
     @unpack f, dt, u, uprev, p, t = integ
     # TODO move Δt_last out of the cache into a preamble step
     # TODO remove uₙ, uₙ₋₁ from cache
@@ -86,7 +87,8 @@ function OS.step_inner!(integ, cache::Thunderbolt.BackwardEulerSolverCache)
 end
 
 # function perform_step!(cell_model::ION, t::Float64, Δt::Float64, solver_cache::ForwardEulerCellSolverCache{VT}) where {VT, ION <: AbstractIonicModel}
-function OS.step_inner!(integ, cache::Thunderbolt.ForwardEulerCellSolverCache)
+# function OS.step_inner!(integ, cache::Thunderbolt.ForwardEulerCellSolverCache)
+function Thunderbolt.perform_step!(integ::Thunderbolt.ThunderboltIntegrator, cache::Thunderbolt.ForwardEulerCellSolverCache)
     @unpack f, dt, u, uprev, p, t = integ
     # Remove these from the cache
     @unpack du#=, uₙ, sₙ=# = cache
@@ -119,18 +121,18 @@ end
 
 # REMOVEME
 # v2
-function OS.build_subintegrators_recursive(f::Thunderbolt.TransientHeatProblem, p::Any, cache::Any, u::SubArray, uprev::SubArray, t, dt)
-    return OS.ThunderboltSubIntegrator(f, u, uprev, p, t, dt)
-end
-function OS.build_subintegrators_recursive(f::Thunderbolt.AbstractPointwiseProblem, p::Any, cache::Any, u::SubArray, uprev::SubArray, t, dt)
-    return OS.ThunderboltSubIntegrator(f, u, uprev, p, t, dt)
-end
+# function OS.build_subintegrators_recursive(f::Thunderbolt.TransientHeatProblem, p::Any, cache::Any, u::SubArray, uprev::SubArray, t, dt)
+#     return Thunderbolt.ThunderboltIntegrator(f, u, uprev, p, t, dt)
+# end
+# function OS.build_subintegrators_recursive(f::Thunderbolt.AbstractPointwiseProblem, p::Any, cache::Any, u::SubArray, uprev::SubArray, t, dt)
+#     return Thunderbolt.ThunderboltIntegrator(f, u, uprev, p, t, dt)
+# end
 # v3
-function OS.build_subintegrators_recursive(f::Thunderbolt.TransientHeatProblem, p::Any, cache::Thunderbolt.BackwardEulerSolverCache, u::AbstractArray, uprev::AbstractArray, t, dt, dof_range, umaster)
-    return OS.ThunderboltSubIntegrator(f, u, umaster, uprev, dof_range, p, t, dt)
+function OS.build_subintegrators_recursive(f, p::Any, cache::Thunderbolt.BackwardEulerSolverCache, u::AbstractArray, uprev::AbstractArray, t, dt, dof_range, uparent)
+    return Thunderbolt.ThunderboltIntegrator(f, u, uparent, uprev, dof_range, p, t, t, dt, cache, nothing, true)
 end
-function OS.build_subintegrators_recursive(f::Thunderbolt.AbstractPointwiseProblem, p::Any, cache::Thunderbolt.ForwardEulerCellSolverCache, u::AbstractArray, uprev::AbstractArray, t, dt, dof_range, umaster)
-    return OS.ThunderboltSubIntegrator(f, u, umaster, uprev, dof_range, p, t, dt)
+function OS.build_subintegrators_recursive(f, p::Any, cache::Thunderbolt.ForwardEulerCellSolverCache, u::AbstractArray, uprev::AbstractArray, t, dt, dof_range, uparent)
+    return Thunderbolt.ThunderboltIntegrator(f, u, uparent, uprev, dof_range, p, t, t, dt, cache, nothing, true)
 end
 
 timestepper = OS.LieTrotterGodunov((
@@ -153,24 +155,24 @@ io = ParaViewWriter("test_new")
 state_symbol(ionic_model, sidx) = Symbol("s$sidx") # TODO query via ionic model and into Thunderbolt.jl
 
 TimerOutputs.enable_debug_timings(Thunderbolt)
-TimerOutputs.enable_debug_timings(Main)
+# TimerOutputs.enable_debug_timings(Main)
 TimerOutputs.reset_timer!()
 for (u, t) in OS.TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
-    # # @show t
-    # dh = odeform.A.dh
-    # φ = u[1:ndofs(dh)]
-    # # φ = @view u[odeform.subproblems[1].indexset]
-    # # sflat = ....?
-    # store_timestep!(io, t, dh.grid)
-    # Thunderbolt.store_timestep_field!(io, t, dh, φ, :φₘ) # TODO allow views
-    # # s = reshape(sflat, (Thunderbolt.num_states(ionic_model),length(φ)))
-    # # for sidx in 1:Thunderbolt.num_states(ionic_model)
-    # #    Thunderbolt.store_timestep_field!(io, t, dh, s[sidx,:], state_symbol(ionic_model, sidx))
-    # # end
-    # Thunderbolt.finalize_timestep!(io, t)
+    dh = odeform.A.dh
+    φ = u[1:ndofs(dh)]
+    @info t,norm(u)
+    # φ = @view u[odeform.subproblems[1].indexset]
+    # sflat = ....?
+    store_timestep!(io, t, dh.grid)
+    Thunderbolt.store_timestep_field!(io, t, dh, φ, :φₘ) # TODO allow views
+    # s = reshape(sflat, (Thunderbolt.num_states(ionic_model),length(φ)))
+    # for sidx in 1:Thunderbolt.num_states(ionic_model)
+    #    Thunderbolt.store_timestep_field!(io, t, dh, s[sidx,:], state_symbol(ionic_model, sidx))
+    # end
+    Thunderbolt.finalize_timestep!(io, t)
 end
 TimerOutputs.print_timer()
-TimerOutputs.disable_debug_timings(Main)
+# TimerOutputs.disable_debug_timings(Main)
 TimerOutputs.disable_debug_timings(Thunderbolt)
 
 # v2
