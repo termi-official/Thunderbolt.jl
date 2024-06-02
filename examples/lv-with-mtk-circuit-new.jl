@@ -317,7 +317,7 @@ splitfun = OS.GenericSplitFunction(
     [
         1:offset,
         (offset+1):(offset+Thunderbolt.solution_size(coupledform.B))
-    ]
+    ],
 )
 
 # Postprocessor
@@ -336,11 +336,11 @@ u₀ = [zeros(offset); u0new]
 function OS.build_subintegrators_recursive(f, p::Any, cache::Thunderbolt.LoadDrivenSolverCache, u::AbstractArray, uprev::AbstractArray, t, dt)
     return Thunderbolt.ThunderboltIntegrator(f, u, uprev, p, t, dt)
 end
-function OS.build_subintegrators_recursive(f, p::Any, cache::Thunderbolt.LoadDrivenSolverCache, u::AbstractArray, uprev::AbstractArray, t, dt, dof_range, umaster)
-    return Thunderbolt.ThunderboltIntegrator(f, u, umaster, uprev, dof_range, p, t, t, dt, cache, nothing, true)
+function OS.build_subintegrators_recursive(f, p::Any, cache::Thunderbolt.LoadDrivenSolverCache, u::AbstractArray, uprev::AbstractArray, t, dt, dof_range, uparent)
+    return Thunderbolt.ThunderboltIntegrator(f, u, uparent, uprev, dof_range, p, t, t, dt, cache, nothing, true)
 end
-function OS.build_subintegrators_recursive(f, p::Any, cache::Thunderbolt.ForwardEulerSolverCache, u::AbstractArray, uprev::AbstractArray, t, dt, dof_range, umaster)
-    return Thunderbolt.ThunderboltIntegrator(f, u, umaster, uprev, dof_range, p, t, t, dt, cache, nothing, true)
+function OS.build_subintegrators_recursive(f, p::Any, cache::Thunderbolt.ForwardEulerSolverCache, u::AbstractArray, uprev::AbstractArray, t, dt, dof_range, uparent)
+    return Thunderbolt.ThunderboltIntegrator(f, u, uparent, uprev, dof_range, p, t, t, dt, cache, nothing, true)
 end
 
 # FIXME
