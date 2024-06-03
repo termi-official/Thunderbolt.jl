@@ -1,80 +1,3 @@
-# TODO we need to pass the time interval into the inner solvers
-module OS
-
-import Unrolled: @unroll
-
-import DiffEqBase, DataStructures
-
-import UnPack: @unpack
-import DiffEqBase: ODEFunction, init, TimeChoiceIterator
-
-abstract type AbstractOperatorSplittingAlgorithm end
-
-abstract type AbstractOperatorSplitFunction <: DiffEqBase.AbstractODEFunction{true} end
-
-"""
-    GenericSplitFunction(functions::Tuple, dof_ranges::Tuple)
-    GenericSplitFunction(functions::Tuple, dof_ranges::Tuple, syncronizers::Tuple)
-
-This type of function describes a set of connected inner functions in mass-matrix form, as usually found in operator splitting procedures.
-
-TODO "Automatic sync"
-     we should be able to get rid of the synchronizer and handle the connection of coefficients and solutions in semidiscretize.
-"""
-struct GenericSplitFunction{fSetType <: Tuple, idxSetType <: Tuple, sSetType <: Tuple} <: AbstractOperatorSplitFunction
-    # The atomic ode functions
-    functions::fSetType
-    # The ranges for the values in the solution vector.
-    dof_ranges::idxSetType
-    # Operators to update the ode function parameters
-    synchronizers::sSetType
-    function GenericSplitFunction(fs::Tuple, drs::Tuple, syncers::Tuple)
-        @assert length(fs) == length(drs) == length(syncers)
-        new{typeof(fs), typeof(drs), typeof(syncers)}(fs, drs, syncers)
-    end
-end
-
-function function_size(gsf::GenericSplitFunction)
-    # TODO optimize
-    alldofs = Set{Int}()
-    for dof_range in gsf.dof_ranges
-        union!(alldofs, dof_range)
-    end
-    return length(alldofs)
-end
-
-struct NoExternalSynchronization end
-
-GenericSplitFunction(fs::Tuple, drs::Tuple) = GenericSplitFunction(fs, drs, ntuple(_->NoExternalSynchronization(), length(fs)))
-
-@inline get_operator(f::GenericSplitFunction, i::Integer) = f.functions[i]
-
-recursive_null_parameters(f::AbstractOperatorSplitFunction) = @error "Not implemented"
-recursive_null_parameters(f::GenericSplitFunction) = ntuple(i->recursive_null_parameters(get_operator(f, i)), length(f.functions));
-recursive_null_parameters(f::DiffEqBase.AbstractODEFunction) = DiffEqBase.NullParameters()
-
-"""
-    OperatorSplittingProblem(f::AbstractOperatorSplitFunction, u0, tspan, p::Tuple)
-"""
-mutable struct OperatorSplittingProblem{fType <: AbstractOperatorSplitFunction, uType, tType, pType <: Tuple, K} <: DiffEqBase.AbstractODEProblem{uType, tType, true}
-    f::fType
-    u0::uType
-    tspan::tType
-    p::pType
-    kwargs::K
-    function OperatorSplittingProblem(f::AbstractOperatorSplitFunction,
-        u0, tspan, p = recursive_null_parameters(f);
-        kwargs...)
-        new{typeof(f),typeof(u0),
-        typeof(tspan), typeof(p),
-        typeof(kwargs)}(f,
-        u0,
-        tspan,
-        p,
-        kwargs)
-    end
-end
-
 """
     OperatorSplittingIntegrator <: AbstractODEIntegrator
 
@@ -117,31 +40,6 @@ mutable struct OperatorSplittingIntegrator{
     cache::cacheType
     sol::solType#
     subintegrators::subintsetType
-end
-
-# helper function for setting up min/max heaps for tstops and saveat
-function tstops_and_saveat_heaps(t0, tf, tstops, saveat)
-    FT = typeof(tf)
-    ordering = tf > t0 ? DataStructures.FasterForward : DataStructures.FasterReverse
-
-    # ensure that tstops includes tf and only has values ahead of t0
-    tstops = [filter(t -> t0 < t < tf || tf < t < t0, tstops)..., tf]
-    tstops = DataStructures.BinaryHeap{FT, ordering}(tstops)
-
-    if isnothing(saveat)
-        saveat = [t0, tf]
-    elseif saveat isa Number
-        saveat > zero(saveat) || error("saveat value must be positive")
-        saveat = tf > t0 ? saveat : -saveat
-        saveat = [t0:saveat:tf..., tf]
-    else
-        # We do not need to filter saveat like tstops because the saving
-        # callback will ignore any times that are not between t0 and tf.
-        saveat = collect(saveat)
-    end
-    saveat = DataStructures.BinaryHeap{FT, ordering}(saveat)
-
-    return tstops, saveat
 end
 
 # called by DiffEqBase.init and DiffEqBase.solve
@@ -380,45 +278,6 @@ end
 # defined as default initialize: https://github.com/SciML/DiffEqBase.jl/blob/master/src/callbacks.jl#L3
 DiffEqBase.u_modified!(i::OperatorSplittingIntegrator, bool) = nothing
 
-
-
-
-# Lie-Trotter-Godunov Splitting Implementation
-struct LieTrotterGodunov{AlgTupleType} <: AbstractOperatorSplittingAlgorithm
-    inner_algs::AlgTupleType # Tuple of timesteppers for inner problems
-    # transfer_algs::TransferTupleType # Tuple of transfer algorithms from the master solution into the individual ones
-end
-
-struct LieTrotterGodunovCache{uType, tmpType, iiType}
-    u::uType
-    uprev::uType # True previous solution
-    uprev2::tmpType # Previous solution used during time marching
-    tmp::tmpType # Scratch
-    inner_caches::iiType
-end
-
-# Dispatch for outer construction
-function init_cache(prob::OperatorSplittingProblem, alg::LieTrotterGodunov; dt, kwargs...) # TODO
-    @unpack f = prob
-    @assert f isa GenericSplitFunction
-
-    u          = copy(prob.u0)
-    uprev      = copy(prob.u0)
-
-    # Build inner integrator
-    return construct_inner_cache(f, alg, u, uprev)
-end
-
-# Dispatch for recursive construction
-function construct_inner_cache(f::AbstractOperatorSplitFunction, alg::LieTrotterGodunov, u::AbstractArray, uprev::AbstractArray)
-    dof_ranges = f.dof_ranges
-
-    uprev2     = similar(uprev)
-    tmp        = similar(u)
-    inner_caches = ntuple(i->construct_inner_cache(get_operator(f, i), alg.inner_algs[i], similar(u, length(dof_ranges[i])), similar(u, length(dof_ranges[i]))), length(f.functions))
-    LieTrotterGodunovCache(u, uprev, uprev2, tmp, inner_caches)
-end
-
 function synchronize_subintegrators!(integrator::OperatorSplittingIntegrator)
     synchronize_subintegrator!(integrator.subintegrators, integrator)
 end
@@ -429,27 +288,10 @@ end
     end
 end
 
-advance_solution_to!(integrator::OperatorSplittingIntegrator, cache::LieTrotterGodunovCache, tnext::Number) = advance_solution_to!(integrator.subintegrators, cache, tnext)
-
-@inline @unroll function advance_solution_to!(subintegrators::Tuple, cache::LieTrotterGodunovCache, tnext)
-    # We assume that the integrators are already synced
-    @unpack u, uprev2, uprev, inner_caches = cache
-
-    # Store current solution
-    uprev .= u
-
-    # For each inner operator
-    i = 0
-    @unroll for subinteg in subintegrators
-        i += 1
-        prepare_local_step!(subinteg)
-        advance_solution_to!(subinteg, inner_caches[i], tnext)
-        finalize_local_step!(subinteg)
-    end
-end
+advance_solution_to!(integrator::OperatorSplittingIntegrator, cache::AbstractOperatorSplittingCache, tnext::Number) = advance_solution_to!(integrator.subintegrators, cache, tnext)
 
 # Dispatch for tree node construction
-function build_subintegrators_recursive(f::GenericSplitFunction, synchronizers::Tuple, p::Tuple, cache::LieTrotterGodunovCache, u::AbstractArray, uprev::AbstractArray, t, dt, dof_range, uparent)
+function build_subintegrators_recursive(f::GenericSplitFunction, synchronizers::Tuple, p::Tuple, cache::AbstractOperatorSplittingCache, u::AbstractArray, uprev::AbstractArray, t, dt, dof_range, uparent)
     submaster = @view uparent[dof_range]
     return ntuple(i ->
         build_subintegrators_recursive(
@@ -467,9 +309,6 @@ function build_subintegrators_recursive(f::GenericSplitFunction, synchronizers::
     )
 end
 
-export ODEFunction, GenericSplitFunction, LieTrotterGodunov, ForwardEuler, OperatorSplittingProblem,
-    DiffEqBase, init, TimeChoiceIterator
-
 @unroll function prepare_local_step!(subintegrators::Tuple)
     @unroll for subintegrator in subintegrators
         prepare_local_step!(subintegrator)
@@ -480,7 +319,4 @@ end
     @unroll for subintegrator in subintegrators
         finalize_local_step!(subintegrator)
     end
-end
-
-
 end

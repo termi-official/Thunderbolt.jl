@@ -1,6 +1,11 @@
 abstract type AbstractPointwiseSolver <: AbstractSolver end
 abstract type AbstractPointwiseSolverCache <: AbstractTimeSolverCache end
 
+# FIXME
+function perform_step!(problem::PointwiseODEProblem, cache::ForwardEulerCellSolverCache, t::Float64, Δt::Float64)
+    perform_step!(problem.ode, t, Δt, cache)
+end
+
 struct ForwardEulerCellSolver <: AbstractPointwiseSolver
 end
 
@@ -10,7 +15,7 @@ mutable struct ForwardEulerCellSolverCache{uType, duType} <: AbstractPointwiseSo
     uₙ₋₁::uType
 end
 
-function perform_step!(cell_model::ION, t::Float64, Δt::Float64, solver_cache::ForwardEulerCellSolverCache{VT}) where {VT, ION <: AbstractIonicModel}
+function perform_step!(cell_model::AbstractIonicModel, t::Float64, Δt::Float64, solver_cache::ForwardEulerCellSolverCache)
     # Eval buffer
     @unpack du, uₙ = solver_cache
 

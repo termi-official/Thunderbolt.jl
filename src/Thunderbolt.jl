@@ -1,5 +1,10 @@
 module Thunderbolt
 
+# This is a standalone module which will be a custom package in the future
+include("solver/operator_splitting.jl")
+# include("solver/local_time_stepping.jl")
+# include("solver/multilevel.jl")
+
 using TimerOutputs
 
 using Reexport, UnPack
@@ -57,7 +62,6 @@ include("solver/newton_raphson.jl")
 include("solver/load_stepping.jl")
 include("solver/euler.jl")
 include("solver/partitioned_solver.jl")
-include("solver/operator_splitting.jl")
 
 # FIXME move into integrator
 function DiffEqBase.step!(integrator::ThunderboltTimeIntegrator, dt, stop_at_tdt = false)
