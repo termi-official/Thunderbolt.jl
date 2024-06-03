@@ -17,15 +17,16 @@ Supertype for all functions coming from PDE discretizations.
 
 ## Interface
 
-solution_size(::AbstractSemidiscreteODEProblem)
+solution_size(::AbstractSemidiscreteProblem)
 """
 abstract type AbstractSemidiscreteProblem <: DiffEqBase.AbstractDEProblem end
 DiffEqBase.has_kwargs(::AbstractSemidiscreteProblem) = false
 DiffEqBase.isinplace(::AbstractSemidiscreteProblem) = true
 solution_size(prob::AbstractSemidiscreteProblem) = solution_size(prob.f)
 
+
 """
-    AbstractSemidiscreteODEProblem <: AbstractSemidiscreteProblem
+    AbstractSemidiscreteDAEProblem <: AbstractSemidiscreteProblem
 
 Supertype for discretizations of time-dependent PDEs in residual form.
 """
@@ -38,6 +39,7 @@ abstract type AbstractSemidiscreteDAEProblem <: AbstractSemidiscreteProblem end
 Supertype for discretizations of time-dependent PDEs in mass matrix form.
 """
 abstract type AbstractSemidiscreteODEProblem <: AbstractSemidiscreteProblem end
+
 
 """
     AbstractSemidiscreteNonlinearProblem <: AbstractSemidiscreteProblem
