@@ -1,4 +1,4 @@
-import Thunderbolt: OS, ThunderboltIntegrator
+import Thunderbolt: OS, ThunderboltTimeIntegrator
 using BenchmarkTools
 using UnPack
 import Thunderbolt.ModelingToolkit.OrdinaryDiffEq: ODEFunction
@@ -18,7 +18,7 @@ function OS.construct_inner_cache(f::ODEFunction, alg::DummyForwardEuler, u::Abs
 end
 
 # Dispatch innermost solve
-function OS.advance_solution_to!(integ::ThunderboltIntegrator, cache::DummyForwardEulerCache, tend)
+function OS.advance_solution_to!(integ::ThunderboltTimeIntegrator, cache::DummyForwardEulerCache, tend)
     @unpack f, dt, u, p, t = integ
     @unpack du = cache
 
@@ -27,9 +27,13 @@ function OS.advance_solution_to!(integ::ThunderboltIntegrator, cache::DummyForwa
 end
 
 # Dispatch for leaf construction
-function OS.build_subintegrators_recursive(f::ODEFunction, p::Any, cache::Any, u::AbstractArray, uprev::AbstractArray, t, dt, dof_range, umaster)
-    return ThunderboltIntegrator(f, u, umaster, uprev, dof_range, p, t, t, dt, cache, nothing, true)
+# TODO proper OrdinaryDiffEq.jl example
+function OS.build_subintegrators_recursive(f::ODEFunction, synchronizer, p::Any, cache::DummyForwardEulerCache, u::AbstractArray, uprev::AbstractArray, t, dt, dof_range, uparent)
+    return ThunderboltTimeIntegrator(f, u, uparent, uprev, dof_range, p, t, t, dt, cache, synchronizer, nothing, true)
 end
+# function OS.build_subintegrators_recursive(f::GenericSplitFunction, synchronizer, p::Any, cache::Any, u::AbstractArray, uprev::AbstractArray, t, dt, dof_range, uparent)
+#     return ThunderboltTimeIntegrator(f, u, uparent, uprev, dof_range, p, t, t, dt, cache, synchronizer, nothing, true)
+# end
 
 
 # Operator splitting
@@ -60,7 +64,7 @@ f2 = ODEFunction(ode2)
 # ode_true and ode1/ode2 side by side to see how they connect.
 f1dofs = [1,2,3]
 f2dofs = [1,3]
-fsplit1 = GenericSplitFunction((f1,f2), [f1dofs, f2dofs])
+fsplit1 = GenericSplitFunction((f1,f2), (f1dofs, f2dofs))
 
 # Now the usual setup just with our new problem type.
 # u0 = rand(3)
@@ -102,9 +106,9 @@ f3 = ODEFunction(ode3)
 # Hence the indices for `fsplit2_inner` are.
 f1dofs = [1,2,3]
 f2dofs = [1,3]
-f3dofs = [1,2]
-fsplit2_inner = GenericSplitFunction((f3,f3), [f3dofs, f3dofs])
-fsplit2_outer = GenericSplitFunction((f1,fsplit2_inner), [f1dofs, f2dofs])
+f3dofs = [1,3]
+fsplit2_inner = GenericSplitFunction((f3,f3), (f3dofs, f3dofs))
+fsplit2_outer = GenericSplitFunction((f1,fsplit2_inner), (f1dofs, f2dofs))
 
 timestepper_inner = LieTrotterGodunov(
     (DummyForwardEuler(), DummyForwardEuler())

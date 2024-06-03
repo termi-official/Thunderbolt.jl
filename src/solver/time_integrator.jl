@@ -92,9 +92,6 @@ end
     end
 end
 # Glue code
-function OS.build_subintegrators_recursive(f, p::Any, cache::AbstractTimeSolverCache, u::AbstractArray, uprev::AbstractArray, t, dt)
-    return Thunderbolt.ThunderboltTimeIntegrator(f, cache.uₙ, cache.uₙ₋₁, p, t, dt)
-end
 function OS.build_subintegrators_recursive(f, synchronizer, p::Any, cache::AbstractTimeSolverCache, u::AbstractArray, uprev::AbstractArray, t, dt, dof_range, uparent)
     integrator = Thunderbolt.ThunderboltTimeIntegrator(f, cache.uₙ, uparent, cache.uₙ₋₁, dof_range, p, t, t, dt, cache, synchronizer, nothing, true)
     # This makes sure that the parameters are set correctly for the first time step

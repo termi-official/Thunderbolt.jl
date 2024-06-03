@@ -292,7 +292,6 @@ advance_solution_to!(integrator::OperatorSplittingIntegrator, cache::AbstractOpe
 
 # Dispatch for tree node construction
 function build_subintegrators_recursive(f::GenericSplitFunction, synchronizers::Tuple, p::Tuple, cache::AbstractOperatorSplittingCache, u::AbstractArray, uprev::AbstractArray, t, dt, dof_range, uparent)
-    submaster = @view uparent[dof_range]
     return ntuple(i ->
         build_subintegrators_recursive(
             get_operator(f, i),
@@ -300,11 +299,33 @@ function build_subintegrators_recursive(f::GenericSplitFunction, synchronizers::
             p[i],
             cache.inner_caches[i],
             # TODO recover this
-            # cache.inner_caches[i].uₙ,
-            # cache.inner_caches[i].uₙ₋₁,
+            # cache.inner_caches[i].u,
+            # cache.inner_caches[i].uprev,
             similar(u, length(f.dof_ranges[i])),
             similar(uprev, length(f.dof_ranges[i])),
-            t, dt, f.dof_ranges[i], submaster,
+            t, dt, f.dof_ranges[i],
+            # We pass the full solution, because some parameters might require
+            # access to solution variables which are not part of the local solution range
+            uparent,
+        ), length(f.functions)
+    )
+end
+function build_subintegrators_recursive(f::GenericSplitFunction, synchronizers::NoExternalSynchronization, p::Tuple, cache::AbstractOperatorSplittingCache, u::AbstractArray, uprev::AbstractArray, t, dt, dof_range, uparent)
+    return ntuple(i ->
+        build_subintegrators_recursive(
+            get_operator(f, i),
+            synchronizers,
+            p[i],
+            cache.inner_caches[i],
+            # TODO recover this
+            # cache.inner_caches[i].u,
+            # cache.inner_caches[i].uprev,
+            similar(u, length(f.dof_ranges[i])),
+            similar(uprev, length(f.dof_ranges[i])),
+            t, dt, f.dof_ranges[i],
+            # We pass the full solution, because some parameters might require
+            # access to solution variables which are not part of the local solution range
+            uparent,
         ), length(f.functions)
     )
 end
