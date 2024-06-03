@@ -36,6 +36,15 @@ struct GenericSplitFunction{fSetType <: Tuple, idxSetType <: Tuple, sSetType <: 
     end
 end
 
+function function_size(gsf::GenericSplitFunction)
+    # TODO optimize
+    alldofs = Set{Int}()
+    for dof_range in gsf.dof_ranges
+        union!(alldofs, dof_range)
+    end
+    return length(alldofs)
+end
+
 struct NoExternalSynchronization end
 
 GenericSplitFunction(fs::Tuple, drs::Tuple) = GenericSplitFunction(fs, drs, ntuple(_->NoExternalSynchronization(), length(fs)))

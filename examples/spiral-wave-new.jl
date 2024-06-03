@@ -47,13 +47,14 @@ odeform = semidiscretize(
     mesh
 )
 # TODO this should be done by the function above.
+ndofsφ = ndofs(odeform.A.dh)
+nstates_per_cell = Thunderbolt.num_states(odeform.B.ode)
 splitfun = OS.GenericSplitFunction(
     (odeform.A, odeform.B),
-    (1:ndofs(odeform.A.dh), 1:2*ndofs(odeform.A.dh))
+    (1:ndofsφ, 1:(1+nstates_per_cell)*ndofsφ)
 )
 
-# TODO query with function from odeform
-u₀ = zeros(ndofs(odeform.A.dh) + ndofs(odeform.A.dh)*Thunderbolt.num_states(odeform.B.ode))
+u₀ = zeros(Float64, OS.function_size(splitfun))
 spiral_wave_initializer!(u₀, odeform, 0.0)
 
 problem = OS.OperatorSplittingProblem(splitfun, u₀, tspan)
@@ -66,8 +67,6 @@ timestepper = OS.LieTrotterGodunov((
 integrator = OS.init(problem, timestepper, dt=dt₀, verbose=true)
 
 io = ParaViewWriter("test_new")
-
-state_symbol(ionic_model, sidx) = Symbol("s$sidx") # TODO query via ionic model and into Thunderbolt.jl
 
 TimerOutputs.enable_debug_timings(Thunderbolt)
 # TimerOutputs.enable_debug_timings(Main)
