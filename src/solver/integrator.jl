@@ -30,8 +30,12 @@ mutable struct ThunderboltIntegrator{
     dtchangeable::Bool
 end
 
-# TODO remove me
-const ThunderboltSubIntegrator = ThunderboltIntegrator
+@inline get_parent_index(integ::ThunderboltIntegrator, local_idx::Int) = get_parent_index(integ, local_idx, integ.indexset)
+@inline get_parent_index(integ::ThunderboltIntegrator, local_idx::Int, indexset::AbstractVector) = indexset[local_idx]
+@inline get_parent_index(integ::ThunderboltIntegrator, local_idx::Int, range::AbstractUnitRange) = first(range) + local_idx - 1
+@inline get_parent_index(integ::ThunderboltIntegrator, local_idx::Int, range::StepRange) = first(range) + range.step*(local_idx - 1)
+
+@inline get_parent_value(integ::ThunderboltIntegrator, local_idx::Int) = integ.uparent[get_parent_index(integ, local_idx)]
 
 # TimeChoiceIterator API
 @inline function DiffEqBase.get_tmp_cache(integrator::ThunderboltIntegrator)

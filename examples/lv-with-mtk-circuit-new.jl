@@ -310,29 +310,6 @@ coupledform = semidiscretize(
     LV_grid
 )
 
-struct VolumeTransfer0D3D{TP <: Thunderbolt.RSAFDQ2022TyingProblem} <: Thunderbolt.AbstractTransferOperator
-    tying::TP
-end
-
-struct PressureTransfer3D0D{TP <: Thunderbolt.RSAFDQ2022TyingProblem} <: Thunderbolt.AbstractTransferOperator
-    tying::TP
-end
-
-function Thunderbolt.syncronize_parameters!(integ, f, syncer::VolumeTransfer0D3D)
-    @unpack tying = syncer
-    offset = length(integ.u)
-    for chamber ∈ tying.chambers
-        chamber.V⁰ᴰval = integ.uparent[offset+chamber.V⁰ᴰidx] # FIXME automatic offset
-    end
-end
-function Thunderbolt.syncronize_parameters!(integ, f, syncer::PressureTransfer3D0D)
-    @unpack tying = syncer
-    for (chamber_idx,chamber) ∈ enumerate(tying.chambers)
-        p = integ.uparent[chamber.pressure_dof_index]
-        f.p[chamber_idx] = p # FIXME should not be chamber_idx
-    end
-end
-
 offset = Thunderbolt.solution_size(coupledform.A)
 splitfun = OS.GenericSplitFunction(
     (

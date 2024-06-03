@@ -3,8 +3,6 @@ module OS
 
 import Unrolled: @unroll
 
-# import Test: @inferred
-
 import DiffEqBase, DataStructures
 
 import UnPack: @unpack
@@ -78,7 +76,7 @@ mutable struct OperatorSplittingProblem{fType <: AbstractOperatorSplitFunction, 
 end
 
 """
-OperatorSplittingIntegrator <: AbstractODEIntegrator
+    OperatorSplittingIntegrator <: AbstractODEIntegrator
 
 A variant of [`ODEIntegrator`](https://github.com/SciML/OrdinaryDiffEq.jl/blob/6ec5a55bda26efae596bf99bea1a1d729636f412/src/integrators/type.jl#L77-L123) to perform opeartor splitting.
 

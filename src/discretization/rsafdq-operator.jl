@@ -77,7 +77,7 @@ function update_linearization!(op::AssembledRSAFDQ2022Operator, u::AbstractVecto
     # Assemble forward and backward coupling contributions
     for (chamber_index,chamber) ∈ enumerate(tying_cache.chambers)
         V⁰ᴰ = chamber.V⁰ᴰval
-        chamber_pressure = u[chamber.pressure_dof_index] # We can also make this up[pressure_dof_index] with local index
+        chamber_pressure = u[chamber.pressure_dof_index_local] # We can also make this up[pressure_dof_index] with local index
 
         Jpd_current = @view Jpd[chamber_index,:]
         Jdp_current = @view Jdp[:,chamber_index]
@@ -132,7 +132,7 @@ function update_linearization!(op::AssembledRSAFDQ2022Operator, u::AbstractVecto
     # Assemble forward and backward coupling contributions
     for (chamber_index,chamber) ∈ enumerate(tying_cache.chambers)
         V⁰ᴰ = chamber.V⁰ᴰval
-        chamber_pressure = u[chamber.pressure_dof_index] # We can also make this up[pressure_dof_index] with local index
+        chamber_pressure = u[chamber.pressure_dof_index_local] # We can also make this up[pressure_dof_index] with local index
 
         Jpd_current = @view Jpd[chamber_index,:]
         Jdp_current = @view Jdp[:,chamber_index]

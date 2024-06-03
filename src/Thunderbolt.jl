@@ -77,7 +77,8 @@ function OS.synchronize_subintegrator!(subintegrator::ThunderboltIntegrator, int
     subintegrator.t = t
     subintegrator.dt = dt
 end
-OS.tdir(::ThunderboltIntegrator) = 1 # TODO remove
+# TODO some operator splitting methods require to go back in time, so we need to figure out what the best way is.
+OS.tdir(::ThunderboltIntegrator) = 1
 
 # TODO Any -> cache supertype
 function OS.advance_solution_to!(integrator::ThunderboltIntegrator, cache::Any, tend)
@@ -121,6 +122,41 @@ function OS.construct_inner_cache(f, alg::AbstractSolver, u::AbstractArray, upre
 end
 OS.recursive_null_parameters(stuff::AbstractSemidiscreteProblem) = OS.DiffEqBase.NullParameters()
 syncronize_parameters!(integ, f, ::OS.NoExternalSynchronization) = nothing
+
+
+
+"""
+    Utility function to synchronize the volume in a split [`RSAFDQ2022Problem`](@ref)
+"""
+struct VolumeTransfer0D3D{TP <: Thunderbolt.RSAFDQ2022TyingProblem} <: Thunderbolt.AbstractTransferOperator
+    tying::TP
+end
+
+function Thunderbolt.syncronize_parameters!(integ, f, syncer::VolumeTransfer0D3D)
+    # Tying holds a buffer for the 3D problem with some meta information about the 0D problem
+    for chamber ∈ syncer.tying.chambers
+        chamber.V⁰ᴰval = integ.uparent[chamber.V⁰ᴰidx_global]
+    end
+end
+
+"""
+    Utility function to synchronize the pressire in a split [`RSAFDQ2022Problem`](@ref)
+"""
+struct PressureTransfer3D0D{TP <: Thunderbolt.RSAFDQ2022TyingProblem} <: Thunderbolt.AbstractTransferOperator
+    tying::TP
+end
+
+function Thunderbolt.syncronize_parameters!(integ, f, syncer::PressureTransfer3D0D)
+    # Tying holds a buffer for the 3D problem with some meta information about the 0D problem
+    for (chamber_idx,chamber) ∈ enumerate(syncer.tying.chambers)
+        p = integ.uparent[chamber.pressure_dof_index_global]
+        # The pressure buffer is constructed in a way that the chamber index and
+        # pressure index coincides
+        f.p[chamber_idx] = p
+    end
+end
+
+
 
 include("solver/ecg.jl")
 
@@ -204,6 +240,8 @@ export
     Hirschvogel2017SurrogateVolume,
     LumpedFluidSolidCoupler,
     ChamberVolumeCoupling,
+    VolumeTransfer0D3D,
+    PressureTransfer3D0D,
     # Microstructure
     AnisotropicPlanarMicrostructureModel,
     OrthotropicMicrostructureModel,
@@ -229,6 +267,9 @@ export
     BackwardEulerSolver,
     ForwardEulerCellSolver,
     LTGOSSolver,
+    # Integrator
+    get_parent_index,
+    get_parent_value,
     # Utils
     default_initializer,
     calculate_volume_deformed_mesh,

@@ -76,12 +76,14 @@ end
 #      variables down to the inner assembly functions
 
 mutable struct RSAFDQ2022SingleChamberTying{CVM}
-    const pressure_dof_index::Int
+    const pressure_dof_index_local::Int
+    pressure_dof_index_global::Int
     const faces::Set{FaceIndex}
     const volume_method::CVM
     const displacement_symbol::Symbol
     V⁰ᴰval::Float64
-    const V⁰ᴰidx::Int
+    const V⁰ᴰidx_local::Int
+    V⁰ᴰidx_global::Int
 end
 
 struct RSAFDQ2022TyingCache{FV <: FaceValues, CVM}
@@ -100,7 +102,7 @@ function setup_tying_cache(tying_model::RSAFDQ2022TyingProblem, qr, ip, ip_geo)
 end
 
 function get_tying_dofs(tying_cache::RSAFDQ2022TyingCache, u)
-    return [u[chamber.pressure_dof_index] for chamber in tying_cache.chambers]
+    return [u[chamber.pressure_dof_index_local] for chamber in tying_cache.chambers]
 end
 
 function assemble_LFSI_coupling_contribution_row_inner!(Jₑ, rₑ, uₑ, p, face, dh, fv, method)
