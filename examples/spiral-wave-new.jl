@@ -56,8 +56,6 @@ splitfun = OS.GenericSplitFunction(
 u₀ = zeros(ndofs(odeform.A.dh) + ndofs(odeform.A.dh)*Thunderbolt.num_states(odeform.B.ode))
 spiral_wave_initializer!(u₀, odeform, 0.0)
 
-# FIXME
-OS.recursive_null_parameters(stuff) = OS.DiffEqBase.NullParameters()
 problem = OS.OperatorSplittingProblem(splitfun, u₀, tspan)
 
 timestepper = OS.LieTrotterGodunov((

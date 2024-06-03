@@ -119,7 +119,7 @@ end
 function OS.construct_inner_cache(f, alg::AbstractSolver, u::AbstractArray, uprev::AbstractArray)
     return Thunderbolt.setup_solver_cache(f, alg, 0.0)
 end
-
+OS.recursive_null_parameters(stuff::AbstractSemidiscreteProblem) = OS.DiffEqBase.NullParameters()
 syncronize_parameters!(integ, f, ::OS.NoExternalSynchronization) = nothing
 
 include("solver/ecg.jl")

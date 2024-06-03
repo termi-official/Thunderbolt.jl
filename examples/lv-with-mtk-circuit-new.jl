@@ -357,8 +357,6 @@ timestepper = OS.LieTrotterGodunov((
 
 u₀ = [zeros(offset); u0new]
 
-# FIXME
-OS.recursive_null_parameters(stuff) = OS.DiffEqBase.NullParameters()
 problem = OS.OperatorSplittingProblem(splitfun, u₀, tspan)
 
 integrator = OS.init(problem, timestepper, dt=dt₀, verbose=true)
