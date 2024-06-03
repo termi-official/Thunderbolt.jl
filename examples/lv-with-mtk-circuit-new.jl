@@ -381,7 +381,7 @@ for (u, t) in OS.TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
     if t > 0.0
         lv = coupledform.A.tying_problem.chambers[1]
         append!(vlv.val, lv.V⁰ᴰval)
-        append!(plv.val, u[lv.pressure_dof_index])
+        append!(plv.val, u[lv.pressure_dof_index_global])
         notify(vlv)
         notify(plv)
     end

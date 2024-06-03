@@ -3,7 +3,7 @@
 Internal helper to integrate a single inner operator
 over some time interval.
 """
-mutable struct ThunderboltIntegrator{
+mutable struct ThunderboltTimeIntegrator{
     fType,
     uType,
     uType2,
@@ -30,24 +30,24 @@ mutable struct ThunderboltIntegrator{
     dtchangeable::Bool
 end
 
-@inline get_parent_index(integ::ThunderboltIntegrator, local_idx::Int) = get_parent_index(integ, local_idx, integ.indexset)
-@inline get_parent_index(integ::ThunderboltIntegrator, local_idx::Int, indexset::AbstractVector) = indexset[local_idx]
-@inline get_parent_index(integ::ThunderboltIntegrator, local_idx::Int, range::AbstractUnitRange) = first(range) + local_idx - 1
-@inline get_parent_index(integ::ThunderboltIntegrator, local_idx::Int, range::StepRange) = first(range) + range.step*(local_idx - 1)
+@inline get_parent_index(integ::ThunderboltTimeIntegrator, local_idx::Int) = get_parent_index(integ, local_idx, integ.indexset)
+@inline get_parent_index(integ::ThunderboltTimeIntegrator, local_idx::Int, indexset::AbstractVector) = indexset[local_idx]
+@inline get_parent_index(integ::ThunderboltTimeIntegrator, local_idx::Int, range::AbstractUnitRange) = first(range) + local_idx - 1
+@inline get_parent_index(integ::ThunderboltTimeIntegrator, local_idx::Int, range::StepRange) = first(range) + range.step*(local_idx - 1)
 
-@inline get_parent_value(integ::ThunderboltIntegrator, local_idx::Int) = integ.uparent[get_parent_index(integ, local_idx)]
+@inline get_parent_value(integ::ThunderboltTimeIntegrator, local_idx::Int) = integ.uparent[get_parent_index(integ, local_idx)]
 
 # TimeChoiceIterator API
-@inline function DiffEqBase.get_tmp_cache(integrator::ThunderboltIntegrator)
+@inline function DiffEqBase.get_tmp_cache(integrator::ThunderboltTimeIntegrator)
     return (integrator.cache.tmp,)
 end
-@inline function DiffEqBase.get_tmp_cache(integrator::ThunderboltIntegrator, alg, cache)
+@inline function DiffEqBase.get_tmp_cache(integrator::ThunderboltTimeIntegrator, alg, cache)
     return (cache.tmp,)
 end
 
 # Interpolation
 # TODO via https://github.com/SciML/SciMLBase.jl/blob/master/src/interpolation.jl
 # TODO deduplicate with OS module
-function (integrator::ThunderboltIntegrator)(tmp, t)
+function (integrator::ThunderboltTimeIntegrator)(tmp, t)
     OS.linear_interpolation!(tmp, t, integrator.uprev, integrator.u, integrator.t-integrator.dt, integrator.t)
 end

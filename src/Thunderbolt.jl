@@ -60,7 +60,7 @@ include("solver/partitioned_solver.jl")
 include("solver/operator_splitting.jl")
 
 # FIXME move into integrator
-function DiffEqBase.step!(integrator::ThunderboltIntegrator, dt, stop_at_tdt = false)
+function DiffEqBase.step!(integrator::ThunderboltTimeIntegrator, dt, stop_at_tdt = false)
     dt <= zero(dt) && error("dt must be positive")
     tnext = integrator.t + dt
     while !OS.reached_tstop(integrator, tnext, stop_at_tdt)
@@ -72,21 +72,21 @@ function DiffEqBase.step!(integrator::ThunderboltIntegrator, dt, stop_at_tdt = f
         integrator.t = integrator.t + integrator.dt
     end
 end
-function OS.synchronize_subintegrator!(subintegrator::ThunderboltIntegrator, integrator::OS.OperatorSplittingIntegrator)
+function OS.synchronize_subintegrator!(subintegrator::ThunderboltTimeIntegrator, integrator::OS.OperatorSplittingIntegrator)
     @unpack t, dt = integrator
     subintegrator.t = t
     subintegrator.dt = dt
 end
 # TODO some operator splitting methods require to go back in time, so we need to figure out what the best way is.
-OS.tdir(::ThunderboltIntegrator) = 1
+OS.tdir(::ThunderboltTimeIntegrator) = 1
 
 # TODO Any -> cache supertype
-function OS.advance_solution_to!(integrator::ThunderboltIntegrator, cache::Any, tend)
+function OS.advance_solution_to!(integrator::ThunderboltTimeIntegrator, cache::Any, tend)
     @unpack f, t = integrator
     dt = tend-t
     DiffEqBase.step!(integrator, dt, true)
 end
-@inline function OS.prepare_local_step!(subintegrator::ThunderboltIntegrator)
+@inline function OS.prepare_local_step!(subintegrator::ThunderboltTimeIntegrator)
     # Copy solution into subproblem
     # uparentview = @view subintegrator.uparent[subintegrator.indexset]
     # subintegrator.u .= subintegrator.uparent[subintegrator.indexset]
@@ -97,7 +97,7 @@ end
     subintegrator.uprev .= subintegrator.u
     syncronize_parameters!(subintegrator, subintegrator.f, subintegrator.synchronizer)
 end
-@inline function OS.finalize_local_step!(subintegrator::ThunderboltIntegrator)
+@inline function OS.finalize_local_step!(subintegrator::ThunderboltTimeIntegrator)
     # Copy solution out of subproblem
     #
     # uparentview = @view subintegrator.uparent[subintegrator.indexset]
@@ -109,10 +109,10 @@ end
 end
 # Glue code
 function OS.build_subintegrators_recursive(f, p::Any, cache::AbstractTimeSolverCache, u::AbstractArray, uprev::AbstractArray, t, dt)
-    return Thunderbolt.ThunderboltIntegrator(f, cache.uₙ, cache.uₙ₋₁, p, t, dt)
+    return Thunderbolt.ThunderboltTimeIntegrator(f, cache.uₙ, cache.uₙ₋₁, p, t, dt)
 end
 function OS.build_subintegrators_recursive(f, synchronizer, p::Any, cache::AbstractTimeSolverCache, u::AbstractArray, uprev::AbstractArray, t, dt, dof_range, uparent)
-    integrator = Thunderbolt.ThunderboltIntegrator(f, cache.uₙ, uparent, cache.uₙ₋₁, dof_range, p, t, t, dt, cache, synchronizer, nothing, true)
+    integrator = Thunderbolt.ThunderboltTimeIntegrator(f, cache.uₙ, uparent, cache.uₙ₋₁, dof_range, p, t, t, dt, cache, synchronizer, nothing, true)
     # This makes sure that the parameters are set correctly for the first time step
     syncronize_parameters!(integrator, f, synchronizer)
     return integrator
@@ -123,6 +123,59 @@ end
 OS.recursive_null_parameters(stuff::AbstractSemidiscreteProblem) = OS.DiffEqBase.NullParameters()
 syncronize_parameters!(integ, f, ::OS.NoExternalSynchronization) = nothing
 
+function DiffEqBase.__init(
+    prob::AbstractSemidiscreteProblem,
+    alg::AbstractSolver,
+    args...;
+    dt,
+    tstops = (),
+    saveat = nothing,
+    save_everystep = false,
+    callback = nothing,
+    advance_to_tstop = false,
+    save_func = (u, t) -> copy(u), # custom kwarg
+    dtchangeable = true,           # custom kwarg
+    stepstop = -1,                 # custom kwarg
+    syncronizer = OS.NoExternalSynchronization(),
+    kwargs...,
+)
+    (; u0, p) = prob
+    t0, tf = prob.tspan
+
+    dt > zero(dt) || error("dt must be positive")
+    _dt = dt
+    dt = tf > t0 ? dt : -dt
+
+    _tstops = tstops
+    _saveat = saveat
+    tstops, saveat = OS.tstops_and_saveat_heaps(t0, tf, tstops, saveat)
+
+    sol = DiffEqBase.build_solution(prob, alg, typeof(t0)[], typeof(save_func(u0, t0))[])
+
+    callback = DiffEqBase.CallbackSet(callback)
+
+    cache = setup_solver_cache(prob, alg, t0)
+
+    cache.uₙ .= u0
+    cache.uₙ₋₁ .= u0
+
+    integrator = ThunderboltTimeIntegrator(
+        prob.f,
+        cache.uₙ,
+        nothing,
+        cache.uₙ₋₁,
+        1:length(u0),
+        p,
+        t0,
+        t0,
+        dt,
+        cache,
+        sol,
+        true,
+    )
+    # DiffEqBase.initialize!(callback, u0, t0, integrator) # Do I need this?
+    return integrator
+end
 
 
 """
