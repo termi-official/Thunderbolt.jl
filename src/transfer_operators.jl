@@ -110,3 +110,45 @@ function transfer!(u_to::AbstractArray, operator::NodalIntergridInterpolation, u
     # TODO non-allocating version
     u_to[operator.node_to_dof_map] .= Ferrite.evaluate_at_points(operator.ph, operator.dh_from, u_from, operator.field_name)
 end
+
+
+#### Parameter <-> Solution
+# TODO generalize these below into something like
+# struct ParameterSyncronizer <: AbstractTransferOperator
+#     parameter_buffer
+#     index_range_global
+#     method
+# end
+# struct IdentityTransferOpeator <: AbstractTransferOperator end
+# syncronize_parameters!(integ, f, syncer::SimpleParameterSyncronizer) = transfer!(parameter_buffer.data, syncer.method, @view f.uparent[index_range_global])
+# transfer!(y, syncer::IdentityTransferOpeator, x) = y .= x
+"""
+    Utility function to synchronize the volume in a split [`RSAFDQ2022Problem`](@ref)
+"""
+struct VolumeTransfer0D3D{TP} <: AbstractTransferOperator
+    tying::TP
+end
+
+function syncronize_parameters!(integ, f, syncer::VolumeTransfer0D3D)
+    # Tying holds a buffer for the 3D problem with some meta information about the 0D problem
+    for chamber ∈ syncer.tying.chambers
+        chamber.V⁰ᴰval = integ.uparent[chamber.V⁰ᴰidx_global]
+    end
+end
+
+"""
+    Utility function to synchronize the pressire in a split [`RSAFDQ2022Problem`](@ref)
+"""
+struct PressureTransfer3D0D{TP } <: AbstractTransferOperator
+    tying::TP
+end
+
+function syncronize_parameters!(integ, f, syncer::PressureTransfer3D0D)
+    # Tying holds a buffer for the 3D problem with some meta information about the 0D problem
+    for (chamber_idx,chamber) ∈ enumerate(syncer.tying.chambers)
+        p = integ.uparent[chamber.pressure_dof_index_global]
+        # The pressure buffer is constructed in a way that the chamber index and
+        # pressure index coincides
+        f.p[chamber_idx] = p
+    end
+end
