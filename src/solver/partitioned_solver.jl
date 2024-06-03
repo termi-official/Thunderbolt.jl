@@ -2,7 +2,7 @@ abstract type AbstractPointwiseSolver <: AbstractSolver end
 abstract type AbstractPointwiseSolverCache <: AbstractTimeSolverCache end
 
 # FIXME
-function perform_step!(problem::PointwiseODEProblem, cache::ForwardEulerCellSolverCache, t::Float64, Δt::Float64)
+function perform_step!(problem::PointwiseODEProblem, cache::AbstractPointwiseSolverCache, t::Float64, Δt::Float64)
     perform_step!(problem.ode, t, Δt, cache)
 end
 

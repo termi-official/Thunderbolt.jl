@@ -117,9 +117,10 @@ function DiffEqBase.__init(
     save_everystep = false,
     callback = nothing,
     advance_to_tstop = false,
-    save_func = (u, t) -> copy(u), # custom kwarg
-    dtchangeable = true,           # custom kwarg
-    syncronizer = OS.NoExternalSynchronization(),
+    save_func = (u, t) -> copy(u),                  # custom kwarg
+    dtchangeable = true,                            # custom kwarg
+    uparent = nothing,                              # custom kwarg
+    syncronizer = OS.NoExternalSynchronization(),   # custom kwarg
     kwargs...,
 )
     (; u0, p) = prob
@@ -145,7 +146,7 @@ function DiffEqBase.__init(
     integrator = ThunderboltTimeIntegrator(
         prob.f,
         cache.uₙ,
-        nothing,
+        uparent,
         cache.uₙ₋₁,
         1:length(u0),
         p,
@@ -153,6 +154,7 @@ function DiffEqBase.__init(
         t0,
         dt,
         cache,
+        syncronizer,
         sol,
         true,
     )
@@ -167,3 +169,6 @@ end
 @inline get_parent_index(integ::ThunderboltTimeIntegrator, local_idx::Int, range::StepRange) = first(range) + range.step*(local_idx - 1)
 
 @inline get_parent_value(integ::ThunderboltTimeIntegrator, local_idx::Int) = integ.uparent[get_parent_index(integ, local_idx)]
+
+# Compat with OrdinaryDiffEq
+perform_step!(integ::ThunderboltTimeIntegrator, cache::AbstractTimeSolverCache) = perform_step!(integ.f, cache, integ.t, integ.dt)
