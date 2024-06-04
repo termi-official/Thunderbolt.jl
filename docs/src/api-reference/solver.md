@@ -10,8 +10,14 @@ ForwardEulerSolver
 ForwardEulerCellSolver
 Thunderbolt.AdaptiveForwardEulerReactionSubCellSolver
 Thunderbolt.ThreadedForwardEulerCellSolver
-LTGOSSolver
 LoadDrivenSolver
 NewtonRaphsonSolver
-solve
+```
+
+## Operator Splitting Module
+
+```@docs
+Thunderbolt.OS.LieTrotterGodunov
+Thunderbolt.OS.GenericSplitFunction
+Thunderbolt.OS.OperatorSplittingIntegrator
 ```

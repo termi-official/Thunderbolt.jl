@@ -4,8 +4,8 @@
 
 This type of function describes a set of connected inner functions in mass-matrix form, as usually found in operator splitting procedures.
 
-TODO "Automatic sync"
-     we should be able to get rid of the synchronizer and handle the connection of coefficients and solutions in semidiscretize.
+!!! note "Automatic sync"
+    We should be able to get rid of the synchronizer and handle the connection of coefficients and solutions in semidiscretize.
 """
 struct GenericSplitFunction{fSetType <: Tuple, idxSetType <: Tuple, sSetType <: Tuple} <: AbstractOperatorSplitFunction
     # The atomic ode functions

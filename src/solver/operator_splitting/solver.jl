@@ -1,5 +1,9 @@
 
 # Lie-Trotter-Godunov Splitting Implementation
+"""
+    LieTrotterGodunov <: AbstractOperatorSplittingAlgorithm
+A first order operator splitting algorithm attributed to [Lie:1880:tti,Tro:1959:psg,God:1959:dmn](@cite).
+"""
 struct LieTrotterGodunov{AlgTupleType} <: AbstractOperatorSplittingAlgorithm
     inner_algs::AlgTupleType # Tuple of timesteppers for inner problems
     # transfer_algs::TransferTupleType # Tuple of transfer algorithms from the master solution into the individual ones

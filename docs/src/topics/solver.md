@@ -28,9 +28,9 @@ We call $t$ time the $u(t)$ the *state* of the system. This way we can define su
 \end{aligned}
 ```
 
-Now, the key idea of operator splitting methods is that solving the subproblems can be easier, and hopefully more efficient, than solving the full problem. Arguably the easiest algorithm to advance the solution from $t_0$ to some time point $t_1 > t_0$ is the Lie-Trotter-Godunov operator splitting. Here the subproblems are solved consecutively, where the solution of one subproblem is taken as the initial guess for the next subproblem, until we have solved all subproblems. In this case we have constructed an _approximation_ for $u(t_1)$.
+Now, the key idea of operator splitting methods is that solving the subproblems can be easier, and hopefully more efficient, than solving the full problem. Arguably the easiest algorithm to advance the solution from $t_0$ to some time point $t_1 > t_0$ is the Lie-Trotter-Godunov operator splitting [Lie:1880:tti,Tro:1959:psg,God:1959:dmn](@cite). Here the subproblems are solved consecutively, where the solution of one subproblem is taken as the initial guess for the next subproblem, until we have solved all subproblems. In this case we have constructed an _approximation_ for $u(t_1)$.
 
-More formally we can write the Lie-Trotter-Godunov scheme as follows: 
+More formally we can write the Lie-Trotter-Godunov scheme [Lie:1880:tti,Tro:1959:psg,God:1959:dmn](@cite) as follows: 
 
 ```math
 \begin{aligned}
@@ -40,7 +40,7 @@ More formally we can write the Lie-Trotter-Godunov scheme as follows:
     \text{Solve} \quad d_t u^N(t) &= F_N(u^N(t), p, t) & & \quad \text{on} \; [t_0, t_1] \; \text{with} \; u^N(t_0) = u^{N-1}(t_1)
 \end{aligned}
 ```
-Such that we obtain the approximation $u(t_1) \approx u^{N-1}(t_1)$.
+Such that we obtain the approximation $u(t_1) \approx u^{N-1}(t_1)$. The approximation is first order in time.
 
 It should be noted that even if we solve all subproblems analytically, then operator splitting schemes themselves almost always come with their own approximation an error, which is simply called the splitting error. For linear problems this error can vanish if all suboperators $F_i$ commute, i.e. if $F_j \cdot F_j - F_i \cdot F_j = 0$ for all $1 \leq i,j \leq N$. One possibility to show this to write down the integral form of the solution and then applying the Baker-Campbell-Hausdorff formula.
 
@@ -51,3 +51,10 @@ d_t u(t) = Lu + R(u)
 ```
 
 where $L$ is some linear operator, usually coming from the linaerization of diffusion opeartors and a nonlinear reaction part $R$ which has some interesting locality properties. This locallity property usually tells is that the time evolution of $R$ natually decouples into many small blocks. This way we only have to solve for the time evolution of a linear problem $d_t u(t) = Lu$ and a set of many very small nonlinear problems $d_t u(t) = R(u)$.
+
+## References
+
+```@bibliography
+Pages = ["topics/solver.md"]
+Canonical = false
+```
