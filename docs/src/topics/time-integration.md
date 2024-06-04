@@ -55,6 +55,6 @@ where $L$ is some linear operator, usually coming from the linaerization of diff
 ## References
 
 ```@bibliography
-Pages = ["topics/solver.md"]
+Pages = ["topics/time-integration.md"]
 Canonical = false
 ```
