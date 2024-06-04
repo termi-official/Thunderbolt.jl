@@ -5,7 +5,7 @@
 During load stepping we want to solve a nonlinear problem with pseudo-time $t$ on some time interval $[t_0, t_1]$. An initial guess is provided for the first nonlinear solve. Formally we can write down the problem as follows. Find $u(t)$ such that
 
 ```math
-0 = F(u(t), p, t) \qquad \text{on} \; [t_1, t_2],
+0 = F(u(t), p, t) \qquad \text{on} \; [t_0, t_1],
 ```
 
 where $u$ usually descibes the displacement of some mechanical system and the operator $F$ contains some mechanical load, hence the name *load stepping*. We obtain systems with this form if we assume that inertial terms are neglibile, or formally $||d^2_tu|| \approx 0$.

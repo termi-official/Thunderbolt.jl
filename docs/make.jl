@@ -46,7 +46,7 @@ bibtex_plugin = CitationBibliography(
             "Overview" => "topics/index.md",
             "topics/operators.md",
             "topics/couplers.md",
-            "topics/solver.md",
+            "topics/time-integration.md",
         ],
         "API Reference" => [
             "Overview" => "api-reference/index.md",
