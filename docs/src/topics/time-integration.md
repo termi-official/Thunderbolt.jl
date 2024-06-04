@@ -35,7 +35,7 @@ More formally we can write the Lie-Trotter-Godunov scheme [Lie:1880:tti,Tro:1959
 ```math
 \begin{aligned}
     \text{Solve} \quad d_t u^1(t) &= F_1(u^1(t), p, t) & & \quad \text{on} \; [t_0, t_1] \; \text{with} \; u^1(t_0) = u_0 \\
-    \text{Solve} \quad d_t u^2(t) &= F_1(u^2(t), p, t) & & \quad \text{on} \; [t_0, t_1] \; \text{with} \; u^2(t_0) = u^1(t_1) \\
+    \text{Solve} \quad d_t u^2(t) &= F_2(u^2(t), p, t) & & \quad \text{on} \; [t_0, t_1] \; \text{with} \; u^2(t_0) = u^1(t_1) \\
              & \vdots & & \\
     \text{Solve} \quad d_t u^N(t) &= F_N(u^N(t), p, t) & & \quad \text{on} \; [t_0, t_1] \; \text{with} \; u^N(t_0) = u^{N-1}(t_1)
 \end{aligned}
