@@ -122,9 +122,7 @@ end
 
 
 #######################################################################################
-
-# FIXME interface
-function solve!(u::AbstractVector, problem::Union{AbstractSemidiscreteFunction,Thunderbolt.RSAFDQ20223DProblem}, solver_cache::NewtonRaphsonSolverCache, t)
+function nlsolve!(u::AbstractVector, problem::Union{AbstractSemidiscreteFunction,Thunderbolt.RSAFDQ20223DProblem}, solver_cache::NewtonRaphsonSolverCache, t)
     @unpack op, residual = solver_cache
     newton_itr = -1
     Δu = zero(u)

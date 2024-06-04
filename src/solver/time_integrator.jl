@@ -168,4 +168,8 @@ end
 @inline get_parent_value(integ::ThunderboltTimeIntegrator, local_idx::Int) = integ.uparent[get_parent_index(integ, local_idx)]
 
 # Compat with OrdinaryDiffEq
-perform_step!(integ::ThunderboltTimeIntegrator, cache::AbstractTimeSolverCache) = perform_step!(integ.f, cache, integ.t, integ.dt)
+function perform_step!(integ::ThunderboltTimeIntegrator, cache::AbstractTimeSolverCache)
+    if !perform_step!(integ.f, cache, integ.t, integ.dt)
+        error("Time step failed at t=$(integ.t).")
+    end
+end

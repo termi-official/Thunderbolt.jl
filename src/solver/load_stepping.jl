@@ -66,7 +66,7 @@ function perform_step!(problem, solver_cache::LoadDrivenSolverCache, t, Δt)
     solver_cache.uₙ₋₁ .= solver_cache.uₙ
     @info t
     update_constraints!(problem, solver_cache, t)
-    if !solve!(solver_cache.uₙ, problem, solver_cache.inner_solver_cache, t) # TODO remove ,,t'' here. But how?
+    if !nlsolve!(solver_cache.uₙ, problem, solver_cache.inner_solver_cache, t) # TODO remove ,,t'' here. But how?
         @warn "Inner solver failed."
         return false
     end

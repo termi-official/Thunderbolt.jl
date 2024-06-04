@@ -71,7 +71,6 @@ include("disambiguation.jl")
 
 # TODO put exports into the individual submodules above!
 export
-    legacysolve,
     # Coefficients
     ConstantCoefficient,
     FieldCoefficient,
