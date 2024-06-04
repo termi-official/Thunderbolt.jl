@@ -1,8 +1,8 @@
 abstract type AbstractPointwiseSolver <: AbstractSolver end
 abstract type AbstractPointwiseSolverCache <: AbstractTimeSolverCache end
 
-# FIXME
-function perform_step!(problem::PointwiseODEProblem, cache::AbstractPointwiseSolverCache, t::Float64, Δt::Float64)
+# Redirect to inner solve
+function perform_step!(problem::PointwiseODEFunction, cache::AbstractPointwiseSolverCache, t::Float64, Δt::Float64)
     perform_step!(problem.ode, t, Δt, cache)
 end
 
@@ -209,14 +209,4 @@ function setup_solver_cache(problem, solver::ThreadedForwardEulerCellSolver, t�
         zeros(npoints, num_states(problem.ode)),
         solver.num_cells_per_batch
     )
-end
-
-struct RushLarsenSolver
-end
-
-struct RushLarsenSolverCache
-end
-
-function setup_solver_cache(problem::PartitionedProblem{APT, BPT}, solver::RushLarsenSolver) where {APT,BPT}
-    return RushLarsenSolverCache()
 end

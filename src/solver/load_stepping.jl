@@ -15,58 +15,41 @@ mutable struct LoadDrivenSolverCache{ISC, T, VT <: AbstractVector{T}} <: Abstrac
     tmp::VT
 end
 
-function setup_solver_cache(problem, solver::LoadDrivenSolver{<:NewtonRaphsonSolver{T}}, t₀) where T
-    inner_solver_cache = setup_solver_cache(problem, solver.inner_solver)
+function setup_solver_cache(f::AbstractSemidiscreteFunction, solver::LoadDrivenSolver, t₀)
+    inner_solver_cache = setup_solver_cache(f, solver.inner_solver)
+    T = Float64 # TODO query
+    vtype = Vector{T}
     LoadDrivenSolverCache(
         inner_solver_cache,
-        Vector{T}(undef, solution_size(problem)),
-        Vector{T}(undef, solution_size(problem)),
-        Vector{T}(undef, solution_size(problem)),
+        vtype(undef, solution_size(f)),
+        vtype(undef, solution_size(f)),
+        vtype(undef, solution_size(f)),
     )
 end
 
-setup_solver_cache(problem::AbstractCoupledProblem, solver::LoadDrivenSolver, t₀) = error("Not implemented yet.")
-
-function setup_solver_cache(problem::AbstractCoupledProblem, solver::LoadDrivenSolver{<:NewtonRaphsonSolver{T}}, t₀) where T
-    inner_solver_cache = setup_solver_cache(problem, solver.inner_solver)
+function setup_solver_cache(f::AbstractSemidiscreteBlockedFunction, solver::LoadDrivenSolver, t₀)
+    inner_solver_cache = setup_solver_cache(f, solver.inner_solver)
+    T = Float64 # TODO query
+    vtype = Vector{T}
     LoadDrivenSolverCache(
         inner_solver_cache,
         mortar([
-            Vector{T}(undef, solution_size(base_problem)) for base_problem ∈ base_problems(problem)
+            vtype(undef, solution_size(fi)) for fi ∈ blocks(f)
         ]),
         mortar([
-            Vector{T}(undef, solution_size(base_problem)) for base_problem ∈ base_problems(problem)
+            vtype(undef, solution_size(fi)) for fi ∈ blocks(f)
         ]),
         mortar([
-            Vector{T}(undef, solution_size(base_problem)) for base_problem ∈ base_problems(problem)
+            vtype(undef, solution_size(fi)) for fi ∈ blocks(f)
         ]),
     )
 end
 
-function update_constraints!(problem, solver_cache::LoadDrivenSolverCache, t)
-    Ferrite.update!(getch(problem), t)
-    apply!(solver_cache.uₙ, getch(problem))
-end
-
-function update_constraints!(problem::CoupledProblem, solver_cache::LoadDrivenSolverCache, t)
-    for (i,p) ∈ enumerate(problem.base_problems)
-        update_constraints_block!(p, Block(i), solver_cache, t)
-    end
-end
-
-function update_constraints_block!(problem, i::Block, solver_cache, t)
-    Ferrite.update!(getch(problem), t)
-    u = @view solver_cache.uₙ[i]
-    apply!(u, getch(problem))
-end
-
-update_constraints_block!(problem::NullProblem, i::Block, solver_cache, t) = nothing
-
-function perform_step!(problem, solver_cache::LoadDrivenSolverCache, t, Δt)
+function perform_step!(f::AbstractSemidiscreteFunction, solver_cache::LoadDrivenSolverCache, t, Δt)
     solver_cache.uₙ₋₁ .= solver_cache.uₙ
     @info t
-    update_constraints!(problem, solver_cache, t)
-    if !nlsolve!(solver_cache.uₙ, problem, solver_cache.inner_solver_cache, t) # TODO remove ,,t'' here. But how?
+    update_constraints!(f, solver_cache, t)
+    if !nlsolve!(solver_cache.uₙ, f, solver_cache.inner_solver_cache, t) # TODO remove ,,t'' here. But how?
         @warn "Inner solver failed."
         return false
     end

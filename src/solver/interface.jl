@@ -5,35 +5,22 @@ abstract type AbstractNonlinearSolverCache end
 
 abstract type AbstractTimeSolverCache end
 
-"""
-    setup_initial_condition!(problem, cache, initial_condition, time)
-
-Main entry point to setup the initial condition of a problem for a given solver.
-"""
-function setup_initial_condition!(problem, cache, initial_condition, time)
-    u₀ = initial_condition(problem, time)
-    cache.uₙ .= u₀
-    return nothing
+function setup_operator(f::NullFunction, solver)
+    return NullOperator{Float64,solution_size(f),solution_size(f)}()
 end
 
-function setup_operator(problem::NullProblem, solver)
-    return DiagonalOperator([1.0])
-    # return NullOperator{Float64,solution_size(problem),solution_size(problem)}()
+function setup_operator(f::NullFunction, couplings, solver)
+    return NullOperator{Float64,solution_size(f),solution_size(f)}()
 end
 
-function setup_operator(problem::NullProblem, couplings, solver)
-    return DiagonalOperator([1.0])
-    # return NullOperator{Float64,solution_size(problem),solution_size(problem)}()
-end
-
-function setup_operator(problem::QuasiStaticProblem, solver::AbstractNonlinearSolver)
-    @unpack dh, constitutive_model, face_models = problem.f
+function setup_operator(f::AbstractQuasiStaticFunction, solver::AbstractNonlinearSolver)
+    @unpack dh, constitutive_model, face_models = f
     @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the nonlinear solver."
     @assert length(dh.field_names) == 1 "Multiple fields not yet supported in the nonlinear solver."
 
     displacement_symbol = first(dh.field_names)
 
-    intorder = quadrature_order(problem.f, displacement_symbol)
+    intorder = quadrature_order(f, displacement_symbol)
     qr = QuadratureRuleCollection(intorder)
     qr_face = FaceQuadratureRuleCollection(intorder)
 
@@ -56,30 +43,35 @@ end
 #     )
 # end
 
-function setup_operator(problem::RSAFDQ20223DProblem, solver::AbstractNonlinearSolver)
-    @unpack tying_problem, structural_problem = problem
-    # @unpack dh, constitutive_model, face_models, displacement_symbol = structural_problem
-    @unpack dh, constitutive_model, face_models = structural_problem
-    @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the Newton solver."
-    @assert length(dh.field_names) == 1 "Multiple fields not yet supported in the nonlinear solver."
+# # TODO correct dispatches
+# function setup_coupling_operator(first_problem::DiffEqBase.AbstractDEProblem, second_problem::DiffEqBase.AbstractDEProblem, relevant_couplings, solver::AbstractNonlinearSolver)
+#     NullOperator{Float64,solution_size(second_problem),solution_size(first_problem)}()
+# end
 
-    displacement_symbol = first(dh.field_names)
+# # Block-Diagonal entry
+# setup_operator(coupled_problem::CoupledProblem, i::Int, solver) = setup_operator(coupled_problem.base_problems[i], coupled_problem.couplings, solver)
+# # Offdiagonal entry
+# setup_coupling_operator(coupled_problem::CoupledProblem, i::Int, j::Int, solver) = setup_coupling_operator(coupled_problem.base_problems[i], coupled_problem.base_problems[j], coupled_problem.couplings, solver)
 
-    intorder = quadrature_order(structural_problem, displacement_symbol)
-    qr = QuadratureRuleCollection(intorder)
-    qr_face = FaceQuadratureRuleCollection(intorder)
-
-    return AssembledRSAFDQ2022Operator(
-        dh, displacement_symbol, constitutive_model, qr, face_models, qr_face, tying_problem
-    )
+function update_constraints!(f::AbstractSemidiscreteFunction, solver_cache::AbstractTimeSolverCache, t)
+    Ferrite.update!(getch(f), t)
+    apply!(solver_cache.uₙ, getch(f))
 end
 
-# TODO correct dispatches
-function setup_coupling_operator(first_problem::DiffEqBase.AbstractDEProblem, second_problem::DiffEqBase.AbstractDEProblem, relevant_couplings, solver::AbstractNonlinearSolver)
-    NullOperator{Float64,solution_size(second_problem),solution_size(first_problem)}()
+update_constraints!(f, solver_cache::AbstractTimeSolverCache, t) = nothing
+
+function update_constraints!(f::AbstractSemidiscreteBlockedFunction, solver_cache::AbstractTimeSolverCache, t)
+    for (i,pi) ∈ enumerate(blocks(f))
+        update_constraints_block!(pi, Block(i), solver_cache, t)
+    end
 end
 
-# Block-Diagonal entry
-setup_operator(coupled_problem::CoupledProblem, i::Int, solver) = setup_operator(coupled_problem.base_problems[i], coupled_problem.couplings, solver)
-# Offdiagonal entry
-setup_coupling_operator(coupled_problem::CoupledProblem, i::Int, j::Int, solver) = setup_coupling_operator(coupled_problem.base_problems[i], coupled_problem.base_problems[j], coupled_problem.couplings, solver)
+function update_constraints_block!(problem::AbstractSemidiscreteFunction, i::Block, solver_cache::AbstractTimeSolverCache, t)
+    Ferrite.update!(getch(problem), t)
+    u = @view solver_cache.uₙ[i]
+    apply!(u, getch(problem))
+end
+
+update_constraints_block!(problem, i::Block, solver_cache::AbstractTimeSolverCache, t) = nothing
+
+update_constraints_block!(problem::NullFunction, i::Block, solver_cache, t) = nothing

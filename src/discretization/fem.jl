@@ -33,12 +33,12 @@ function semidiscretize(split::ReactionDiffusionSplit{<:MonodomainModel}, discre
 
     #
     semidiscrete_problem = SplitProblem(
-        TransientHeatProblem(
+        TransientHeatFunction(
             ConductivityToDiffusivityCoefficient(epmodel.κ, epmodel.Cₘ, epmodel.χ),
             epmodel.stim,
             dh
         ),
-        PointwiseODEProblem(
+        PointwiseODEFunction(
             # TODO epmodel.Cₘ(x) and coordinates
             ndofs(dh),
             epmodel.ion
@@ -74,31 +74,6 @@ function semidiscretize(model::StructuralModel{<:QuasiStaticModel}, discretizati
     return semidiscrete_problem
 end
 
-function semidiscretize(split::RSAFDQ2022Split{<:CoupledModel}, discretization::FiniteElementDiscretization, grid::AbstractGrid)
-    ets = elementtypes(grid)
-    @assert length(ets) == 1 "Multiple element types not supported"
-    @assert length(split.model.base_models) == 2 "I can only handle pure mechanics coupled to pure circuit."
-    @error "Implementation for RSAFDQ2022Split{<:CoupledModel} currently broken. 💔"
-
-    num_chambers_lumped = num_unknown_pressures(split.model.base_models[2])
-    semidiscrete_problem = SplitProblem(
-        CoupledProblem(
-            (
-                semidiscretize(split.model.base_models[1], discretization, grid),
-                NullProblem(num_chambers_lumped) # one coupling dof for each chamber (chamber pressure)
-            ),
-            split.model.couplings
-        ),
-        ODEProblem(
-            split.model.base_models[2],
-            (du,u,t,chamber_pressures) -> lumped_driver!(du, u, t, chamber_pressures, split.model.base_models[2]),
-            zeros(num_chambers_lumped) # Initialize with 0 pressure in the chambers
-        )
-    )
-
-    return semidiscrete_problem
-end
-
 function create_chamber_tyings(coupler::LumpedFluidSolidCoupler{CVM}, structural_problem, circuit_model) where CVM
     num_unknowns_structure = solution_size(structural_problem)
     chamber_tyings = RSAFDQ2022SingleChamberTying{CVM}[]
@@ -123,39 +98,4 @@ function create_chamber_tyings(coupler::LumpedFluidSolidCoupler{CVM}, structural
         push!(chamber_tyings, tying)
     end
     return chamber_tyings
-end
-
-function semidiscretize(split::RSAFDQ2022Split, discretization::FiniteElementDiscretization, grid::AbstractGrid)
-    ets = elementtypes(grid)
-    @assert length(ets) == 1 "Multiple element types not supported"
-
-    @unpack model = split
-    @unpack structural_model, circuit_model, coupler = model
-    @assert length(coupler.chamber_couplings) ≥ 1 "Provide at least one coupling for the semi-discretization of an RSAFDQ2022 model"
-    @assert coupler.displacement_symbol == structural_model.displacement_symbol "Coupler is not compatible with structural model"
-
-    # Discretize individual problems
-    structural_problem = semidiscretize(model.structural_model, discretization, grid)
-    num_chambers_lumped = num_unknown_pressures(model.circuit_model)
-
-    # ODE problem for blood circuit
-    flow_problem = ODEProblem(
-            model.circuit_model,
-        (du,u,t,chamber_pressures) -> lumped_driver!(du, u, t, chamber_pressures, model.circuit_model),
-        zeros(num_chambers_lumped) # Initialize with 0 pressure in the chambers - TODO replace this hack with a proper transfer operator!
-    )
-
-    # Tie problems
-    # Fix dispatch....
-    chamber_tyings = create_chamber_tyings(coupler, structural_problem, circuit_model)
-    @assert num_chambers_lumped == length(chamber_tyings) "Number of chambers in structural model ($(length(chamber_tyings))) and circuit model ($num_chambers_lumped) differs."
-    semidiscrete_problem = SplitProblem(
-        RSAFDQ20223DProblem(
-            structural_problem,
-            RSAFDQ2022TyingProblem(chamber_tyings)
-        ),
-        flow_problem
-    )
-
-    return semidiscrete_problem
 end

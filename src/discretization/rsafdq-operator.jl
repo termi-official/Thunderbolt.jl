@@ -7,7 +7,7 @@ struct AssembledRSAFDQ2022Operator{MatrixType <: BlockMatrix, ElementCacheType, 
     dh::DHType
 end
 
-function AssembledRSAFDQ2022Operator(dh::AbstractDofHandler, field_name::Symbol, element_model, element_qrc::QuadratureRuleCollection, boundary_model, boundary_qrc::FaceQuadratureRuleCollection, tying::RSAFDQ2022TyingProblem)
+function AssembledRSAFDQ2022Operator(dh::AbstractDofHandler, field_name::Symbol, element_model, element_qrc::QuadratureRuleCollection, boundary_model, boundary_qrc::FaceQuadratureRuleCollection, tying::RSAFDQ2022TyingInfo)
     @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the nonlinear opeartor."
 
     firstcell = getcells(Ferrite.get_grid(dh), first(dh.subdofhandlers[1].cellset))
@@ -146,3 +146,24 @@ function update_linearization!(op::AssembledRSAFDQ2022Operator, u::AbstractVecto
 
     #finish_assemble(assembler)
 end
+
+function setup_operator(f::RSAFDQ20223DFunction, solver::AbstractNonlinearSolver)
+    @unpack tying_info, structural_function = f
+    # @unpack dh, constitutive_model, face_models, displacement_symbol = structural_function
+    @unpack dh, constitutive_model, face_models = structural_function
+    @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the Newton solver."
+    @assert length(dh.field_names) == 1 "Multiple fields not yet supported in the nonlinear solver."
+
+    displacement_symbol = first(dh.field_names)
+
+    intorder = quadrature_order(structural_function, displacement_symbol)
+    qr = QuadratureRuleCollection(intorder)
+    qr_face = FaceQuadratureRuleCollection(intorder)
+
+    return AssembledRSAFDQ2022Operator(
+        dh, displacement_symbol, constitutive_model, qr, face_models, qr_face, tying_info
+    )
+end
+
+
+BlockArrays.blocks(f::RSAFDQ20223DFunction) = (f.structural_function, f.tying_info)

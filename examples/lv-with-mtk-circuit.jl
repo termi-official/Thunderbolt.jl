@@ -321,8 +321,8 @@ splitfun = OS.GenericSplitFunction(
         (offset+1):(offset+Thunderbolt.solution_size(coupledform.B))
     ),
     (
-        VolumeTransfer0D3D(coupledform.A.tying_problem),
-        PressureTransfer3D0D(coupledform.A.tying_problem),
+        VolumeTransfer0D3D(coupledform.A.tying_info),
+        PressureTransfer3D0D(coupledform.A.tying_info),
     ),
 )
 
@@ -373,13 +373,13 @@ using Thunderbolt.TimerOutputs
 TimerOutputs.enable_debug_timings(Thunderbolt)
 TimerOutputs.reset_timer!()
 for (u, t) in OS.TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
-    dh = coupledform.A.structural_problem.dh
+    dh = coupledform.A.structural_function.dh
     store_timestep!(io, t, dh.grid)
     Thunderbolt.store_timestep_field!(io, t, dh, u[1:ndofs(dh)], :displacement) # TODO allow views
     Thunderbolt.finalize_timestep!(io, t)
 
     if t > 0.0
-        lv = coupledform.A.tying_problem.chambers[1]
+        lv = coupledform.A.tying_info.chambers[1]
         append!(vlv.val, lv.V⁰ᴰval)
         append!(plv.val, u[lv.pressure_dof_index_global])
         notify(vlv)

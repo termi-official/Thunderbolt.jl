@@ -54,7 +54,7 @@ function Plonsey1964ECGGaussCache(dh::DofHandler, op::AssembledBilinearOperator,
     Plonsey1964ECGGaussCache(κ∇φₘ, cv, dh.grid)
 end
 
-function Plonsey1964ECGGaussCache(problem::SplitProblem{<:TransientHeatProblem}, op::AssembledBilinearOperator, φₘ)
+function Plonsey1964ECGGaussCache(problem::SplitProblem{<:TransientHeatFunction}, op::AssembledBilinearOperator, φₘ)
     @unpack dh = problem.A
     Plonsey1964ECGGaussCache(dh, op, φₘ)
 end

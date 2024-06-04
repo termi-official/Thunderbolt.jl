@@ -28,7 +28,7 @@ function spiral_wave_initializer!(u₀, problem::Thunderbolt.SplitProblem, t₀)
 end
 
 tspan = (0.0, 1000.0)
-dtvis = 10.0
+dtvis = 25.0
 dt₀ = 1.0
 
 model = MonodomainModel(
@@ -66,24 +66,24 @@ timestepper = OS.LieTrotterGodunov((
 
 integrator = OS.init(problem, timestepper, dt=dt₀, verbose=true)
 
-io = ParaViewWriter("test_new")
+io = ParaViewWriter("spiral-wave-test")
 
 TimerOutputs.enable_debug_timings(Thunderbolt)
 # TimerOutputs.enable_debug_timings(Main)
 TimerOutputs.reset_timer!()
 for (u, t) in OS.TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
-    # dh = odeform.A.dh
-    # φ = u[1:ndofs(dh)]
-    # @info t,norm(u)
-    # # φ = @view u[odeform.subproblems[1].indexset]
-    # # sflat = ....?
-    # store_timestep!(io, t, dh.grid)
-    # Thunderbolt.store_timestep_field!(io, t, dh, φ, :φₘ) # TODO allow views
-    # # s = reshape(sflat, (Thunderbolt.num_states(ionic_model),length(φ)))
-    # # for sidx in 1:Thunderbolt.num_states(ionic_model)
-    # #    Thunderbolt.store_timestep_field!(io, t, dh, s[sidx,:], state_symbol(ionic_model, sidx))
-    # # end
-    # Thunderbolt.finalize_timestep!(io, t)
+    dh = odeform.A.dh
+    φ = u[1:ndofs(dh)]
+    @info t,norm(u)
+    # φ = @view u[odeform.subproblems[1].indexset]
+    # sflat = ....?
+    store_timestep!(io, t, dh.grid)
+    Thunderbolt.store_timestep_field!(io, t, dh, φ, :φₘ) # TODO allow views
+    # s = reshape(sflat, (Thunderbolt.num_states(ionic_model),length(φ)))
+    # for sidx in 1:Thunderbolt.num_states(ionic_model)
+    #    Thunderbolt.store_timestep_field!(io, t, dh, s[sidx,:], state_symbol(ionic_model, sidx))
+    # end
+    Thunderbolt.finalize_timestep!(io, t)
 end
 TimerOutputs.print_timer()
 # TimerOutputs.disable_debug_timings(Main)

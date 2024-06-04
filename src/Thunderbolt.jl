@@ -50,13 +50,15 @@ include("modeling/fluid_mechanics.jl")
 
 include("modeling/multiphysics.jl")
 
-include("modeling/problems.jl") # This is not really "modeling" but a glue layer to translate from model to solver via a discretization
+include("modeling/functions.jl")
+include("modeling/problems.jl") # Utility for compat against DiffEqBase
 
 include("discretization/interface.jl")
 include("discretization/fem.jl")
 include("discretization/operator.jl")
 
 include("solver/interface.jl")
+include("solver/nlsolve_common.jl")
 include("solver/newton_raphson.jl")
 include("solver/time_integrator.jl")
 include("solver/load_stepping.jl")
@@ -68,6 +70,10 @@ include("solver/ecg.jl")
 include("io.jl")
 
 include("disambiguation.jl")
+
+# TODO where to put these?
+include("modeling/rsafdq2022.jl")
+include("discretization/rsafdq-operator.jl")
 
 # TODO put exports into the individual submodules above!
 export
@@ -175,7 +181,6 @@ export
     get_parent_index,
     get_parent_value,
     # Utils
-    default_initializer,
     calculate_volume_deformed_mesh,
     elementtypes,
     QuadraturePoint,

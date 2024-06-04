@@ -23,7 +23,7 @@ calcium_profile_function(x,t) = t/1000.0 < 0.5 ? (1-x.transmural*0.7)*2.0*t/1000
 #     # ("Quadratic-Ring", 2, Thunderbolt.generate_quadratic_ring_mesh(20,4,4))
 # ]
 
-name = "Debug-Ring"
+name = "ring-test"
 order = 1
 ring_grid = Thunderbolt.generate_ring_mesh(16,4,4)
 

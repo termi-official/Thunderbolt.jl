@@ -44,7 +44,7 @@ end
 
 # Performs a backward Euler step
 # TODO check if operator is time dependent and update
-function perform_step!(problem::TransientHeatProblem, cache::BackwardEulerSolverCache{SolutionType, MassMatrixType, DiffusionMatrixType, SystemMatrixType, LinSolverType, RHSType}, t, Δt) where {SolutionType, MassMatrixType, DiffusionMatrixType, SystemMatrixType, LinSolverType, RHSType}
+function perform_step!(problem::TransientHeatFunction, cache::BackwardEulerSolverCache{SolutionType, MassMatrixType, DiffusionMatrixType, SystemMatrixType, LinSolverType, RHSType}, t, Δt) where {SolutionType, MassMatrixType, DiffusionMatrixType, SystemMatrixType, LinSolverType, RHSType}
     @unpack Δt_last, b, M, A, uₙ, uₙ₋₁, linsolver = cache
     # Remember last solution
     @inbounds uₙ₋₁ .= uₙ
@@ -66,7 +66,7 @@ function perform_step!(problem::TransientHeatProblem, cache::BackwardEulerSolver
     return true
 end
 
-function setup_solver_cache(problem::TransientHeatProblem, solver::BackwardEulerSolver, t₀)
+function setup_solver_cache(problem::TransientHeatFunction, solver::BackwardEulerSolver, t₀)
     @unpack dh = problem
     @assert length(dh.field_names) == 1 # TODO relax this assumption, maybe.
     field_name = dh.field_names[1]
@@ -141,7 +141,7 @@ function perform_step!(problem, solver_cache::ForwardEulerSolverCache, t::Float6
     return !any(isnan.(uₙ))
 end
 
-function setup_solver_cache(problem::ODEProblem, solver::ForwardEulerSolver, t₀)
+function setup_solver_cache(problem::ODEFunction, solver::ForwardEulerSolver, t₀)
     return ForwardEulerSolverCache(
         solver.rate,
         zeros(num_states(problem.ode)),

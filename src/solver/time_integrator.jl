@@ -101,7 +101,7 @@ end
 function OS.construct_inner_cache(f, alg::AbstractSolver, u::AbstractArray, uprev::AbstractArray)
     return Thunderbolt.setup_solver_cache(f, alg, 0.0)
 end
-OS.recursive_null_parameters(stuff::AbstractSemidiscreteProblem) = OS.DiffEqBase.NullParameters()
+OS.recursive_null_parameters(stuff::Union{AbstractSemidiscreteProblem, AbstractSemidiscreteFunction}) = OS.DiffEqBase.NullParameters()
 syncronize_parameters!(integ, f, ::OS.NoExternalSynchronization) = nothing
 
 function DiffEqBase.__init(
@@ -120,7 +120,7 @@ function DiffEqBase.__init(
     syncronizer = OS.NoExternalSynchronization(),   # custom kwarg
     kwargs...,
 )
-    (; u0, p) = prob
+    (; f, u0, p) = prob
     t0, tf = prob.tspan
 
     dt > zero(dt) || error("dt must be positive")
@@ -135,13 +135,13 @@ function DiffEqBase.__init(
 
     callback = DiffEqBase.CallbackSet(callback)
 
-    cache = setup_solver_cache(prob, alg, t0)
+    cache = setup_solver_cache(f, alg, t0)
 
     cache.uₙ .= u0
     cache.uₙ₋₁ .= u0
 
     integrator = ThunderboltTimeIntegrator(
-        prob.f,
+        f,
         cache.uₙ,
         uparent,
         cache.uₙ₋₁,

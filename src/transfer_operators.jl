@@ -123,7 +123,7 @@ end
 # syncronize_parameters!(integ, f, syncer::SimpleParameterSyncronizer) = transfer!(parameter_buffer.data, syncer.method, @view f.uparent[index_range_global])
 # transfer!(y, syncer::IdentityTransferOpeator, x) = y .= x
 """
-    Utility function to synchronize the volume in a split [`RSAFDQ2022Problem`](@ref)
+    Utility function to synchronize the volume in a split [`RSAFDQ2022Function`](@ref)
 """
 struct VolumeTransfer0D3D{TP} <: AbstractTransferOperator
     tying::TP
@@ -137,7 +137,7 @@ function syncronize_parameters!(integ, f, syncer::VolumeTransfer0D3D)
 end
 
 """
-    Utility function to synchronize the pressire in a split [`RSAFDQ2022Problem`](@ref)
+    Utility function to synchronize the pressire in a split [`RSAFDQ2022Function`](@ref)
 """
 struct PressureTransfer3D0D{TP } <: AbstractTransferOperator
     tying::TP

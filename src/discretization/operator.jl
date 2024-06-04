@@ -490,6 +490,3 @@ function needs_update(op::LinearOperator{<:Any, <: AnalyticalCoefficientElementC
     end
     return false
 end
-
-# Advanced model-specific operators
-include("rsafdq-operator.jl")
