@@ -6,7 +6,7 @@ mutable struct OperatorSplittingProblem{fType <: AbstractOperatorSplitFunction, 
     u0::uType
     tspan::tType
     p::pType
-    kwargs::K
+    kwargs::K # TODO what to do with these?
     function OperatorSplittingProblem(f::AbstractOperatorSplitFunction,
         u0, tspan, p = recursive_null_parameters(f);
         kwargs...)
@@ -19,3 +19,5 @@ mutable struct OperatorSplittingProblem{fType <: AbstractOperatorSplitFunction, 
         kwargs)
     end
 end
+
+num_operators(prob::OperatorSplittingProblem) = num_operators(prob.f)

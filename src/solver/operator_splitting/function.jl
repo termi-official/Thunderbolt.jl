@@ -21,13 +21,14 @@ struct GenericSplitFunction{fSetType <: Tuple, idxSetType <: Tuple, sSetType <: 
 end
 
 function function_size(gsf::GenericSplitFunction)
-    # TODO optimize
     alldofs = Set{Int}()
     for dof_range in gsf.dof_ranges
         union!(alldofs, dof_range)
     end
     return length(alldofs)
 end
+
+num_operators(f::GenericSplitFunction) = length(f.functions)
 
 struct NoExternalSynchronization end
 
