@@ -2,32 +2,32 @@
 
 ## Load Stepping
 
-During load stepping we want to solve a nonlinear problem with pseudo-time $t$ 
-on some time interval $[t_0, t_1]$. An initial guess is provided for the first 
-nonlinear solve. Formally we can write down the problem as follows. Find $u(t)$ 
+During load stepping we want to solve a nonlinear problem with pseudo-time $t$
+on some time interval $[t_0, t_1]$. An initial guess is provided for the first
+nonlinear solve. Formally we can write down the problem as follows. Find $u(t)$
 such that
 
 ```math
 0 = F(u(t), p, t) \qquad \text{on} \; [t_0, t_1],
 ```
 
-where $u$ usually descibes the displacement of some mechanical system and the 
-operator $F$ contains some mechanical load, hence the name *load stepping*. We 
-obtain systems with this form if we assume that inertial terms are neglibile, 
+where $u$ usually descibes the displacement of some mechanical system and the
+operator $F$ contains some mechanical load, hence the name *load stepping*. We
+obtain systems with this form if we assume that inertial terms are neglibile,
 or formally $||d^2_tu|| \approx 0$.
 
 ## Operator Splitting
 
-For operator splitting procedures we assume that we have some time-dependent 
-problem with initial condition $u_0 := u(t_0)$ and an operator $F$ describing 
-the right hand side. We assume that $F$ can be additively split into $N$ 
+For operator splitting procedures we assume that we have some time-dependent
+problem with initial condition $u_0 := u(t_0)$ and an operator $F$ describing
+the right hand side. We assume that $F$ can be additively split into $N$
 suboperators $F_i$. This can be formally written as
 
 ```math
 d_t u(t) = F(u(t), p, t) = F_1(u(t), p, t) + ... + F_N(u(t), p, t) \, .
 ```
 
-We call $t$ time the $u(t)$ the *state* of the system. This way we can 
+We call $t$ time the $u(t)$ the *state* of the system. This way we can
 define subproblems
 
 ```math
@@ -42,12 +42,12 @@ Now, the key idea of operator splitting methods is that solving the subproblems
 can be easier, and hopefully more efficient, than solving the full problem.
 Arguably the easiest algorithm to advance the solution from $t_0$ to some time
 point $t_1 > t_0$ is the Lie-Trotter-Godunov operator splitting [Lie:1880:tti,Tro:1959:psg,God:1959:dmn](@cite).
-Here the subproblems are solved consecutively, where the solution of one 
+Here the subproblems are solved consecutively, where the solution of one
 subproblem is taken as the initial guess for the next subproblem, until we have
  solved all subproblems. In this case we have constructed an _approximation_
  for $u(t_1)$.
 
-More formally we can write the Lie-Trotter-Godunov scheme [Lie:1880:tti,Tro:1959:psg,God:1959:dmn](@cite) as follows: 
+More formally we can write the Lie-Trotter-Godunov scheme [Lie:1880:tti,Tro:1959:psg,God:1959:dmn](@cite) as follows:
 
 ```math
 \begin{aligned}
@@ -82,7 +82,7 @@ approximation error, which is simply called the splitting error. For linear
 problems this error can vanish if all suboperators $F_i$ commute, i.e. if
 $F_j \cdot F_i = F_i \cdot F_j$ for all $1 \leq i,j \leq N$, which can be shown
 with the Baker-Campbell-Hausdorff formula. Let us investigate the convergence
-order for two bounded linear operators $L_1$ and $L_2$, i.e. on the following 
+order for two bounded linear operators $L_1$ and $L_2$, i.e. on the following
 system of ODEs
 
 ```math
@@ -111,7 +111,7 @@ if we now replace the exponentials with their definitions we obtain for the firs
 
 ```math
 \begin{aligned}
-&||(I + tL_1 + \frac{h^2}{2}L_1^2 + ...)(I + tL_2 + \frac{h^2}{2}L_2^2 + ...) - (I + t(L_1 + L_2) + \frac{h^2}{2}(L_1+L_2)^2 + ...)||\\ 
+&||(I + tL_1 + \frac{h^2}{2}L_1^2 + ...)(I + tL_2 + \frac{h^2}{2}L_2^2 + ...) - (I + t(L_1 + L_2) + \frac{h^2}{2}(L_1+L_2)^2 + ...)||\\
 =& ||\frac{h^2}{2} (L_1 L_2 - L_2 L_1) + ... || \leq \frac{h^2}{2} || (L_1 L_2 - L_2 L_1) || + O(h^3)
 \end{aligned}
 ```
