@@ -42,7 +42,6 @@ More formally we can write the Lie-Trotter-Godunov scheme [Lie:1880:tti,Tro:1959
 ```
 Such that we obtain the approximation $u(t_1) \approx u^{N-1}(t_1)$. The approximation is first order in time.
 
-It should be noted that even if we solve all subproblems analytically, then operator splitting schemes themselves almost always come with their own approximation an error, which is simply called the splitting error. For linear problems this error can vanish if all suboperators $F_i$ commute, i.e. if $F_j \cdot F_j - F_i \cdot F_j = 0$ for all $1 \leq i,j \leq N$. One possibility to show this to write down the integral form of the solution and then applying the Baker-Campbell-Hausdorff formula.
 
 Probably the most widely spread application for operator splitting schemes is the solution for reaction diffusion systems. These have the form
 
@@ -51,6 +50,56 @@ d_t u(t) = Lu + R(u)
 ```
 
 where $L$ is some linear operator, usually coming from the linaerization of diffusion opeartors and a nonlinear reaction part $R$ which has some interesting locality properties. This locallity property usually tells is that the time evolution of $R$ natually decouples into many small blocks. This way we only have to solve for the time evolution of a linear problem $d_t u(t) = Lu$ and a set of many very small nonlinear problems $d_t u(t) = R(u)$.
+
+### Analysis of Lie-Trotter-Godunov
+
+It should be noted that even if we solve all subproblems analytically, then operator splitting schemes themselves almost always come with their own approximation an error, which is simply called the splitting error. For linear problems this error can vanish if all suboperators $F_i$ commute, i.e. if $F_j \cdot F_i = F_i \cdot F_j$ for all $1 \leq i,j \leq N$, which can be shown with the Baker-Campbell-Hausdorff formula. Let us investigate the convergence order for two bounded linear operators $L_1$ and $L_2$, i.e. on the following system of ODEs
+
+```math
+d_t u = L_1 u + L_2 u \, .
+```
+
+Here the exact solution $u$ at time point $t$ for some initial condition at $t_0 = 0$ is
+
+```math
+u(t) = e^{(L_1 + L_2)t} u_0 \, ,
+```
+
+while the solution for the Lie-Trotter-Godunov scheme is
+
+```math
+\tilde{u}(t) = e^{L_1t}e^{L_2t} u_0 \, .
+```
+
+The local truncation error can be written as
+
+```math
+\epsilon(t) = ||e^{L_1t}e^{L_2t} - e^{(L_1 + L_2)t}|| \, ||u_0||
+```
+
+if we now replace the exponentials with their definitions we obtain for the first norm
+
+```math
+\begin{aligned}
+&||(I + tL_1 + \frac{h^2}{2}L_1^2 + ...)(I + tL_2 + \frac{h^2}{2}L_2^2 + ...) - (I + t(L_1 + L_2) + \frac{h^2}{2}(L_1+L_2)^2 + ...)||\\ 
+=& ||\frac{h^2}{2} (L_1 L_2 - L_2 L_1) + ... || \leq \frac{h^2}{2} || (L_1 L_2 - L_2 L_1) || + O(h^3)
+\end{aligned}
+```
+
+This shows that the local truncation error is O(h^2) and hence the scheme is first order accurate.
+
+Showing stability is also straight forward. We assumed that $L_1$ and $L_2$ are bounded, so we obtain for all time points $t' < t$ and all repeated subdivisions $n \in \mathbb{N}$ the following bound
+
+```math
+||(e^{L_1\frac{t'}{n}}e^{L_2\frac{t'}{n}})^n||
+\leq ||e^{L_1\frac{t'}{n}}e^{L_2\frac{t'}{n}}||^n
+\leq ||e^{L_1\frac{t'}{n}}||^n ||e^{L_2\frac{t'}{n}}||^n
+\leq e^{||L_1||t'} e^{||L_2||t'}
+\leq e^{||L_1||t} e^{||L_2||t}
+\leq C < \infty
+```
+
+which implies stability of the scheme.
 
 ## References
 
