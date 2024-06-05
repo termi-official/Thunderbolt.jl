@@ -1,16 +1,19 @@
 using Thunderbolt, Thunderbolt.TimerOutputs
-using UnPack # TODO REMOVEME
-import Thunderbolt.OS
-######################################################
 
-function spiral_wave_initializer!(u₀, problem::Thunderbolt.SplitProblem, t₀)
+function spiral_wave_initializer!(u₀, f::GenericSplitFunction)
     # TODO cleaner implementation. We need to extract this from the types or via dispatch.
-    dh = problem.A.dh
-    ionic_model = problem.B.ode
-    # TODO extraction these via index maps
-    φ₀ = @view u₀[1:ndofs(dh)];
+    heatfun = f.functions[1]
+    heat_dofrange = f.dof_ranges[1]
+    odefun = f.functions[2]
+    ionic_model = odefun.ode
+
+    φ₀ = @view u₀[heat_dofrange];
+    # TODO extraction these via utility functions
+    dh = heatfun.dh
     s₀flat = @view u₀[(ndofs(dh)+1):end];
+    # Should not be reshape but some array of arrays fun
     s₀ = reshape(s₀flat, (ndofs(dh), Thunderbolt.num_states(ionic_model)));
+
     for cell in CellIterator(dh)
         _celldofs = celldofs(cell)
         φₘ_celldofs = _celldofs[dof_range(dh, :ϕₘ)]
@@ -46,18 +49,10 @@ odeform = semidiscretize(
     FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}())),
     mesh
 )
-# TODO this should be done by the function above.
-ndofsφ = ndofs(odeform.A.dh)
-nstates_per_cell = Thunderbolt.num_states(odeform.B.ode)
-splitfun = OS.GenericSplitFunction(
-    (odeform.A, odeform.B),
-    (1:ndofsφ, 1:(1+nstates_per_cell)*ndofsφ)
-)
+u₀ = zeros(Float64, OS.function_size(odeform))
+spiral_wave_initializer!(u₀, odeform)
 
-u₀ = zeros(Float64, OS.function_size(splitfun))
-spiral_wave_initializer!(u₀, odeform, 0.0)
-
-problem = OS.OperatorSplittingProblem(splitfun, u₀, tspan)
+problem = OS.OperatorSplittingProblem(odeform, u₀, tspan)
 
 timestepper = OS.LieTrotterGodunov((
     BackwardEulerSolver(),
@@ -72,8 +67,8 @@ TimerOutputs.enable_debug_timings(Thunderbolt)
 # TimerOutputs.enable_debug_timings(Main)
 TimerOutputs.reset_timer!()
 for (u, t) in OS.TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
-    dh = odeform.A.dh
-    φ = u[1:ndofs(dh)]
+    dh = odeform.functions[1].dh
+    φ = u[odeform.dof_ranges[1]]
     @info t,norm(u)
     # φ = @view u[odeform.subproblems[1].indexset]
     # sflat = ....?

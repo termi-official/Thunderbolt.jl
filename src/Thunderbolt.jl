@@ -1,10 +1,5 @@
 module Thunderbolt
 
-# This is a standalone module which will be a custom package in the future
-include("solver/operator_splitting.jl")
-# include("solver/local_time_stepping.jl")
-# include("solver/multilevel.jl")
-
 using TimerOutputs
 
 using Reexport, UnPack
@@ -16,6 +11,13 @@ using OrderedCollections
 using BlockArrays, SparseArrays, StaticArrays
 
 using JLD2
+
+# This is a standalone module which will be a custom package in the future
+include("solver/operator_splitting.jl")
+@reexport using .OS
+solution_size(f::GenericSplitFunction) = OS.function_size(f)
+# include("solver/local_time_stepping.jl")
+# include("solver/multilevel.jl")
 
 import Ferrite: AbstractDofHandler, AbstractGrid, AbstractRefShape, AbstractCell
 import Ferrite: vertices, edges, faces, sortedge, sortface
@@ -188,6 +190,7 @@ export
     load_carp_mesh,
     load_voom2_mesh,
     load_mfem_mesh,
+    solution_size,
     # IO
     ParaViewWriter,
     JLD2Writer,

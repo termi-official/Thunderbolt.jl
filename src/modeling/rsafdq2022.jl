@@ -201,9 +201,9 @@ end
 
 #################################################################################
 
-function create_chamber_tyings(coupler::LumpedFluidSolidCoupler, structural_problem, circuit_model)
+function create_chamber_tyings(coupler::LumpedFluidSolidCoupler{CVM}, structural_problem, circuit_model) where CVM
     num_unknowns_structure = solution_size(structural_problem)
-    chamber_tyings = RSAFDQ2022SingleChamberTying[]
+    chamber_tyings = RSAFDQ2022SingleChamberTying{CVM}[]
     for i in 1:length(coupler.chamber_couplings)
         # Get i-th ChamberVolumeCoupling
         coupling = coupler.chamber_couplings[i]
@@ -241,7 +241,7 @@ function semidiscretize(split::RSAFDQ2022Split, discretization::FiniteElementDis
     num_chambers_lumped = num_unknown_pressures(model.circuit_model)
 
     # ODE problem for blood circuit
-    flow_problem = ODEFunction( #Not ModelingToolkit.ODEFunction :)
+    circuit_fun = ODEFunction( #Not ModelingToolkit.ODEFunction :)
             model.circuit_model,
         (du,u,t,chamber_pressures) -> lumped_driver!(du, u, t, chamber_pressures, model.circuit_model),
         zeros(num_chambers_lumped) # Initialize with 0 pressure in the chambers - TODO replace this hack with a proper transfer operator!
@@ -251,15 +251,30 @@ function semidiscretize(split::RSAFDQ2022Split, discretization::FiniteElementDis
     # Fix dispatch....
     chamber_tyings = create_chamber_tyings(coupler, structural_problem, circuit_model)
     @assert num_chambers_lumped == length(chamber_tyings) "Number of chambers in structural model ($(length(chamber_tyings))) and circuit model ($num_chambers_lumped) differs."
-    semidiscrete_problem = SplitProblem(
-        RSAFDQ20223DFunction(
-            structural_problem,
-            RSAFDQ2022TyingInfo(chamber_tyings) # TODO replace with proper function
-        ),
-        flow_problem
+
+    tying_info = RSAFDQ2022TyingInfo(chamber_tyings)
+    structural_fun = RSAFDQ20223DFunction(
+        structural_problem,
+        tying_info  # TODO replace with proper function
     )
 
-    return semidiscrete_problem
+    offset = solution_size(structural_fun)
+    splitfun = GenericSplitFunction(
+        (
+            structural_fun,
+            circuit_fun
+        ),
+        (
+            1:offset,
+            (offset+1):(offset+solution_size(circuit_fun))
+        ),
+        (
+            VolumeTransfer0D3D(tying_info),
+            PressureTransfer3D0D(tying_info),
+        ),
+    )
+
+    return splitfun
 end
 
 

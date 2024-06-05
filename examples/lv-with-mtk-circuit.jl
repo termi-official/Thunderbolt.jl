@@ -310,33 +310,19 @@ coupledform = semidiscretize(
     LV_grid
 )
 
-offset = Thunderbolt.solution_size(coupledform.A)
-splitfun = OS.GenericSplitFunction(
-    (
-        coupledform.A,
-        coupledform.B
-    ),
-    (
-        1:offset,
-        (offset+1):(offset+Thunderbolt.solution_size(coupledform.B))
-    ),
-    (
-        VolumeTransfer0D3D(coupledform.A.tying_info),
-        PressureTransfer3D0D(coupledform.A.tying_info),
-    ),
-)
 
 # Create sparse matrix and residual vector
-timestepper = OS.LieTrotterGodunov((
+timestepper = LieTrotterGodunov((
         LoadDrivenSolver(NewtonRaphsonSolver(;max_iter=100, tol=1e-2)),
         ForwardEulerSolver(ceil(Int, dt₀/0.001)), # Force time step to about 0.001
 ))
 
-u₀ = [zeros(offset); u0new]
+u₀ = zeros(solution_size(coupledform))
+u₀[OS.get_dofrange(coupledform, 2)] .= u0new # TODO how to do this correctly?
 
-problem = OS.OperatorSplittingProblem(splitfun, u₀, tspan)
+problem = OperatorSplittingProblem(coupledform, u₀, tspan)
 
-integrator = OS.init(problem, timestepper, dt=dt₀, verbose=true)
+integrator = init(problem, timestepper, dt=dt₀, verbose=true)
 
 f2 = Figure()
 axs = [
@@ -372,14 +358,15 @@ io = ParaViewWriter("lv_with_lumped_circuit");
 using Thunderbolt.TimerOutputs
 TimerOutputs.enable_debug_timings(Thunderbolt)
 TimerOutputs.reset_timer!()
-for (u, t) in OS.TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
-    dh = coupledform.A.structural_function.dh
+for (u, t) in TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
+    chamber_function = OS.get_operator(coupledform,1)
+    dh = chamber_function.structural_function.dh
     store_timestep!(io, t, dh.grid)
     Thunderbolt.store_timestep_field!(io, t, dh, u[1:ndofs(dh)], :displacement) # TODO allow views
     Thunderbolt.finalize_timestep!(io, t)
 
     if t > 0.0
-        lv = coupledform.A.tying_info.chambers[1]
+        lv = chamber_function.tying_info.chambers[1]
         append!(vlv.val, lv.V⁰ᴰval)
         append!(plv.val, u[lv.pressure_dof_index_global])
         notify(vlv)

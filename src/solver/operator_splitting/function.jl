@@ -35,6 +35,7 @@ struct NoExternalSynchronization end
 GenericSplitFunction(fs::Tuple, drs::Tuple) = GenericSplitFunction(fs, drs, ntuple(_->NoExternalSynchronization(), length(fs)))
 
 @inline get_operator(f::GenericSplitFunction, i::Integer) = f.functions[i]
+@inline get_dofrange(f::GenericSplitFunction, i::Integer) = f.dof_ranges[i]
 
 recursive_null_parameters(f::AbstractOperatorSplitFunction) = @error "Not implemented"
 recursive_null_parameters(f::GenericSplitFunction) = ntuple(i->recursive_null_parameters(get_operator(f, i)), length(f.functions));
