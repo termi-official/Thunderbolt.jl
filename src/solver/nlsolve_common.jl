@@ -3,22 +3,22 @@ residual_norm(cache::AbstractNonlinearSolverCache, f::AbstractQuasiStaticFunctio
 residual_norm(cache::AbstractNonlinearSolverCache, f::NullFunction, i::Block) = 0.0
 residual_norm(cache::AbstractNonlinearSolverCache, f::NullFunction) = 0.0
 
-eliminate_constraints_from_linearization!(cache::AbstractNonlinearSolverCache, f) = apply_zero!(cache.op.J, cache.residual, getch(f))
-eliminate_constraints_from_increment!(Δu, f, cache::AbstractNonlinearSolverCache) = apply_zero!(Δu, getch(f))
-function eliminate_constraints_from_increment!(Δu, f::AbstractSemidiscreteBlockedFunction, cache::AbstractNonlinearSolverCache)
+eliminate_constraints_from_linearization!(cache::AbstractNonlinearSolverCache, f::AbstractSemidiscreteFunction) = apply_zero!(cache.op.J, cache.residual, getch(f))
+eliminate_constraints_from_increment!(Δu::AbstractVector, f::AbstractSemidiscreteFunction, cache::AbstractNonlinearSolverCache) = apply_zero!(Δu, getch(f))
+function eliminate_constraints_from_increment!(Δu::AbstractVector, f::AbstractSemidiscreteBlockedFunction, cache::AbstractNonlinearSolverCache)
     for (i,fi) ∈ enumerate(blocks(f))
         eliminate_constraints_from_increment!(Δu[Block(i)], fi, cache)
     end
 end
-eliminate_constraints_from_increment!(Δu, f::NullFunction, cache::AbstractNonlinearSolverCache) = nothing
+eliminate_constraints_from_increment!(Δu::AbstractVector, f::NullFunction, cache::AbstractNonlinearSolverCache) = nothing
 
-function eliminate_constraints_from_linearization!(cache, f::AbstractSemidiscreteBlockedFunction)
+function eliminate_constraints_from_linearization!(cache::AbstractNonlinearSolverCache, f::AbstractSemidiscreteBlockedFunction)
     for (i,_) ∈ enumerate(blocks(f))
         eliminate_constraints_from_linearization_blocked!(cache, problem, Block(i))
     end
 end
 
-function eliminate_constraints_from_linearization_blocked!(cache, f::AbstractSemidiscreteBlockedFunction, i_::Block)
+function eliminate_constraints_from_linearization_blocked!(cache::AbstractNonlinearSolverCache, f::AbstractSemidiscreteBlockedFunction, i_::Block)
     @assert length(i_.n) == 1
     i = i_.n[1]
     fi = blocks(f)[i]

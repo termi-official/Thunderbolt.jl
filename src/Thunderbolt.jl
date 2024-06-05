@@ -107,6 +107,8 @@ export
     generate_ideal_lv_mesh,
     # Mechanics
     StructuralModel,
+    QuasiStaticProblem,
+    QuasiStaticNonlinearFunction,
     # Passive material models
     NullEnergyModel,
     NullCompressionPenalty,
@@ -136,8 +138,9 @@ export
     PiersantiActiveStress,
     # Electrophysiology
     MonodomainModel,
-    ParabolicParabolicBidomainModel,
-    ParabolicEllipticBidomainModel,
+    TransientHeatFunction,
+    # ParabolicParabolicBidomainModel,
+    # ParabolicEllipticBidomainModel,
     NoStimulationProtocol,
     TransmembraneStimulationProtocol,
     AnalyticalTransmembraneStimulationProtocol,
@@ -178,7 +181,6 @@ export
     ForwardEulerSolver,
     BackwardEulerSolver,
     ForwardEulerCellSolver,
-    LTGOSSolver,
     # Integrator
     get_parent_index,
     get_parent_value,

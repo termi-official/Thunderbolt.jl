@@ -29,7 +29,7 @@ function semidiscretize(split::ReactionDiffusionSplit{<:MonodomainModel}, discre
     # TODO factor this out to make a isolated transient heat problem and call semidiscretize here. This should simplify testing.
     ip = getinterpolation(discretization.interpolations[:φₘ], getcells(grid, 1))
     dh = DofHandler(grid)
-    Ferrite.add!(dh, :ϕₘ, ip)
+    Ferrite.add!(dh, :φₘ, ip)
     close!(dh);
     heatfun = TransientHeatFunction(
         ConductivityToDiffusivityCoefficient(epmodel.κ, epmodel.Cₘ, epmodel.χ),

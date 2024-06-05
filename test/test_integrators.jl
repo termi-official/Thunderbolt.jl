@@ -1,20 +1,24 @@
 import Thunderbolt: OS, ThunderboltTimeIntegrator
-using BenchmarkTools
+# using BenchmarkTools
 using UnPack
-import Thunderbolt.ModelingToolkit.OrdinaryDiffEq: ODEFunction
-using .OS
+
+@testset "Operator Splitting API" begin
+
+ODEFunction = Thunderbolt.ModelingToolkit.OrdinaryDiffEq.ODEFunction
 
 # For testing purposes
 struct DummyForwardEuler
 end
 
-mutable struct DummyForwardEulerCache{duType}
+mutable struct DummyForwardEulerCache{duType, uType} <: Thunderbolt.AbstractTimeSolverCache
     du::duType
+    uₙ::uType
+    uₙ₋₁::uType
 end
 
 # Dispatch for leaf construction
 function OS.construct_inner_cache(f::ODEFunction, alg::DummyForwardEuler, u::AbstractArray, uprev::AbstractArray)
-    DummyForwardEulerCache(copy(uprev))
+    DummyForwardEulerCache(copy(uprev), copy(uprev), copy(uprev))
 end
 
 # Dispatch innermost solve
@@ -25,16 +29,6 @@ function OS.advance_solution_to!(integ::ThunderboltTimeIntegrator, cache::DummyF
     f(du, u, p, t)
     @. u += dt * du
 end
-
-# Dispatch for leaf construction
-# TODO proper OrdinaryDiffEq.jl example
-function OS.build_subintegrators_recursive(f::ODEFunction, synchronizer, p::Any, cache::DummyForwardEulerCache, u::AbstractArray, uprev::AbstractArray, t, dt, dof_range, uparent)
-    return ThunderboltTimeIntegrator(f, u, uparent, uprev, dof_range, p, t, t, dt, cache, synchronizer, nothing, true)
-end
-# function OS.build_subintegrators_recursive(f::GenericSplitFunction, synchronizer, p::Any, cache::Any, u::AbstractArray, uprev::AbstractArray, t, dt, dof_range, uparent)
-#     return ThunderboltTimeIntegrator(f, u, uparent, uprev, dof_range, p, t, t, dt, cache, synchronizer, nothing, true)
-# end
-
 
 # Operator splitting
 
@@ -83,17 +77,21 @@ timestepper = LieTrotterGodunov(
 integrator = DiffEqBase.init(prob, timestepper, dt=0.01, verbose=true)
 DiffEqBase.solve!(integrator)
 ufinal = copy(integrator.u)
-@assert ufinal ≉ u0 # Make sure the solve did something
+@test ufinal ≉ u0 # Make sure the solve did something
 
 DiffEqBase.reinit!(integrator, u0; tspan)
 for (u, t) in DiffEqBase.TimeChoiceIterator(integrator, 0.0:5.0:100.0)
 end
-@assert  isapprox(ufinal, integrator.u, atol=1e-8)
+@test  isapprox(ufinal, integrator.u, atol=1e-8)
 
 DiffEqBase.reinit!(integrator, u0; tspan)
 for (uprev, tprev, u, t) in DiffEqBase.intervals(integrator)
 end
-@assert  isapprox(ufinal, integrator.u, atol=1e-8)
+@test  isapprox(ufinal, integrator.u, atol=1e-8)
+
+DiffEqBase.reinit!(integrator, u0; tspan)
+DiffEqBase.solve!(integrator)
+@test integrator.sol.retcode == DiffEqBase.ReturnCode.Success
 
 # Now some recursive splitting
 function ode3(du, u, p, t)
@@ -123,14 +121,20 @@ DiffEqBase.solve!(integrator2)
 DiffEqBase.reinit!(integrator2, u0; tspan)
 for (u, t) in DiffEqBase.TimeChoiceIterator(integrator2, 0.0:5.0:100.0)
 end
-@assert isapprox(ufinal, integrator2.u, atol=1e-8)
+@test isapprox(ufinal, integrator2.u, atol=1e-8)
 
-tnext = tspan[1]+0.01
-@btime OS.advance_solution_to!($integrator, $tnext) setup=(DiffEqBase.reinit!(integrator, u0; tspan))
+DiffEqBase.reinit!(integrator2, u0; tspan)
+DiffEqBase.solve!(integrator2)
+@test integrator2.sol.retcode == DiffEqBase.ReturnCode.Success
+
+# tnext = tspan[1]+0.01
+# @btime OS.advance_solution_to!($integrator, $tnext) setup=(DiffEqBase.reinit!(integrator, u0; tspan))
 #   326.743 ns (8 allocations: 416 bytes) for 1 (OUTDATED
 #   89.949 ns (0 allocations: 0 bytes) for 2 (OUTDATED
 #   31.418 ns (0 allocations: 0 bytes) for 3
-@btime DiffEqBase.solve!($integrator) setup=(DiffEqBase.reinit!(integrator, u0; tspan));
+# @btime DiffEqBase.solve!($integrator) setup=(DiffEqBase.reinit!(integrator, u0; tspan));
 #   431.632 μs (10000 allocations: 507.81 KiB) for 1 (OUTDATED
 #   105.712 μs (0 allocations: 0 bytes) for 2 (OUTDATED)
 #   1.852 μs (0 allocations: 0 bytes) for 3
+
+end

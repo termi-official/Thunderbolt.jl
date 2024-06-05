@@ -64,7 +64,7 @@ quasistaticform = semidiscretize(
     ring_grid
 )
 
-problem = Thunderbolt.QuasiStaticProblem(quasistaticform, tspan)
+problem = QuasiStaticProblem(quasistaticform, tspan)
 timestepper = LoadDrivenSolver(NewtonRaphsonSolver(;max_iter=100))
 
 integrator = OS.init(problem, timestepper, dt=dt₀, verbose=true)

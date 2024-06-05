@@ -16,7 +16,7 @@ function spiral_wave_initializer!(u₀, f::GenericSplitFunction)
 
     for cell in CellIterator(dh)
         _celldofs = celldofs(cell)
-        φₘ_celldofs = _celldofs[dof_range(dh, :ϕₘ)]
+        φₘ_celldofs = _celldofs[dof_range(dh, :φₘ)]
         # TODO query coordinate directly from the cell model
         coordinates = getcoordinates(cell)
         for (i, (x₁, x₂)) in zip(φₘ_celldofs,coordinates)

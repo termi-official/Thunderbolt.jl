@@ -72,6 +72,6 @@ function update_constraints_block!(problem::AbstractSemidiscreteFunction, i::Blo
     apply!(u, getch(problem))
 end
 
-update_constraints_block!(problem, i::Block, solver_cache::AbstractTimeSolverCache, t) = nothing
+update_constraints_block!(problem::DiffEqBase.AbstractDEProblem, i::Block, solver_cache::AbstractTimeSolverCache, t) = nothing
 
-update_constraints_block!(problem::NullFunction, i::Block, solver_cache, t) = nothing
+update_constraints_block!(problem::NullFunction, i::Block, solver_cache::AbstractTimeSolverCache, t) = nothing
