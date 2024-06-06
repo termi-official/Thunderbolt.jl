@@ -222,19 +222,19 @@ function reorder_nodal!(dh::DofHandler)
     end
 end
 
-function to_ferrite_elements(cells_vtk::Vector{MeshCell{VTKCellType, Vector{Int64}}})
-    celltype = if cells_vtk[1].ctype == VTKCellTypes.VTK_TETRA
+function to_ferrite_elements(cells_vtk::Vector{WriteVTK.MeshCell{WriteVTK.VTKCellType, Vector{Int64}}})
+    celltype = if cells_vtk[1].ctype == WriteVTK.VTKCellTypes.VTK_TETRA
         Tetrahedron
-    elseif cells_vtk[1].ctype == VTKCellTypes.VTK_HEXAHEDRON
+    elseif cells_vtk[1].ctype == WriteVTK.VTKCellTypes.VTK_HEXAHEDRON
         Hexahedron
     else 
         @error "Unknown cell type" cells_vtk[1].ctype
     end
     cells_ferrite = Vector{celltype}(undef, length(cells_vtk))
     for (i,cell_vtk) in enumerate(cells_vtk)
-        cells_ferrite[i] = if cells_vtk[1].ctype == VTKCellTypes.VTK_TETRA
+        cells_ferrite[i] = if cells_vtk[1].ctype == WriteVTK.VTKCellTypes.VTK_TETRA
             Tetrahedron(ntuple(i->cell_vtk.connectivity[i],4))
-        elseif cells_vtk[1].ctype == VTKCellTypes.VTK_HEXAHEDRON
+        elseif cells_vtk[1].ctype == WriteVTK.VTKCellTypes.VTK_HEXAHEDRON
             Hexahedron(ntuple(i->cell_vtk.connectivity[i],8))
         end
     end
