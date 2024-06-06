@@ -1,5 +1,6 @@
 [deps]
 CirculatorySystemModels = "4211d73e-f4e8-40c4-b600-92e4b82f0e1a"
+DiffEqBase = "2b5f629d-d688-5b77-993f-72d75c75574e"
 Ferrite = "c061ca5d-56c9-439f-9c0e-210fe06d3992"
 FerriteGmsh = "4f95f4f8-b27c-4ae5-9a39-ea55e634e36b"
 GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"

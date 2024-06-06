@@ -143,15 +143,15 @@ Comes with one entry point for each cache type to handle the most common cases:
 TODO
     assemble_interface! -> update jacobian/residual contribution for interface contributions (e.g. DG or FSI)
 """
-struct AssembledNonlinearOperator{MatrixType, ElementCacheType, FaceCacheType, TyingCacheType, DHType <: AbstractDofHandler} <: AbstractNonlinearOperator
+struct AssembledNonlinearOperator{MatrixType, ElementCacheType, FacetCacheType, TyingCacheType, DHType <: AbstractDofHandler} <: AbstractNonlinearOperator
     J::MatrixType
     element_cache::ElementCacheType
-    face_cache::FaceCacheType
+    face_cache::FacetCacheType
     tying_cache::TyingCacheType
     dh::DHType
-    function AssembledNonlinearOperator(J::MatrixType, element_cache::ElementCacheType, face_cache::FaceCacheType, tying_cache::TyingCacheType, dh::DHType) where {MatrixType, ElementCacheType, FaceCacheType, TyingCacheType, DHType <: AbstractDofHandler}
+    function AssembledNonlinearOperator(J::MatrixType, element_cache::ElementCacheType, face_cache::FacetCacheType, tying_cache::TyingCacheType, dh::DHType) where {MatrixType, ElementCacheType, FacetCacheType, TyingCacheType, DHType <: AbstractDofHandler}
         check_subdomains(dh)
-        return new{MatrixType, ElementCacheType, FaceCacheType, TyingCacheType, DHType}(J, element_cache, face_cache, tying_cache, dh)
+        return new{MatrixType, ElementCacheType, FacetCacheType, TyingCacheType, DHType}(J, element_cache, face_cache, tying_cache, dh)
     end
 end
 
@@ -160,7 +160,7 @@ function AssembledNonlinearOperator(dh::AbstractDofHandler, field_name::Symbol, 
 
     firstcell = getcells(Ferrite.get_grid(dh), first(dh.subdofhandlers[1].cellset))
     ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], field_name)
-    ip_geo = Ferrite.default_interpolation(typeof(firstcell))
+    ip_geo = Ferrite.geometric_interpolation(typeof(firstcell))
     element_qr = getquadraturerule(element_qrc, firstcell)
     boundary_qr = getquadraturerule(boundary_qrc, firstcell)
 
@@ -169,19 +169,19 @@ function AssembledNonlinearOperator(dh::AbstractDofHandler, field_name::Symbol, 
     AssembledNonlinearOperator(
         create_sparsity_pattern(dh),
         element_cache,
-        EmtpyFaceCache(),
+        EmtpyFacetCache(),
         EmptyTyingCache(),
         dh,
     )
 end
 
 #Utility constructor to get the nonlinear operator for a single field problem.
-function AssembledNonlinearOperator(dh::AbstractDofHandler, field_name::Symbol, element_model, element_qrc::QuadratureRuleCollection, boundary_model, boundary_qrc::FaceQuadratureRuleCollection)
+function AssembledNonlinearOperator(dh::AbstractDofHandler, field_name::Symbol, element_model, element_qrc::QuadratureRuleCollection, boundary_model, boundary_qrc::FacetQuadratureRuleCollection)
     @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the nonlinear opeartor."
 
     firstcell = getcells(Ferrite.get_grid(dh), first(dh.subdofhandlers[1].cellset))
     ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], field_name)
-    ip_geo = Ferrite.default_interpolation(typeof(firstcell))
+    ip_geo = Ferrite.geometric_interpolation(typeof(firstcell))
     element_qr = getquadraturerule(element_qrc, firstcell)
     boundary_qr = getquadraturerule(boundary_qrc, firstcell)
 
@@ -197,12 +197,12 @@ function AssembledNonlinearOperator(dh::AbstractDofHandler, field_name::Symbol, 
     )
 end
 
-function AssembledNonlinearOperator(dh::AbstractDofHandler, field_name::Symbol, element_model, element_qrc::QuadratureRuleCollection, boundary_model, boundary_qrc::FaceQuadratureRuleCollection, tying_model, tying_qr)
+function AssembledNonlinearOperator(dh::AbstractDofHandler, field_name::Symbol, element_model, element_qrc::QuadratureRuleCollection, boundary_model, boundary_qrc::FacetQuadratureRuleCollection, tying_model, tying_qr)
     @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the nonlinear opeartor."
 
     firstcell = getcells(Ferrite.get_grid(dh), first(dh.subdofhandlers[1].cellset))
     ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], field_name)
-    ip_geo = Ferrite.default_interpolation(typeof(firstcell))
+    ip_geo = Ferrite.geometric_interpolation(typeof(firstcell))
     element_qr = getquadraturerule(element_qrc, firstcell)
     boundary_qr = getquadraturerule(boundary_qrc, firstcell)
 
@@ -235,8 +235,8 @@ function update_linearization!(op::AssembledNonlinearOperator, u::AbstractVector
         uₑ .= @view u[celldofs(cell)]
         @timeit_debug "assemble element" assemble_element!(Jₑ, uₑ, cell, element_cache, time)
         # TODO maybe it makes sense to merge this into the element routine in a modular fasion?
-        # TODO benchmark against putting this into the FaceIterator
-        @timeit_debug "assemble faces" for local_face_index ∈ 1:nfaces(cell)
+        # TODO benchmark against putting this into the FacetIterator
+        @timeit_debug "assemble faces" for local_face_index ∈ 1:nfacets(cell)
             assemble_face!(Jₑ, uₑ, cell, local_face_index, face_cache, time)
         end
         @timeit_debug "assemble tying"  assemble_tying!(Jₑ, uₑ, uₜ, cell, tying_cache, time)
@@ -263,8 +263,8 @@ function update_linearization!(op::AssembledNonlinearOperator, u::AbstractVector
         uₑ .= @view u[dofs]
         @timeit_debug "assemble element" assemble_element!(Jₑ, rₑ, uₑ, cell, element_cache, time)
         # TODO maybe it makes sense to merge this into the element routine in a modular fasion?
-        # TODO benchmark against putting this into the FaceIterator
-        @timeit_debug "assemble faces" for local_face_index ∈ 1:nfaces(cell)
+        # TODO benchmark against putting this into the FacetIterator
+        @timeit_debug "assemble faces" for local_face_index ∈ 1:nfacets(cell)
             assemble_face!(Jₑ, rₑ, uₑ, cell, local_face_index, face_cache, time)
         end
         @timeit_debug "assemble tying"  assemble_tying!(Jₑ, rₑ, uₑ, uₜ, cell, tying_cache, time)
@@ -304,7 +304,7 @@ function AssembledBilinearOperator(dh::AbstractDofHandler, field_name::Symbol, i
 
     firstcell = getcells(Ferrite.get_grid(dh), first(dh.subdofhandlers[1].cellset))
     ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], field_name)
-    ip_geo = Ferrite.default_interpolation(typeof(firstcell))
+    ip_geo = Ferrite.geometric_interpolation(typeof(firstcell))
     element_qr = getquadraturerule(element_qrc, firstcell)
 
     element_cache = setup_element_cache(integrator, element_qr, ip, ip_geo)
@@ -441,7 +441,7 @@ end
 function create_linear_operator(dh, protocol::AnalyticalTransmembraneStimulationProtocol)
     check_subdomains(dh)
     ip = dh.subdofhandlers[1].field_interpolations[1]
-    ip_g = Ferrite.default_interpolation(typeof(getcells(Ferrite.get_grid(dh), 1)))
+    ip_g = Ferrite.geometric_interpolation(typeof(getcells(Ferrite.get_grid(dh), 1)))
     qr = QuadratureRule{Ferrite.getrefshape(ip_g)}(Ferrite.getorder(ip_g)+1)
     cv = CellValues(qr, ip, ip_g) # TODO replace with something more lightweight
     return LinearOperator(

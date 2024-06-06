@@ -10,9 +10,9 @@ function test_solve_contractile_cuboid(constitutive_model)
 
     # Clamp three sides
     dbcs = [
-        Dirichlet(:d, getfaceset(grid, "left"), (x,t) -> [0.0], [1])
-        Dirichlet(:d, getfaceset(grid, "front"), (x,t) -> [0.0], [2])
-        Dirichlet(:d, getfaceset(grid, "bottom"), (x,t) -> [0.0], [3])
+        Dirichlet(:d, getfacetset(grid, "left"), (x,t) -> [0.0], [1])
+        Dirichlet(:d, getfacetset(grid, "front"), (x,t) -> [0.0], [2])
+        Dirichlet(:d, getfacetset(grid, "bottom"), (x,t) -> [0.0], [3])
         Dirichlet(:d, Set([1]), (x,t) -> [0.0, 0.0, 0.0], [1, 2, 3])
     ]
 

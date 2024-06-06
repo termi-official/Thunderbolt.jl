@@ -1,5 +1,5 @@
 # NOTE This example is work in progress. Please consult it at a later time again.
-using CirculatorySystemModels.OrdinaryDiffEq, ModelingToolkit, CirculatorySystemModels, SymbolicIndexingInterface
+using CirculatorySystemModels, ModelingToolkit, ModelingToolkit.OrdinaryDiffEq
 using GLMakie
 
 using Thunderbolt
@@ -300,7 +300,7 @@ coupledform = semidiscretize(
     FiniteElementDiscretization(
         Dict(:displacement => ip_mech),
         [
-            Dirichlet(:displacement, getfaceset(LV_grid, "Base"), (x,t) -> [0.0], [3]),
+            Dirichlet(:displacement, getfacetset(LV_grid, "Base"), (x,t) -> [0.0], [3]),
             Dirichlet(:displacement, getnodeset(LV_grid, "MyocardialAnchor1"), (x,t) -> (0.0, 0.0, 0.0), [1,2,3]),
             Dirichlet(:displacement, getnodeset(LV_grid, "MyocardialAnchor2"), (x,t) -> (0.0, 0.0), [2,3]),
             Dirichlet(:displacement, getnodeset(LV_grid, "MyocardialAnchor3"), (x,t) -> (0.0,), [3]),

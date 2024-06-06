@@ -13,7 +13,7 @@ CartesianCoordinateSystem(grid::AbstractGrid{sdim}) where sdim = CartesianCoordi
 
 Get interpolation function for the cartesian coordinate system.
 """
-getcoordinateinterpolation(cs::CartesianCoordinateSystem{sdim}, cell::CellType) where {sdim, CellType <: AbstractCell} = Ferrite.default_interpolation(CellType)^sdim
+getcoordinateinterpolation(cs::CartesianCoordinateSystem{sdim}, cell::CellType) where {sdim, CellType <: AbstractCell} = Ferrite.geometric_interpolation(CellType)^sdim
 
 
 """
@@ -61,7 +61,7 @@ getcoordinateinterpolation(cs::LVCoordinateSystem, cell::AbstractCell) = getinte
 """
     compute_LV_coordinate_system(grid::AbstractGrid)
 
-Requires a grid with facesets
+Requires a grid with facetsets
     * Base
     * Epicardium
     * Endocardium
@@ -113,9 +113,9 @@ function compute_LV_coordinate_system(grid::AbstractGrid{3})
 
     # Transmural coordinate
     ch = ConstraintHandler(dh);
-    dbc = Dirichlet(:coordinates, getfaceset(grid, "Endocardium"), (x, t) -> 0)
+    dbc = Dirichlet(:coordinates, getfacetset(grid, "Endocardium"), (x, t) -> 0)
     Ferrite.add!(ch, dbc);
-    dbc = Dirichlet(:coordinates, getfaceset(grid, "Epicardium"), (x, t) -> 1)
+    dbc = Dirichlet(:coordinates, getfacetset(grid, "Epicardium"), (x, t) -> 1)
     Ferrite.add!(ch, dbc);
     close!(ch)
     update!(ch, 0.0);
@@ -136,11 +136,11 @@ function compute_LV_coordinate_system(grid::AbstractGrid{3})
                 apex_node_index = i
             end
         end
-        addnodeset!(grid, "Apex", Set{Int}((apex_node_index)))
+        addnodeset!(grid, "Apex", OrderedSet{Int}((apex_node_index)))
     end
 
     ch = ConstraintHandler(dh);
-    dbc = Dirichlet(:coordinates, getfaceset(grid, "Base"), (x, t) -> 0)
+    dbc = Dirichlet(:coordinates, getfacetset(grid, "Base"), (x, t) -> 0)
     Ferrite.add!(ch, dbc);
     dbc = Dirichlet(:coordinates, getnodeset(grid, "Apex"), (x, t) -> 1)
     Ferrite.add!(ch, dbc);
@@ -162,7 +162,7 @@ end
 """
     compute_midmyocardial_section_coordinate_system(grid::AbstractGrid)
 
-Requires a grid with facesets
+Requires a grid with facetsets
     * Base
     * Epicardium
     * Endocardium
@@ -211,9 +211,9 @@ function compute_midmyocardial_section_coordinate_system(grid::AbstractGrid{dim}
 
     # Transmural coordinate
     ch = ConstraintHandler(dh);
-    dbc = Dirichlet(:coordinates, getfaceset(grid, "Endocardium"), (x, t) -> 0)
+    dbc = Dirichlet(:coordinates, getfacetset(grid, "Endocardium"), (x, t) -> 0)
     Ferrite.add!(ch, dbc);
-    dbc = Dirichlet(:coordinates, getfaceset(grid, "Epicardium"), (x, t) -> 1)
+    dbc = Dirichlet(:coordinates, getfacetset(grid, "Epicardium"), (x, t) -> 1)
     Ferrite.add!(ch, dbc);
     close!(ch)
     update!(ch, 0.0);
@@ -225,9 +225,9 @@ function compute_midmyocardial_section_coordinate_system(grid::AbstractGrid{dim}
     transmural = K_transmural \ f;
 
     ch = ConstraintHandler(dh);
-    dbc = Dirichlet(:coordinates, getfaceset(grid, "Base"), (x, t) -> 0)
+    dbc = Dirichlet(:coordinates, getfacetset(grid, "Base"), (x, t) -> 0)
     Ferrite.add!(ch, dbc);
-    dbc = Dirichlet(:coordinates, getfaceset(grid, "Myocardium"), (x, t) -> 0.15)
+    dbc = Dirichlet(:coordinates, getfacetset(grid, "Myocardium"), (x, t) -> 0.15)
     Ferrite.add!(ch, dbc);
     close!(ch)
     update!(ch, 0.0);

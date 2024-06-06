@@ -24,4 +24,4 @@ include("coordinate_systems.jl")
 include("tools.jl")
 include("generators.jl")
 
-Ferrite.PointEvalHandler(mesh::Union{SimpleMesh2D,SimpleMesh3D}, points::AbstractVector{Vec}) = Ferrite.PointEvalHandler(mesh.grid, points)
+Ferrite.PointEvalHandler(mesh::SimpleMesh{sdim}, points::AbstractVector{Vec{sdim, T}}) where {sdim, T} = Ferrite.PointEvalHandler(mesh.grid, points)

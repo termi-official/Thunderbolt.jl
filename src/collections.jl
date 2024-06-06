@@ -94,16 +94,16 @@ end
 
 
 """
-    FaceQuadratureRuleCollection(order::Int)
+    FacetQuadratureRuleCollection(order::Int)
 
 A collection of quadrature rules across different cell types.
 """
-struct FaceQuadratureRuleCollection{order}
+struct FacetQuadratureRuleCollection{order}
 end
 
-FaceQuadratureRuleCollection(order::Int) = FaceQuadratureRuleCollection{order}()
+FacetQuadratureRuleCollection(order::Int) = FacetQuadratureRuleCollection{order}()
 
-getquadraturerule(qrc::FaceQuadratureRuleCollection{order}, cell::AbstractCell{ref_shape}) where {order,ref_shape} = FaceQuadratureRule{ref_shape}(order)
+getquadraturerule(qrc::FacetQuadratureRuleCollection{order}, cell::AbstractCell{ref_shape}) where {order,ref_shape} = FacetQuadratureRule{ref_shape}(order)
 
 
 """
@@ -119,22 +119,22 @@ end
 getcellvalues(cv::CellValueCollection, cell::CellType) where {CellType <: AbstractCell} = CellValues(
     getquadraturerule(cv.qrc, cell),
     getinterpolation(cv.ipc, cell),
-    Ferrite.default_interpolation(CellType)
+    Ferrite.geometric_interpolation(CellType)
 )
 
 
 """
-    FaceValueCollection(::QuadratureRuleCollection, ::InterpolationCollection)
+    FacetValueCollection(::QuadratureRuleCollection, ::InterpolationCollection)
 
 Helper to construct and query the correct face values on mixed grids.
 """
-struct FaceValueCollection{QRC <: FaceQuadratureRuleCollection, IPC <: InterpolationCollection}
+struct FacetValueCollection{QRC <: FacetQuadratureRuleCollection, IPC <: InterpolationCollection}
     qrc::QRC
     ipc::IPC
 end
 
-getfacevalues(fv::FaceValueCollection, cell::CellType) where {CellType <: AbstractCell} = FaceValues(
+getfacevalues(fv::FacetValueCollection, cell::CellType) where {CellType <: AbstractCell} = FacetValues(
     getquadraturerule(fv.qrc, cell),
     getinterpolation(fv.ipc, cell),
-    Ferrite.default_interpolation(CellType)
+    Ferrite.geometric_interpolation(CellType)
 )

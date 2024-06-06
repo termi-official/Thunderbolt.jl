@@ -87,11 +87,11 @@ where u are the unkowns in the 3D problem and c the unkowns in the 0D problem.
 function assemble_LFSI_coupling_contribution_row!(C, R, dh, u, p, V⁰ᴰ, method)
     grid = dh.grid
     ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], method.displacement_symbol) # TODO TYPE INSTABILITY - remove this as the interpolation query is instable
-    ip_geo = Ferrite.default_interpolation(typeof(getcells(grid, 1)))
+    ip_geo = Ferrite.geometric_interpolation(typeof(getcells(grid, 1)))
     intorder = 2*Ferrite.getorder(ip)
     ref_shape = Ferrite.getrefshape(ip)
-    qr_face = FaceQuadratureRule{ref_shape}(intorder)
-    fv = FaceValues(qr_face, ip, ip_geo)
+    qr_face = FacetQuadratureRule{ref_shape}(intorder)
+    fv = FacetValues(qr_face, ip, ip_geo)
 
     ndofs = getnbasefunctions(ip)
 
@@ -101,7 +101,7 @@ function assemble_LFSI_coupling_contribution_row!(C, R, dh, u, p, V⁰ᴰ, metho
 
     drange = dof_range(dh, method.displacement_symbol)
 
-    for face ∈ FaceIterator(dh, method.faces)
+    for face ∈ FacetIterator(dh, method.facets)
         ddofs = @view celldofs(face)[drange]
         uₑ .= u[ddofs]
         fill!(Jₑ, 0.0)
@@ -116,7 +116,7 @@ function assemble_LFSI_coupling_contribution_row!(C, R, dh, u, p, V⁰ᴰ, metho
     R[1] -= V⁰ᴰ
 end
 
-function assemble_LFSI_coupling_contribution_col_inner!(C, R, u, p, face, dh, fv::FaceValues, symbol::Symbol)
+function assemble_LFSI_coupling_contribution_col_inner!(C, R, u, p, face, dh, fv::FacetValues, symbol::Symbol)
     reinit!(fv, face)
     drange = dof_range(dh, symbol)
 
@@ -142,7 +142,7 @@ function assemble_LFSI_coupling_contribution_col_inner!(C, R, u, p, face, dh, fv
 end
 
 
-function assemble_LFSI_coupling_contribution_col_inner!(C, u, p, face, dh, fv::FaceValues, symbol::Symbol)
+function assemble_LFSI_coupling_contribution_col_inner!(C, u, p, face, dh, fv::FacetValues, symbol::Symbol)
     reinit!(fv, face)
     drange = dof_range(dh, symbol)
 
@@ -208,11 +208,11 @@ end
 function assemble_LFSI_volumetric_corrector!(J, residual, dh, u, p, setname, method)
     grid = dh.grid
     ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], method.displacement_symbol)
-    ip_geo = Ferrite.default_interpolation(typeof(getcells(grid, 1)))
+    ip_geo = Ferrite.geometric_interpolation(typeof(getcells(grid, 1)))
     intorder = 2*Ferrite.getorder(ip)
     ref_shape = Ferrite.getrefshape(ip)
-    qr_face = FaceQuadratureRule{ref_shape}(intorder)
-    fv = FaceValues(qr_face, ip, ip_geo)
+    qr_face = FacetQuadratureRule{ref_shape}(intorder)
+    fv = FacetValues(qr_face, ip, ip_geo)
 
     drange = dof_range(dh, method.displacement_symbol)
 
@@ -223,7 +223,7 @@ function assemble_LFSI_volumetric_corrector!(J, residual, dh, u, p, setname, met
     rₑ = zeros(ndofs)
     uₑ = zeros(ndofs)
 
-    for face ∈ FaceIterator(dh, getfaceset(grid, setname))
+    for face ∈ FacetIterator(dh, getfacetset(grid, setname))
         dofs = celldofs(face)
         fill!(Jₑ, 0)
         fill!(rₑ, 0)

@@ -22,7 +22,7 @@ function setup_operator(f::AbstractQuasiStaticFunction, solver::AbstractNonlinea
 
     intorder = quadrature_order(f, displacement_symbol)
     qr = QuadratureRuleCollection(intorder)
-    qr_face = FaceQuadratureRuleCollection(intorder)
+    qr_face = FacetQuadratureRuleCollection(intorder)
 
     return AssembledNonlinearOperator(
         dh, displacement_symbol, constitutive_model, qr, face_models, qr_face
@@ -36,7 +36,7 @@ end
 
 #     intorder = quadrature_order(problem, displacement_symbol)
 #     qr = QuadratureRuleCollection(intorder)
-#     qr_face = FaceQuadratureRuleCollection(intorder)
+#     qr_face = FacetQuadratureRuleCollection(intorder)
 
 #     return AssembledNonlinearOperator(
 #         dh, displacement_symbol, constitutive_model, qr, face_models, qr_face, relevant_coupler, ???, <- depending on the coupler either face or element qr
