@@ -5,25 +5,37 @@ Classical Newton-Raphson solver to solve nonlinear problems of the form `F(u) = 
 To use the Newton-Raphson solver you have to dispatch on
 * [update_linearization!](@ref)
 """
-Base.@kwdef struct NewtonRaphsonSolver{T} <: AbstractNonlinearSolver
+Base.@kwdef struct NewtonRaphsonSolver{T, solverType} <: AbstractNonlinearSolver
     # Convergence tolerance
     tol::T = 1e-4
     # Maximum number of iterations
     max_iter::Int = 100
+    inner_solver::solverType = LinearSolve.KrylovJL_GMRES()
 end
 
-mutable struct NewtonRaphsonSolverCache{OpType, ResidualType, T} <: AbstractNonlinearSolverCache
+mutable struct NewtonRaphsonSolverCache{OpType, ResidualType, T, InnerSolverCacheType} <: AbstractNonlinearSolverCache
     # The nonlinear operator
     op::OpType
     # Cache for the right hand side f(u)
     residual::ResidualType
     #
     const parameters::NewtonRaphsonSolver{T}
-    #linear_solver_cache
+    linear_solver_cache::InnerSolverCacheType
 end
 
 function setup_solver_cache(f::AbstractSemidiscreteFunction, solver::NewtonRaphsonSolver{T}) where {T}
-    NewtonRaphsonSolverCache(setup_operator(f, solver), Vector{T}(undef, solution_size(f)), solver)
+    @unpack inner_solver = solver
+    op = setup_operator(f, solver)
+    residual = Vector{T}(undef, solution_size(f))
+    Δu = Vector{T}(undef, solution_size(f))
+
+    # Connect both solver caches
+    inner_prob = LinearSolve.LinearProblem(
+        getJ(op), residual; Δu
+    )
+    inner_cache = init(inner_prob, inner_solver)
+    
+    NewtonRaphsonSolverCache(op, residual, solver, inner_cache)
 end
 
 function setup_solver_cache(f::AbstractSemidiscreteBlockedFunction, solver::NewtonRaphsonSolver{T}) where {T}
@@ -34,9 +46,9 @@ function setup_solver_cache(f::AbstractSemidiscreteBlockedFunction, solver::Newt
 end
 
 function nlsolve!(u::AbstractVector, f::AbstractSemidiscreteFunction, cache::NewtonRaphsonSolverCache, t)
-    @unpack op, residual = cache
+    @unpack op, residual, linear_solver_cache = cache
     newton_itr = -1
-    Δu = zero(u)
+    Δu = linear_solver_cache.u
     while true
         newton_itr += 1
 
@@ -59,7 +71,10 @@ function nlsolve!(u::AbstractVector, f::AbstractSemidiscreteFunction, cache::New
             return false
         end
 
-        @timeit_debug "solve" !solve_inner_linear_system!(Δu, cache) && return false
+        @timeit_debug "solve" sol = LinearSolve.solve!(linear_solver_cache)
+        @info sol.stats
+        solve_succeeded = LinearSolve.SciMLBase.successful_retcode(sol.retcode) || sol.retcode == LinearSolve.ReturnCode.Default # The latter seems off...
+        solve_succeeded || return false
 
         eliminate_constraints_from_increment!(Δu, f, cache)
 
