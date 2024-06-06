@@ -66,12 +66,12 @@ function update_constraints!(f::AbstractSemidiscreteBlockedFunction, solver_cach
     end
 end
 
-function update_constraints_block!(problem::AbstractSemidiscreteFunction, i::Block, solver_cache::AbstractTimeSolverCache, t)
-    Ferrite.update!(getch(problem), t)
+function update_constraints_block!(f::AbstractSemidiscreteFunction, i::Block, solver_cache::AbstractTimeSolverCache, t)
+    Ferrite.update!(getch(f), t)
     u = @view solver_cache.uₙ[i]
-    apply!(u, getch(problem))
+    apply!(u, getch(f))
 end
 
-update_constraints_block!(problem::DiffEqBase.AbstractDEProblem, i::Block, solver_cache::AbstractTimeSolverCache, t) = nothing
+update_constraints_block!(f::DiffEqBase.AbstractDiffEqFunction, i::Block, solver_cache::AbstractTimeSolverCache, t) = nothing
 
-update_constraints_block!(problem::NullFunction, i::Block, solver_cache::AbstractTimeSolverCache, t) = nothing
+update_constraints_block!(f::NullFunction, i::Block, solver_cache::AbstractTimeSolverCache, t) = nothing

@@ -36,7 +36,7 @@ struct NullFunction <: AbstractSemidiscreteFunction
     ndofs::Int
 end
 
-solution_size(problem::NullFunction) = problem.ndofs
+solution_size(f::NullFunction) = f.ndofs
 
 
 # TODO replace this with the original
@@ -54,7 +54,7 @@ struct PointwiseODEFunction{ODET} <: AbstractPointwiseFunction
     ode::ODET
 end
 
-solution_size(problem::PointwiseODEFunction) = problem.npoints*num_states(problem.ode)
+solution_size(f::PointwiseODEFunction) = f.npoints*num_states(f.ode)
 
 # TODO translate into AffineODEFunction and use ODEFunction
 struct TransientHeatFunction{DTF, ST, DH} <: AbstractSemidiscreteFunction
@@ -67,7 +67,7 @@ struct TransientHeatFunction{DTF, ST, DH} <: AbstractSemidiscreteFunction
     end
 end
 
-solution_size(problem::TransientHeatFunction) = ndofs(problem.dh)
+solution_size(f::TransientHeatFunction) = ndofs(f.dh)
 
 abstract type AbstractQuasiStaticFunction <: AbstractSemidiscreteFunction end
 
@@ -88,7 +88,7 @@ struct QuasiStaticNonlinearFunction{CM <: QuasiStaticModel, DH <: Ferrite.Abstra
     end
 end
 
-solution_size(problem::QuasiStaticNonlinearFunction) = ndofs(problem.dh)
+solution_size(f::QuasiStaticNonlinearFunction) = ndofs(f.dh)
 
 # """
 #     QuasiStaticODEFunction{M <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler}
