@@ -83,6 +83,33 @@ Returns a new `v₁` which is orthogonal to `v₂`.
 end
 
 """
+    orthogonalize_normal_system(v₁::Vec{dim,T}, v₂::Vec{dim,T})
+
+Returns new vectors which are orthogonal to each other.
+"""
+@inline function orthogonalize_normal_system(v₁::Vec{2,T}, v₂::Vec{2,T}) where {T}
+    w₁ = v₁
+    w₂ = v₂ - (w₁ ⋅ v₂)*w₁
+    return w₁, w₂
+end
+
+orthogonalize_system(v₁::Vec{2}, v₂::Vec{2}) = orthogonalize_normal_system(v₁/norm(v₁), v₂/norm(v₂))
+
+"""
+    orthogonalize_normal_system(v₁::Vec{3}, v₂::Vec{3}, v₃::Vec{3})
+
+Returns new vectors which are orthogonal to each other.
+"""
+@inline function orthogonalize_normal_system(v₁::Vec{3}, v₂::Vec{3}, v₃::Vec{3})
+    w₁ = v₁
+    w₂ = v₂ - (w₁ ⋅ v₂)*w₁
+    w₃ = v₃ - (w₁ ⋅ v₃)*w₁ - (w₂ ⋅ v₃)*w₂
+    return w₁, w₂, w₃
+end
+
+orthogonalize_system(v₁::Vec{3}, v₂::Vec{3}, v₃::Vec{3}) = orthogonalize_normal_system(v₁/norm(v₁), v₂/norm(v₂), v₃/norm(v₃))
+
+"""
 """
 function generate_nodal_quadrature_rule(ip::Interpolation{ref_shape, order}) where {ref_shape, order}
     n_base = Ferrite.getnbasefunctions(ip)
