@@ -1,19 +1,21 @@
 # Developer documentation
+## Design details
 
-More devdocs coming soon.
+### Models
 
+In Thunderbolt a model essentially describes a set of PDEs, their boundary conditions and their coupling information on a high level.
 
-Question: The solver is definitely responsible for managing the solution vectors, but who is responsible for setting up projectors, dof handlers and constriant handlers?
+### Functions
 
+Functions are simply semidiscretizations together with boundary condition and coupling information for the semidiscrete form.
 
-# Design details
+### Problems
 
-## Modeling
+A function equipped with a time interval and an initial guess.
 
-Questions:
-1. How to pass and solve state information for internal variables around?
+### Operators
 
-## Operators
+Operators decouple the function description from their evaluation.
 
 `assemble_element`
 
@@ -21,7 +23,9 @@ Questions:
 1. How to deal with quasi-static problems which also need velocities?
 2. How to make recursive assemble_element definitions for volume coupled problems?
 
-## Solver
+### Solver
+
+Solvers construct operators from given functions and solve some problem with the function info.
 
 `setup_solver_caches(problem, solver, t₀)` takes the problem and a solver to setup the operators needed during solve.
 

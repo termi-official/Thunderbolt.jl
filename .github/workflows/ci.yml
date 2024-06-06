@@ -30,6 +30,7 @@ jobs:
         run: |
           julia --color=yes --project=. -e '
             using Pkg
+            Pkg.add(url="https://github.com/SciML/DiffEqBase.jl.git", rev="1c283e02");
             Pkg.add(url="https://github.com/Ferrite-FEM/Ferrite.jl.git", rev="5b42946f");
             Pkg.instantiate();
             Pkg.precompile();'

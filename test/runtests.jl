@@ -6,6 +6,8 @@ include("test_subdomains.jl")
 
 include("test_transfer.jl")
 
+include("test_integrators.jl")
+
 include("test_type_stability.jl")
 include("test_mesh.jl")
 include("test_coefficients.jl")

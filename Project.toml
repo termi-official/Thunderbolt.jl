@@ -5,6 +5,8 @@ version = "0.0.1-DEV"
 [deps]
 BlockArrays = "8e7c35d0-a365-5155-bbbb-fb81a777f24e"
 CommonSolve = "38540f10-b2f7-11e9-35d8-d573e4eb0ff2"
+DataStructures = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
+DiffEqBase = "2b5f629d-d688-5b77-993f-72d75c75574e"
 Ferrite = "c061ca5d-56c9-439f-9c0e-210fe06d3992"
 FerriteGmsh = "4f95f4f8-b27c-4ae5-9a39-ea55e634e36b"
 JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
@@ -21,6 +23,7 @@ SymbolicIndexingInterface = "2efcf032-c050-4f8e-a9bb-153293bab1f5"
 Tensors = "48a634ad-e948-5137-8d70-aa71f2a747f4"
 TimerOutputs = "a759f4b9-e2f1-59dc-863e-4aeb61b1ea8f"
 UnPack = "3a884ed6-31ef-47d7-9d2a-63182c4928ed"
+Unrolled = "9602ed7d-8fef-5bc8-8597-8f21381861e8"
 
 [compat]
 Aqua = "0.8"

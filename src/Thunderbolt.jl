@@ -12,8 +12,17 @@ using BlockArrays, SparseArrays, StaticArrays
 
 using JLD2
 
+# This is a standalone module which will be a custom package in the future
+include("solver/operator_splitting.jl")
+@reexport using .OS
+solution_size(f::GenericSplitFunction) = OS.function_size(f)
+# include("solver/local_time_stepping.jl")
+# include("solver/multilevel.jl")
+
 import Ferrite: AbstractDofHandler, AbstractGrid, AbstractRefShape, AbstractCell
 import Ferrite: vertices, edges, faces, sortedge, sortface
+
+import DiffEqBase#: AbstractDiffEqFunction, AbstractDEProblem
 
 import Krylov: CgSolver
 
@@ -43,18 +52,20 @@ include("modeling/fluid_mechanics.jl")
 
 include("modeling/multiphysics.jl")
 
-include("modeling/problems.jl") # This is not really "modeling" but a glue layer to translate from model to solver via a discretization
+include("modeling/functions.jl")
+include("modeling/problems.jl") # Utility for compat against DiffEqBase
 
 include("discretization/interface.jl")
 include("discretization/fem.jl")
 include("discretization/operator.jl")
 
 include("solver/interface.jl")
+include("solver/nlsolve_common.jl")
 include("solver/newton_raphson.jl")
+include("solver/time_integrator.jl")
 include("solver/load_stepping.jl")
 include("solver/euler.jl")
 include("solver/partitioned_solver.jl")
-include("solver/operator_splitting.jl")
 
 include("solver/ecg.jl")
 
@@ -62,9 +73,12 @@ include("io.jl")
 
 include("disambiguation.jl")
 
+# TODO where to put these?
+include("modeling/rsafdq2022.jl")
+include("discretization/rsafdq-operator.jl")
+
 # TODO put exports into the individual submodules above!
 export
-    solve,
     # Coefficients
     ConstantCoefficient,
     FieldCoefficient,
@@ -93,6 +107,8 @@ export
     generate_ideal_lv_mesh,
     # Mechanics
     StructuralModel,
+    QuasiStaticProblem,
+    QuasiStaticNonlinearFunction,
     # Passive material models
     NullEnergyModel,
     NullCompressionPenalty,
@@ -122,8 +138,9 @@ export
     PiersantiActiveStress,
     # Electrophysiology
     MonodomainModel,
-    ParabolicParabolicBidomainModel,
-    ParabolicEllipticBidomainModel,
+    TransientHeatFunction,
+    # ParabolicParabolicBidomainModel,
+    # ParabolicEllipticBidomainModel,
     NoStimulationProtocol,
     TransmembraneStimulationProtocol,
     AnalyticalTransmembraneStimulationProtocol,
@@ -138,6 +155,8 @@ export
     Hirschvogel2017SurrogateVolume,
     LumpedFluidSolidCoupler,
     ChamberVolumeCoupling,
+    VolumeTransfer0D3D,
+    PressureTransfer3D0D,
     # Microstructure
     AnisotropicPlanarMicrostructureModel,
     OrthotropicMicrostructureModel,
@@ -162,9 +181,10 @@ export
     ForwardEulerSolver,
     BackwardEulerSolver,
     ForwardEulerCellSolver,
-    LTGOSSolver,
+    # Integrator
+    get_parent_index,
+    get_parent_value,
     # Utils
-    default_initializer,
     calculate_volume_deformed_mesh,
     elementtypes,
     QuadraturePoint,
@@ -172,6 +192,7 @@ export
     load_carp_mesh,
     load_voom2_mesh,
     load_mfem_mesh,
+    solution_size,
     # IO
     ParaViewWriter,
     JLD2Writer,

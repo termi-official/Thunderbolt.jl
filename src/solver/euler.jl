@@ -5,7 +5,7 @@ struct BackwardEulerSolver <: AbstractSolver
 end
 
 # TODO decouple from heat problem via special ODEFunction (AffineODEFunction)
-mutable struct BackwardEulerSolverCache{SolutionType, MassMatrixType, DiffusionMatrixType, SystemMatrixType, SourceTermType, LinSolverType, RHSType}
+mutable struct BackwardEulerSolverCache{SolutionType, MassMatrixType, DiffusionMatrixType, SystemMatrixType, SourceTermType, LinSolverType, RHSType} <: AbstractTimeSolverCache
     # Current solution buffer
     uₙ::SolutionType
     # Last solution buffer
@@ -44,7 +44,7 @@ end
 
 # Performs a backward Euler step
 # TODO check if operator is time dependent and update
-function perform_step!(problem::TransientHeatProblem, cache::BackwardEulerSolverCache{SolutionType, MassMatrixType, DiffusionMatrixType, SystemMatrixType, LinSolverType, RHSType}, t, Δt) where {SolutionType, MassMatrixType, DiffusionMatrixType, SystemMatrixType, LinSolverType, RHSType}
+function perform_step!(f::TransientHeatFunction, cache::BackwardEulerSolverCache{SolutionType, MassMatrixType, DiffusionMatrixType, SystemMatrixType, LinSolverType, RHSType}, t, Δt) where {SolutionType, MassMatrixType, DiffusionMatrixType, SystemMatrixType, LinSolverType, RHSType}
     @unpack Δt_last, b, M, A, uₙ, uₙ₋₁, linsolver = cache
     # Remember last solution
     @inbounds uₙ₋₁ .= uₙ
@@ -66,11 +66,11 @@ function perform_step!(problem::TransientHeatProblem, cache::BackwardEulerSolver
     return true
 end
 
-function setup_solver_cache(problem::TransientHeatProblem, solver::BackwardEulerSolver, t₀)
-    @unpack dh = problem
+function setup_solver_cache(f::TransientHeatFunction, solver::BackwardEulerSolver, t₀)
+    @unpack dh = f
     @assert length(dh.field_names) == 1 # TODO relax this assumption, maybe.
     field_name = dh.field_names[1]
-    intorder = quadrature_order(problem, field_name)
+    intorder = quadrature_order(f, field_name)
     qr = QuadratureRuleCollection(intorder) # TODO how to pass this one down here?
 
     mass_operator = AssembledBilinearOperator(
@@ -84,27 +84,27 @@ function setup_solver_cache(problem::TransientHeatProblem, solver::BackwardEuler
     diffusion_operator = AssembledBilinearOperator(
         dh, field_name, # TODO field name
         BilinearDiffusionIntegrator(
-            problem.diffusion_tensor_field,
+            f.diffusion_tensor_field,
         ),
         qr
     )
 
     cache = BackwardEulerSolverCache(
-        zeros(solution_size(problem)),
-        zeros(solution_size(problem)),
+        zeros(solution_size(f)),
+        zeros(solution_size(f)),
         # TODO How to choose the exact operator types here?
         #      Maybe via some parameter in BackwardEulerSolver?
         mass_operator,
         diffusion_operator,
         ThreadedSparseMatrixCSR(transpose(create_sparsity_pattern(dh))), # TODO this should be decided via some interface
-        create_linear_operator(dh, problem.source_term),
+        create_linear_operator(dh, f.source_term),
         # TODO this via LinearSolvers.jl?
         CgSolver(
-            solution_size(problem),
-            solution_size(problem),
+            solution_size(f),
+            solution_size(f),
             Vector{Float64}
         ),
-        zeros(solution_size(problem)),
+        zeros(solution_size(f)),
         0.0
     )
 
@@ -121,18 +121,19 @@ struct ForwardEulerSolver <: AbstractSolver
     rate::Int
 end
 
-mutable struct ForwardEulerSolverCache{VT,F}
+mutable struct ForwardEulerSolverCache{VT,F} <: AbstractTimeSolverCache
     rate::Int
     du::VT
     uₙ::VT
+    uₙ₋₁::VT
     rhs!::F
 end
 
-function perform_step!(problem, solver_cache::ForwardEulerSolverCache, t::Float64, Δt::Float64)
+function perform_step!(f::ODEFunction, solver_cache::ForwardEulerSolverCache, t::Float64, Δt::Float64)
     @unpack rate, du, uₙ, rhs! = solver_cache
     Δtsub = Δt/rate
     for i ∈ 1:rate
-        @inbounds rhs!(du, uₙ, t, problem.p)
+        @inbounds rhs!(du, uₙ, t, f.p)
         @inbounds uₙ .= uₙ .+ Δtsub .* du
         t += Δtsub
     end
@@ -140,11 +141,12 @@ function perform_step!(problem, solver_cache::ForwardEulerSolverCache, t::Float6
     return !any(isnan.(uₙ))
 end
 
-function setup_solver_cache(problem::ODEProblem, solver::ForwardEulerSolver, t₀)
+function setup_solver_cache(f::ODEFunction, solver::ForwardEulerSolver, t₀)
     return ForwardEulerSolverCache(
         solver.rate,
-        zeros(num_states(problem.ode)),
-        zeros(num_states(problem.ode)),
-        problem.f
+        zeros(num_states(f.ode)),
+        zeros(num_states(f.ode)),
+        zeros(num_states(f.ode)),
+        f.f
     )
 end
