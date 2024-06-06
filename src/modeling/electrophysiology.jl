@@ -91,7 +91,12 @@ struct OhmicCurrent{T, NChannels}
     channels::SVector{NChannels, HodgkinHuxleyTypeIonChannel}
 end
 
-abstract type AbstractIonicModel end;
+"""
+Supertype for all ionic models in Thunderbolt.
+"""
+abstract type AbstractIonicModel end
+
+state_symbol(ionic_model::AbstractIonicModel, sidx::Int) = Symbol("s$sidx")
 
 """
 Models where all states are described by Hodgkin-Huxley type ion channels.
@@ -200,6 +205,13 @@ struct MonodomainModel{F1,F2,F3,STIM<:TransmembraneStimulationProtocol,ION<:Abst
     κ::F3
     stim::STIM
     ion::ION
+end
+
+"""
+Annotation for the classical reaction-diffusion split of a given model.
+"""
+struct ReactionDiffusionSplit{MODEL}
+    model::MODEL
 end
 
 include("cells/fhn.jl")

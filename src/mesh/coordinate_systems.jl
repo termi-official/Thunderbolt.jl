@@ -13,7 +13,7 @@ CartesianCoordinateSystem(grid::AbstractGrid{sdim}) where sdim = CartesianCoordi
 
 Get interpolation function for the cartesian coordinate system.
 """
-getcoordinateinterpolation(cs::CartesianCoordinateSystem{sdim}, cell::CellType) where {sdim, CellType <: AbstractCell} = Ferrite.default_interpolation(CellType)^sdim
+getcoordinateinterpolation(cs::CartesianCoordinateSystem{sdim}, cell::CellType) where {sdim, CellType <: AbstractCell} = Ferrite.geometric_interpolation(CellType)^sdim
 
 
 """
@@ -22,14 +22,15 @@ getcoordinateinterpolation(cs::CartesianCoordinateSystem{sdim}, cell::CellType) 
 Simplified universal ventricular coordinate on LV only, containing the transmural, apicobasal and
 circumferential coordinates. See [`compute_LV_coordinate_system`](@ref) to construct it.
 """
-struct LVCoordinateSystem{DH <: AbstractDofHandler}
+struct LVCoordinateSystem{DH <: AbstractDofHandler, IPC}
     dh::DH
+    ip_collection::IPC # TODO special dof handler with type stable interpolation
     u_transmural::Vector{Float64}
     u_apicobasal::Vector{Float64}
     u_circumferential::Vector{Float64}
-    function LVCoordinateSystem(dh::AbstractDofHandler, u_transmural::Vector{Float64}, u_apicobasal::Vector{Float64}, u_circumferential::Vector{Float64})
+    function LVCoordinateSystem(dh::AbstractDofHandler, ipc::ScalarInterpolationCollection, u_transmural::Vector{Float64}, u_apicobasal::Vector{Float64}, u_circumferential::Vector{Float64})
         check_subdomains(dh)
-        return new{typeof(dh)}(dh, u_transmural, u_apicobasal, u_circumferential)
+        return new{typeof(dh), typeof(ipc)}(dh, ipc, u_transmural, u_apicobasal, u_circumferential)
     end
 end
 
@@ -54,13 +55,13 @@ end
 
 Get interpolation function for the LV coordinate system.
 """
-getcoordinateinterpolation(cs::LVCoordinateSystem, cell::AbstractCell) = Ferrite.getfieldinterpolation(cs.dh, (1,1))
+getcoordinateinterpolation(cs::LVCoordinateSystem, cell::AbstractCell) = getinterpolation(cs.ip_collection, cell)
 
 
 """
     compute_LV_coordinate_system(grid::AbstractGrid)
 
-Requires a grid with facesets
+Requires a grid with facetsets
     * Base
     * Epicardium
     * Endocardium
@@ -112,9 +113,9 @@ function compute_LV_coordinate_system(grid::AbstractGrid{3})
 
     # Transmural coordinate
     ch = ConstraintHandler(dh);
-    dbc = Dirichlet(:coordinates, getfaceset(grid, "Endocardium"), (x, t) -> 0)
+    dbc = Dirichlet(:coordinates, getfacetset(grid, "Endocardium"), (x, t) -> 0)
     Ferrite.add!(ch, dbc);
-    dbc = Dirichlet(:coordinates, getfaceset(grid, "Epicardium"), (x, t) -> 1)
+    dbc = Dirichlet(:coordinates, getfacetset(grid, "Epicardium"), (x, t) -> 1)
     Ferrite.add!(ch, dbc);
     close!(ch)
     update!(ch, 0.0);
@@ -135,11 +136,11 @@ function compute_LV_coordinate_system(grid::AbstractGrid{3})
                 apex_node_index = i
             end
         end
-        addnodeset!(grid, "Apex", Set{Int}((apex_node_index)))
+        addnodeset!(grid, "Apex", OrderedSet{Int}((apex_node_index)))
     end
 
     ch = ConstraintHandler(dh);
-    dbc = Dirichlet(:coordinates, getfaceset(grid, "Base"), (x, t) -> 0)
+    dbc = Dirichlet(:coordinates, getfacetset(grid, "Base"), (x, t) -> 0)
     Ferrite.add!(ch, dbc);
     dbc = Dirichlet(:coordinates, getnodeset(grid, "Apex"), (x, t) -> 1)
     Ferrite.add!(ch, dbc);
@@ -155,13 +156,13 @@ function compute_LV_coordinate_system(grid::AbstractGrid{3})
     circumferential = zeros(ndofs(dh))
     circumferential .= NaN
 
-    return LVCoordinateSystem(dh, transmural, apicobasal, circumferential)
+    return LVCoordinateSystem(dh, ip_collection, transmural, apicobasal, circumferential)
 end
 
 """
     compute_midmyocardial_section_coordinate_system(grid::AbstractGrid)
 
-Requires a grid with facesets
+Requires a grid with facetsets
     * Base
     * Epicardium
     * Endocardium
@@ -210,9 +211,9 @@ function compute_midmyocardial_section_coordinate_system(grid::AbstractGrid{dim}
 
     # Transmural coordinate
     ch = ConstraintHandler(dh);
-    dbc = Dirichlet(:coordinates, getfaceset(grid, "Endocardium"), (x, t) -> 0)
+    dbc = Dirichlet(:coordinates, getfacetset(grid, "Endocardium"), (x, t) -> 0)
     Ferrite.add!(ch, dbc);
-    dbc = Dirichlet(:coordinates, getfaceset(grid, "Epicardium"), (x, t) -> 1)
+    dbc = Dirichlet(:coordinates, getfacetset(grid, "Epicardium"), (x, t) -> 1)
     Ferrite.add!(ch, dbc);
     close!(ch)
     update!(ch, 0.0);
@@ -224,9 +225,9 @@ function compute_midmyocardial_section_coordinate_system(grid::AbstractGrid{dim}
     transmural = K_transmural \ f;
 
     ch = ConstraintHandler(dh);
-    dbc = Dirichlet(:coordinates, getfaceset(grid, "Base"), (x, t) -> 0)
+    dbc = Dirichlet(:coordinates, getfacetset(grid, "Base"), (x, t) -> 0)
     Ferrite.add!(ch, dbc);
-    dbc = Dirichlet(:coordinates, getfaceset(grid, "Myocardium"), (x, t) -> 0.15)
+    dbc = Dirichlet(:coordinates, getfacetset(grid, "Myocardium"), (x, t) -> 0.15)
     Ferrite.add!(ch, dbc);
     close!(ch)
     update!(ch, 0.0);
@@ -240,7 +241,7 @@ function compute_midmyocardial_section_coordinate_system(grid::AbstractGrid{dim}
     circumferential = zeros(ndofs(dh))
     circumferential .= NaN
 
-    return LVCoordinateSystem(dh, transmural, apicobasal, circumferential)
+    return LVCoordinateSystem(dh, ip_collection, transmural, apicobasal, circumferential)
 end
 
 """

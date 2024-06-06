@@ -2,6 +2,15 @@
 include("collections.jl")
 include("quadrature_iterator.jl")
 
+function celldofsview(dh::DofHandler, i::Int)
+    if i == length(dh.cell_dofs_offset)
+        return @views dh.cell_dofs[dh.cell_dofs_offset[i]:end]
+    else
+        return @views dh.cell_dofs[dh.cell_dofs_offset[i]:(dh.cell_dofs_offset[i+1]-1)]
+    end
+end
+
+
 function calculate_element_volume(cell, cellvalues_u, uₑ)
     reinit!(cellvalues_u, cell)
     evol::Float64=0.0;
@@ -99,7 +108,7 @@ function ThreadedSparseMatrixCSR(a::Transpose{Tv,<:SparseMatrixCSC} where Tv)
     ThreadedSparseMatrixCSR(SparseMatrixCSR(a))
 end
 
-function mul!(y::AbstractVector, A_::ThreadedSparseMatrixCSR, x::AbstractVector, alpha::Number, beta::Number)
+function mul!(y::AbstractVector{<:Number}, A_::ThreadedSparseMatrixCSR, x::AbstractVector{<:Number}, alpha::Number, beta::Number)
     A = A_.A
     A.n == size(x, 1) || throw(DimensionMismatch())
     A.m == size(y, 1) || throw(DimensionMismatch())
@@ -118,7 +127,7 @@ function mul!(y::AbstractVector, A_::ThreadedSparseMatrixCSR, x::AbstractVector,
     return y
 end
 
-function mul!(y::AbstractVector, A_::ThreadedSparseMatrixCSR, x::AbstractVector)
+function mul!(y::AbstractVector{<:Number}, A_::ThreadedSparseMatrixCSR, x::AbstractVector{<:Number})
     A = A_.A
     A.n == size(x, 1) || throw(DimensionMismatch())
     A.m == size(y, 1) || throw(DimensionMismatch())
@@ -159,3 +168,21 @@ IndexStyle(::Type{<:ThreadedSparseMatrixCSR}) = IndexCartesian()
 # Internal helper to throw uniform error messages on problems with multiple subdomains
 @noinline check_subdomains(dh::Ferrite.AbstractDofHandler) = length(dh.subdofhandlers) == 1 || throw(ArgumentError("Using DofHandler with multiple subdomains is not currently supported"))
 @noinline check_subdomains(grid::Ferrite.AbstractGrid) = length(elementtypes(grid)) == 1 || throw(ArgumentError("Using mixed grid is not currently supported"))
+
+@inline function quadrature_order(problem, fieldname)
+    @unpack dh = problem
+    @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the quadrature order determination."
+    2*Ferrite.getorder(Ferrite.getfieldinterpolation(dh.subdofhandlers[1], fieldname))
+end
+
+
+
+mtk_parameter_query_filter(discard_me, sym) = false
+mtk_parameter_query_filter(param::ModelingToolkit.BasicSymbolic, sym) = true
+
+function query_mtk_parameter_by_symbol(sys, sym::Symbol)
+    symbol_list = ModelingToolkit.parameter_symbols(sys)
+    idx = findfirst(param->mtk_parameter_query_filter(param,sym), symbol_list)
+    idx === nothing && @error "Symbol $sym not found for system $sys."
+    return symbol_list[idx]
+end

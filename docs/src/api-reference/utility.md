@@ -16,7 +16,7 @@ LagrangeCollection
 QuadratureRuleCollection
 getquadraturerule
 CellValueCollection
-FaceValueCollection
+FacetValueCollection
 ```
 
 ## Iteration

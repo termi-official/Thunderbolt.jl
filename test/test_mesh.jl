@@ -9,7 +9,7 @@
             cell = getcells(grid, cellid(cc))
             ref_shape = Ferrite.getrefshape(cell)
             ip = getinterpolation(LagrangeCollection{1}(), ref_shape)
-            qr = QuadratureRule{ref_shape, Float64}([1.0], [Vec(ntuple(_->0.1, Ferrite.getdim(cell)))]) # TODO randomize point
+            qr = QuadratureRule{ref_shape, Float64}([1.0], [Vec(ntuple(_->0.1, Ferrite.getrefdim(cell)))]) # TODO randomize point
             gv = Ferrite.GeometryMapping{1}(Float64, ip, qr)
             x = getcoordinates(cc)
             mapping = Ferrite.calculate_mapping(gv, 1, x)
@@ -25,7 +25,7 @@
         # Quadrilateral,
         # Triangle
     ]
-        dim = Ferrite.getdim(element_type)
+        dim = Ferrite.getrefdim(element_type)
         grid = generate_grid(element_type, ntuple(_ -> 3, dim))
         if dim == 3
             grid_hex = Thunderbolt.hexahedralize(grid)
@@ -33,18 +33,18 @@
             test_detJ(grid_hex) # And for messed up elements
 
             # Check for correct transfer of facesets
-            addfaceset!(grid_hex, "right_new", x -> x[1] ≈ 1.0)
-            @test getfaceset(grid_hex, "right") == getfaceset(grid_hex, "right_new")
-            addfaceset!(grid_hex, "left_new", x -> x[1] ≈ -1.0)
-            @test getfaceset(grid_hex, "left") == getfaceset(grid_hex, "left_new")
-            addfaceset!(grid_hex, "top_new", x -> x[3] ≈ 1.0)
-            @test getfaceset(grid_hex, "top") == getfaceset(grid_hex, "top_new")
-            addfaceset!(grid_hex, "bottom_new", x -> x[3] ≈ -1.0)
-            @test getfaceset(grid_hex, "bottom") == getfaceset(grid_hex, "bottom_new")
-            addfaceset!(grid_hex, "front_new", x -> x[2] ≈ -1.0)
-            @test getfaceset(grid_hex, "front") == getfaceset(grid_hex, "front_new")
-            addfaceset!(grid_hex, "back_new", x -> x[2] ≈ 1.0)
-            @test getfaceset(grid_hex, "back") == getfaceset(grid_hex, "back_new")
+            addfacetset!(grid_hex, "right_new", x -> x[1] ≈ 1.0)
+            @test getfacetset(grid_hex, "right") == getfacetset(grid_hex, "right_new")
+            addfacetset!(grid_hex, "left_new", x -> x[1] ≈ -1.0)
+            @test getfacetset(grid_hex, "left") == getfacetset(grid_hex, "left_new")
+            addfacetset!(grid_hex, "top_new", x -> x[3] ≈ 1.0)
+            @test getfacetset(grid_hex, "top") == getfacetset(grid_hex, "top_new")
+            addfacetset!(grid_hex, "bottom_new", x -> x[3] ≈ -1.0)
+            @test getfacetset(grid_hex, "bottom") == getfacetset(grid_hex, "bottom_new")
+            addfacetset!(grid_hex, "front_new", x -> x[2] ≈ -1.0)
+            @test getfacetset(grid_hex, "front") == getfacetset(grid_hex, "front_new")
+            addfacetset!(grid_hex, "back_new", x -> x[2] ≈ 1.0)
+            @test getfacetset(grid_hex, "back") == getfacetset(grid_hex, "back_new")
         end
 
         if element_type == Hexahedron

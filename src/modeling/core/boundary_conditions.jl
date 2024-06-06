@@ -11,7 +11,7 @@ struct RobinBC
     boundary_name::String
 end
 
-#TODO Energy-based interface?
+#TODO Energy-based interface
 struct NormalSpringBC
     kₛ::Float64
     boundary_name::String
@@ -28,24 +28,60 @@ struct ConstantPressureBC
 end
 
 struct PressureFieldBC{C}
-    p::C
+    pc::C
     boundary_name::String
 end
 
-struct SimpleFaceCache{MP, FV}
+
+
+struct EmtpyFacetCache
+end
+
+assemble_face!(Kₑ::Matrix, residualₑ, uₑ, cell, local_face_index, face_caches::EmtpyFacetCache, time) = nothing
+assemble_face!(Kₑ::Matrix, uₑ, cell, local_face_index, face_caches::EmtpyFacetCache, time) = nothing
+
+
+
+function setup_boundary_cache(boundary_models::Union{<:Tuple,<:AbstractVector}, qr::FacetQuadratureRule, ip, ip_geo)
+    length(boundary_models) == 0 && return EmtpyFacetCache()
+    return ntuple(i->setup_boundary_cache(boundary_models[i], qr, ip, ip_geo), length(boundary_models))
+end
+
+function assemble_face!(Kₑ::Matrix, uₑ, cell, local_face_index, face_caches::Tuple, time)
+    for face_cache ∈ face_caches
+        if (cellid(cell), local_face_index) ∈ getfacetset(cell.grid, getboundaryname(face_cache))
+            assemble_face!(Kₑ, uₑ, cell, local_face_index, face_cache, time)
+        end
+    end
+end
+
+function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, cell, local_face_index, face_caches::Tuple, time)
+    for face_cache ∈ face_caches
+        if (cellid(cell), local_face_index) ∈ getfacetset(cell.grid, getboundaryname(face_cache))
+            assemble_face!(Kₑ, residualₑ, uₑ, cell, local_face_index, face_cache, time)
+        end
+    end
+end
+
+
+
+struct SimpleFacetCache{MP, FV}
     mp::MP
     fv::FV
 end
 
-getboundaryname(face_cache::FC) where {FC} = face_cache.mp.boundary_name
+getboundaryname(face_cache::SimpleFacetCache) = face_cache.mp.boundary_name
 
-setup_face_cache(bcd::BCD, fv::FV, time) where {BCD, FV} = SimpleFaceCache(bcd, fv)
+function setup_boundary_cache(face_model, qr::FacetQuadratureRule, ip, ip_geo)
+    return SimpleFacetCache(face_model, FacetValues(qr, ip, ip_geo))
+end
 
-function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, face, cache::SimpleFaceCache{<:RobinBC}, time)
+
+function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, cell, local_face_index::Int, cache::SimpleFacetCache{<:RobinBC}, time)
     @unpack mp, fv = cache
     @unpack α = mp
 
-    reinit!(fv, face[1], face[2])
+    reinit!(fv, cell, local_face_index)
 
     ndofs_face = getnbasefunctions(fv)
     for qp in QuadratureIterator(fv)
@@ -69,11 +105,11 @@ function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, face, cache::SimpleFace
     end
 end
 
-function assemble_face!(Kₑ::Matrix, uₑ, face, cache::SimpleFaceCache{<:RobinBC}, time)
+function assemble_face!(Kₑ::Matrix, uₑ, cell, local_face_index, cache::SimpleFacetCache{<:RobinBC}, time)
     @unpack mp, fv = cache
     @unpack α = mp
 
-    reinit!(fv, face[1], face[2])
+    reinit!(fv, cell, local_face_index)
 
     ndofs_face = getnbasefunctions(fv)
     for qp in QuadratureIterator(fv)
@@ -96,11 +132,13 @@ function assemble_face!(Kₑ::Matrix, uₑ, face, cache::SimpleFaceCache{<:Robin
     end
 end
 
-function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, face, cache::SimpleFaceCache{<:NormalSpringBC}, time)
+
+
+function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, cell, local_face_index, cache::SimpleFacetCache{<:NormalSpringBC}, time)
     @unpack mp, fv = cache
     @unpack kₛ = mp
 
-    reinit!(fv, face[1], face[2])
+    reinit!(fv, cell, local_face_index)
 
     ndofs_face = getnbasefunctions(fv)
     for qp in QuadratureIterator(fv)
@@ -124,11 +162,11 @@ function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, face, cache::SimpleFace
     end
 end
 
-function assemble_face!(Kₑ::Matrix, uₑ, face, cache::SimpleFaceCache{<:NormalSpringBC}, time)
+function assemble_face!(Kₑ::Matrix, uₑ, cell, local_face_index, cache::SimpleFacetCache{<:NormalSpringBC}, time)
     @unpack mp, fv = cache
     @unpack kₛ = mp
 
-    reinit!(fv, face[1], face[2])
+    reinit!(fv, cell, local_face_index)
 
     ndofs_face = getnbasefunctions(fv)
     for qp in QuadratureIterator(fv)
@@ -151,11 +189,13 @@ function assemble_face!(Kₑ::Matrix, uₑ, face, cache::SimpleFaceCache{<:Norma
     end
 end
 
-function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, face, cache::SimpleFaceCache{<:BendingSpringBC}, time)
+
+
+function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, cell, local_face_index, cache::SimpleFacetCache{<:BendingSpringBC}, time)
     @unpack mp, fv = cache
     @unpack kᵇ = mp
 
-    reinit!(fv, face[1], face[2])
+    reinit!(fv, cell, local_face_index)
 
     ndofs_face = getnbasefunctions(fv)
     for qp in QuadratureIterator(fv)
@@ -170,7 +210,7 @@ function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, face, cache::SimpleFace
         # Add contribution to the residual from this test function
         for i in 1:ndofs_face
             ∇δui = shape_gradient(fv, qp, i)
-            residualₑ[i] -= ∇δui ⊡ ∂Ψ∂F * dΓ
+            residualₑ[i] += ∇δui ⊡ ∂Ψ∂F * dΓ
 
             ∇δui∂P∂F = ∇δui ⊡ ∂²Ψ∂F² # Hoisted computation
             for j in 1:ndofs_face
@@ -182,12 +222,11 @@ function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, face, cache::SimpleFace
     end
 end
 
-
-function assemble_face!(Kₑ::Matrix, uₑ, face, cache::SimpleFaceCache{<:BendingSpringBC}, time)
+function assemble_face!(Kₑ::Matrix, uₑ, cell, local_face_index, cache::SimpleFacetCache{<:BendingSpringBC}, time)
     @unpack mp, fv = cache
     @unpack kᵇ = mp
 
-    reinit!(fv, face[1], face[2])
+    reinit!(fv, cell, local_face_index)
 
     ndofs_face = getnbasefunctions(fv)
     for qp in QuadratureIterator(fv)
@@ -213,153 +252,115 @@ function assemble_face!(Kₑ::Matrix, uₑ, face, cache::SimpleFaceCache{<:Bendi
     end
 end
 
-function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, face, cache::SimpleFaceCache{<:PressureFieldBC}, time)
-    @unpack mp, fv = cache
-    @unpack p = mp
 
-    reinit!(fv, face[1], face[2])
 
+function assemble_face_pressure_qp!(Kₑ, residualₑ, uₑ, p, qp, fv::FacetValues)
     ndofs_face = getnbasefunctions(fv)
-    for qp in QuadratureIterator(fv)
-        dΓ = getdetJdV(fv, qp)
 
-        n₀ = getnormal(fv, qp)
+    dΓ = getdetJdV(fv, qp)
+    n₀ = getnormal(fv, qp)
 
-        ∇u = function_gradient(fv, qp, uₑ)
-        F = one(∇u) + ∇u
+    ∇u = function_gradient(fv, qp, uₑ)
+    F = one(∇u) + ∇u
 
-        # ∂P∂F = Tensors.gradient(
-        #     F_ad -> p * det(F_ad) * transpose(inv(F_ad)),
-        # F)
+    invF = inv(F)
+    cofF = transpose(invF)
+    J = det(F)
+    neumann_term = p * J * cofF
+    for i in 1:ndofs_face
+        δuᵢ = shape_value(fv, qp, i)
+        residualₑ[i] += neumann_term ⋅ n₀ ⋅ δuᵢ * dΓ
 
-        # Add contribution to the residual from this test function
-        cofF = transpose(inv(F))
-        # TODO fix the "nothing" here
-        neumann_term = evaluate_coefficient(p, nothing, qp, time) * det(F) * cofF
-        for i in 1:ndofs_face
-            δuᵢ = shape_value(fv, qp, i)
-            residualₑ[i] += neumann_term ⋅ n₀ ⋅ δuᵢ * dΓ
-
-            # ∂P∂Fδui =   ∂P∂F ⊡ (n₀ ⊗ δuᵢ) # Hoisted computation
-            for j in 1:ndofs_face
-                ∇δuⱼ = shape_gradient(fv, qp, j)
-                # Add contribution to the tangent
-                # Kₑ[i, j] += (n₀ ⊗ δuⱼ) ⊡ ∂P∂Fδui * dΓ
-                Kₑ[i, j] += δuᵢ ⋅ (((cofF ⊡ ∇δuⱼ) * one(cofF) - cofF ⋅ transpose(∇δuⱼ)) ⋅ neumann_term) ⋅ n₀ * dΓ
-            end
+        for j in 1:ndofs_face
+            ∇δuⱼ = shape_gradient(fv, qp, j)
+            # Add contribution to the tangent
+            #   δF^-1 = -F^-1 δF F^-1
+            #   δJ = J tr(δF F^-1)
+            # Product rule
+            δcofF = -transpose(invF ⋅ ∇δuⱼ ⋅ invF)
+            δJ = J * tr(∇δuⱼ ⋅ invF)
+            δJcofF = δJ * cofF + J * δcofF
+            Kₑ[i, j] += p * (δJcofF ⋅ n₀) ⋅ δuᵢ * dΓ
         end
     end
 end
 
-
-function assemble_face!(Kₑ::Matrix, uₑ, face, cache::SimpleFaceCache{<:PressureFieldBC}, time)
-    @unpack mp, fv = cache
-    @unpack p = mp
-
-    reinit!(fv, face[1], face[2])
-
+function assemble_face_pressure_qp!(Kₑ, uₑ, p, qp, fv::FacetValues)
     ndofs_face = getnbasefunctions(fv)
-    for qp in QuadratureIterator(fv)
-        dΓ = getdetJdV(fv, qp)
+
+    dΓ = getdetJdV(fv, qp)
+    n₀ = getnormal(fv, qp)
+
+    ∇u = function_gradient(fv, qp, uₑ)
+    F = one(∇u) + ∇u
     
-        n₀ = getnormal(fv, qp)
-    
-        ∇u = function_gradient(fv, qp, uₑ)
-        F = one(∇u) + ∇u
-    
-        # ∂P∂F = Tensors.gradient(
-        #     F_ad -> p * det(F_ad) * transpose(inv(F_ad)),
-        # F)
-    
-        # Add contribution to the residual from this test function
-        cofF = transpose(inv(F))
-        # TODO fix the "nothing" here
-        neumann_term = evaluate_coefficient(p, nothing, qp, time) * det(F) * cofF
-        for i in 1:ndofs_face
-            δuᵢ = shape_value(fv, qp, i)
-    
-            # ∂P∂Fδui =   ∂P∂F ⊡ (n₀ ⊗ δuᵢ) # Hoisted computation
-            for j in 1:ndofs_face
-                ∇δuⱼ = shape_gradient(fv, qp, j)
-                # Add contribution to the tangent
-                # Kₑ[i, j] += (n₀ ⊗ δuⱼ) ⊡ ∂P∂Fδui * dΓ
-                Kₑ[i, j] += δuᵢ ⋅ (((cofF ⊡ ∇δuⱼ) * one(cofF) - cofF ⋅ transpose(∇δuⱼ)) ⋅ neumann_term) ⋅ n₀ * dΓ
-            end
+    invF = inv(F)
+    cofF = transpose(invF)
+    J = det(F)
+    # neumann_term = p * J * cofF
+    for i in 1:ndofs_face
+        δuᵢ = shape_value(fv, qp, i)
+
+        for j in 1:ndofs_face
+            ∇δuⱼ = shape_gradient(fv, qp, j)
+            # Add contribution to the tangent
+            #   δF^-1 = -F^-1 δF F^-1
+            #   δJ = J tr(δF F^-1)
+            # Product rule
+            δcofF = -transpose(invF ⋅ ∇δuⱼ ⋅ invF)
+            δJ = J * tr(∇δuⱼ ⋅ invF)
+            δJcofF = δJ * cofF + J * δcofF
+            Kₑ[i, j] += p * (δJcofF ⋅ n₀) ⋅ δuᵢ * dΓ
         end
     end
 end
 
-
-function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, face, cache::SimpleFaceCache{<:ConstantPressureBC}, time)
+function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, cell, local_face_index, cache::SimpleFacetCache{<:PressureFieldBC}, time)
     @unpack mp, fv = cache
-    @unpack p = mp
+    @unpack pc = mp
 
-    reinit!(fv, face[1], face[2])
+    reinit!(fv, cell, local_face_index)
 
-    ndofs_face = getnbasefunctions(fv)
     for qp in QuadratureIterator(fv)
-        dΓ = getdetJdV(fv, qp)
+        p = evaluate_coefficient(pc, cell, qp, time)
+        assemble_face_pressure_qp!(Kₑ, residualₑ, uₑ, p, qp, fv)
+    end
+end
 
-        n₀ = getnormal(fv, qp)
+function assemble_face!(Kₑ::Matrix, uₑ, cell, local_face_index, cache::SimpleFacetCache{<:PressureFieldBC}, time)
+    @unpack mp, fv = cache
+    @unpack pc = mp
 
-        ∇u = function_gradient(fv, qp, uₑ)
-        F = one(∇u) + ∇u
+    reinit!(fv, cell, local_face_index)
 
-        # ∂P∂F = Tensors.gradient(
-        #     F_ad -> p * det(F_ad) * transpose(inv(F_ad)),
-        # F)
-
+    for qp in QuadratureIterator(fv)
         # Add contribution to the residual from this test function
-        cofF = transpose(inv(F))
-        neumann_term = p * det(F) * cofF
-        for i in 1:ndofs_face
-            δuᵢ = shape_value(fv, qp, i)
-            residualₑ[i] += neumann_term ⋅ n₀ ⋅ δuᵢ * dΓ
-
-            # ∂P∂Fδui =   ∂P∂F ⊡ (n₀ ⊗ δuᵢ) # Hoisted computation
-            for j in 1:ndofs_face
-                ∇δuⱼ = shape_gradient(fv, qp, j)
-                # Add contribution to the tangent
-                # Kₑ[i, j] += (n₀ ⊗ δuⱼ) ⊡ ∂P∂Fδui * dΓ
-                Kₑ[i, j] += δuᵢ ⋅ (((cofF ⊡ ∇δuⱼ) * one(cofF) - cofF ⋅ transpose(∇δuⱼ)) ⋅ neumann_term) ⋅ n₀ * dΓ
-            end
-        end
+        p = evaluate_coefficient(pc, cell, qp, time)
+        assemble_face_pressure_qp!(Kₑ, uₑ, p, qp, fv)
     end
 end
 
 
-function assemble_face!(Kₑ::Matrix, uₑ, face, cache::SimpleFaceCache{<:ConstantPressureBC}, time)
+
+function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, cell, local_face_index, cache::SimpleFacetCache{<:ConstantPressureBC}, time)
     @unpack mp, fv = cache
     @unpack p = mp
 
-    reinit!(fv, face[1], face[2])
+    reinit!(fv, cell, local_face_index)
 
-    ndofs_face = getnbasefunctions(fv)
     for qp in QuadratureIterator(fv)
-        dΓ = getdetJdV(fv, qp)
-    
-        n₀ = getnormal(fv, qp)
-    
-        ∇u = function_gradient(fv, qp, uₑ)
-        F = one(∇u) + ∇u
-    
-        # ∂P∂F = Tensors.gradient(
-        #     F_ad -> p * det(F_ad) * transpose(inv(F_ad)),
-        # F)
-    
-        # Add contribution to the residual from this test function
-        cofF = transpose(inv(F))
-        neumann_term = p * det(F) * cofF
-        for i in 1:ndofs_face
-            δuᵢ = shape_value(fv, qp, i)
-    
-            # ∂P∂Fδui =   ∂P∂F ⊡ (n₀ ⊗ δuᵢ) # Hoisted computation
-            for j in 1:ndofs_face
-                ∇δuⱼ = shape_gradient(fv, qp, j)
-                # Add contribution to the tangent
-                # Kₑ[i, j] += (n₀ ⊗ δuⱼ) ⊡ ∂P∂Fδui * dΓ
-                Kₑ[i, j] += δuᵢ ⋅ (((cofF ⊡ ∇δuⱼ) * one(cofF) - cofF ⋅ transpose(∇δuⱼ)) ⋅ neumann_term) ⋅ n₀ * dΓ
-            end
-        end
+        assemble_face_pressure_qp!(Kₑ, residualₑ, uₑ, p, qp, fv)
+    end
+end
+
+
+function assemble_face!(Kₑ::Matrix, uₑ, cell, local_face_index, cache::SimpleFacetCache{<:ConstantPressureBC}, time)
+    @unpack mp, fv = cache
+    @unpack p = mp
+
+    reinit!(fv, cell, local_face_index)
+
+    for qp in QuadratureIterator(fv)
+        assemble_face_pressure_qp!(Kₑ, uₑ, p, qp, fv)
     end
 end

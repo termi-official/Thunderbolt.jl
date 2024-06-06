@@ -95,11 +95,15 @@ function evaluate_coefficient(coeff::CoordinateSystemCoefficient{<:CartesianCoor
 end
 
 function evaluate_coefficient(coeff::CoordinateSystemCoefficient{<:LVCoordinateSystem}, cell_cache, qp::QuadraturePoint{ref_shape,T}, t) where {ref_shape,T}
-    x = @MVector zeros(T, 3)
     ip = getcoordinateinterpolation(coeff.cs, getcells(cell_cache.grid, cellid(cell_cache)))
-    dofs = celldofs(coeff.cs.dh, cellid(cell_cache))
+    dofs = celldofsview(coeff.cs.dh, cellid(cell_cache))
+    return _evaluate_coefficient(coeff, ip, dofs, qp, t)
+end
+
+function _evaluate_coefficient(coeff::CoordinateSystemCoefficient{<:LVCoordinateSystem}, ip::ScalarInterpolation, dofs, qp::QuadraturePoint{ref_shape,T}, t) where {ref_shape,T}
+    x = @MVector zeros(T, 3)
     @inbounds for i in 1:getnbasefunctions(ip)
-        val = Ferrite.shape_value(ip, qp.ξ, i)
+        val = Ferrite.shape_value(ip, qp.ξ, i)::Float64
         x[1] += val * coeff.cs.u_transmural[dofs[i]]
         x[2] += val * coeff.cs.u_apicobasal[dofs[i]]
         x[3] += val * coeff.cs.u_circumferential[dofs[i]]
@@ -108,9 +112,13 @@ function evaluate_coefficient(coeff::CoordinateSystemCoefficient{<:LVCoordinateS
 end
 
 function evaluate_coefficient(coeff::CoordinateSystemCoefficient{<:BiVCoordinateSystem}, cell_cache, qp::QuadraturePoint{ref_shape,T}, t) where {ref_shape,T}
-    x = @MVector zeros(T, 4)
     ip = getcoordinateinterpolation(coeff.cs, getcells(cell_cache.grid, cellid(cell_cache)))
-    dofs = celldofs(coeff.cs.dh, cellid(cell_cache))
+    dofs = celldofsview(coeff.cs.dh, cellid(cell_cache))
+    return _evaluate_coefficient(coeff, ip, dofs, qp, t)
+end
+
+function _evaluate_coefficient(coeff::CoordinateSystemCoefficient{<:BiVCoordinateSystem}, ip::ScalarInterpolation, dofs, qp::QuadraturePoint{ref_shape,T}, t) where {ref_shape,T}
+    x = @MVector zeros(T, 4)
     @inbounds for i in 1:getnbasefunctions(ip)
         val = Ferrite.shape_value(ip, qp.ξ, i)
         x[1] += val * coeff.cs.u_transmural[dofs[i]]

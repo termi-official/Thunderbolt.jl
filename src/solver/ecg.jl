@@ -43,19 +43,19 @@ end
 function Plonsey1964ECGGaussCache(dh::DofHandler, op::AssembledBilinearOperator, φₘ)
     @assert length(dh.subdofhandlers) == 1 "TODO subdomain support"
     @assert length(dh.subdofhandlers[1].field_interpolations) == 1 "Problem setup might be broken..."
-    sdim = Ferrite.getdim(dh.grid)
     # TODO https://github.com/Ferrite-FEM/Ferrite.jl/pull/806 maybe?
     ip = dh.subdofhandlers[1].field_interpolations[1]
     # TODO QVector
     qr = op.element_cache.cellvalues.qr
-    κ∇φₘ = zeros(Vec{sdim}, getnquadpoints(qr), getncells(dh.grid))
+    grid = Ferrite.get_grid(dh)
+    κ∇φₘ = zeros(Ferrite.get_coordinate_type(grid), getnquadpoints(qr), getncells(dh.grid))
     cv = CellValues(qr, ip)
     _compute_quadrature_fluxes!(κ∇φₘ,dh,cv,φₘ,op.element_cache.integrator.D) # Function barrier
     Plonsey1964ECGGaussCache(κ∇φₘ, cv, dh.grid)
 end
 
-function Plonsey1964ECGGaussCache(problem::SplitProblem{<:TransientHeatProblem}, op::AssembledBilinearOperator, φₘ)
-    @unpack dh = problem.A
+function Plonsey1964ECGGaussCache(problem::OperatorSplittingProblem, op::AssembledBilinearOperator, φₘ)
+    @unpack dh = get_operator(problem.f, 1)
     Plonsey1964ECGGaussCache(dh, op, φₘ)
 end
 

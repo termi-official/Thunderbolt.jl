@@ -1,46 +1,55 @@
-abstract type AbstractPointwiseSolver end
-abstract type AbstractPointwiseSolverCache end
+abstract type AbstractPointwiseSolver <: AbstractSolver end
+abstract type AbstractPointwiseSolverCache <: AbstractTimeSolverCache end
+
+# Redirect to inner solve
+function perform_step!(f::PointwiseODEFunction, cache::AbstractPointwiseSolverCache, t::Float64, Δt::Float64)
+    perform_step!(f.ode, t, Δt, cache)
+end
 
 struct ForwardEulerCellSolver <: AbstractPointwiseSolver
 end
 
-mutable struct ForwardEulerCellSolverCache{VT, MT} <: AbstractPointwiseSolverCache
-    du::VT
-    #TODO merge into a helper vector
-    uₙ::VT
-    sₙ::MT
+mutable struct ForwardEulerCellSolverCache{uType, duType} <: AbstractPointwiseSolverCache
+    du::duType
+    uₙ::uType
+    uₙ₋₁::uType
 end
 
-function perform_step!(cell_model::ION, t::Float64, Δt::Float64, solver_cache::ForwardEulerCellSolverCache{VT}) where {VT, ION <: AbstractIonicModel}
+function perform_step!(cell_model::AbstractIonicModel, t::Float64, Δt::Float64, solver_cache::ForwardEulerCellSolverCache)
     # Eval buffer
-    @unpack du, uₙ, sₙ = solver_cache
+    @unpack du, uₙ = solver_cache
+
+    ndofs_local = 1+num_states(cell_model)
+    npoints = length(uₙ)÷ndofs_local
+    u_matrix = reshape(uₙ, (npoints,ndofs_local))
 
     # TODO formulate as a kernel for GPU
-    for i ∈ 1:length(uₙ)
-        @inbounds φₘ_cell = uₙ[i]
-        @inbounds s_cell  = @view sₙ[i,:]
+    for i ∈ 1:npoints
+        u_local = @view u_matrix[i, :]
+        # TODO this should happen in rhs call below
+        @inbounds φₘ_cell = u_local[1]
+        @inbounds s_cell  = @view u_local[2:end]
 
         # #TODO get x and Cₘ
         cell_rhs!(du, φₘ_cell, s_cell, nothing, t, cell_model)
 
-        @inbounds uₙ[i] = φₘ_cell + Δt*du[1]
+        @inbounds u_local[1] = φₘ_cell + Δt*du[1]
 
         # # Non-allocating assignment
         @inbounds for j ∈ 1:num_states(cell_model)
-            sₙ[i,j] = s_cell[j] + Δt*du[j+1]
+            u_local[1+j] = s_cell[j] + Δt*du[j+1]
         end
     end
 
     return true
 end
 
-# TODO decouple the concept ForwardEuler from "CellProblem"
-function setup_solver_caches(problem, solver::ForwardEulerCellSolver, t₀)
-    @unpack npoints = problem # TODO what is a good abstraction layer over this?
+function setup_solver_cache(f::PointwiseODEFunction, solver::ForwardEulerCellSolver, t₀)
+    @unpack npoints = f
     return ForwardEulerCellSolverCache(
-        zeros(1+num_states(problem.ode)),
-        zeros(npoints),
-        zeros(npoints, num_states(problem.ode))
+        zeros(1+num_states(f.ode)),
+        zeros(npoints*(num_states(f.ode)+1)),
+        zeros(npoints*(num_states(f.ode)+1)),
     )
 end
 
@@ -49,7 +58,7 @@ Base.@kwdef struct AdaptiveForwardEulerReactionSubCellSolver{T} <: AbstractPoint
     reaction_threshold::T = 0.1
 end
 
-struct AdaptiveForwardEulerReactionSubCellSolverCache{VT, T} <: AbstractPointwiseSolverCache
+struct AdaptiveForwardEulerReactionSubCellSolverCache{T, VT <: AbstractVector{T}} <: AbstractPointwiseSolverCache
     uₙ::VT
     sₙ::VT
     du::VT
@@ -57,7 +66,7 @@ struct AdaptiveForwardEulerReactionSubCellSolverCache{VT, T} <: AbstractPointwis
     reaction_threshold::T
 end
 
-function perform_step!(cell_model::ION, t::Float64, Δt::Float64, cache::AdaptiveForwardEulerReactionSubCellSolverCache{VT,T}) where {VT, T, ION <: AbstractIonicModel}
+function perform_step!(cell_model::AbstractIonicModel, t::Real, Δt::Real, cache::AdaptiveForwardEulerReactionSubCellSolverCache)
     @unpack uₙ, sₙ, du = cache
 
     # TODO formulate as a kernel for GPU
@@ -116,10 +125,10 @@ end
 #     scratch::Vector{CacheType}
 # end
 
-# function setup_solver_caches(problem, solver::ThreadedCellSolver{InnerSolverType}, t₀) where {InnerSolverType}
-#     @unpack npoints = problem # TODO what is a good abstraction layer over this?
+# function setup_solver_cache(f, solver::ThreadedCellSolver{InnerSolverType}, t₀) where {InnerSolverType}
+#     @unpack npoints = f # TODO what is a good abstraction layer over this?
 #     return ThreadedCellSolverCache(
-#         [setup_solver_caches(problem, solver.inner_solver, t₀) for i ∈ 1:solver.cells_per_thread]
+#         [setup_solver_cache(f, solver.inner_solver, t₀) for i ∈ 1:solver.cells_per_thread]
 #     )
 # end
 
@@ -133,25 +142,6 @@ end
 #             perform_step!(tuₙ, tsₙ, cell_model, t, Δt, tcache)
 #         end
 #     end
-# end
-
-# # TODO better abstraction layer
-# function setup_solver_caches(problem::SplitProblem{APT, BPT}, solver::LTGOSSolver{BackwardEulerSolver,BST}, t₀) where {APT <: TransientHeatProblem,BPT,BST}
-#     cache = LTGOSSolverCache(
-#         setup_solver_caches(problem.A, solver.A_solver, t₀),
-#         setup_solver_caches(problem.B, solver.B_solver, t₀),
-#     )
-#     cache.B_solver_cache.uₙ = cache.A_solver_cache.uₙ
-#     return cache
-# end
-
-# function setup_solver_caches(problem::SplitProblem{APT, BPT}, solver::LTGOSSolver{AST,BackwardEulerSolver}, t₀) where {APT,BPT <: TransientHeatProblem,AST}
-#     cache = LTGOSSolverCache(
-#         setup_solver_caches(problem.A, solver.A_solver, t₀),
-#         setup_solver_caches(problem.B, solver.B_solver, t₀),
-#     )
-#     cache.B_solver_cache.uₙ = cache.A_solver_cache.uₙ
-#     return cache
 # end
 
 # TODO fix the one above somehow
@@ -191,23 +181,12 @@ function perform_step!(cell_model::ION, t::Float64, Δt::Float64, solver_cache::
     return true
 end
 
-# TODO decouple the concept ForwardEuler from "CellProblem"
-function setup_solver_caches(problem, solver::ThreadedForwardEulerCellSolver, t₀)
-    @unpack npoints = problem # TODO what is a good abstraction layer over this?
+function setup_solver_cache(f::PointwiseODEFunction, solver::ThreadedForwardEulerCellSolver, t₀)
+    @unpack npoints = f # TODO what is a good abstraction layer over this?
     return ThreadedForwardEulerCellSolverCache(
-        zeros(1+num_states(problem.ode)),
+        zeros(1+num_states(f.ode)),
         zeros(npoints),
-        zeros(npoints, num_states(problem.ode)),
+        zeros(npoints, num_states(f.ode)),
         solver.num_cells_per_batch
     )
-end
-
-struct RushLarsenSolver
-end
-
-struct RushLarsenSolverCache
-end
-
-function setup_solver_caches(problem::PartitionedProblem{APT, BPT}, solver::RushLarsenSolver) where {APT,BPT}
-    return RushLarsenSolverCache()
 end

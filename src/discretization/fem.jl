@@ -18,6 +18,7 @@ struct FiniteElementDiscretization
     end
 end
 
+semidiscretize(::CoupledModel, discretization, grid) = @error "No implementation for the generic discretization of coupled problems available yet."
 
 function semidiscretize(split::ReactionDiffusionSplit{<:MonodomainModel}, discretization::FiniteElementDiscretization, grid::AbstractGrid)
     epmodel = split.model
@@ -25,36 +26,47 @@ function semidiscretize(split::ReactionDiffusionSplit{<:MonodomainModel}, discre
     ets = elementtypes(grid)
     @assert length(ets) == 1
 
+    # TODO factor this out to make a isolated transient heat problem and call semidiscretize here. This should simplify testing.
     ip = getinterpolation(discretization.interpolations[:φₘ], getcells(grid, 1))
     dh = DofHandler(grid)
-    Ferrite.add!(dh, :ϕₘ, ip)
+    Ferrite.add!(dh, :φₘ, ip)
     close!(dh);
-
+    heatfun = TransientHeatFunction(
+        ConductivityToDiffusivityCoefficient(epmodel.κ, epmodel.Cₘ, epmodel.χ),
+        epmodel.stim,
+        dh
+    )
+    ndofsφ = ndofs(dh)
+    heat_dofrange = 1:ndofsφ
+    # TODO we need some information about the discretization of this one, e.g. dofs a nodes vs dofs at quadrature points
+    # TODO we should call semidiscretize here too
+    odefun = PointwiseODEFunction(
+        # TODO epmodel.Cₘ(x) and coordinates
+        ndofs(dh),
+        epmodel.ion
+    )
+    # TODO This is a faulty assumption. We can have varying ndofs per cell.
+    nstates_per_cell = num_states(odefun.ode)
+    # TODO this assumes that the transmembrane potential is the first field. Relax this.
+    ode_dofrange = 1:(1+nstates_per_cell)*ndofsφ
     #
-    semidiscrete_problem = SplitProblem(
-        TransientHeatProblem(
-            ConductivityToDiffusivityCoefficient(epmodel.κ, epmodel.Cₘ, epmodel.χ),
-            epmodel.stim,
-            dh
-        ),
-        PointwiseODEProblem(
-            # TODO epmodel.Cₘ(x) and coordinates
-            ndofs(dh),
-            epmodel.ion
-        )
+    semidiscrete_ode = GenericSplitFunction(
+        (heatfun, odefun),
+        (heat_dofrange, ode_dofrange),
+        # No transfer operators needed, because the the solutions variables overlap with the subproblems perfectly
     )
 
-    return semidiscrete_problem
+    return semidiscrete_ode
 end
 
 function semidiscretize(model::StructuralModel{<:QuasiStaticModel}, discretization::FiniteElementDiscretization, grid::AbstractGrid)
     ets = elementtypes(grid)
     @assert length(ets) == 1 "Multiple elements not supported yet."
 
-    ip = getinterpolation(discretization.interpolations[:displacement], getcells(grid, 1))
+    ip = getinterpolation(discretization.interpolations[model.displacement_symbol], getcells(grid, 1))
     ip_geo = Ferrite.default_geometric_interpolation(ip) # TODO get interpolation from cell
     dh = DofHandler(grid)
-    Ferrite.add!(dh, :displacement, ip)
+    Ferrite.add!(dh, model.displacement_symbol, ip)
     close!(dh);
 
     ch = ConstraintHandler(dh)
@@ -63,35 +75,11 @@ function semidiscretize(model::StructuralModel{<:QuasiStaticModel}, discretizati
     end
     close!(ch)
 
-    semidiscrete_problem = QuasiStaticNonlinearProblem(
+    semidiscrete_problem = QuasiStaticNonlinearFunction(
         dh,
         ch,
         model.mechanical_model,
-        model.face_models,
-    )
-
-    return semidiscrete_problem
-end
-
-function semidiscretize(split::ReggazoniSalvadorAfricaSplit, discretization::FiniteElementDiscretization, grid::AbstractGrid)
-    ets = elementtypes(grid)
-    @assert length(ets) == 1 "Multiple element types not supported"
-    @assert length(discretization.dbcs) == 0 "Dirichlet elimination is not supported yet."
-    @assert length(split.model.base_models) == 2 "I can only handle pure mechanics coupled to pure circuit."
-
-    semidiscrete_problem = SplitProblem(
-        CoupledProblem( # Recouple mechanical problem with dummy to introduce the coupling!
-            (
-                semidiscretize(split.model.base_models[1], discretization, grid),
-                NullProblem(1) # 1 coupling dof (chamber pressure)
-            ),
-            split.model.couplers
-        ),
-        ODEProblem(
-            split.model.base_models[2],
-            (du,u,t,pₗᵥ) -> lumped_driver_lv!(du, u, t, pₗᵥ[1], split.model.base_models[2]),
-            [0.0] #pₗᵥ TODO better design
-        )
+        model.face_models
     )
 
     return semidiscrete_problem

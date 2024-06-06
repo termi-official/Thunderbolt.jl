@@ -33,7 +33,7 @@ function create_face_center_node(grid::AbstractGrid{dim}, cell::LinearCellGeomet
     return Node(center)
 end
 
-function refine_element_uniform(mgrid::SimpleMesh3D, cell::Hexahedron, cell_idx::Int, global_edge_indices, global_face_indices)
+function refine_element_uniform(mgrid::SimpleMesh, cell::Hexahedron, cell_idx::Int, global_edge_indices, global_face_indices)
     # Compute offsets
     new_edge_offset = num_nodes(mgrid)
     new_face_offset = num_edges(mgrid) + new_edge_offset
@@ -83,46 +83,46 @@ end
 function hexahedralize_local_face_transfer(cell::Hexahedron, offset::Int, faceid::Int)
     # TODO extract the topology table for this one, because we also need it for AMR
     if faceid == 1
-        return Set([
-            FaceIndex(offset+1,1),
-            FaceIndex(offset+2,1),
-            FaceIndex(offset+3,1),
-            FaceIndex(offset+4,1),
+        return OrderedSet([
+            FacetIndex(offset+1,1),
+            FacetIndex(offset+2,1),
+            FacetIndex(offset+3,1),
+            FacetIndex(offset+4,1),
         ])
     elseif faceid == 2
-        return Set([
-            FaceIndex(offset+1,2),
-            FaceIndex(offset+2,2),
-            FaceIndex(offset+5,2),
-            FaceIndex(offset+6,2),
+        return OrderedSet([
+            FacetIndex(offset+1,2),
+            FacetIndex(offset+2,2),
+            FacetIndex(offset+5,2),
+            FacetIndex(offset+6,2),
         ])
     elseif faceid == 3
-        return Set([
-            FaceIndex(offset+2,3),
-            FaceIndex(offset+4,3),
-            FaceIndex(offset+6,3),
-            FaceIndex(offset+8,3),
+        return OrderedSet([
+            FacetIndex(offset+2,3),
+            FacetIndex(offset+4,3),
+            FacetIndex(offset+6,3),
+            FacetIndex(offset+8,3),
         ])
     elseif faceid == 4
-        return Set([
-            FaceIndex(offset+3,4),
-            FaceIndex(offset+4,4),
-            FaceIndex(offset+7,4),
-            FaceIndex(offset+8,4),
+        return OrderedSet([
+            FacetIndex(offset+3,4),
+            FacetIndex(offset+4,4),
+            FacetIndex(offset+7,4),
+            FacetIndex(offset+8,4),
         ])
     elseif faceid == 5
-        return Set([
-            FaceIndex(offset+1,5),
-            FaceIndex(offset+3,5),
-            FaceIndex(offset+5,5),
-            FaceIndex(offset+7,5),
+        return OrderedSet([
+            FacetIndex(offset+1,5),
+            FacetIndex(offset+3,5),
+            FacetIndex(offset+5,5),
+            FacetIndex(offset+7,5),
         ])
     elseif faceid == 6
-        return Set([
-            FaceIndex(offset+5,6),
-            FaceIndex(offset+6,6),
-            FaceIndex(offset+7,6),
-            FaceIndex(offset+8,6),
+        return OrderedSet([
+            FacetIndex(offset+5,6),
+            FacetIndex(offset+6,6),
+            FacetIndex(offset+7,6),
+            FacetIndex(offset+8,6),
         ])
     else
         error("Invalid face $faceid for Hexahedron")
@@ -131,9 +131,9 @@ end
 
 
 # Hex into 8 hexahedra
-hexahedralize_cell(mgrid::SimpleMesh3D, cell::Hexahedron, cell_idx::Int, global_edge_indices, global_face_indices) = refine_element_uniform(mgrid, cell, cell_idx, global_edge_indices, global_face_indices)
+hexahedralize_cell(mgrid::SimpleMesh, cell::Hexahedron, cell_idx::Int, global_edge_indices, global_face_indices) = refine_element_uniform(mgrid, cell, cell_idx, global_edge_indices, global_face_indices)
 
-function hexahedralize_cell(mgrid::SimpleMesh3D, cell::Wedge, cell_idx::Int, global_edge_indices, global_face_indices)
+function hexahedralize_cell(mgrid::SimpleMesh, cell::Wedge, cell_idx::Int, global_edge_indices, global_face_indices)
     # Compute offsets
     new_edge_offset = num_nodes(mgrid)
     new_face_offset = new_edge_offset+num_edges(mgrid)
@@ -175,37 +175,37 @@ end
 function hexahedralize_local_face_transfer(cell::Wedge, offset::Int, faceid::Int)
     # TODO extract the topology table for this one, because we also need it for AMR
     if faceid == 1
-        return Set([
-            FaceIndex(offset+1,1),
-            FaceIndex(offset+2,1),
-            FaceIndex(offset+3,1),
+        return OrderedSet([
+            FacetIndex(offset+1,1),
+            FacetIndex(offset+2,1),
+            FacetIndex(offset+3,1),
         ])
     elseif faceid == 2
-        return Set([
-            FaceIndex(offset+1,2),
-            FaceIndex(offset+2,2),
-            FaceIndex(offset+4,2),
-            FaceIndex(offset+5,2),
+        return OrderedSet([
+            FacetIndex(offset+1,2),
+            FacetIndex(offset+2,2),
+            FacetIndex(offset+4,2),
+            FacetIndex(offset+5,2),
         ])
     elseif faceid == 3
-        return Set([
-            FaceIndex(offset+1,5),
-            FaceIndex(offset+3,4),
-            FaceIndex(offset+4,5),
-            FaceIndex(offset+6,4),
+        return OrderedSet([
+            FacetIndex(offset+1,5),
+            FacetIndex(offset+3,4),
+            FacetIndex(offset+4,5),
+            FacetIndex(offset+6,4),
         ])
     elseif faceid == 4
-        return Set([
-            FaceIndex(offset+2,3),
-            FaceIndex(offset+3,3),
-            FaceIndex(offset+5,3),
-            FaceIndex(offset+6,3),
+        return OrderedSet([
+            FacetIndex(offset+2,3),
+            FacetIndex(offset+3,3),
+            FacetIndex(offset+5,3),
+            FacetIndex(offset+6,3),
         ])
     elseif faceid == 5
-        return Set([
-            FaceIndex(offset+4,6),
-            FaceIndex(offset+5,6),
-            FaceIndex(offset+6,6),
+        return OrderedSet([
+            FacetIndex(offset+4,6),
+            FacetIndex(offset+5,6),
+            FacetIndex(offset+6,6),
         ])
     else
         error("Invalid face $faceid for Wedge")
@@ -234,7 +234,7 @@ function uniform_refinement(grid::Grid{3,C,T}) where {C,T}
         for (edgeidx,gei) ∈ enumerate(global_edge_indices)
             new_edge_nodes[gei] = create_edge_center_node(grid, cell, edgeidx)
         end
-        # Face center nodes
+        # Facet center nodes
         global_face_indices = global_faces(mgrid, cell)
         for (faceidx,gfi) ∈ enumerate(global_face_indices)
             new_face_nodes[gfi] = create_face_center_node(grid, cell, faceidx)
@@ -279,18 +279,18 @@ function hexahedralize(grid::Grid{3,<:Any,T}) where {T}
 
     # TODO boundary sets
     !isempty(grid.vertexsets) && warn("Vertexsets are not transfered to new mesh!")
-    !isempty(grid.edgesets) && warn("Edgesets are not transfered to new mesh!")
+    # !isempty(grid.edgesets) && warn("Edgesets are not transfered to new mesh!")
 
-    new_facesets = Dict{String, Set{FaceIndex}}()
-    for (setname,faceset) ∈ grid.facesets
-        new_facesets[setname] = Set{FaceIndex}()
-        for (cellidx,lfi) ∈ faceset
+    new_facetsets = Dict{String, OrderedSet{FacetIndex}}()
+    for (setname,facetset) ∈ grid.facetsets
+        new_facetsets[setname] = OrderedSet{FacetIndex}()
+        for (cellidx,lfi) ∈ facetset
             for f ∈ hexahedralize_local_face_transfer(grid.cells[cellidx], cell_offsets[cellidx], lfi)
-                push!(new_facesets[setname], f)
+                push!(new_facetsets[setname], f)
             end
         end
     end
-    return Grid(new_cells, [grid.nodes; new_edge_nodes; new_face_nodes; new_cell_nodes]; facesets=new_facesets, nodesets=deepcopy(grid.nodesets))
+    return Grid(new_cells, [grid.nodes; new_edge_nodes; new_face_nodes; new_cell_nodes]; facetsets=new_facetsets, nodesets=deepcopy(grid.nodesets))
 end
 
 function compute_minΔx(grid::Grid{dim, CT, DT}) where {dim, CT, DT}
@@ -428,7 +428,7 @@ function load_mfem_mesh(filename)
         ne = parse(Int64, strip(readline(file)))
         @info "number of elements=$ne"
         elements = Vector{Ferrite.AbstractCell}(undef, ne)
-        domains = Dict{String,Set{Int}}()
+        domains = Dict{String,OrderedSet{Int}}()
         for ei in 1:ne
             line = parse.(Int64,split(strip(readline(file))))
             etype = line[2]
@@ -455,7 +455,7 @@ function load_mfem_mesh(filename)
 
             attr = line[1]
             if !haskey(domains, "$attr")
-                domains["$attr"] = Set{Int}()
+                domains["$attr"] = OrderedSet{Int}()
             end
             push!(domains["$attr"], ei)
         end
@@ -484,7 +484,7 @@ end
 
 function load_carp_elements(filename)
     elements = Vector{Ferrite.AbstractCell}()
-    domains = Dict{String,Set{Int}}()
+    domains = Dict{String,OrderedSet{Int}}()
 
     open(filename, "r") do file
         # First line has format number of elements as Int and 2 more integers
@@ -534,7 +534,7 @@ function load_carp_elements(filename)
 
             attr === nothing && continue # no attribute available
             if !haskey(domains, "$attr")
-                domains["$attr"] = Set{Int}()
+                domains["$attr"] = OrderedSet{Int}()
             end
             push!(domains["$attr"], ei)
         end
