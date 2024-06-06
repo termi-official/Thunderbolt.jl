@@ -179,7 +179,6 @@ function solve!(u, problem, solver_cache::NewtonRaphsonSolverCache, t)
 
         @timeit_debug "elimination" eliminate_constraints_from_linearization!(solver_cache, problem)
         residualnorm = residual_norm(solver_cache, problem)
-        @show residualnorm
         if residualnorm < solver_cache.parameters.tol
             break
         elseif newton_itr > solver_cache.parameters.max_iter
