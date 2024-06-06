@@ -34,22 +34,22 @@ end
 
 
 
-struct EmtpyFaceCache
+struct EmtpyFacetCache
 end
 
-assemble_face!(Kₑ::Matrix, residualₑ, uₑ, cell, local_face_index, face_caches::EmtpyFaceCache, time) = nothing
-assemble_face!(Kₑ::Matrix, uₑ, cell, local_face_index, face_caches::EmtpyFaceCache, time) = nothing
+assemble_face!(Kₑ::Matrix, residualₑ, uₑ, cell, local_face_index, face_caches::EmtpyFacetCache, time) = nothing
+assemble_face!(Kₑ::Matrix, uₑ, cell, local_face_index, face_caches::EmtpyFacetCache, time) = nothing
 
 
 
-function setup_boundary_cache(boundary_models::Union{<:Tuple,<:AbstractVector}, qr::FaceQuadratureRule, ip, ip_geo)
-    length(boundary_models) == 0 && return EmtpyFaceCache()
+function setup_boundary_cache(boundary_models::Union{<:Tuple,<:AbstractVector}, qr::FacetQuadratureRule, ip, ip_geo)
+    length(boundary_models) == 0 && return EmtpyFacetCache()
     return ntuple(i->setup_boundary_cache(boundary_models[i], qr, ip, ip_geo), length(boundary_models))
 end
 
 function assemble_face!(Kₑ::Matrix, uₑ, cell, local_face_index, face_caches::Tuple, time)
     for face_cache ∈ face_caches
-        if (cellid(cell), local_face_index) ∈ getfaceset(cell.grid, getboundaryname(face_cache))
+        if (cellid(cell), local_face_index) ∈ getfacetset(cell.grid, getboundaryname(face_cache))
             assemble_face!(Kₑ, uₑ, cell, local_face_index, face_cache, time)
         end
     end
@@ -57,7 +57,7 @@ end
 
 function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, cell, local_face_index, face_caches::Tuple, time)
     for face_cache ∈ face_caches
-        if (cellid(cell), local_face_index) ∈ getfaceset(cell.grid, getboundaryname(face_cache))
+        if (cellid(cell), local_face_index) ∈ getfacetset(cell.grid, getboundaryname(face_cache))
             assemble_face!(Kₑ, residualₑ, uₑ, cell, local_face_index, face_cache, time)
         end
     end
@@ -65,19 +65,19 @@ end
 
 
 
-struct SimpleFaceCache{MP, FV}
+struct SimpleFacetCache{MP, FV}
     mp::MP
     fv::FV
 end
 
-getboundaryname(face_cache::SimpleFaceCache) = face_cache.mp.boundary_name
+getboundaryname(face_cache::SimpleFacetCache) = face_cache.mp.boundary_name
 
-function setup_boundary_cache(face_model, qr::FaceQuadratureRule, ip, ip_geo)
-    return SimpleFaceCache(face_model, FaceValues(qr, ip, ip_geo))
+function setup_boundary_cache(face_model, qr::FacetQuadratureRule, ip, ip_geo)
+    return SimpleFacetCache(face_model, FacetValues(qr, ip, ip_geo))
 end
 
 
-function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, cell, local_face_index::Int, cache::SimpleFaceCache{<:RobinBC}, time)
+function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, cell, local_face_index::Int, cache::SimpleFacetCache{<:RobinBC}, time)
     @unpack mp, fv = cache
     @unpack α = mp
 
@@ -105,7 +105,7 @@ function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, cell, local_face_index:
     end
 end
 
-function assemble_face!(Kₑ::Matrix, uₑ, cell, local_face_index, cache::SimpleFaceCache{<:RobinBC}, time)
+function assemble_face!(Kₑ::Matrix, uₑ, cell, local_face_index, cache::SimpleFacetCache{<:RobinBC}, time)
     @unpack mp, fv = cache
     @unpack α = mp
 
@@ -134,7 +134,7 @@ end
 
 
 
-function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, cell, local_face_index, cache::SimpleFaceCache{<:NormalSpringBC}, time)
+function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, cell, local_face_index, cache::SimpleFacetCache{<:NormalSpringBC}, time)
     @unpack mp, fv = cache
     @unpack kₛ = mp
 
@@ -162,7 +162,7 @@ function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, cell, local_face_index,
     end
 end
 
-function assemble_face!(Kₑ::Matrix, uₑ, cell, local_face_index, cache::SimpleFaceCache{<:NormalSpringBC}, time)
+function assemble_face!(Kₑ::Matrix, uₑ, cell, local_face_index, cache::SimpleFacetCache{<:NormalSpringBC}, time)
     @unpack mp, fv = cache
     @unpack kₛ = mp
 
@@ -191,7 +191,7 @@ end
 
 
 
-function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, cell, local_face_index, cache::SimpleFaceCache{<:BendingSpringBC}, time)
+function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, cell, local_face_index, cache::SimpleFacetCache{<:BendingSpringBC}, time)
     @unpack mp, fv = cache
     @unpack kᵇ = mp
 
@@ -222,7 +222,7 @@ function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, cell, local_face_index,
     end
 end
 
-function assemble_face!(Kₑ::Matrix, uₑ, cell, local_face_index, cache::SimpleFaceCache{<:BendingSpringBC}, time)
+function assemble_face!(Kₑ::Matrix, uₑ, cell, local_face_index, cache::SimpleFacetCache{<:BendingSpringBC}, time)
     @unpack mp, fv = cache
     @unpack kᵇ = mp
 
@@ -254,7 +254,7 @@ end
 
 
 
-function assemble_face_pressure_qp!(Kₑ, residualₑ, uₑ, p, qp, fv::FaceValues)
+function assemble_face_pressure_qp!(Kₑ, residualₑ, uₑ, p, qp, fv::FacetValues)
     ndofs_face = getnbasefunctions(fv)
 
     dΓ = getdetJdV(fv, qp)
@@ -285,7 +285,7 @@ function assemble_face_pressure_qp!(Kₑ, residualₑ, uₑ, p, qp, fv::FaceValu
     end
 end
 
-function assemble_face_pressure_qp!(Kₑ, uₑ, p, qp, fv::FaceValues)
+function assemble_face_pressure_qp!(Kₑ, uₑ, p, qp, fv::FacetValues)
     ndofs_face = getnbasefunctions(fv)
 
     dΓ = getdetJdV(fv, qp)
@@ -315,7 +315,7 @@ function assemble_face_pressure_qp!(Kₑ, uₑ, p, qp, fv::FaceValues)
     end
 end
 
-function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, cell, local_face_index, cache::SimpleFaceCache{<:PressureFieldBC}, time)
+function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, cell, local_face_index, cache::SimpleFacetCache{<:PressureFieldBC}, time)
     @unpack mp, fv = cache
     @unpack pc = mp
 
@@ -327,7 +327,7 @@ function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, cell, local_face_index,
     end
 end
 
-function assemble_face!(Kₑ::Matrix, uₑ, cell, local_face_index, cache::SimpleFaceCache{<:PressureFieldBC}, time)
+function assemble_face!(Kₑ::Matrix, uₑ, cell, local_face_index, cache::SimpleFacetCache{<:PressureFieldBC}, time)
     @unpack mp, fv = cache
     @unpack pc = mp
 
@@ -342,7 +342,7 @@ end
 
 
 
-function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, cell, local_face_index, cache::SimpleFaceCache{<:ConstantPressureBC}, time)
+function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, cell, local_face_index, cache::SimpleFacetCache{<:ConstantPressureBC}, time)
     @unpack mp, fv = cache
     @unpack p = mp
 
@@ -354,7 +354,7 @@ function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, cell, local_face_index,
 end
 
 
-function assemble_face!(Kₑ::Matrix, uₑ, cell, local_face_index, cache::SimpleFaceCache{<:ConstantPressureBC}, time)
+function assemble_face!(Kₑ::Matrix, uₑ, cell, local_face_index, cache::SimpleFacetCache{<:ConstantPressureBC}, time)
     @unpack mp, fv = cache
     @unpack p = mp
 

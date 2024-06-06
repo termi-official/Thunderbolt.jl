@@ -101,7 +101,7 @@ for (u, t) in OS.TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
         for cell ∈ CellIterator(sdh)
             cv = Thunderbolt.getcellvalues(cvc, getcells(grid, cellid(cell)))
 
-            reinit!(cv, cell)
+            Thunderbolt.reinit!(cv, cell)
             global_dofs = celldofs(cell)
             field_dofs  = dof_range(sdh, field_idx)
             uₑ = u[global_dofs] # element dofs
@@ -188,19 +188,19 @@ for (u, t) in OS.TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
     end
 
     # Save the solution
-    Thunderbolt.store_timestep!(io, t, dh.grid)
-    Thunderbolt.store_timestep_field!(io, t, dh, u, :displacement)
-    # TODo replace by "dump coefficient" function
-    Thunderbolt.store_timestep_celldata!(io, t, hcat(fdata...),"Current Fiber Data")
-    Thunderbolt.store_timestep_celldata!(io, t, hcat(sdata...),"Current Sheet Data")
-    Thunderbolt.store_timestep_celldata!(io, t, E_ff,"E_ff")
-    Thunderbolt.store_timestep_celldata!(io, t, E_cc,"E_cc")
-    Thunderbolt.store_timestep_celldata!(io, t, E_rr,"E_rr")
-    Thunderbolt.store_timestep_celldata!(io, t, E_ll,"E_ll")
-    Thunderbolt.store_timestep_celldata!(io, t, Jdata,"J")
-    Thunderbolt.store_timestep_celldata!(io, t, rad2deg.(helixangledata),"Helix Angle")
-    Thunderbolt.store_timestep_celldata!(io, t, rad2deg.(helixanglerefdata),"Helix Angle (End Diastole)")
-    Thunderbolt.finalize_timestep!(io, t)
+    Thunderbolt.store_timestep!(io, t, dh.grid) do file
+        Thunderbolt.store_timestep_field!(io, t, dh, u, :displacement)
+        # TODo replace by "dump coefficient" function
+        Thunderbolt.store_timestep_celldata!(io, t, hcat(fdata...),"Current Fiber Data")
+        Thunderbolt.store_timestep_celldata!(io, t, hcat(sdata...),"Current Sheet Data")
+        Thunderbolt.store_timestep_celldata!(io, t, E_ff,"E_ff")
+        Thunderbolt.store_timestep_celldata!(io, t, E_cc,"E_cc")
+        Thunderbolt.store_timestep_celldata!(io, t, E_rr,"E_rr")
+        Thunderbolt.store_timestep_celldata!(io, t, E_ll,"E_ll")
+        Thunderbolt.store_timestep_celldata!(io, t, Jdata,"J")
+        Thunderbolt.store_timestep_celldata!(io, t, rad2deg.(helixangledata),"Helix Angle")
+        Thunderbolt.store_timestep_celldata!(io, t, rad2deg.(helixanglerefdata),"Helix Angle (End Diastole)")
+    end
 end
 TimerOutputs.print_timer()
 TimerOutputs.disable_debug_timings(Thunderbolt)

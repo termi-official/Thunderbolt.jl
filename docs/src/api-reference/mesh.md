@@ -5,8 +5,7 @@ DocTestSetup = :(using Thunderbolt)
 # Mesh
 
 ```@docs
-Thunderbolt.SimpleMesh2D
-Thunderbolt.SimpleMesh3D
+Thunderbolt.SimpleMesh
 Thunderbolt.to_mesh
 Thunderbolt.elementtypes
 ```

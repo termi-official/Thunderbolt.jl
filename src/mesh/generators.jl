@@ -35,28 +35,28 @@ function generate_ring_mesh(num_elements_circumferential::Int, num_elements_radi
 
     # Cell faces
     cell_array = reshape(collect(1:ne_tot),(num_elements_circumferential, num_elements_radial, num_elements_logintudinal))
-    boundary = FaceIndex[[FaceIndex(cl, 1) for cl in cell_array[:,:,1][:]];
-                            [FaceIndex(cl, 2) for cl in cell_array[:,1,:][:]];
-                            #[FaceIndex(cl, 3) for cl in cell_array[end,:,:][:]];
-                            [FaceIndex(cl, 4) for cl in cell_array[:,end,:][:]];
-                            #[FaceIndex(cl, 5) for cl in cell_array[1,:,:][:]];
-                            [FaceIndex(cl, 6) for cl in cell_array[:,:,end][:]]]
+    boundary = FacetIndex[[FacetIndex(cl, 1) for cl in cell_array[:,:,1][:]];
+                            [FacetIndex(cl, 2) for cl in cell_array[:,1,:][:]];
+                            #[FacetIndex(cl, 3) for cl in cell_array[end,:,:][:]];
+                            [FacetIndex(cl, 4) for cl in cell_array[:,end,:][:]];
+                            #[FacetIndex(cl, 5) for cl in cell_array[1,:,:][:]];
+                            [FacetIndex(cl, 6) for cl in cell_array[:,:,end][:]]]
 
     # Cell face sets
     offset = 0
-    facesets = Dict{String,Set{FaceIndex}}()
-    facesets["Myocardium"] = Set{FaceIndex}(boundary[(1:length(cell_array[:,:,1][:]))   .+ offset]); offset += length(cell_array[:,:,1][:])
-    facesets["Endocardium"]  = Set{FaceIndex}(boundary[(1:length(cell_array[:,1,:][:]))   .+ offset]); offset += length(cell_array[:,1,:][:])
-    facesets["Epicardium"]   = Set{FaceIndex}(boundary[(1:length(cell_array[:,end,:][:])) .+ offset]); offset += length(cell_array[:,end,:][:])
-    facesets["Base"]    = Set{FaceIndex}(boundary[(1:length(cell_array[:,:,end][:])) .+ offset]); offset += length(cell_array[:,:,end][:])
+    facetsets = Dict{String,OrderedSet{FacetIndex}}()
+    facetsets["Myocardium"]  = OrderedSet{FacetIndex}(boundary[(1:length(cell_array[:,:,1][:]))   .+ offset]); offset += length(cell_array[:,:,1][:])
+    facetsets["Endocardium"] = OrderedSet{FacetIndex}(boundary[(1:length(cell_array[:,1,:][:]))   .+ offset]); offset += length(cell_array[:,1,:][:])
+    facetsets["Epicardium"]  = OrderedSet{FacetIndex}(boundary[(1:length(cell_array[:,end,:][:])) .+ offset]); offset += length(cell_array[:,end,:][:])
+    facetsets["Base"]        = OrderedSet{FacetIndex}(boundary[(1:length(cell_array[:,:,end][:])) .+ offset]); offset += length(cell_array[:,:,end][:])
 
-    nodesets = Dict{String,Set{Int}}()
-    nodesets["MyocardialAnchor1"] = Set{Int}([node_array[1,1,1]])
-    nodesets["MyocardialAnchor2"] = Set{Int}([node_array[1,end,1]])
-    nodesets["MyocardialAnchor3"] = Set{Int}([node_array[ceil(Int,1+n_nodes_c/4),1,1]])
-    nodesets["MyocardialAnchor4"] = Set{Int}([node_array[ceil(Int,1+3*n_nodes_c/4),1,1]])
+    nodesets = Dict{String,OrderedSet{Int}}()
+    nodesets["MyocardialAnchor1"] = OrderedSet{Int}([node_array[1,1,1]])
+    nodesets["MyocardialAnchor2"] = OrderedSet{Int}([node_array[1,end,1]])
+    nodesets["MyocardialAnchor3"] = OrderedSet{Int}([node_array[ceil(Int,1+n_nodes_c/4),1,1]])
+    nodesets["MyocardialAnchor4"] = OrderedSet{Int}([node_array[ceil(Int,1+3*n_nodes_c/4),1,1]])
 
-    return Grid(cells, nodes, facesets=facesets, nodesets=nodesets)
+    return Grid(cells, nodes, facetsets=facetsets, nodesets=nodesets)
 end
 
 
@@ -97,31 +97,31 @@ function generate_open_ring_mesh(num_elements_circumferential::Int, num_elements
 
     # Cell faces
     cell_array = reshape(collect(1:ne_tot),(num_elements_circumferential, num_elements_radial, num_elements_logintudinal))
-    boundary = FaceIndex[[FaceIndex(cl, 1) for cl in cell_array[:,:,1][:]];
-                            [FaceIndex(cl, 2) for cl in cell_array[:,1,:][:]];
-                            [FaceIndex(cl, 3) for cl in cell_array[end,:,:][:]];
-                            [FaceIndex(cl, 4) for cl in cell_array[:,end,:][:]];
-                            [FaceIndex(cl, 5) for cl in cell_array[1,:,:][:]];
-                            [FaceIndex(cl, 6) for cl in cell_array[:,:,end][:]]]
+    boundary = FacetIndex[[FacetIndex(cl, 1) for cl in cell_array[:,:,1][:]];
+                            [FacetIndex(cl, 2) for cl in cell_array[:,1,:][:]];
+                            [FacetIndex(cl, 3) for cl in cell_array[end,:,:][:]];
+                            [FacetIndex(cl, 4) for cl in cell_array[:,end,:][:]];
+                            [FacetIndex(cl, 5) for cl in cell_array[1,:,:][:]];
+                            [FacetIndex(cl, 6) for cl in cell_array[:,:,end][:]]]
 
     # Cell face sets
     offset = 0
-    facesets = Dict{String,Set{FaceIndex}}()
+    facetsets = Dict{String,OrderedSet{FacetIndex}}()
 
-    facesets["Myocardium"] = Set{FaceIndex}(boundary[(1:length(cell_array[:,:,1][:]))   .+ offset]); offset += length(cell_array[:,:,1][:])
-    facesets["Endocardium"]  = Set{FaceIndex}(boundary[(1:length(cell_array[:,1,:][:]))   .+ offset]); offset += length(cell_array[:,1,:][:])
-    facesets["Open1"]  = Set{FaceIndex}(boundary[(1:length(cell_array[end,:,:][:])) .+ offset]); offset += length(cell_array[end,:,:][:])
-    facesets["Epicardium"]   = Set{FaceIndex}(boundary[(1:length(cell_array[:,end,:][:])) .+ offset]); offset += length(cell_array[:,end,:][:])
-    facesets["Open2"]   = Set{FaceIndex}(boundary[(1:length(cell_array[1,:,:][:]))   .+ offset]); offset += length(cell_array[1,:,:][:])
-    facesets["Base"]    = Set{FaceIndex}(boundary[(1:length(cell_array[:,:,end][:])) .+ offset]); offset += length(cell_array[:,:,end][:])
+    facetsets["Myocardium"] = OrderedSet{FacetIndex}(boundary[(1:length(cell_array[:,:,1][:]))   .+ offset]); offset += length(cell_array[:,:,1][:])
+    facetsets["Endocardium"]  = OrderedSet{FacetIndex}(boundary[(1:length(cell_array[:,1,:][:]))   .+ offset]); offset += length(cell_array[:,1,:][:])
+    facetsets["Open1"]  = OrderedSet{FacetIndex}(boundary[(1:length(cell_array[end,:,:][:])) .+ offset]); offset += length(cell_array[end,:,:][:])
+    facetsets["Epicardium"]   = OrderedSet{FacetIndex}(boundary[(1:length(cell_array[:,end,:][:])) .+ offset]); offset += length(cell_array[:,end,:][:])
+    facetsets["Open2"]   = OrderedSet{FacetIndex}(boundary[(1:length(cell_array[1,:,:][:]))   .+ offset]); offset += length(cell_array[1,:,:][:])
+    facetsets["Base"]    = OrderedSet{FacetIndex}(boundary[(1:length(cell_array[:,:,end][:])) .+ offset]); offset += length(cell_array[:,:,end][:])
 
-    nodesets = Dict{String,Set{Int}}()
-    nodesets["MyocardialAnchor1"] = Set{Int}([node_array[1,1,1]])
-    nodesets["MyocardialAnchor2"] = Set{Int}([node_array[1,end,1]])
-    nodesets["MyocardialAnchor3"] = Set{Int}([node_array[ceil(Int,1+n_nodes_c/4),1,1]])
-    nodesets["MyocardialAnchor4"] = Set{Int}([node_array[ceil(Int,1+3*n_nodes_c/4),1,1]])
+    nodesets = Dict{String,OrderedSet{Int}}()
+    nodesets["MyocardialAnchor1"] = OrderedSet{Int}([node_array[1,1,1]])
+    nodesets["MyocardialAnchor2"] = OrderedSet{Int}([node_array[1,end,1]])
+    nodesets["MyocardialAnchor3"] = OrderedSet{Int}([node_array[ceil(Int,1+n_nodes_c/4),1,1]])
+    nodesets["MyocardialAnchor4"] = OrderedSet{Int}([node_array[ceil(Int,1+3*n_nodes_c/4),1,1]])
 
-    return Grid(cells, nodes, facesets=facesets, nodesets=nodesets)
+    return Grid(cells, nodes, facetsets=facetsets, nodesets=nodesets)
 end
 
 
@@ -169,35 +169,35 @@ function generate_quadratic_ring_mesh(num_elements_circumferential::Int, num_ele
             node_array[i+1,j+0,k+0], node_array[i_next,j+1,k+0], node_array[i+1,j+2,k+0],    node_array[i+0,j+1,k+0], # Edge loop back
             node_array[i+1,j+0,k+2], node_array[i_next,j+1,k+2], node_array[i+1,j+2,k+2],    node_array[i+0,j+1,k+2], # Edge loop front
             node_array[i+0,j+0,k+1], node_array[i_next,j+0,k+1], node_array[i_next,j+2,k+1], node_array[i+0,j+2,k+1], # Edge loop center
-            node_array[i+1,j+1,k+0], node_array[i+1,j+0,k+1],    node_array[i_next,j+1,k+1], node_array[i+1,j+2,k+1], node_array[i+0,j+1,k+1], node_array[i+1,j+1,k+2], # Face centers
+            node_array[i+1,j+1,k+0], node_array[i+1,j+0,k+1],    node_array[i_next,j+1,k+1], node_array[i+1,j+2,k+1], node_array[i+0,j+1,k+1], node_array[i+1,j+1,k+2], # Facet centers
             node_array[i+1,j+1,k+1]# Center
         )))
     end
 
     # Cell faces
     cell_array = reshape(collect(1:ne_tot),(num_elements_circumferential, num_elements_radial, num_elements_logintudinal))
-    boundary = FaceIndex[[FaceIndex(cl, 1) for cl in cell_array[:,:,1][:]];
-                            [FaceIndex(cl, 2) for cl in cell_array[:,1,:][:]];
-                            #[FaceIndex(cl, 3) for cl in cell_array[end,:,:][:]];
-                            [FaceIndex(cl, 4) for cl in cell_array[:,end,:][:]];
-                            #[FaceIndex(cl, 5) for cl in cell_array[1,:,:][:]];
-                            [FaceIndex(cl, 6) for cl in cell_array[:,:,end][:]]]
+    boundary = FacetIndex[[FacetIndex(cl, 1) for cl in cell_array[:,:,1][:]];
+                            [FacetIndex(cl, 2) for cl in cell_array[:,1,:][:]];
+                            #[FacetIndex(cl, 3) for cl in cell_array[end,:,:][:]];
+                            [FacetIndex(cl, 4) for cl in cell_array[:,end,:][:]];
+                            #[FacetIndex(cl, 5) for cl in cell_array[1,:,:][:]];
+                            [FacetIndex(cl, 6) for cl in cell_array[:,:,end][:]]]
 
     # Cell face sets
     offset = 0
-    facesets = Dict{String,Set{FaceIndex}}()
-    facesets["Myocardium"] = Set{FaceIndex}(boundary[(1:length(cell_array[:,:,1][:]))   .+ offset]); offset += length(cell_array[:,:,1][:])
-    facesets["Endocardium"]  = Set{FaceIndex}(boundary[(1:length(cell_array[:,1,:][:]))   .+ offset]); offset += length(cell_array[:,1,:][:])
-    facesets["Epicardium"]   = Set{FaceIndex}(boundary[(1:length(cell_array[:,end,:][:])) .+ offset]); offset += length(cell_array[:,end,:][:])
-    facesets["Base"]    = Set{FaceIndex}(boundary[(1:length(cell_array[:,:,end][:])) .+ offset]); offset += length(cell_array[:,:,end][:])
+    facetsets = Dict{String,OrderedSet{FacetIndex}}()
+    facetsets["Myocardium"] = OrderedSet{FacetIndex}(boundary[(1:length(cell_array[:,:,1][:]))   .+ offset]); offset += length(cell_array[:,:,1][:])
+    facetsets["Endocardium"]  = OrderedSet{FacetIndex}(boundary[(1:length(cell_array[:,1,:][:]))   .+ offset]); offset += length(cell_array[:,1,:][:])
+    facetsets["Epicardium"]   = OrderedSet{FacetIndex}(boundary[(1:length(cell_array[:,end,:][:])) .+ offset]); offset += length(cell_array[:,end,:][:])
+    facetsets["Base"]    = OrderedSet{FacetIndex}(boundary[(1:length(cell_array[:,:,end][:])) .+ offset]); offset += length(cell_array[:,:,end][:])
 
-    nodesets = Dict{String,Set{Int}}()
-    nodesets["MyocardialAnchor1"] = Set{Int}([node_array[1,1,1]])
-    nodesets["MyocardialAnchor2"] = Set{Int}([node_array[1,end,1]])
-    nodesets["MyocardialAnchor3"] = Set{Int}([node_array[ceil(Int,1+n_nodes_c/4),1,1]])
-    nodesets["MyocardialAnchor4"] = Set{Int}([node_array[ceil(Int,1+3*n_nodes_c/4),1,1]])
+    nodesets = Dict{String,OrderedSet{Int}}()
+    nodesets["MyocardialAnchor1"] = OrderedSet{Int}([node_array[1,1,1]])
+    nodesets["MyocardialAnchor2"] = OrderedSet{Int}([node_array[1,end,1]])
+    nodesets["MyocardialAnchor3"] = OrderedSet{Int}([node_array[ceil(Int,1+n_nodes_c/4),1,1]])
+    nodesets["MyocardialAnchor4"] = OrderedSet{Int}([node_array[ceil(Int,1+3*n_nodes_c/4),1,1]])
 
-    return Grid(cells, nodes, facesets=facesets, nodesets=nodesets)
+    return Grid(cells, nodes, facetsets=facetsets, nodesets=nodesets)
 end
 
 
@@ -241,35 +241,35 @@ function generate_quadratic_open_ring_mesh(num_elements_circumferential::Int, nu
             node_array[i+1,j+0,k+0], node_array[2*i_ + 1,j+1,k+0], node_array[i+1,j+2,k+0],    node_array[i+0,j+1,k+0], # Edge loop back
             node_array[i+1,j+0,k+2], node_array[2*i_ + 1,j+1,k+2], node_array[i+1,j+2,k+2],    node_array[i+0,j+1,k+2], # Edge loop front
             node_array[i+0,j+0,k+1], node_array[2*i_ + 1,j+0,k+1], node_array[2*i_ + 1,j+2,k+1], node_array[i+0,j+2,k+1], # Edge loop center
-            node_array[i+1,j+1,k+0], node_array[i+1,j+0,k+1],    node_array[2*i_ + 1,j+1,k+1], node_array[i+1,j+2,k+1], node_array[i+0,j+1,k+1], node_array[i+1,j+1,k+2], # Face centers
+            node_array[i+1,j+1,k+0], node_array[i+1,j+0,k+1],    node_array[2*i_ + 1,j+1,k+1], node_array[i+1,j+2,k+1], node_array[i+0,j+1,k+1], node_array[i+1,j+1,k+2], # Facet centers
             node_array[i+1,j+1,k+1]# Center
         )))
     end
 
     # Cell faces
     cell_array = reshape(collect(1:ne_tot),(num_elements_circumferential, num_elements_radial, num_elements_logintudinal))
-    boundary = FaceIndex[[FaceIndex(cl, 1) for cl in cell_array[:,:,1][:]];
-                            [FaceIndex(cl, 2) for cl in cell_array[:,1,:][:]];
-                            #[FaceIndex(cl, 3) for cl in cell_array[end,:,:][:]];
-                            [FaceIndex(cl, 4) for cl in cell_array[:,end,:][:]];
-                            #[FaceIndex(cl, 5) for cl in cell_array[1,:,:][:]];
-                            [FaceIndex(cl, 6) for cl in cell_array[:,:,end][:]]]
+    boundary = FacetIndex[[FacetIndex(cl, 1) for cl in cell_array[:,:,1][:]];
+                            [FacetIndex(cl, 2) for cl in cell_array[:,1,:][:]];
+                            #[FacetIndex(cl, 3) for cl in cell_array[end,:,:][:]];
+                            [FacetIndex(cl, 4) for cl in cell_array[:,end,:][:]];
+                            #[FacetIndex(cl, 5) for cl in cell_array[1,:,:][:]];
+                            [FacetIndex(cl, 6) for cl in cell_array[:,:,end][:]]]
 
     # Cell face sets
     offset = 0
-    facesets = Dict{String,Set{FaceIndex}}()
-    facesets["Myocardium"] = Set{FaceIndex}(boundary[(1:length(cell_array[:,:,1][:]))   .+ offset]); offset += length(cell_array[:,:,1][:])
-    facesets["Endocardium"]  = Set{FaceIndex}(boundary[(1:length(cell_array[:,1,:][:]))   .+ offset]); offset += length(cell_array[:,1,:][:])
-    facesets["Epicardium"]   = Set{FaceIndex}(boundary[(1:length(cell_array[:,end,:][:])) .+ offset]); offset += length(cell_array[:,end,:][:])
-    facesets["Base"]    = Set{FaceIndex}(boundary[(1:length(cell_array[:,:,end][:])) .+ offset]); offset += length(cell_array[:,:,end][:])
+    facetsets = Dict{String,OrderedSet{FacetIndex}}()
+    facetsets["Myocardium"] = OrderedSet{FacetIndex}(boundary[(1:length(cell_array[:,:,1][:]))   .+ offset]); offset += length(cell_array[:,:,1][:])
+    facetsets["Endocardium"]  = OrderedSet{FacetIndex}(boundary[(1:length(cell_array[:,1,:][:]))   .+ offset]); offset += length(cell_array[:,1,:][:])
+    facetsets["Epicardium"]   = OrderedSet{FacetIndex}(boundary[(1:length(cell_array[:,end,:][:])) .+ offset]); offset += length(cell_array[:,end,:][:])
+    facetsets["Base"]    = OrderedSet{FacetIndex}(boundary[(1:length(cell_array[:,:,end][:])) .+ offset]); offset += length(cell_array[:,:,end][:])
 
-    nodesets = Dict{String,Set{Int}}()
-    nodesets["MyocardialAnchor1"] = Set{Int}([node_array[1,1,1]])
-    nodesets["MyocardialAnchor2"] = Set{Int}([node_array[1,end,1]])
-    nodesets["MyocardialAnchor3"] = Set{Int}([node_array[ceil(Int,1+n_nodes_c/4),1,1]])
-    nodesets["MyocardialAnchor4"] = Set{Int}([node_array[ceil(Int,1+3*n_nodes_c/4),1,1]])
+    nodesets = Dict{String,OrderedSet{Int}}()
+    nodesets["MyocardialAnchor1"] = OrderedSet{Int}([node_array[1,1,1]])
+    nodesets["MyocardialAnchor2"] = OrderedSet{Int}([node_array[1,end,1]])
+    nodesets["MyocardialAnchor3"] = OrderedSet{Int}([node_array[ceil(Int,1+n_nodes_c/4),1,1]])
+    nodesets["MyocardialAnchor4"] = OrderedSet{Int}([node_array[ceil(Int,1+3*n_nodes_c/4),1,1]])
 
-    return Grid(cells, nodes, facesets=facesets, nodesets=nodesets)
+    return Grid(cells, nodes, facetsets=facetsets, nodesets=nodesets)
 end
 
 
@@ -320,25 +320,25 @@ function generate_ideal_lv_mesh(num_elements_circumferential::Int, num_elements_
                                  node_array[i,j,k+1], node_array[i_next,j,k+1], node_array[i_next,j+1,k+1], node_array[i,j+1,k+1])))
     end
 
-    nodesets = Dict{String,Set{Int}}()
-    nodesets["MyocardialAnchor1"] = Set{Int}([node_array[1,1,end]])
-    nodesets["MyocardialAnchor2"] = Set{Int}([node_array[1,end,end]])
-    nodesets["MyocardialAnchor3"] = Set{Int}([node_array[ceil(Int,1+n_nodes_c/4),1,end]])
-    nodesets["MyocardialAnchor4"] = Set{Int}([node_array[ceil(Int,1+3*n_nodes_c/4),1,end]])
+    nodesets = Dict{String,OrderedSet{Int}}()
+    nodesets["MyocardialAnchor1"] = OrderedSet{Int}([node_array[1,1,end]])
+    nodesets["MyocardialAnchor2"] = OrderedSet{Int}([node_array[1,end,end]])
+    nodesets["MyocardialAnchor3"] = OrderedSet{Int}([node_array[ceil(Int,1+n_nodes_c/4),1,end]])
+    nodesets["MyocardialAnchor4"] = OrderedSet{Int}([node_array[ceil(Int,1+3*n_nodes_c/4),1,end]])
 
     # Cell faces
     cell_array = reshape(collect(1:ne_tot),(num_elements_circumferential, num_elements_radial, num_elements_logintudinal))
-    boundary = FaceIndex[[FaceIndex(cl, 2) for cl in cell_array[:,1,:][:]];
-                          [FaceIndex(cl, 4) for cl in cell_array[:,end,:][:]];
-                          [FaceIndex(cl, 6) for cl in cell_array[:,:,end][:]]]
+    boundary = FacetIndex[[FacetIndex(cl, 2) for cl in cell_array[:,1,:][:]];
+                          [FacetIndex(cl, 4) for cl in cell_array[:,end,:][:]];
+                          [FacetIndex(cl, 6) for cl in cell_array[:,:,end][:]]]
 
     # Cell face sets
     offset = 0
-    facesets = Dict{String,Set{FaceIndex}}()
-    facesets["Endocardium"]  = Set{FaceIndex}(boundary[(1:length(cell_array[:,1,:][:]))   .+ offset]); offset += length(cell_array[:,1,:][:])
-    facesets["Epicardium"]   = Set{FaceIndex}(boundary[(1:length(cell_array[:,end,:][:])) .+ offset]); offset += length(cell_array[:,end,:][:])
-    facesets["Base"]    = Set{FaceIndex}(boundary[(1:length(cell_array[:,:,end][:])) .+ offset]); offset += length(cell_array[:,:,end][:])
-    nodesets["Apex"] = Set{Int}()
+    facetsets = Dict{String,OrderedSet{FacetIndex}}()
+    facetsets["Endocardium"]  = OrderedSet{FacetIndex}(boundary[(1:length(cell_array[:,1,:][:]))   .+ offset]); offset += length(cell_array[:,1,:][:])
+    facetsets["Epicardium"]   = OrderedSet{FacetIndex}(boundary[(1:length(cell_array[:,end,:][:])) .+ offset]); offset += length(cell_array[:,end,:][:])
+    facetsets["Base"]    = OrderedSet{FacetIndex}(boundary[(1:length(cell_array[:,:,end][:])) .+ offset]); offset += length(cell_array[:,:,end][:])
+    nodesets["Apex"] = OrderedSet{Int}()
 
     # Add apex nodes
     for radius_percent ∈ radii_in_percent
@@ -354,12 +354,12 @@ function generate_ideal_lv_mesh(num_elements_circumferential::Int, num_elements_
             singular_index , node_array[i,j,1], node_array[i_next,j,1],
             singular_index+1, node_array[i,j+1,1], node_array[i_next,j+1,1],
         )))
-        j == 1 && push!(facesets["Endocardium"], FaceIndex(length(cells), 1))
-        j == num_elements_radial && push!(facesets["Epicardium"], FaceIndex(length(cells), 5))
+        j == 1 && push!(facetsets["Endocardium"], FacetIndex(length(cells), 1))
+        j == num_elements_radial && push!(facetsets["Epicardium"], FacetIndex(length(cells), 5))
         j == num_elements_radial && push!(nodesets["Apex"], singular_index+1)
     end
 
-    return Grid(cells, nodes, nodesets=nodesets, facesets=facesets)
+    return Grid(cells, nodes, nodesets=nodesets, facetsets=facetsets)
 end
 
 # TODO think about making Mesh = Grid+Topology+CoordinateSystem
@@ -373,11 +373,11 @@ function generate_simple_disc_mesh(::Type{Quadrilateral}, n; radius= 1.0)
     nodes = [rotate(nodepos, θ*i) for i ∈ 0:(2n-1)]
     push!(nodes, Vec((0.0,0.0)))
 
-    elements = [Quadrilateral((2i-1==0 ? nnodes-1 : 2i-1,2i,2i+1 == nnodes ? 1 : 2i+1,nnodes)) for i ∈ 1:n]
+    elements = Quadrilateral[Quadrilateral((2i-1==0 ? nnodes-1 : 2i-1,2i,2i+1 == nnodes ? 1 : 2i+1,nnodes)) for i ∈ 1:n]
 
-    facesets = Dict(
-        "boundary" => Set([FaceIndex(i,1) for i ∈ 1:n]) ∪ Set([FaceIndex(i,2) for i ∈ 1:n]),
+    facetsets = Dict(
+        "boundary" => OrderedSet([FacetIndex(i,1) for i ∈ 1:n]) ∪ OrderedSet([FacetIndex(i,2) for i ∈ 1:n]),
     )
 
-    return to_mesh(Grid(elements, Node.(nodes); facesets=facesets))
+    return to_mesh(Grid(elements, Node.(nodes); facetsets=facetsets))
 end

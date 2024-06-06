@@ -3,7 +3,7 @@
 mutable struct RSAFDQ2022SingleChamberTying{CVM}
     const pressure_dof_index_local::Int
     pressure_dof_index_global::Int
-    const faces::Set{FaceIndex}
+    const facets::OrderedSet{FacetIndex}
     const volume_method::CVM
     const displacement_symbol::Symbol
     V⁰ᴰval::Float64
@@ -11,7 +11,7 @@ mutable struct RSAFDQ2022SingleChamberTying{CVM}
     V⁰ᴰidx_global::Int
 end
 
-struct RSAFDQ2022TyingCache{FV <: FaceValues, CVM}
+struct RSAFDQ2022TyingCache{FV <: FacetValues, CVM}
     fv::FV
     chambers::Vector{RSAFDQ2022SingleChamberTying{CVM}}
 end
@@ -23,7 +23,7 @@ end
 solution_size(problem::RSAFDQ2022TyingInfo) = length(problem.chambers)
 
 function setup_tying_cache(tying_info::RSAFDQ2022TyingInfo, qr, ip, ip_geo)
-    RSAFDQ2022TyingCache(FaceValues(qr, ip, ip_geo), tying_info.chambers)
+    RSAFDQ2022TyingCache(FacetValues(qr, ip, ip_geo), tying_info.chambers)
 end
 
 function get_tying_dofs(tying_cache::RSAFDQ2022TyingCache, u)
@@ -40,13 +40,13 @@ where p is the unknown chamber pressure and u contains the unknown deformation f
 function assemble_LFSI_coupling_contribution_col!(C, R, dh::AbstractDofHandler, u::AbstractVector, pressure, method::RSAFDQ2022SingleChamberTying)
     grid = dh.grid
     ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], method.displacement_symbol)
-    ip_geo = Ferrite.default_interpolation(typeof(getcells(grid, 1)))
+    ip_geo = Ferrite.geometric_interpolation(typeof(getcells(grid, 1)))
     intorder = 2*Ferrite.getorder(ip)
     ref_shape = Ferrite.getrefshape(ip)
-    qr_face = FaceQuadratureRule{ref_shape}(intorder)
-    fv = FaceValues(qr_face, ip, ip_geo)
+    qr_face = FacetQuadratureRule{ref_shape}(intorder)
+    fv = FacetValues(qr_face, ip, ip_geo)
 
-    for face ∈ FaceIterator(dh, method.faces)
+    for face ∈ FacetIterator(dh, method.facets)
         assemble_LFSI_coupling_contribution_col_inner!(C, R, u, pressure, face, dh, fv, method.displacement_symbol)
     end
 end
@@ -54,13 +54,13 @@ end
 function assemble_LFSI_coupling_contribution_col!(C, dh::AbstractDofHandler, u::AbstractVector, pressure, method::RSAFDQ2022SingleChamberTying)
     grid = dh.grid
     ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], method.displacement_symbol)
-    ip_geo = Ferrite.default_interpolation(typeof(getcells(grid, 1)))
+    ip_geo = Ferrite.geometric_interpolation(typeof(getcells(grid, 1)))
     intorder = 2*Ferrite.getorder(ip)
     ref_shape = Ferrite.getrefshape(ip)
-    qr_face = FaceQuadratureRule{ref_shape}(intorder)
-    fv = FaceValues(qr_face, ip, ip_geo)
+    qr_face = FacetQuadratureRule{ref_shape}(intorder)
+    fv = FacetValues(qr_face, ip, ip_geo)
 
-    for face ∈ FaceIterator(dh, method.faces)
+    for face ∈ FacetIterator(dh, method.facets)
         assemble_LFSI_coupling_contribution_col_inner!(C, u, pressure, face, dh, fv, method.displacement_symbol)
     end
 end
@@ -70,15 +70,15 @@ function compute_chamber_volume(dh, u, setname, method::RSAFDQ2022SingleChamberT
     check_subdomains(dh)
     grid = dh.grid
     ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], method.displacement_symbol)
-    ip_geo = Ferrite.default_interpolation(typeof(getcells(grid, 1)))
+    ip_geo = Ferrite.geometric_interpolation(typeof(getcells(grid, 1)))
     intorder = 2*Ferrite.getorder(ip)
     ref_shape = Ferrite.getrefshape(ip)
-    qr_face = FaceQuadratureRule{ref_shape}(intorder)
-    fv = FaceValues(qr_face, ip, ip_geo)
+    qr_face = FacetQuadratureRule{ref_shape}(intorder)
+    fv = FacetValues(qr_face, ip, ip_geo)
 
     volume = 0.0
     drange = dof_range(dh,method.displacement_symbol)
-    for face ∈ FaceIterator(dh, getfaceset(grid, setname))
+    for face ∈ FacetIterator(dh, getfacetset(grid, setname))
         reinit!(fv, face)
 
         coords = getcoordinates(face)
@@ -180,9 +180,9 @@ function assemble_tying_face_rsadfq!(Jₑ, uₑ, p, cell, local_face_index, fv, 
 end
 
 function assemble_tying!(Jₑ, residualₑ, uₑ, uₜ, cell, tying_cache::RSAFDQ2022TyingCache, time)
-    for local_face_index ∈ 1:nfaces(cell)
+    for local_face_index ∈ 1:nfacets(cell)
         for (chamber_index,chamber) in pairs(tying_cache.chambers)
-            if (cellid(cell), local_face_index) ∈ chamber.faces
+            if (cellid(cell), local_face_index) ∈ chamber.facets
                 assemble_tying_face_rsadfq!(Jₑ, residualₑ, uₑ, uₜ[chamber_index], cell, local_face_index, tying_cache.fv, time)
             end
         end
@@ -190,9 +190,9 @@ function assemble_tying!(Jₑ, residualₑ, uₑ, uₜ, cell, tying_cache::RSAFD
 end
 
 function assemble_tying!(Jₑ, uₑ, uₜ, cell, tying_cache::RSAFDQ2022TyingCache, time)
-    for local_face_index ∈ 1:nfaces(cell)
+    for local_face_index ∈ 1:nfacets(cell)
         for (chamber_index,chamber) in pairs(tying_cache.chambers)
-            if (cellid(cell), local_face_index) ∈ chamber.faces
+            if (cellid(cell), local_face_index) ∈ chamber.facets
                 assemble_tying_face_rsadfq!(Jₑ, uₑ, uₜ[chamber_index], cell, local_face_index, tying_cache.fv, time)
             end
         end
@@ -209,13 +209,13 @@ function create_chamber_tyings(coupler::LumpedFluidSolidCoupler{CVM}, structural
         coupling = coupler.chamber_couplings[i]
         # The pressure dof is just the last dof index for the structurel problem + the current chamber index
         pressure_dof_index = num_unknowns_structure + i
-        chamber_faceset = getfaceset(structural_problem.dh.grid, coupling.chamber_surface_setname)
+        chamber_facetset = getfacetset(structural_problem.dh.grid, coupling.chamber_surface_setname)
         chamber_volume_idx_lumped = get_variable_symbol_index(circuit_model, coupling.lumped_model_symbol)
         initial_volume_lumped = NaN # We do this to catch initializiation issues downstream
         tying = RSAFDQ2022SingleChamberTying(
             pressure_dof_index,
             pressure_dof_index,
-            chamber_faceset,
+            chamber_facetset,
             coupling.chamber_volume_method,
             coupler.displacement_symbol,
             initial_volume_lumped,
@@ -307,3 +307,5 @@ function eliminate_constraints_from_linearization!(solver_cache::AbstractNonline
     # Eliminate columns
     getJ(op, Block((2,1)))[:, ch.prescribed_dofs] .= 0.0
 end
+
+update_constraints_block!(::RSAFDQ2022TyingInfo, ::BlockArrays.Block, ::Thunderbolt.LoadDrivenSolverCache, ::Float64) = nothing

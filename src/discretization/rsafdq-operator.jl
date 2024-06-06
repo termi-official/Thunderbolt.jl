@@ -7,12 +7,12 @@ struct AssembledRSAFDQ2022Operator{MatrixType <: BlockMatrix, ElementCacheType, 
     dh::DHType
 end
 
-function AssembledRSAFDQ2022Operator(dh::AbstractDofHandler, field_name::Symbol, element_model, element_qrc::QuadratureRuleCollection, boundary_model, boundary_qrc::FaceQuadratureRuleCollection, tying::RSAFDQ2022TyingInfo)
+function AssembledRSAFDQ2022Operator(dh::AbstractDofHandler, field_name::Symbol, element_model, element_qrc::QuadratureRuleCollection, boundary_model, boundary_qrc::FacetQuadratureRuleCollection, tying::RSAFDQ2022TyingInfo)
     @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the nonlinear opeartor."
 
     firstcell = getcells(Ferrite.get_grid(dh), first(dh.subdofhandlers[1].cellset))
     ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], field_name)
-    ip_geo = Ferrite.default_interpolation(typeof(firstcell))
+    ip_geo = Ferrite.geometric_interpolation(typeof(firstcell))
     element_qr = getquadraturerule(element_qrc, firstcell)
     boundary_qr = getquadraturerule(boundary_qrc, firstcell)
 
@@ -66,8 +66,8 @@ function update_linearization!(op::AssembledRSAFDQ2022Operator, u::AbstractVecto
         uₑ .= @view u[dofs]
         @timeit_debug "assemble element" assemble_element!(Jₑ, uₑ, cell, element_cache, time)
         # TODO maybe it makes sense to merge this into the element routine in a modular fasion?
-        # TODO benchmark against putting this into the FaceIterator
-        @timeit_debug "assemble faces" for local_face_index ∈ 1:nfaces(cell)
+        # TODO benchmark against putting this into the FacetIterator
+        @timeit_debug "assemble faces" for local_face_index ∈ 1:nfacets(cell)
             assemble_face!(Jₑ, uₑ, cell, local_face_index, face_cache, time)
         end
         @timeit_debug "assemble tying"  assemble_tying!(Jₑ, uₑ, uₜ, cell, tying_cache, time)
@@ -122,7 +122,7 @@ function update_linearization!(op::AssembledRSAFDQ2022Operator, u::AbstractVecto
         fill!(rₑ, 0.0)
         uₑ .= @view u[dofs]
         @timeit_debug "assemble element" assemble_element!(Jₑ, rₑ, uₑ, cell, element_cache, time)
-        @timeit_debug "assemble faces" for local_face_index ∈ 1:nfaces(cell)
+        @timeit_debug "assemble faces" for local_face_index ∈ 1:nfacets(cell)
             assemble_face!(Jₑ, rₑ, uₑ, cell, local_face_index, face_cache, time)
         end
         @timeit_debug "assemble tying"  assemble_tying!(Jₑ, rₑ, uₑ, uₜ, cell, tying_cache, time)
@@ -158,7 +158,7 @@ function setup_operator(f::RSAFDQ20223DFunction, solver::AbstractNonlinearSolver
 
     intorder = quadrature_order(structural_function, displacement_symbol)
     qr = QuadratureRuleCollection(intorder)
-    qr_face = FaceQuadratureRuleCollection(intorder)
+    qr_face = FacetQuadratureRuleCollection(intorder)
 
     return AssembledRSAFDQ2022Operator(
         dh, displacement_symbol, constitutive_model, qr, face_models, qr_face, tying_info

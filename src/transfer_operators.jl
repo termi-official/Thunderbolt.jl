@@ -21,6 +21,16 @@ function _spatial_coordinate(interpolation::ScalarInterpolation, ξ::Vec{<:Any,T
     return x
 end
 
+function _compute_dof_nodes_barrier!(nodes, sdh, dofrange, gip, dof_to_node_map, ref_coords)
+    for cc ∈ CellIterator(sdh)
+        # Compute for each dof the spatial coordinate of from the reference coordiante and store.
+        # NOTE We assume a continuous coordinate field if the interpolation is continuous.
+        dofs = @view celldofs(cc)[dofrange]
+        for (dofidx,dof) in enumerate(dofs)
+            nodes[dof_to_node_map[dof]] = _spatial_coordinate(gip, ref_coords[dofidx], getcoordinates(cc))
+        end
+    end
+end
 
 """
     NodalIntergridInterpolation(dh_from::DofHandler{sdim}, dh_to::DofHandler{sdim}, field_name::Symbol)
@@ -68,7 +78,8 @@ struct NodalIntergridInterpolation{PH <: PointEvalHandler, DH1 <: AbstractDofHan
         end
 
         # Compute nodes
-        nodes = Vector{Ferrite.get_coordinate_type(dh_to.grid)}(undef, length(dofset))
+        grid_to = Ferrite.get_grid(dh_to)
+        nodes = Vector{Ferrite.get_coordinate_type(grid_to)}(undef, length(dofset))
         for sdh in dh_to.subdofhandlers
             # Skip subdofhandler if field is not present
             field_name ∈ sdh.field_names || continue
@@ -76,15 +87,11 @@ struct NodalIntergridInterpolation{PH <: PointEvalHandler, DH1 <: AbstractDofHan
             ip = Ferrite.getfieldinterpolation(sdh, field_name)
             ref_coords = Ferrite.reference_coordinates(ip)
             # Grab the geometric interpolation
-            gip = Ferrite.default_interpolation(typeof(getcells(Ferrite.get_grid(dh_to), first(sdh.cellset))))
-            for cc ∈ CellIterator(sdh)
-                # Compute for each dof the spatial coordinate of from the reference coordiante and store.
-                # NOTE We assume a continuous coordinate field if the interpolation is continuous.
-                dofs = celldofs(cc)[dof_range(sdh, field_name)]
-                for (dofidx,dof) in enumerate(dofs)
-                    nodes[dof_to_node_map[dof]] = _spatial_coordinate(gip, ref_coords[dofidx], getcoordinates(cc))
-                end
-            end
+            first_cell = getcells(grid_to, first(sdh.cellset))
+            cell_type  = typeof(first_cell)
+            gip = Ferrite.geometric_interpolation(cell_type)
+
+            _compute_dof_nodes_barrier!(nodes, sdh, Ferrite.dof_range(sdh, field_name), gip, dof_to_node_map, ref_coords)
         end
 
         ph = PointEvalHandler(Ferrite.get_grid(dh_from), nodes)

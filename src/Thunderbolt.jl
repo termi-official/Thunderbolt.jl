@@ -11,6 +11,7 @@ using OrderedCollections
 using BlockArrays, SparseArrays, StaticArrays
 
 using JLD2
+using WriteVTK
 
 # This is a standalone module which will be a custom package in the future
 include("solver/operator_splitting.jl")
@@ -96,7 +97,7 @@ export
     getquadraturerule,
     CellValueCollection,
     getcellvalues,
-    FaceValueCollection,
+    FacetValueCollection,
     getfacevalues,
     # Mesh generators
     generate_mesh,

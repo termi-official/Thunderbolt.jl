@@ -30,5 +30,5 @@ Thunderbolt.AnalyticalCoefficientElementCache
 
 ```@docs
 Thunderbolt.StructuralElementCache
-Thunderbolt.SimpleFaceCache
+Thunderbolt.SimpleFacetCache
 ```
