@@ -27,8 +27,6 @@ import Ferrite: vertices, edges, faces, sortedge, sortface
 import DiffEqBase#: AbstractDiffEqFunction, AbstractDEProblem
 import LinearSolve
 
-import Krylov: CgSolver
-
 import Base: *, +, -
 
 import CommonSolve: init, solve, solve!, step!
