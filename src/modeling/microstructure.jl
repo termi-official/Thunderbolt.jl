@@ -8,7 +8,7 @@ function evaluate_coefficient(fsn::AnisotropicPlanarMicrostructureModel, cell_ca
     f = evaluate_coefficient(fsn.fiber_coefficient, cell_cache, qp, t)
     s = evaluate_coefficient(fsn.sheetlet_coefficient, cell_cache, qp, t)
 
-    return SVector((f, s))
+    return SVector(orthogonalize_system(f,s))
 end
 
 struct OrthotropicMicrostructureModel{FiberCoefficientType, SheetletCoefficientType, NormalCoefficientType}
@@ -22,7 +22,7 @@ function evaluate_coefficient(fsn::OrthotropicMicrostructureModel, cell_cache, q
     s = evaluate_coefficient(fsn.sheetlet_coefficient, cell_cache, qp, t)
     n = evaluate_coefficient(fsn.normal_coefficient, cell_cache, qp, t)
 
-    return SVector((f, s, n))
+    return SVector(orthogonalize_system(f, s, n))
 end
 
 """
