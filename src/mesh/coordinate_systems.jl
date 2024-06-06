@@ -253,3 +253,43 @@ function vtk_coordinate_system(vtk, cs::LVCoordinateSystem)
     vtk_point_data(vtk, cs.dh, cs.u_apicobasal, "apicobasal_")
     vtk_point_data(vtk, cs.dh, cs.u_transmural, "transmural_")
 end
+
+"""
+    BiVCoordinateSystem(dh, u_transmural, u_apicobasal, u_rotational, u_transventricular)
+
+Universal ventricular coordinate, containing the transmural, apicobasal, circumferential 
+and transventricular coordinates.
+"""
+struct BiVCoordinateSystem{DH <: Ferrite.AbstractDofHandler}
+    dh::DH
+    u_transmural::Vector{Float32}
+    u_apicobasal::Vector{Float32}
+    u_rotational::Vector{Float32}
+    u_transventricular::Vector{Float32}
+end
+
+
+"""
+BiVCoordinate{T}
+
+Biventricular universal coordinate, containing
+    * transmural
+    * apicobasal
+    * rotational
+    * transventricular
+"""
+struct BiVCoordinate{T}
+    transmural::T
+    apicaobasal::T
+    rotational::T
+    transventricular::T
+end
+
+getcoordinateinterpolation(cs::BiVCoordinateSystem, cell::Ferrite.AbstractCell) = Ferrite.getfieldinterpolation(cs.dh, (1,1))
+
+function vtk_coordinate_system(vtk, cs::BiVCoordinateSystem)
+    vtk_point_data(vtk, bivcs.dh, bivcs.u_transmural, "_transmural")
+    vtk_point_data(vtk, bivcs.dh, bivcs.u_apicobasal, "_apicobasal")
+    vtk_point_data(vtk, bivcs.dh, bivcs.u_rotational, "_rotational")
+    vtk_point_data(vtk, bivcs.dh, bivcs.u_transventricular, "_transventricular")
+end

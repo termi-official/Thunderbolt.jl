@@ -208,3 +208,82 @@ end
 
 finalize_timestep!(io::JLD2Writer, t) = nothing
 finalize!(io::JLD2Writer) = nothing
+
+function reorder_nodal!(dh::DofHandler)
+    @assert length(dh.field_names) == 1 "Just single field possible."
+    grid = Ferrite.get_grid(dh)
+    for sdh in dh.subdofhandlers
+        firstcellidx = first(sdh.cellset)
+        celltype = typeof(getcells(grid,firstcellidx))
+        @assert sdh.field_interpolations[1] == Ferrite.geometric_interpolation(celltype)
+        for i ∈ 1:getncells(grid)
+            dh.cell_dofs[dh.cell_dofs_offset[i]:(dh.cell_dofs_offset[i]+Ferrite.ndofs_per_cell(dh, i)-1)] .= getcells(grid,i).nodes
+        end
+    end
+end
+
+function to_ferrite_elements(cells_vtk::Vector{WriteVTK.MeshCell{WriteVTK.VTKCellType, Vector{Int64}}})
+    celltype = if cells_vtk[1].ctype == WriteVTK.VTKCellTypes.VTK_TETRA
+        Tetrahedron
+    elseif cells_vtk[1].ctype == WriteVTK.VTKCellTypes.VTK_HEXAHEDRON
+        Hexahedron
+    else 
+        @error "Unknown cell type" cells_vtk[1].ctype
+    end
+    cells_ferrite = Vector{celltype}(undef, length(cells_vtk))
+    for (i,cell_vtk) in enumerate(cells_vtk)
+        cells_ferrite[i] = if cells_vtk[1].ctype == WriteVTK.VTKCellTypes.VTK_TETRA
+            Tetrahedron(ntuple(i->cell_vtk.connectivity[i],4))
+        elseif cells_vtk[1].ctype == WriteVTK.VTKCellTypes.VTK_HEXAHEDRON
+            Hexahedron(ntuple(i->cell_vtk.connectivity[i],8))
+        end
+    end
+    return cells_ferrite
+end
+
+function read_vtk_cobivec(filename::String, transmural_id::String, apicobasal_id::String, radial_id::String, transventricular_id::String)
+    vtk = ReadVTK.VTKFile(filename)
+    points_vtk = get_points(vtk)
+    points_ferrite = [Vec{3}(point) for point in eachcol(points_vtk)]
+    cells_vtk = to_meshcells(get_cells(vtk))
+    cells_ferrite = to_ferrite_elements(cells_vtk)
+
+    grid = Grid(cells_ferrite, Node.(points_ferrite))
+
+    gip =  Ferrite.geometric_interpolation(typeof(grid.cells[1]))
+
+    dh = DofHandler(grid)
+    add!(dh, :u, gip)
+    close!(dh)
+    reorder_nodal!(dh)
+
+    all_data = get_point_data(vtk)
+    u_transmural = get_data(all_data[transmural_id])
+    u_apicobasal = get_data(all_data[apicobasal_id])
+    u_radial = get_data(all_data[radial_id])
+    u_transventricular = get_data(all_data[transventricular_id])
+
+    epicardium = OrderedSet{FacetIndex}()
+    endocardium = OrderedSet{FacetIndex}()
+    for (cellidx,cell) ∈ enumerate(grid.cells)
+        for (faceidx,facenodes) in enumerate(Ferrite.faces(cell))
+            # facenodes = cell.nodes[collect(face)]
+            if all(u_transmural[collect(facenodes)] .> 1.0-1e-6)
+                push!(endocardium, FacetIndex(cellidx, faceidx))
+            end
+            if all(u_transmural[collect(facenodes)] .< 1e-6)
+                push!(epicardium, FacetIndex(cellidx, faceidx))
+            end
+        end
+    end
+    Ferrite.addfacetset!(grid, "Epicardium", epicardium)
+    Ferrite.addfacetset!(grid, "Endocardium", endocardium)
+
+    return BiVCoordinateSystem(
+        dh,
+        collect(u_transmural),
+        collect(u_apicobasal),
+        collect(u_radial),
+        collect(u_transventricular)
+    )
+end
