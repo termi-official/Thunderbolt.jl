@@ -105,13 +105,13 @@ solution_size(problem::QuasiStaticNonlinearFunction) = ndofs(problem.dh)
 # end
 
 # """
-#     QuasiStaticDAEProblem{M <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler}
+#     QuasiStaticDAEFunction{M <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler}
 
 # A problem with time dependent terms and time derivatives only w.r.t. internal solution variable which can't be expressed as an ODE.
 
 # TODO implement.
 # """
-# struct QuasiStaticDAEProblem{CM <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler, FACE <: Tuple, CH <: ConstraintHandler} <: AbstractSemidiscreteDAEProblem
+# struct QuasiStaticDAEFunction{CM <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler, FACE <: Tuple, CH <: ConstraintHandler} <: AbstractSemidiscreteDAEFunction
 #     dh::DH
 #     ch::CH
 #     constitutive_model::CM

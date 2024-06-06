@@ -144,25 +144,6 @@ end
 #     end
 # end
 
-# # TODO better abstraction layer
-# function setup_solver_cache(problem::SplitProblem{APT, BPT}, solver::LTGOSSolver{BackwardEulerSolver,BST}, t₀) where {APT <: TransientHeatProblem,BPT,BST}
-#     cache = LTGOSSolverCache(
-#         setup_solver_cache(problem.A, solver.A_solver, t₀),
-#         setup_solver_cache(problem.B, solver.B_solver, t₀),
-#     )
-#     cache.B_solver_cache.uₙ = cache.A_solver_cache.uₙ
-#     return cache
-# end
-
-# function setup_solver_cache(problem::SplitProblem{APT, BPT}, solver::LTGOSSolver{AST,BackwardEulerSolver}, t₀) where {APT,BPT <: TransientHeatProblem,AST}
-#     cache = LTGOSSolverCache(
-#         setup_solver_cache(problem.A, solver.A_solver, t₀),
-#         setup_solver_cache(problem.B, solver.B_solver, t₀),
-#     )
-#     cache.B_solver_cache.uₙ = cache.A_solver_cache.uₙ
-#     return cache
-# end
-
 # TODO fix the one above somehow
 
 struct ThreadedForwardEulerCellSolver <: AbstractPointwiseSolver

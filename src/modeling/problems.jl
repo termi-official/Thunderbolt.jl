@@ -115,15 +115,6 @@ end
 
 # relevant_couplings(problem::CoupledProblem, i::Int) = [coupling for coupling in problem.couplings if is_relevant_coupling(coupling)]
 
-
-# TODO replace with OS module
-struct SplitProblem{APT, BPT}
-    A::APT
-    B::BPT
-end
-
-solution_size(problem::SplitProblem) = (solution_size(problem.A), solution_size(problem.B))
-
 struct QuasiStaticProblem{fType <: AbstractQuasiStaticFunction, uType, tType, pType} <: AbstractSemidiscreteProblem
     f::fType
     u0::uType
