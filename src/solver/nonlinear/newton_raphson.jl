@@ -31,18 +31,26 @@ function setup_solver_cache(f::AbstractSemidiscreteFunction, solver::NewtonRaphs
 
     # Connect both solver caches
     inner_prob = LinearSolve.LinearProblem(
-        getJ(op), residual; Δu
+        getJ(op), residual; u0=Δu
     )
     inner_cache = init(inner_prob, inner_solver)
-    
+
     NewtonRaphsonSolverCache(op, residual, solver, inner_cache)
 end
 
 function setup_solver_cache(f::AbstractSemidiscreteBlockedFunction, solver::NewtonRaphsonSolver{T}) where {T}
-    residual_buffer = mortar([
-        Vector{T}(undef, bsize) for bsize ∈ blocksizes(f)
-    ])
-    NewtonRaphsonSolverCache(setup_operator(f, solver), residual_buffer, solver)
+    @unpack inner_solver = solver
+    op = setup_operator(f, solver)
+    sizeu = solution_size(f)
+    residual = Vector{T}(undef, sizeu)
+    Δu = Vector{T}(undef, sizeu)
+    # Connect both solver caches
+    inner_prob = LinearSolve.LinearProblem(
+        getJ(op), residual; u0=Δu
+    )
+    inner_cache = init(inner_prob, inner_solver)
+    
+    NewtonRaphsonSolverCache(op, residual, solver, inner_cache)
 end
 
 function nlsolve!(u::AbstractVector, f::AbstractSemidiscreteFunction, cache::NewtonRaphsonSolverCache, t)

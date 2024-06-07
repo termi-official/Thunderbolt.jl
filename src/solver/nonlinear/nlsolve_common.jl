@@ -6,8 +6,10 @@ residual_norm(cache::AbstractNonlinearSolverCache, f::NullFunction) = 0.0
 eliminate_constraints_from_linearization!(cache::AbstractNonlinearSolverCache, f::AbstractSemidiscreteFunction) = apply_zero!(cache.op.J, cache.residual, getch(f))
 eliminate_constraints_from_increment!(Δu::AbstractVector, f::AbstractSemidiscreteFunction, cache::AbstractNonlinearSolverCache) = apply_zero!(Δu, getch(f))
 function eliminate_constraints_from_increment!(Δu::AbstractVector, f::AbstractSemidiscreteBlockedFunction, cache::AbstractNonlinearSolverCache)
+    # TODO be smarter about the block extraction and use info from f
+    Δublocked = PseudoBlockVector(Δu, [blocksizes(f)...])
     for (i,fi) ∈ enumerate(blocks(f))
-        eliminate_constraints_from_increment!(Δu[Block(i)], fi, cache)
+        eliminate_constraints_from_increment!(Δublocked[Block(i)], fi, cache)
     end
 end
 eliminate_constraints_from_increment!(Δu::AbstractVector, f::NullFunction, cache::AbstractNonlinearSolverCache) = nothing
