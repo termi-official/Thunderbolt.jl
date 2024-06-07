@@ -4,6 +4,21 @@ DocTestSetup = :(using Thunderbolt)
 
 # Solver
 
+## Linear
+
+```@docs
+Thunderbolt.Schur2x2SaddleFormLinearSolver
+```
+
+## Nonlinear
+
+```@docs
+NewtonRaphsonSolver
+```
+
+
+## Time
+
 ```@docs
 BackwardEulerSolver
 ForwardEulerSolver
@@ -11,7 +26,6 @@ ForwardEulerCellSolver
 Thunderbolt.AdaptiveForwardEulerReactionSubCellSolver
 Thunderbolt.ThreadedForwardEulerCellSolver
 LoadDrivenSolver
-NewtonRaphsonSolver
 ```
 
 ## Operator Splitting Module
