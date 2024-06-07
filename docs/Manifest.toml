@@ -1778,7 +1778,7 @@ uuid = "8290d209-cae3-49c0-8002-c8c24d57dab5"
 version = "0.5.2"
 
 [[deps.Thunderbolt]]
-deps = ["BlockArrays", "CommonSolve", "DataStructures", "DiffEqBase", "Ferrite", "FerriteGmsh", "JLD2", "Krylov", "LinearAlgebra", "ModelingToolkit", "OrderedCollections", "Polyester", "ReadVTK", "Reexport", "SparseArrays", "SparseMatricesCSR", "StaticArrays", "SymbolicIndexingInterface", "Tensors", "TimerOutputs", "UnPack", "Unrolled", "WriteVTK"]
+deps = ["BlockArrays", "CommonSolve", "DataStructures", "DiffEqBase", "Ferrite", "FerriteGmsh", "JLD2", "Krylov", "LinearAlgebra", "LinearSolve", "ModelingToolkit", "OrderedCollections", "Polyester", "ReadVTK", "Reexport", "SparseArrays", "SparseMatricesCSR", "StaticArrays", "SymbolicIndexingInterface", "Tensors", "TimerOutputs", "UnPack", "Unrolled", "WriteVTK"]
 path = ".."
 uuid = "909927c2-98d5-4a67-bba9-79f03a9ad49b"
 version = "0.0.1-DEV"
