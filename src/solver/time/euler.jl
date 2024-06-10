@@ -1,11 +1,16 @@
 #########################################################
 ########################## TIME #########################
 #########################################################
-struct BackwardEulerSolver <: AbstractSolver
+struct BackwardEulerSolver{SolverType} <: AbstractSolver
+    inner_solver::SolverType
+    # mass operator info
+    # diffusion opeartor info
 end
 
+BackwardEulerSolver() = BackwardEulerSolver(LinearSolve.KrylovJL_CG())
+
 # TODO decouple from heat problem via special ODEFunction (AffineODEFunction)
-mutable struct BackwardEulerSolverCache{SolutionType, MassMatrixType, DiffusionMatrixType, SystemMatrixType, SourceTermType, LinSolverType, RHSType} <: AbstractTimeSolverCache
+mutable struct BackwardEulerSolverCache{SolutionType, MassMatrixType, DiffusionMatrixType, SourceTermType, SolverCacheType} <: AbstractTimeSolverCache
     # Current solution buffer
     uₙ::SolutionType
     # Last solution buffer
@@ -13,68 +18,62 @@ mutable struct BackwardEulerSolverCache{SolutionType, MassMatrixType, DiffusionM
     # Mass matrix
     M::MassMatrixType
     # Diffusion matrix
-    J::DiffusionMatrixType
-    # Buffer for (M - Δt J)
-    A::SystemMatrixType
+    K::DiffusionMatrixType
     # Helper for possible source terms
     source_term::SourceTermType
-    # Linear solver for (M - Δtₙ₋₁ J) uₙ = M uₙ₋₁
-    linsolver::LinSolverType
-    # Buffer for right hand side
-    b::RHSType
-    # Last time step length as a check if we have to update J
+    # Linear solver for (M - Δtₙ₋₁ K) uₙ = M uₙ₋₁
+    inner_solver::SolverCacheType
+    # Last time step length as a check if we have to update K
     Δt_last::Float64
 end
 
 # Helper to get A into the right form
-function implicit_euler_heat_solver_update_system_matrix!(cache::BackwardEulerSolverCache{<:Any, <:Any, <:Any, SystemMatrixType}, Δt) where {SystemMatrixType}
-    cache.A = SystemMatrixType(cache.M.A - Δt*cache.J.A) # TODO FIXME make me generic
+function implicit_euler_heat_solver_update_system_matrix!(cache::BackwardEulerSolverCache, Δt)
+    _implicit_euler_heat_solver_update_system_matrix!(cache.inner_solver.A, cache.M, cache.K, Δt)
+
     cache.Δt_last = Δt
 end
-# Optimized version for CSR matrices - Lucky gamble dispatch
-function implicit_euler_heat_solver_update_system_matrix!(cache::BackwardEulerSolverCache{<:Any, <:Any, <:Any, SystemMatrixType}, Δt) where {SystemMatrixType <: ThreadedSparseMatrixCSR}
-    # We live in a symmeric utopia :)
-    @timeit_debug "implicit_euler_heat_solver_update_system_matrix!" cache.A = SystemMatrixType(transpose(cache.M.A - Δt*cache.J.A)) # TODO FIXME make me generic
-    cache.Δt_last = Δt
-end
+
+_implicit_euler_heat_solver_update_system_matrix!(A, M, K, Δt) = @. A = M.A - Δt*K.A
+_implicit_euler_heat_solver_update_system_matrix!(A::ThreadedSparseMatrixCSR, M, K, Δt) = _implicit_euler_heat_solver_update_system_matrix!(A.A, M, K, Δt)
 
 function implicit_euler_heat_update_source_term!(cache::BackwardEulerSolverCache, t)
     needs_update(cache.source_term, t) && update_operator!(cache.source_term, t)
 end
 
 # Performs a backward Euler step
-# TODO check if operator is time dependent and update
-function perform_step!(f::TransientHeatFunction, cache::BackwardEulerSolverCache{SolutionType, MassMatrixType, DiffusionMatrixType, SystemMatrixType, LinSolverType, RHSType}, t, Δt) where {SolutionType, MassMatrixType, DiffusionMatrixType, SystemMatrixType, LinSolverType, RHSType}
-    @unpack Δt_last, b, M, A, uₙ, uₙ₋₁, linsolver = cache
+function perform_step!(f::TransientHeatFunction, cache::BackwardEulerSolverCache, t, Δt)
+    @unpack Δt_last, M, uₙ, uₙ₋₁, inner_solver = cache
     # Remember last solution
     @inbounds uₙ₋₁ .= uₙ
     # Update matrix if time step length has changed
     Δt ≈ Δt_last || implicit_euler_heat_solver_update_system_matrix!(cache, Δt)
     # Prepare right hand side b = M uₙ₋₁
-    @timeit_debug "b = M uₙ₋₁" mul!(b, M, uₙ₋₁)
+    @timeit_debug "b = M uₙ₋₁" mul!(inner_solver.b, M, uₙ₋₁)
     # TODO How to remove these two lines here?
     # Update source term
     @timeit_debug "update source term" begin
         implicit_euler_heat_update_source_term!(cache, t)
-        add!(b, cache.source_term)
+        add!(inner_solver.b, cache.source_term)
     end
     # Solve linear problem
-    # TODO abstraction layer and way to pass the solver/preconditioner pair (LinearSolve.jl?)
-    @timeit_debug "inner solve" Krylov.cg!(linsolver, A, b, uₙ₋₁)
-    @inbounds uₙ .= linsolver.x
-    @info linsolver.stats
+    @timeit_debug "inner solve" LinearSolve.solve!(inner_solver)
+    # @info inner_solver.stats
     return true
 end
 
 function setup_solver_cache(f::TransientHeatFunction, solver::BackwardEulerSolver, t₀)
     @unpack dh = f
+    @unpack inner_solver = solver
     @assert length(dh.field_names) == 1 # TODO relax this assumption, maybe.
     field_name = dh.field_names[1]
     intorder = quadrature_order(f, field_name)
     qr = QuadratureRuleCollection(intorder) # TODO how to pass this one down here?
 
+    # TODO How to choose the exact operator types here?
+    #      Maybe via some parameter in BackwardEulerSolver?
     mass_operator = AssembledBilinearOperator(
-        dh, field_name, # TODO field name
+        dh, field_name,
         BilinearMassIntegrator(
             ConstantCoefficient(1.0)
         ),
@@ -82,37 +81,37 @@ function setup_solver_cache(f::TransientHeatFunction, solver::BackwardEulerSolve
     )
 
     diffusion_operator = AssembledBilinearOperator(
-        dh, field_name, # TODO field name
+        dh, field_name,
         BilinearDiffusionIntegrator(
             f.diffusion_tensor_field,
         ),
         qr
     )
 
+    A = ThreadedSparseMatrixCSR(transpose(create_sparsity_pattern(dh))) # TODO this should be decided via some interface
+    A = create_sparsity_pattern(dh)
+    b = zeros(solution_size(f))
+    u0 = zeros(solution_size(f))
+    inner_prob = LinearSolve.LinearProblem(
+        A, b; u0
+    )
+    inner_cache = init(inner_prob, inner_solver)
+
     cache = BackwardEulerSolverCache(
-        zeros(solution_size(f)),
-        zeros(solution_size(f)),
-        # TODO How to choose the exact operator types here?
-        #      Maybe via some parameter in BackwardEulerSolver?
+        u0, # u
+        zeros(solution_size(f)), # uprev
         mass_operator,
         diffusion_operator,
-        ThreadedSparseMatrixCSR(transpose(create_sparsity_pattern(dh))), # TODO this should be decided via some interface
         create_linear_operator(dh, f.source_term),
-        # TODO this via LinearSolvers.jl?
-        CgSolver(
-            solution_size(f),
-            solution_size(f),
-            Vector{Float64}
-        ),
-        zeros(solution_size(f)),
+        inner_cache,
         0.0
     )
 
     @timeit_debug "initial assembly" begin
-        update_operator!(cache.M, t₀)
-        update_operator!(cache.J, t₀)
+        update_operator!(mass_operator, t₀)
+        update_operator!(diffusion_operator, t₀)
     end
-    
+
     return cache
 end
 

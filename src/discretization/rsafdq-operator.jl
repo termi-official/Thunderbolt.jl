@@ -22,12 +22,11 @@ function AssembledRSAFDQ2022Operator(dh::AbstractDofHandler, field_name::Symbol,
     Jmech = create_sparsity_pattern(dh)
 
     num_chambers = length(tying.chambers)
-    block_sizes = [ndofs(dh), length(tying.chambers)]
+    block_sizes = [ndofs(dh), num_chambers]
     total_size = sum(block_sizes)
-    # First we define an empty dummy block array
+    # First we initialize an empty dummy block array
     Jblock = BlockArray(spzeros(total_size,total_size), block_sizes, block_sizes)
     Jblock[Block(1,1)] = Jmech
-    Jblock[Block(2,2)] = spzeros(num_chambers,num_chambers)
 
     AssembledRSAFDQ2022Operator(
         Jblock,
@@ -41,9 +40,10 @@ end
 getJ(op::AssembledRSAFDQ2022Operator) = op.J
 getJ(op::AssembledRSAFDQ2022Operator, i::Block) = @view op.J[i]
 
-function update_linearization!(op::AssembledRSAFDQ2022Operator, u::AbstractVector, time)
+function update_linearization!(op::AssembledRSAFDQ2022Operator, u_::AbstractVector, time)
     @unpack J, element_cache, face_cache, tying_cache, dh  = op
 
+    u = PseudoBlockVector(u_, blocksizes(J)[1])
     ud = @view u[Block(1)]
     up = @view u[Block(2)]
 
@@ -92,12 +92,14 @@ function update_linearization!(op::AssembledRSAFDQ2022Operator, u::AbstractVecto
     #finish_assemble(assembler)
 end
 
-function update_linearization!(op::AssembledRSAFDQ2022Operator, u::AbstractVector, residual::AbstractVector, time)
+function update_linearization!(op::AssembledRSAFDQ2022Operator, u_::AbstractVector, residual_::AbstractVector, time)
     @unpack J, element_cache, face_cache, tying_cache, dh  = op
 
+    u = PseudoBlockVector(u_, blocksizes(J)[1])
     ud = @view u[Block(1)]
     up = @view u[Block(2)]
 
+    residual = PseudoBlockVector(residual_, blocksizes(J)[1])
     residuald = @view residual[Block(1)]
     residualp = @view residual[Block(2)]
 
@@ -105,7 +107,8 @@ function update_linearization!(op::AssembledRSAFDQ2022Operator, u::AbstractVecto
     Jpd = @view J[Block(2,1)]
     Jdp = @view J[Block(1,2)]
     # Reset residual and Jacobian to 0
-    assembler = start_assemble(Jdd, residuald)
+    assembler = start_assemble(Jdd)
+    fill!(residuald, 0.0)
     fill!(residualp, 0.0)
     fill!(Jpd, 0.0)
     fill!(Jdp, 0.0)
@@ -126,7 +129,8 @@ function update_linearization!(op::AssembledRSAFDQ2022Operator, u::AbstractVecto
             assemble_face!(Jₑ, rₑ, uₑ, cell, local_face_index, face_cache, time)
         end
         @timeit_debug "assemble tying"  assemble_tying!(Jₑ, rₑ, uₑ, uₜ, cell, tying_cache, time)
-        assemble!(assembler, dofs, Jₑ, rₑ)
+        assemble!(assembler, dofs, Jₑ)
+        residuald[dofs] .+= rₑ
     end
 
     # Assemble forward and backward coupling contributions

@@ -47,7 +47,7 @@ function store_timestep_field!(io::ParaViewWriter, t, dh::AbstractDofHandler, u:
         @warn "Cannot write data for PVD '$(io.name)'. Field $sym not found in $fieldnames of DofHandler. Skipping."
     end
     data = Ferrite._evaluate_at_grid_nodes(dh, u, sym, #=vtk=# Val(true))
-    vtk_point_data(io.current_file, data, String(sym))
+    WriteVTK.vtk_point_data(io.current_file, data, String(sym))
 end
 
 function store_timestep_celldata!(io::ParaViewWriter, t, u, coeff_name::String)
@@ -56,7 +56,7 @@ function store_timestep_celldata!(io::ParaViewWriter, t, u, coeff_name::String)
 end
 
 function finalize_timestep!(io::ParaViewWriter, t)
-    vtk_save(io.current_file)
+    WriteVTK.vtk_save(io.current_file)
     io.pvd.pvd[t] = io.current_file
     io.current_file = nothing
     # This updates the PVD file
@@ -92,7 +92,7 @@ function store_coefficient!(io::ParaViewWriter, t, coefficient::ConstantCoeffici
         qr = getquadraturerule(qr_collection, getcells(get_grid(dh), cellid(cell_cache)))
         data[cellid(cell_cache)] = evaluate_coefficient(coefficient, cell_cache, first(QuadratureIterator(qr)), t)
     end
-    vtk_cell_data(io.current_file, data, name)
+    WriteVTK.vtk_cell_data(io.current_file, data, name)
 end
 
 # TODO split up compute from store
@@ -116,7 +116,7 @@ function _store_coefficient!(::Union{Type{<:Tuple{T}},Type{<:SVector{T}}}, tlen:
         data[cellid(cell_cache),:] ./= getnquadpoints(qr)
     end
     for i ∈ 1:tlen
-        vtk_cell_data(io.current_file, data[:,i], name*".$i") # TODO component names
+        WriteVTK.vtk_cell_data(io.current_file, data[:,i], name*".$i") # TODO component names
     end
 end
 
@@ -129,7 +129,7 @@ function _store_coefficient!(T::Type, tlen::Int, io::ParaViewWriter, dh, coeffic
         end
         data[cellid(cell_cache)] /= getnquadpoints(qr)
     end
-    vtk_cell_data(io.current_file, data, name)
+    WriteVTK.vtk_cell_data(io.current_file, data, name)
 end
 
 function store_coefficient!(io, dh, coefficient::SpectralTensorCoefficient, name, t)
@@ -163,7 +163,7 @@ function store_green_lagrange!(io::ParaViewWriter, dh, u::AbstractVector, a_coef
         end
         E[cellid(cell)] /= getnquadpoints(cv)
     end
-    vtk_cell_data(io.current_file, E, name)
+    WriteVTK.vtk_cell_data(io.current_file, E, name)
 end
 
 """

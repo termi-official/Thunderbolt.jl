@@ -5,9 +5,7 @@ using TimerOutputs
 using Reexport, UnPack
 import LinearAlgebra: mul!
 using SparseMatricesCSR, Polyester, LinearAlgebra
-using Krylov
 using OrderedCollections
-@reexport using Ferrite
 using BlockArrays, SparseArrays, StaticArrays
 
 using JLD2
@@ -21,16 +19,16 @@ solution_size(f::GenericSplitFunction) = OS.function_size(f)
 # include("solver/local_time_stepping.jl")
 # include("solver/multilevel.jl")
 
+@reexport using Ferrite
 import Ferrite: AbstractDofHandler, AbstractGrid, AbstractRefShape, AbstractCell
 import Ferrite: vertices, edges, faces, sortedge, sortface
 
 import DiffEqBase#: AbstractDiffEqFunction, AbstractDEProblem
-
-import Krylov: CgSolver
+@reexport import LinearSolve
 
 import Base: *, +, -
 
-import CommonSolve: init, solve, solve!, step!
+@reexport import CommonSolve: init, solve, solve!, step!
 
 import ModelingToolkit
 import ModelingToolkit: @variables, @parameters, @component, @named,
@@ -62,14 +60,11 @@ include("discretization/fem.jl")
 include("discretization/operator.jl")
 
 include("solver/interface.jl")
-include("solver/nlsolve_common.jl")
-include("solver/newton_raphson.jl")
-include("solver/time_integrator.jl")
-include("solver/load_stepping.jl")
-include("solver/euler.jl")
-include("solver/partitioned_solver.jl")
+include("solver/linear.jl")
+include("solver/nonlinear.jl")
+include("solver/time_integration.jl")
 
-include("solver/ecg.jl")
+include("processing/ecg.jl")
 
 include("io.jl")
 
@@ -177,7 +172,7 @@ export
     semidiscretize,
     FiniteElementDiscretization,
     # Solver
-    solve!,
+    SchurComplementLinearSolver,
     NewtonRaphsonSolver,
     LoadDrivenSolver,
     ForwardEulerSolver,
