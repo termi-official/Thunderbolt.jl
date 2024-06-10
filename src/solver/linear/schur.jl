@@ -45,6 +45,7 @@ struct NestedLinearCache{AType, bType, innerSolveType, scratchType}
     algscratch::scratchType
 end
 
+# FIXME This does not work for some reason...
 LinearSolve.default_alias_A(alg::AbstractLinearBlockAlgorithm, A::AbstractBlockMatrix, b) = true
 
 function LinearSolve.init_cacheval(alg::AbstractLinear2x2BlockAlgorithm, A::AbstractBlockMatrix, b::AbstractVector, u::AbstractVector, Pl, Pr, maxiters::Int, abstol, reltol, verbose::Bool, assumptions::LinearSolve.OperatorAssumptions; zeroinit = true)
@@ -65,17 +66,20 @@ function LinearSolve.init_cacheval(alg::AbstractLinear2x2BlockAlgorithm, A::Abst
     cᵢ = zero(b₁)
 
     # Build inner helper
-    A₁₁ = A[Block(1,1)]
+    A₁₁ = @view A[Block(1,1)]
     inner_prob = LinearSolve.LinearProblem(A₁₁, cᵢ; u0=zᵢ)
+    @assert A₁₁ === inner_prob.A
     innersolve = LinearSolve.init(
         inner_prob,
         alg.inner_alg;
+        alias_A = true,
         Pl, Pr,
         verbose,
         maxiters,
         reltol,
         abstol,
     )
+    @assert A₁₁ === innersolve.A
 
     # Storage for intermediate values
     scratch = allocate_scratch(alg, A, b, u)
@@ -96,14 +100,12 @@ function LinearSolve.solve!(cache::LinearSolve.LinearCache, alg::Schur2x2SaddleF
     #  A₁₁ z₁ = b₁
     #  A₁₁ z₂ = A₁₂
     # to avoid forming A₁₁⁻¹ explicitly.
-    @unpack A,b = cache
+    @unpack A,b,u = cache
     innercache = cache.cacheval
     @unpack algscratch, innersolve = innercache
     innersolve.isfresh = cache.isfresh
 
     bs = blocksizes(A)[1]
-
-    u = zeros(sum(bs))# Where to query this?
     ub = PseudoBlockVector(u, bs)
     bb = PseudoBlockVector(b, bs)
 
@@ -113,23 +115,25 @@ function LinearSolve.solve!(cache::LinearSolve.LinearCache, alg::Schur2x2SaddleF
     solz₁ = solve!(innersolve)
     z₁ = copy(solz₁.u) # TODO cache
     if !(LinearSolve.SciMLBase.successful_retcode(solz₁.retcode) || solz₁.retcode == LinearSolve.ReturnCode.Default)
-        return LinearSolve.build_linear_solution(alg, u, nothing, cache; retcode = solz₁.retcode)
+        @warn "A₁₁ z₁ = b₁ solve failed: $(solz₁.retcode)."
+        return LinearSolve.SciMLBase.build_linear_solution(alg, u, solz₁.resid, cache; retcode = solz₁.retcode)
     end
     # Next step is solving for the transfer matrix A₁₁ z₂ = A₁₂
     z₂ = zeros(bs[1], bs[2]) # TODO cache
-    A₁₂ = A[Block(1,2)]
+    A₁₂ = @view A[Block(1, 2)]
     for i ∈ 1:bs[2]
         innersolve.b .= A₁₂[:,i]
         solz₂ = solve!(innersolve)
         z₂[:,i] .= solz₂.u
         if !(LinearSolve.SciMLBase.successful_retcode(solz₂.retcode) || solz₂.retcode == LinearSolve.ReturnCode.Default)
-            return LinearSolve.build_linear_solution(alg, u, nothing, cache; retcode = solz₂.retcode)
+            @warn "A₁₁ z₂ = A₁₂ ($i) solve failed"
+            return LinearSolve.SciMLBase.build_linear_solution(alg, u, solz₂.resid, cache; retcode = solz₂.retcode)
         end
     end
 
     # Solve A₂₁ z₂ u₂ = A₂₁ z₁ - b₂
-    A₂₁ = @view A[Block(2), Block(1)]
-    A₂₂ = @view A[Block(2), Block(2)]
+    A₂₁ = @view A[Block(2, 1)]
+    A₂₂ = @view A[Block(2, 2)]
     u₂ = @view ub[Block(2)]
     b₂ = @view bb[Block(2)]
     A₂₁z₁ = A₂₁*z₁ # TODO cache
@@ -140,5 +144,28 @@ function LinearSolve.solve!(cache::LinearSolve.LinearCache, alg::Schur2x2SaddleF
     u₁ = @view ub[Block(1)]
     u₁ .= -(z₁+z₂*u₂)
 
+    # Sync outer cache
+    cache.isfresh = innersolve.isfresh
     return LinearSolve.SciMLBase.build_linear_solution(alg, u, nothing, cache; retcode=LinearSolve.ReturnCode.Success)
+end
+
+function inner_solve_schur(J::BlockMatrix, r::AbstractBlockArray)
+    # TODO optimize
+    Jdd = @view J[Block(1,1)]
+    rd = @view r[Block(1)]
+    rp = @view r[Block(2)]
+    v = -(Jdd \ rd)
+    Jdp = @view J[Block(1,2)]
+    Jpd = @view J[Block(2,1)]
+    w = Jdd \ Vector(Jdp[:,1])
+
+    Jpdv = Jpd*v
+    Jpdw = Jpd*w
+    # Δp = [(rp[i] - Jpdv[i]) / Jpdw[i] for i ∈ 1:length(Jpdw)]
+    Δp = (-rp[1] - Jpdv[1]) / Jpdw[1]
+    wΔp = w*Δp
+    Δd = -(v+wΔp) #-[-(v + wΔp[i]) for i in 1:length(v)]
+
+    Δu = BlockVector([Δd; [Δp]], blocksizes(r,1))
+    return Δu
 end

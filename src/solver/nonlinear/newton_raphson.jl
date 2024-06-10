@@ -48,8 +48,9 @@ function setup_solver_cache(f::AbstractSemidiscreteBlockedFunction, solver::Newt
     inner_prob = LinearSolve.LinearProblem(
         getJ(op), residual; u0=Δu
     )
-    inner_cache = init(inner_prob, inner_solver)
-    
+    inner_cache = init(inner_prob, inner_solver; alias_A=true, alias_b=true)
+    @assert inner_cache.b === residual
+
     NewtonRaphsonSolverCache(op, residual, solver, inner_cache)
 end
 
@@ -63,10 +64,13 @@ function nlsolve!(u::AbstractVector, f::AbstractSemidiscreteFunction, cache::New
         residual .= 0.0
         @timeit_debug "update operator" update_linearization!(op, u, residual, t)
         @timeit_debug "elimination" eliminate_constraints_from_linearization!(cache, f)
+        linear_solver_cache.isfresh = true # Notify linear solver that we touched the system matrix
+
         # vtk_grid("newton-debug-$newton_itr", problem.structural_problem.dh) do vtk
         #     vtk_point_data(vtk, f.structural_problem.dh, u[Block(1)])
         #     vtk_point_data(vtk, f.structural_problem.dh, residual[Block(1)], :residual)
         # end
+
         residualnorm = residual_norm(cache, f)
         @info "Newton itr $newton_itr: ||r||=$residualnorm"
         if residualnorm < cache.parameters.tol #|| (newton_itr > 0 && norm(Δu) < cache.parameters.tol)
@@ -80,8 +84,8 @@ function nlsolve!(u::AbstractVector, f::AbstractSemidiscreteFunction, cache::New
         end
 
         @timeit_debug "solve" sol = LinearSolve.solve!(linear_solver_cache)
-        @info sol.stats
-        solve_succeeded = LinearSolve.SciMLBase.successful_retcode(sol.retcode) || sol.retcode == LinearSolve.ReturnCode.Default # The latter seems off...
+        @info "Linear solver stats: $(sol.stats) - norm(Δu) = $(norm(Δu))"
+        solve_succeeded = LinearSolve.SciMLBase.successful_retcode(sol) || sol.retcode == LinearSolve.ReturnCode.Default # The latter seems off...
         solve_succeeded || return false
 
         eliminate_constraints_from_increment!(Δu, f, cache)

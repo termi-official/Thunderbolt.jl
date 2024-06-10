@@ -9,7 +9,8 @@ function eliminate_constraints_from_increment!(Δu::AbstractVector, f::AbstractS
     # TODO be smarter about the block extraction and use info from f
     Δublocked = PseudoBlockVector(Δu, [blocksizes(f)...])
     for (i,fi) ∈ enumerate(blocks(f))
-        eliminate_constraints_from_increment!(Δublocked[Block(i)], fi, cache)
+        Δublockedi = @view Δublocked[Block(i)]
+        eliminate_constraints_from_increment!(Δublockedi, fi, cache)
     end
 end
 eliminate_constraints_from_increment!(Δu::AbstractVector, f::NullFunction, cache::AbstractNonlinearSolverCache) = nothing

@@ -22,12 +22,11 @@ function AssembledRSAFDQ2022Operator(dh::AbstractDofHandler, field_name::Symbol,
     Jmech = create_sparsity_pattern(dh)
 
     num_chambers = length(tying.chambers)
-    block_sizes = [ndofs(dh), length(tying.chambers)]
+    block_sizes = [ndofs(dh), num_chambers]
     total_size = sum(block_sizes)
-    # First we define an empty dummy block array
+    # First we initialize an empty dummy block array
     Jblock = BlockArray(spzeros(total_size,total_size), block_sizes, block_sizes)
     Jblock[Block(1,1)] = Jmech
-    Jblock[Block(2,2)] = spzeros(num_chambers,num_chambers)
 
     AssembledRSAFDQ2022Operator(
         Jblock,
@@ -131,7 +130,7 @@ function update_linearization!(op::AssembledRSAFDQ2022Operator, u_::AbstractVect
         end
         @timeit_debug "assemble tying"  assemble_tying!(Jₑ, rₑ, uₑ, uₜ, cell, tying_cache, time)
         assemble!(assembler, dofs, Jₑ)
-        residuald[dofs] .= rₑ
+        residuald[dofs] .+= rₑ
     end
 
     # Assemble forward and backward coupling contributions

@@ -313,7 +313,15 @@ coupledform = semidiscretize(
 
 # Create sparse matrix and residual vector
 timestepper = LieTrotterGodunov((
-        LoadDrivenSolver(NewtonRaphsonSolver(;max_iter=100, tol=1e-2)),
+        LoadDrivenSolver(
+            NewtonRaphsonSolver(;
+                max_iter=100,
+                tol=1e-2,
+                inner_solver=Schur2x2SaddleFormLinearSolver(
+                    LinearSolve.UMFPACKFactorization()
+                )
+            )
+        ),
         ForwardEulerSolver(ceil(Int, dt₀/0.001)), # Force time step to about 0.001
 ))
 

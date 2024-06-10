@@ -24,11 +24,11 @@ import Ferrite: AbstractDofHandler, AbstractGrid, AbstractRefShape, AbstractCell
 import Ferrite: vertices, edges, faces, sortedge, sortface
 
 import DiffEqBase#: AbstractDiffEqFunction, AbstractDEProblem
-import LinearSolve
+@reexport import LinearSolve
 
 import Base: *, +, -
 
-import CommonSolve: init, solve, solve!, step!
+@reexport import CommonSolve: init, solve, solve!, step!
 
 import ModelingToolkit
 import ModelingToolkit: @variables, @parameters, @component, @named,
@@ -172,7 +172,7 @@ export
     semidiscretize,
     FiniteElementDiscretization,
     # Solver
-    solve!,
+    Schur2x2SaddleFormLinearSolver,
     NewtonRaphsonSolver,
     LoadDrivenSolver,
     ForwardEulerSolver,
