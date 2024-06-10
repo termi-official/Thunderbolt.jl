@@ -429,9 +429,48 @@ function update_operator!(op::LinearOperator, time)
     #finish_assemble(assembler)
 end
 
-Ferrite.add!(b::AbstractVector, op::LinearOperator) = b .+= op.b
-Base.eltype(op::LinearOperator) = eltype(op.b)
-Base.size(op::LinearOperator) = sisze(op.b)
+"""
+Parallel element assembly linear operator.
+"""
+struct PEALinearOperator{VectorType, EAType, CacheType, DHType <: AbstractDofHandler} <: AbstractLinearOperator
+    b::VectorType # [global test function index]
+    beas::EAType  # [element in subdomain, local test function index]
+                  # global test function index -> element indices
+    element_cache::CacheType # Linear operators do have a static cache only
+    dh::DHType
+    function LinearOperator(b::VectorType, beas, element_cache::CacheType, dh::DHType) where {VectorType, CacheType, DHType <: AbstractDofHandler}
+        check_subdomains(dh)
+        return new(b, element_cache, dh)
+    end
+end
+
+function update_operator!(op::PEALinearOperator, time)
+    _update_operator!(op, op.b, time)
+end
+
+# Threaded CPU dispatch
+function _update_operator!(op::PEALinearOperator, b::Vector, time)
+    @unpack element_cache, dh  = op
+
+    ndofs = ndofs_per_cell(dh)
+    fill!(b, 0.0)
+
+    tlds = [ThreadLocalAssemblyData(CellCache(dh), copy(op.element_cache))]
+
+    @batch for eid in 1:ncells(get_grid(dh)) # TODO subdomain support
+        tld = tlds[Thread.threadid()]
+        reinit!(tld.cc, eid)
+        bₑ = get_data_for_index(op.beas, cellid(cell))
+        fill!(bₑ, 0.0)
+        @timeit_debug "assemble element" assemble_element!(bₑ, tld.cc, element_cache, time)
+    end
+
+    ea_collapse!(b, bes)
+end
+
+Ferrite.add!(b::AbstractVector, op::AbstractLinearOperator) = b .+= op.b
+Base.eltype(op::AbstractLinearOperator) = eltype(op.b)
+Base.size(op::AbstractLinearOperator) = sisze(op.b)
 
 # TODO where to put these?
 function create_linear_operator(dh, ::NoStimulationProtocol) 
