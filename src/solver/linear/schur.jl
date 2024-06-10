@@ -81,14 +81,13 @@ function LinearSolve.init_cacheval(alg::AbstractLinear2x2BlockAlgorithm, A::Abst
         reltol,
         abstol,
     )
-    @assert A₁₁ === innersolve.A
 
     # Storage for intermediate values
     scratch = allocate_scratch(alg, A, b, u)
     return NestedLinearCache(A, b, innersolve, scratch)
 end
 
-function LinearSolve.solve!(cache::LinearSolve.LinearCache, alg::SchurComplementLinearSolver; kwargs...)
+function LinearSolve.solve!(cache::LinearSolve.LinearCache, alg::SchurComplementLinearSolver; kwargs...) # 1 alloc from the call...?
     # Instead of solving directly for
     #  / A₁₁  A₁₂ \ u₁ | b₁
     #  \ A₂₁  A₂₂ / u₂ | b₂
@@ -103,46 +102,47 @@ function LinearSolve.solve!(cache::LinearSolve.LinearCache, alg::SchurComplement
     #  A₁₁ z₂ = A₁₂
     # to avoid forming A₁₁⁻¹ explicitly.
     @unpack A,b,u = cache
-    SchurComplementLinearSolver = cache.cacheval
-    @unpack algscratch, innersolve = SchurComplementLinearSolver
+    @unpack algscratch, innersolve = cache.cacheval
 
     # Unpack definitions into readable form without invoking copies
     @unpack z₁, z₂, A₂₁z₁₊b₂, A₂₁z₂₊A₂₂ = algscratch
-    bs = blocksizes(A)[1]
-    ub = PseudoBlockVector(u, bs)
-    bb = PseudoBlockVector(b, bs)
+    bs = blocksizes(A)[1] # 5 allocs
     A₁₂ = @view A[Block(1, 2)]
     A₂₁ = @view A[Block(2, 1)]
     A₂₂ = @view A[Block(2, 2)]
-    u₁ = @view ub[Block(1)]
-    u₂ = @view ub[Block(2)]
-    b₁ = @view bb[Block(1)]
-    b₂ = @view bb[Block(2)]
+    u₁ = @view u[1:bs[1]]
+    u₂ = @view u[(bs[1]+1):(bs[1]+bs[2])]
+    b₁ = @view b[1:bs[1]]
+    b₂ = @view b[(bs[1]+1):(bs[1]+bs[2])]
 
     # Sync inner solver with outer solver
     innersolve.isfresh = cache.isfresh
 
     # First step is solving A₁₁ z₁ = b₁
-    innersolve.b .= -b₁
-    solz₁ = solve!(innersolve)
+    @. innersolve.b = -b₁
+    @timeit_debug "Solve A₁₁ z₁ = b₁" solz₁ = solve!(innersolve)
     z₁ .= solz₁.u
-    if !(LinearSolve.SciMLBase.successful_retcode(solz₁.retcode) || solz₁.retcode == LinearSolve.ReturnCode.Default)
+    if !(LinearSolve.SciMLBase.successful_retcode(solz₁) || solz₁.retcode == LinearSolve.ReturnCode.Default)
         @warn "A₁₁ z₁ = b₁ solve failed: $(solz₁.retcode)."
-        return LinearSolve.SciMLBase.build_linear_solution(alg, u, solz₁.resid, cache; retcode = solz₁.retcode)
+        return LinearSolve.SciMLBase.build_linear_solution(alg, u, nothing, cache; retcode = solz₁.retcode)
     end
     # Next step is solving for the transfer matrix A₁₁ z₂ = A₁₂
     for i ∈ 1:bs[2]
-        innersolve.b .= A₁₂[:,i]
+        # Setup
+        A₁₂i = @view A₁₂[:,i]
+        innersolve.b .= A₁₂i
+        # Solve
         solz₂ = solve!(innersolve)
-        z₂[:,i] .= solz₂.u
-        if !(LinearSolve.SciMLBase.successful_retcode(solz₂.retcode) || solz₂.retcode == LinearSolve.ReturnCode.Default)
+        # Update
+        z₂i = @view z₂[:,i]
+        z₂i .= solz₂.u
+        if !(LinearSolve.SciMLBase.successful_retcode(solz₂) || solz₂.retcode == LinearSolve.ReturnCode.Default)
             @warn "A₁₁ z₂ = A₁₂ ($i) solve failed"
-            return LinearSolve.SciMLBase.build_linear_solution(alg, u, solz₂.resid, cache; retcode = solz₂.retcode)
+            return LinearSolve.SciMLBase.build_linear_solution(alg, u, nothing, cache; retcode = solz₂.retcode)
         end
     end
 
     # Solve A₂₁ z₂ u₂ = A₂₁ z₁ - b₂
-    A₂₁z₁₊b₂ = -(A₂₁*z₁ + b₂)
     mul!(A₂₁z₁₊b₂, A₂₁, z₁)
     A₂₁z₁₊b₂ .+= b₂
     A₂₁z₁₊b₂ .*= -1.0
@@ -152,7 +152,7 @@ function LinearSolve.solve!(cache::LinearSolve.LinearCache, alg::SchurComplement
 
     # ldiv!(u₂, A₂₁z₂₊A₂₂, A₂₁z₁₊b₂) # FIXME
     # ldiv!(A₂₁z₂₊A₂₂, A₂₁z₁₊b₂)
-    u₂ .= A₂₁z₂₊A₂₂ \ A₂₁z₁₊b₂
+    u₂ .= A₂₁z₂₊A₂₂ \ A₂₁z₁₊b₂ # 3 allocs
 
     # Solve for u₁ via u₁ = z₁ - z₂ u₂
     mul!(u₁, z₂, u₂)
