@@ -83,10 +83,23 @@ function LinearSolve.init_cacheval(alg::AbstractLinear2x2BlockAlgorithm, A::Abst
 end
 
 function LinearSolve.solve!(cache::LinearSolve.LinearCache, alg::Schur2x2SaddleFormLinearSolver; kwargs...)
+    # Instead of solving directly for
+    #  / A₁₁  A₁₂ \ u₁ | b₁
+    #  \ A₂₁  A₂₂ / u₂ | b₂
+    # We rewrite the system as in Benzi, Golub, Liesen (2005) p.30
+    # A₂₁ A₁₁⁻¹ A₁₂ u₂ = A₂₁ A₁₁⁻¹ b₁ - b₁
+    #               u₁ = A₁₁⁻¹ b₁ - (A₁₁⁻¹ A₁₂ - A₂₂) u₂
+    # which we rewrite as
+    # A₂₁ z₂ u₂ = A₂₁ z₁ - b₂
+    #        u₁ = z₁ - z₂ u₂
+    # with
+    #  A₁₁ z₁ = b₁
+    #  A₁₁ z₂ = A₁₂
+    # to avoid forming A₁₁⁻¹ explicitly.
     @unpack A,b = cache
     innercache = cache.cacheval
     @unpack algscratch, innersolve = innercache
-    # innersolve.isfresh = cache.isfresh
+    innersolve.isfresh = cache.isfresh
 
     bs = blocksizes(A)[1]
 
@@ -113,76 +126,19 @@ function LinearSolve.solve!(cache::LinearSolve.LinearCache, alg::Schur2x2SaddleF
             return LinearSolve.build_linear_solution(alg, u, nothing, cache; retcode = solz₂.retcode)
         end
     end
-    @info z₂
-    # Solve for u₂
-    A₂₁ = A[Block(2), Block(1)]
-    A₂₁z₁ = A₂₁*z₁ # TODO cache
-    @info A₂₁z₁
-    A₂₁z₂ = A₂₁*z₂ # TODO cache
-    @info A₂₁z₂
-    # TODO check that all are values in A₂₁z₂ are nonzeros or it is a solve failure
+
+    # Solve A₂₁ z₂ u₂ = A₂₁ z₁ - b₂
+    A₂₁ = @view A[Block(2), Block(1)]
+    A₂₂ = @view A[Block(2), Block(2)]
     u₂ = @view ub[Block(2)]
     b₂ = @view bb[Block(2)]
-    for i ∈ 1:bs[2]
-        u₂[i] = -(b₂[i] + A₂₁z₁[i]) / A₂₁z₂[i]
-    end
+    A₂₁z₁ = A₂₁*z₁ # TODO cache
+    A₂₁z₂C = A₂₁*z₂ - A₂₂ # TODO cache
+    u₂ .= A₂₁z₂C \ -(b₂ + A₂₁z₁)
 
-    # Solve for u₁
+    # Solve for u₁ via u₁ = z₁ - z₂ u₂
     u₁ = @view ub[Block(1)]
     u₁ .= -(z₁+z₂*u₂)
 
     return LinearSolve.SciMLBase.build_linear_solution(alg, u, nothing, cache; retcode=LinearSolve.ReturnCode.Success)
 end
-
-# # TODO replace this with LinearSolve.jl
-# # https://github.com/JuliaArrays/BlockArrays.jl/issues/319
-# inner_solve(J, r) = J \ r
-function inner_solve_schur(J::BlockMatrix, r::AbstractBlockArray)
-    # TODO optimize
-    Jdd = @view J[Block(1,1)]
-    rd = @view r[Block(1)]
-    rp = @view r[Block(2)]
-    v = -(Jdd \ rd)
-    Jdp = @view J[Block(1,2)]
-    Jpd = @view J[Block(2,1)]
-    w = Jdd \ Vector(Jdp[:,1])
-    @info w
-
-    Jpdv = Jpd*v
-    Jpdw = Jpd*w
-    # Δp = [(rp[i] - Jpdv[i]) / Jpdw[i] for i ∈ 1:length(Jpdw)]
-    Δp = (-rp[1] - Jpdv[1]) / Jpdw[1]
-    wΔp = w*Δp
-    Δd = -(v+wΔp) #-[-(v + wΔp[i]) for i in 1:length(v)]
-
-    Δu = BlockVector([Δd; [Δp]], blocksizes(r,1))
-    return Δu
-end
-
-# function inner_solve(J::BlockMatrix, r::BlockArray)
-#     if length(blocksizes(r,1)) == 2 # TODO control by passing down the linear solver
-#         return inner_solve_schur(J,r)
-#     end
-
-#     @timeit_debug "transform J " J_ = SparseMatrixCSC(J)
-#     @timeit_debug "transform r" r_ = Vector(r)
-#     @timeit_debug "direct solver" Δu = J_ \ r_
-#     return Δu
-# end
-# inner_solve(J::BlockMatrix, r) = SparseMatrixCSC(J) \ r
-# inner_solve(J, r::BlockArray) = J \ Vector(r)
-
-# function solve_inner_linear_system!(Δu, cache::AbstractNonlinearSolverCache)
-#     J = getJ(cache.op)
-#     r = cache.residual
-#     try
-#         Δu .= inner_solve(J, r)
-#     catch err
-#         io = IOBuffer();
-#         showerror(io, err, catch_backtrace())
-#         error_msg = String(take!(io))
-#         @warn "Linear solver failed: \n $error_msg"
-#         return false
-#     end
-#     return true
-# end

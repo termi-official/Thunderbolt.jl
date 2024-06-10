@@ -5,7 +5,6 @@ using TimerOutputs
 using Reexport, UnPack
 import LinearAlgebra: mul!
 using SparseMatricesCSR, Polyester, LinearAlgebra
-using Krylov
 using OrderedCollections
 using BlockArrays, SparseArrays, StaticArrays
 

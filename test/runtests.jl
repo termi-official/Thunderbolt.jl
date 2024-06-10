@@ -4,6 +4,8 @@ include("test_operators.jl")
 
 include("test_subdomains.jl")
 
+include("test_solver.jl")
+
 include("test_transfer.jl")
 
 include("test_integrators.jl")
