@@ -1,4 +1,4 @@
-abstract type AbstractLinearBlockAlgorithm <: LinearSolve.AbstractLinearAlgorithm end
+abstract type AbstractLinearBlockAlgorithm <: LinearSolve.SciMLLinearSolveAlgorithm end # Why not the following? <: LinearSolve.AbstractLinearAlgorithm end
 
 abstract type AbstractLinear2x2BlockAlgorithm <: AbstractLinearBlockAlgorithm end
 
@@ -52,7 +52,7 @@ function LinearSolve.init_cacheval(alg::AbstractLinear2x2BlockAlgorithm, A::Abst
     bs = blocksizes(A)
     nblocks = length.(bs)
     @assert nblocks == (2,2) "Input matrix is not a 2x2 block matrix. Block sizes are actually $(nblocks)."
-    @assert bs[1] = bs[2] "Diagonal blocks do not form quadratic matrices ($(bs[1]) != $(bs[2])). Aborting."
+    @assert bs[1] == bs[2] "Diagonal blocks do not form quadratic matrices ($(bs[1]) != $(bs[2])). Aborting."
 
     # Transform Vectors to block vectors
     ub = PseudoBlockVector(u, bs[1])
@@ -65,8 +65,8 @@ function LinearSolve.init_cacheval(alg::AbstractLinear2x2BlockAlgorithm, A::Abst
     cᵢ = zero(b₁)
 
     # Build inner helper
-    A₁₁ = @view A[Block(1,1)]
-    inner_prob = LinearProblem(A₁₁, cᵢ; u0=zᵢ)
+    A₁₁ = A[Block(1,1)]
+    inner_prob = LinearSolve.LinearProblem(A₁₁, cᵢ; u0=zᵢ)
     innersolve = LinearSolve.init(
         inner_prob,
         alg.inner_alg;
@@ -82,73 +82,82 @@ function LinearSolve.init_cacheval(alg::AbstractLinear2x2BlockAlgorithm, A::Abst
     return NestedLinearCache(A, b, innersolve, scratch)
 end
 
-function LinearSolve.solve!(cache::NestedLinearCache, alg::Schur2x2SaddleFormLinearSolver; kwargs...)
-    @unpack A,b,innersolve,scratch = cache
-    innersolve.isfresh = cache.isfresh
+function LinearSolve.solve!(cache::LinearSolve.LinearCache, alg::Schur2x2SaddleFormLinearSolver; kwargs...)
+    @unpack A,b = cache
+    innercache = cache.cacheval
+    @unpack algscratch, innersolve = innercache
+    # innersolve.isfresh = cache.isfresh
 
-    bs = blocksizes(b)[1]
+    bs = blocksizes(A)[1]
 
     u = zeros(sum(bs))# Where to query this?
     ub = PseudoBlockVector(u, bs)
+    bb = PseudoBlockVector(b, bs)
 
     # First step is solving A₁₁ z₁ = b₁
-    b₁ = @view b[Block(1)]
-    innersolve.b .= b₁
+    b₁ = @view bb[Block(1)]
+    innersolve.b .= -b₁
     solz₁ = solve!(innersolve)
     z₁ = copy(solz₁.u) # TODO cache
-    if !(LinearSolve.LinearSolve.successful_retcode(solz₁.retcode) || solz₁.retcode == LinearSolve.ReturnCode.Default)
+    if !(LinearSolve.SciMLBase.successful_retcode(solz₁.retcode) || solz₁.retcode == LinearSolve.ReturnCode.Default)
         return LinearSolve.build_linear_solution(alg, u, nothing, cache; retcode = solz₁.retcode)
     end
     # Next step is solving for the transfer matrix A₁₁ z₂ = A₁₂
-    z₂ = zeros(bs[1], bs[2])
+    z₂ = zeros(bs[1], bs[2]) # TODO cache
+    A₁₂ = A[Block(1,2)]
     for i ∈ 1:bs[2]
-        innersolve.b .= b₁
+        innersolve.b .= A₁₂[:,i]
         solz₂ = solve!(innersolve)
         z₂[:,i] .= solz₂.u
-        if !(LinearSolve.LinearSolve.successful_retcode(solz₂.retcode) || solz₂.retcode == LinearSolve.ReturnCode.Default)
+        if !(LinearSolve.SciMLBase.successful_retcode(solz₂.retcode) || solz₂.retcode == LinearSolve.ReturnCode.Default)
             return LinearSolve.build_linear_solution(alg, u, nothing, cache; retcode = solz₂.retcode)
         end
     end
-
+    @info z₂
     # Solve for u₂
+    A₂₁ = A[Block(2), Block(1)]
     A₂₁z₁ = A₂₁*z₁ # TODO cache
+    @info A₂₁z₁
     A₂₁z₂ = A₂₁*z₂ # TODO cache
+    @info A₂₁z₂
     # TODO check that all are values in A₂₁z₂ are nonzeros or it is a solve failure
-    u₂ = @view u[Block(2)]
+    u₂ = @view ub[Block(2)]
+    b₂ = @view bb[Block(2)]
     for i ∈ 1:bs[2]
-        u₂[i] .= (-b₂[i] - A₂₁z₁[i]) / A₂₁z₂[i]
+        u₂[i] = -(b₂[i] + A₂₁z₁[i]) / A₂₁z₂[i]
     end
 
     # Solve for u₁
-    u₁ = @view u[Block(1)]
+    u₁ = @view ub[Block(1)]
     u₁ .= -(z₁+z₂*u₂)
 
-    return LinearSolve.build_linear_solution(alg, u, nothing, cache; retcode=LinearSolve.ReturnCode.Success)
+    return LinearSolve.SciMLBase.build_linear_solution(alg, u, nothing, cache; retcode=LinearSolve.ReturnCode.Success)
 end
 
 # # TODO replace this with LinearSolve.jl
 # # https://github.com/JuliaArrays/BlockArrays.jl/issues/319
 # inner_solve(J, r) = J \ r
-# function inner_solve_schur(J::BlockMatrix, r::BlockArray)
-#     # TODO optimize
-#     Jdd = @view J[Block(1,1)]
-#     rd = @view r[Block(1)]
-#     rp = @view r[Block(2)]
-#     v = -(Jdd \ rd)
-#     Jdp = @view J[Block(1,2)]
-#     Jpd = @view J[Block(2,1)]
-#     w = Jdd \ Vector(Jdp[:,1])
+function inner_solve_schur(J::BlockMatrix, r::AbstractBlockArray)
+    # TODO optimize
+    Jdd = @view J[Block(1,1)]
+    rd = @view r[Block(1)]
+    rp = @view r[Block(2)]
+    v = -(Jdd \ rd)
+    Jdp = @view J[Block(1,2)]
+    Jpd = @view J[Block(2,1)]
+    w = Jdd \ Vector(Jdp[:,1])
+    @info w
 
-#     Jpdv = Jpd*v
-#     Jpdw = Jpd*w
-#     # Δp = [(rp[i] - Jpdv[i]) / Jpdw[i] for i ∈ 1:length(Jpdw)]
-#     Δp = (-rp[1] - Jpdv[1]) / Jpdw[1]
-#     wΔp = w*Δp
-#     Δd = -(v+wΔp) #-[-(v + wΔp[i]) for i in 1:length(v)]
+    Jpdv = Jpd*v
+    Jpdw = Jpd*w
+    # Δp = [(rp[i] - Jpdv[i]) / Jpdw[i] for i ∈ 1:length(Jpdw)]
+    Δp = (-rp[1] - Jpdv[1]) / Jpdw[1]
+    wΔp = w*Δp
+    Δd = -(v+wΔp) #-[-(v + wΔp[i]) for i in 1:length(v)]
 
-#     Δu = BlockVector([Δd; [Δp]], blocksizes(r,1))
-#     return Δu
-# end
+    Δu = BlockVector([Δd; [Δp]], blocksizes(r,1))
+    return Δu
+end
 
 # function inner_solve(J::BlockMatrix, r::BlockArray)
 #     if length(blocksizes(r,1)) == 2 # TODO control by passing down the linear solver
