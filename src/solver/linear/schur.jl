@@ -28,14 +28,16 @@ struct Schur2x2SaddleFormLinearSolver{ASolverType <: LinearSolve.AbstractLinearA
     inner_alg::ASolverType
 end
 
-# struct Schur2x2SaddleFormLinearSolverScratch{zType <: AbstractVector, wType <: AbstractMatrix}
-#     z::zType
-#     w::wType
-# end
+struct Schur2x2SaddleFormLinearSolverScratch{z1Type <: AbstractVector, z2Type <: AbstractMatrix, rhs2Type <: AbstractVector, sys2Type <: AbstractMatrix}
+    z₁::z1Type
+    z₂::z2Type
+    A₂₁z₁₊b₂::rhs2Type
+    A₂₁z₂₊A₂₂::sys2Type
+end
 
 function allocate_scratch(alg::Schur2x2SaddleFormLinearSolver, A, b ,u)
-    bs = blocksizes(A)
-    return nothing
+    bs = blocksizes(A)[1]
+    return Schur2x2SaddleFormLinearSolverScratch(zeros(bs[1]), zeros(bs[1], bs[2]), zeros(bs[2]), zeros(bs[2], bs[2]))
 end
 
 struct NestedLinearCache{AType, bType, innerSolveType, scratchType}
@@ -91,36 +93,44 @@ function LinearSolve.solve!(cache::LinearSolve.LinearCache, alg::Schur2x2SaddleF
     #  / A₁₁  A₁₂ \ u₁ | b₁
     #  \ A₂₁  A₂₂ / u₂ | b₂
     # We rewrite the system as in Benzi, Golub, Liesen (2005) p.30
-    # A₂₁ A₁₁⁻¹ A₁₂ u₂ = A₂₁ A₁₁⁻¹ b₁ - b₁
+    # A₂₁ A₁₁⁻¹ A₁₂ u₂ = A₂₁ A₁₁⁻¹ b₁ - b₂
     #               u₁ = A₁₁⁻¹ b₁ - (A₁₁⁻¹ A₁₂ - A₂₂) u₂
     # which we rewrite as
     # A₂₁ z₂ u₂ = A₂₁ z₁ - b₂
     #        u₁ = z₁ - z₂ u₂
-    # with
+    # with the inner solves
     #  A₁₁ z₁ = b₁
     #  A₁₁ z₂ = A₁₂
     # to avoid forming A₁₁⁻¹ explicitly.
     @unpack A,b,u = cache
     innercache = cache.cacheval
     @unpack algscratch, innersolve = innercache
-    innersolve.isfresh = cache.isfresh
 
+    # Unpack definitions into readable form without invoking copies
+    @unpack z₁, z₂, A₂₁z₁₊b₂, A₂₁z₂₊A₂₂ = algscratch
     bs = blocksizes(A)[1]
     ub = PseudoBlockVector(u, bs)
     bb = PseudoBlockVector(b, bs)
+    A₁₂ = @view A[Block(1, 2)]
+    A₂₁ = @view A[Block(2, 1)]
+    A₂₂ = @view A[Block(2, 2)]
+    u₁ = @view ub[Block(1)]
+    u₂ = @view ub[Block(2)]
+    b₁ = @view bb[Block(1)]
+    b₂ = @view bb[Block(2)]
+
+    # Sync inner solver with outer solver
+    innersolve.isfresh = cache.isfresh
 
     # First step is solving A₁₁ z₁ = b₁
-    b₁ = @view bb[Block(1)]
     innersolve.b .= -b₁
     solz₁ = solve!(innersolve)
-    z₁ = copy(solz₁.u) # TODO cache
+    z₁ .= solz₁.u
     if !(LinearSolve.SciMLBase.successful_retcode(solz₁.retcode) || solz₁.retcode == LinearSolve.ReturnCode.Default)
         @warn "A₁₁ z₁ = b₁ solve failed: $(solz₁.retcode)."
         return LinearSolve.SciMLBase.build_linear_solution(alg, u, solz₁.resid, cache; retcode = solz₁.retcode)
     end
     # Next step is solving for the transfer matrix A₁₁ z₂ = A₁₂
-    z₂ = zeros(bs[1], bs[2]) # TODO cache
-    A₁₂ = @view A[Block(1, 2)]
     for i ∈ 1:bs[2]
         innersolve.b .= A₁₂[:,i]
         solz₂ = solve!(innersolve)
@@ -132,17 +142,23 @@ function LinearSolve.solve!(cache::LinearSolve.LinearCache, alg::Schur2x2SaddleF
     end
 
     # Solve A₂₁ z₂ u₂ = A₂₁ z₁ - b₂
-    A₂₁ = @view A[Block(2, 1)]
-    A₂₂ = @view A[Block(2, 2)]
-    u₂ = @view ub[Block(2)]
-    b₂ = @view bb[Block(2)]
-    A₂₁z₁ = A₂₁*z₁ # TODO cache
-    A₂₁z₂C = A₂₁*z₂ - A₂₂ # TODO cache
-    u₂ .= A₂₁z₂C \ -(b₂ + A₂₁z₁)
+    A₂₁z₁₊b₂ = -(A₂₁*z₁ + b₂)
+    mul!(A₂₁z₁₊b₂, A₂₁, z₁)
+    A₂₁z₁₊b₂ .+= b₂
+    A₂₁z₁₊b₂ .*= -1.0
+
+    mul!(A₂₁z₂₊A₂₂, A₂₁, z₂)
+    A₂₁z₂₊A₂₂ .-= A₂₂
+
+    @info typeof(u₂)
+    # ldiv!(u₂, A₂₁z₂₊A₂₂, A₂₁z₁₊b₂) # FIXME
+    # ldiv!(A₂₁z₂₊A₂₂, A₂₁z₁₊b₂)
+    u₂ .= A₂₁z₂₊A₂₂ \ A₂₁z₁₊b₂
 
     # Solve for u₁ via u₁ = z₁ - z₂ u₂
-    u₁ = @view ub[Block(1)]
-    u₁ .= -(z₁+z₂*u₂)
+    mul!(u₁, z₂, u₂)
+    u₁ .+= z₁
+    u₁ .*= -1.0
 
     # Sync outer cache
     cache.isfresh = innersolve.isfresh
