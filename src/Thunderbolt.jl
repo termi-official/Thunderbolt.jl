@@ -20,7 +20,7 @@ solution_size(f::GenericSplitFunction) = OS.function_size(f)
 # include("solver/multilevel.jl")
 
 @reexport using Ferrite
-import Ferrite: AbstractDofHandler, AbstractGrid, AbstractRefShape, AbstractCell
+import Ferrite: AbstractDofHandler, AbstractGrid, AbstractRefShape, AbstractCell, get_grid
 import Ferrite: vertices, edges, faces, sortedge, sortface
 
 import DiffEqBase#: AbstractDiffEqFunction, AbstractDEProblem

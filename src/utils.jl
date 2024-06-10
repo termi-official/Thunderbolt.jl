@@ -226,7 +226,7 @@ end
 
 @inline function get_data_for_index(r::DenseDataRange, i::Integer)
     i1 = r.offsets[i]
-    i2 = r.offsets[i+1]
+    i2 = r.offsets[i+1]-1
     return @view r.data[i1:i2]
 end
 
@@ -237,17 +237,32 @@ end
 
 """
 """
-struct EAVector{T, EADataType <: AbstractVector{T}, IndexType <: AbstractVector{<:Int}} <: AbstractVector{T}
+struct EAVector{T, EADataType <: AbstractVector{T}, IndexType <: AbstractVector{<:Int}, DofMapType <: AbstractVector{<:ElementDofPair}} <: AbstractVector{T}
     # Buffer for the per element data
     eadata::DenseDataRange{EADataType, IndexType}
     # Map from global dof index to element index and local dof index
-    dof_to_element_map::DenseDataRange{IndexType, ElementDofPair{IndexType}}
+    dof_to_element_map::DenseDataRange{DofMapType, IndexType}
+end
+
+@inline get_data_for_index(r::EAVector, i::Integer) = get_data_for_index(r.eadata, i)
+
+function EAVector(dh::DofHandler)
+    @assert length(dh.field_names) == 1
+    map  = create_dof_to_element_map(dh)
+    grid = get_grid(dh)
+    # TODO subdomains
+    num_entries = ndofs_per_cell(dh,1)*getncells(grid)
+    eadata    = zeros(num_entries)
+    eaoffsets = collect(1:ndofs_per_cell(dh,1):(num_entries+1))
+    return EAVector(
+        DenseDataRange(eadata, eaoffsets),
+        map,
+    )
 end
 
 # Transfer the element data into a vector
 function ea_collapse!(b::Vector, bes::EAVector)
     ndofs = size(b, 1)
-    @assert ndofs == length(bes.eadata.offsets)-1
     @batch for dof ∈ 1:ndofs
         _ea_collapse_kernel!(b, dof, bes)
     end
@@ -269,13 +284,29 @@ create_dof_to_element_map(dh::DofHandler) = create_dof_to_element_map(Int, dh::D
 
 function create_dof_to_element_map(::Type{IndexType}, dh::DofHandler) where IndexType
     # Preallocate storage
-    dof_to_element_vs = [Set{Pair{IndexType, IndexType}}() for _ in 1:ndofs(dh)]
+    dof_to_element_vs = [Set{ElementDofPair{IndexType}}() for _ in 1:ndofs(dh)]
     # Fill set
     for cc in CellIterator(dh)
         eid = Ferrite.cellid(cc)
         for (ldi,dof) in enumerate(celldofs(cc))
-            s = @view dof_to_element_vv[dof]
-            union!(s, ElementDofPair(eid, ldi))
+            s = dof_to_element_vs[dof]
+            push!(s, ElementDofPair(eid, ldi))
         end
     end
+    #
+    dof_to_element_vv = ElementDofPair{IndexType}[]
+    offset = 1
+    offsets = IndexType[]
+    for dof in 1:ndofs(dh)
+        append!(offsets, offset)
+        s = dof_to_element_vs[dof]
+        offset += length(s)
+        append!(dof_to_element_vv, s)
+    end
+    append!(offsets, offset)
+    #
+    return DenseDataRange(
+        dof_to_element_vv,
+        offsets,
+    )
 end

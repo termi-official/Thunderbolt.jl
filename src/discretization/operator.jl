@@ -438,9 +438,10 @@ struct PEALinearOperator{VectorType, EAType, CacheType, DHType <: AbstractDofHan
                   # global test function index -> element indices
     element_cache::CacheType # Linear operators do have a static cache only
     dh::DHType
-    function LinearOperator(b::VectorType, beas, element_cache::CacheType, dh::DHType) where {VectorType, CacheType, DHType <: AbstractDofHandler}
+    function PEALinearOperator(b::AbstractVector, element_cache, dh::AbstractDofHandler)
         check_subdomains(dh)
-        return new(b, element_cache, dh)
+        beas = EAVector(dh)
+        new{typeof(b), typeof(beas), typeof(element_cache), typeof(dh)}(b, beas, element_cache, dh)
     end
 end
 
@@ -455,17 +456,18 @@ function _update_operator!(op::PEALinearOperator, b::Vector, time)
     ndofs = ndofs_per_cell(dh)
     fill!(b, 0.0)
 
-    tlds = [ThreadLocalAssemblyData(CellCache(dh), copy(op.element_cache))]
+    ncells = getncells(get_grid(dh))
+    tlds = [ThreadLocalAssemblyData(CellCache(dh), duplicate_for_parallel(op.element_cache)) for tid in 1:Threads.nthreads()]
 
-    @batch for eid in 1:ncells(get_grid(dh)) # TODO subdomain support
-        tld = tlds[Thread.threadid()]
+    @timeit_debug "assemble elements" @batch for eid in 1:ncells # TODO subdomain support
+        tld = tlds[Threads.threadid()]
         reinit!(tld.cc, eid)
-        bₑ = get_data_for_index(op.beas, cellid(cell))
+        bₑ = get_data_for_index(op.beas, eid)
         fill!(bₑ, 0.0)
-        @timeit_debug "assemble element" assemble_element!(bₑ, tld.cc, element_cache, time)
+        assemble_element!(bₑ, tld.cc, tld.ec, time)
     end
 
-    ea_collapse!(b, bes)
+    ea_collapse!(b, op.beas)
 end
 
 Ferrite.add!(b::AbstractVector, op::AbstractLinearOperator) = b .+= op.b
@@ -483,14 +485,14 @@ function create_linear_operator(dh, protocol::AnalyticalTransmembraneStimulation
     ip_g = Ferrite.geometric_interpolation(typeof(getcells(Ferrite.get_grid(dh), 1)))
     qr = QuadratureRule{Ferrite.getrefshape(ip_g)}(Ferrite.getorder(ip_g)+1)
     cv = CellValues(qr, ip, ip_g) # TODO replace with something more lightweight
-    return LinearOperator(
+    return PEALinearOperator(
         zeros(ndofs(dh)),
         AnalyticalCoefficientElementCache(
             protocol.f,
             protocol.nonzero_intervals,
             cv
         ),
-        dh
+        dh,
     )
 end
 struct AnalyticalCoefficientElementCache{F <: AnalyticalCoefficient, T, CV}
@@ -498,7 +500,7 @@ struct AnalyticalCoefficientElementCache{F <: AnalyticalCoefficient, T, CV}
     nonzero_intervals::Vector{SVector{2,T}}
     cv::CV
 end
-
+duplicate_for_parallel(ec::AnalyticalCoefficientElementCache) = AnalyticalCoefficientElementCache(ec.f, ec.nonzero_intervals, ec.cv)
 function assemble_element!(bₑ, cell, element_cache::AnalyticalCoefficientElementCache, time)
     _assemble_element!(bₑ, getcoordinates(cell), element_cache::AnalyticalCoefficientElementCache, time)
 end
@@ -523,9 +525,18 @@ end
     end
 end
 
-function needs_update(op::LinearOperator{<:Any, <: AnalyticalCoefficientElementCache}, t)
+
+function needs_update(op::Union{LinearOperator, PEALinearOperator}, t)
+    return _needs_update(op, op.element_cache, t)
+end
+
+function _needs_update(op::Union{LinearOperator, PEALinearOperator}, element_cache::AnalyticalCoefficientElementCache, t)
     for nonzero_interval ∈ op.element_cache.nonzero_intervals
         nonzero_interval[1] ≤ t ≤ nonzero_interval[2] && return true
     end
+    return false
+end
+
+function _needs_update(op::Union{LinearOperator, PEALinearOperator}, element_cache::Any, t)
     return false
 end
