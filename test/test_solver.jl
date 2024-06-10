@@ -1,7 +1,7 @@
 import LinearSolve: KrylovJL_GMRES, LinearProblem
 
 @testset "Linear Solver" begin
-    alg = Thunderbolt.Schur2x2SaddleFormLinearSolver(KrylovJL_GMRES())
+    alg = Thunderbolt.SchurComplementLinearSolver(KrylovJL_GMRES())
 
     A = BlockArray{Float64}(undef_blocks, [1,1], [1,1])
     A[Block(1), Block(1)] = ones(1,1)

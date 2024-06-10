@@ -3,7 +3,7 @@ abstract type AbstractLinearBlockAlgorithm <: LinearSolve.SciMLLinearSolveAlgori
 abstract type AbstractLinear2x2BlockAlgorithm <: AbstractLinearBlockAlgorithm end
 
 @doc raw"""
-    Schur2x2SaddleFormLinearSolver(inner_alg::AbstractLinearAlgorithm)
+    SchurComplementLinearSolver(inner_alg::AbstractLinearAlgorithm)
 
 A solver for block systems of the form
 ```math
@@ -24,20 +24,20 @@ A solver for block systems of the form
 with small zero block of size $N_2 \times N_2$ and invertible $A_{11}$ with size $N_1 \times N_1$.
 The inner linear solver is responsible to solve for $N_2$ systems of the form $A_{11} z_i = c_i$.
 """
-struct Schur2x2SaddleFormLinearSolver{ASolverType <: LinearSolve.AbstractLinearAlgorithm} <: AbstractLinear2x2BlockAlgorithm
+struct SchurComplementLinearSolver{ASolverType <: LinearSolve.AbstractLinearAlgorithm} <: AbstractLinear2x2BlockAlgorithm
     inner_alg::ASolverType
 end
 
-struct Schur2x2SaddleFormLinearSolverScratch{z1Type <: AbstractVector, z2Type <: AbstractMatrix, rhs2Type <: AbstractVector, sys2Type <: AbstractMatrix}
+struct SchurComplementLinearSolverScratch{z1Type <: AbstractVector, z2Type <: AbstractMatrix, rhs2Type <: AbstractVector, sys2Type <: AbstractMatrix}
     z₁::z1Type
     z₂::z2Type
     A₂₁z₁₊b₂::rhs2Type
     A₂₁z₂₊A₂₂::sys2Type
 end
 
-function allocate_scratch(alg::Schur2x2SaddleFormLinearSolver, A, b ,u)
+function allocate_scratch(alg::SchurComplementLinearSolver, A, b ,u)
     bs = blocksizes(A)[1]
-    return Schur2x2SaddleFormLinearSolverScratch(zeros(bs[1]), zeros(bs[1], bs[2]), zeros(bs[2]), zeros(bs[2], bs[2]))
+    return SchurComplementLinearSolverScratch(zeros(bs[1]), zeros(bs[1], bs[2]), zeros(bs[2]), zeros(bs[2], bs[2]))
 end
 
 struct NestedLinearCache{AType, bType, innerSolveType, scratchType}
@@ -88,7 +88,7 @@ function LinearSolve.init_cacheval(alg::AbstractLinear2x2BlockAlgorithm, A::Abst
     return NestedLinearCache(A, b, innersolve, scratch)
 end
 
-function LinearSolve.solve!(cache::LinearSolve.LinearCache, alg::Schur2x2SaddleFormLinearSolver; kwargs...)
+function LinearSolve.solve!(cache::LinearSolve.LinearCache, alg::SchurComplementLinearSolver; kwargs...)
     # Instead of solving directly for
     #  / A₁₁  A₁₂ \ u₁ | b₁
     #  \ A₂₁  A₂₂ / u₂ | b₂
@@ -103,8 +103,8 @@ function LinearSolve.solve!(cache::LinearSolve.LinearCache, alg::Schur2x2SaddleF
     #  A₁₁ z₂ = A₁₂
     # to avoid forming A₁₁⁻¹ explicitly.
     @unpack A,b,u = cache
-    innercache = cache.cacheval
-    @unpack algscratch, innersolve = innercache
+    SchurComplementLinearSolver = cache.cacheval
+    @unpack algscratch, innersolve = SchurComplementLinearSolver
 
     # Unpack definitions into readable form without invoking copies
     @unpack z₁, z₂, A₂₁z₁₊b₂, A₂₁z₂₊A₂₂ = algscratch
@@ -150,7 +150,6 @@ function LinearSolve.solve!(cache::LinearSolve.LinearCache, alg::Schur2x2SaddleF
     mul!(A₂₁z₂₊A₂₂, A₂₁, z₂)
     A₂₁z₂₊A₂₂ .-= A₂₂
 
-    @info typeof(u₂)
     # ldiv!(u₂, A₂₁z₂₊A₂₂, A₂₁z₁₊b₂) # FIXME
     # ldiv!(A₂₁z₂₊A₂₂, A₂₁z₁₊b₂)
     u₂ .= A₂₁z₂₊A₂₂ \ A₂₁z₁₊b₂

@@ -310,23 +310,22 @@ coupledform = semidiscretize(
     LV_grid
 )
 
-
 # Create sparse matrix and residual vector
 timestepper = LieTrotterGodunov((
-        LoadDrivenSolver(
-            NewtonRaphsonSolver(;
-                max_iter=100,
-                tol=1e-2,
-                inner_solver=Schur2x2SaddleFormLinearSolver(
-                    LinearSolve.UMFPACKFactorization()
-                )
+    LoadDrivenSolver(
+        NewtonRaphsonSolver(;
+            max_iter=100,
+            tol=1e-2,
+            inner_solver=SchurComplementLinearSolver(
+                LinearSolve.UMFPACKFactorization()
             )
-        ),
-        ForwardEulerSolver(ceil(Int, dt₀/0.001)), # Force time step to about 0.001
+        )
+    ),
+    ForwardEulerSolver(ceil(Int, dt₀/0.001)), # Force time step to about 0.001
 ))
 
 u₀ = zeros(solution_size(coupledform))
-u₀[OS.get_dofrange(coupledform, 2)] .= u0new # TODO how to do this correctly?
+u₀[OS.get_dofrange(coupledform, 2)] .= u0new # TODO how to map this correctly?
 
 problem = OperatorSplittingProblem(coupledform, u₀, tspan)
 

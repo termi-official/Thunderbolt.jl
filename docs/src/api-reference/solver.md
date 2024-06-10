@@ -7,7 +7,7 @@ DocTestSetup = :(using Thunderbolt)
 ## Linear
 
 ```@docs
-Thunderbolt.Schur2x2SaddleFormLinearSolver
+SchurComplementLinearSolver
 ```
 
 ## Nonlinear

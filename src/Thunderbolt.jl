@@ -172,7 +172,7 @@ export
     semidiscretize,
     FiniteElementDiscretization,
     # Solver
-    Schur2x2SaddleFormLinearSolver,
+    SchurComplementLinearSolver,
     NewtonRaphsonSolver,
     LoadDrivenSolver,
     ForwardEulerSolver,
