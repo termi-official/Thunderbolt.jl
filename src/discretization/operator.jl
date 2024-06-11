@@ -22,7 +22,7 @@ abstract type AbstractNonlinearOperator end
 """
     update_linearization!(op, residual, u, t)
 
-Setup the linearized operator `Jᵤ(u) := dᵤF(u)` in op and its residual `F(u)` in 
+Setup the linearized operator `Jᵤ(u) := dᵤF(u)` in op and its residual `F(u)` in
 preparation to solve for the increment `Δu` with the linear problem `J(u) Δu = F(u)`.
 """
 update_linearization!(Jᵤ::AbstractNonlinearOperator, residual::AbstractVector, u::AbstractVector, t)
@@ -104,7 +104,7 @@ function update_linearization!(op::BlockOperator, u::BlockVector, residual::Bloc
     nrows = isqrt(nops)
     for i ∈ 1:nops
         row, col = divrem(i-1, nrows) .+ 1 # index shift due to 1-based indices
-        i1 = Block(row) 
+        i1 = Block(row)
         row_residual = @view residual[i1]
         @timeit_debug "update block ($row,$col)" update_linearization!(op.operators[i], u, row_residual, time) # :)
     end
@@ -123,7 +123,7 @@ function mul!(out::BlockVector, op::BlockOperator, in::BlockVector, α, β)
     nrows = isqrt(nops)
     for i ∈ 1:nops
         i1, i2 = Block.(divrem(i-1, nrows) .+1) # index shift due to 1-based indices
-        in_next  = @view in[i1] 
+        in_next  = @view in[i1]
         out_next = @view out[i2]
         mul!(out_next, op.operators[i], in_next, α, β)
     end
@@ -429,12 +429,62 @@ function update_operator!(op::LinearOperator, time)
     #finish_assemble(assembler)
 end
 
-Ferrite.add!(b::AbstractVector, op::LinearOperator) = b .+= op.b
-Base.eltype(op::LinearOperator) = eltype(op.b)
-Base.size(op::LinearOperator) = sisze(op.b)
+"""
+Parallel element assembly linear operator.
+"""
+struct PEALinearOperator{VectorType, EAType, CacheType, DHType <: AbstractDofHandler} <: AbstractLinearOperator
+    b::VectorType # [global test function index]
+    beas::EAType  # [element in subdomain, local test function index]
+                  # global test function index -> element indices
+    element_cache::CacheType # Linear operators do have a static cache only
+    dh::DHType
+    chunksize::Int
+    function PEALinearOperator(b::AbstractVector, element_cache, dh::AbstractDofHandler; chunksizehint=64)
+        check_subdomains(dh)
+        beas = EAVector(dh)
+        new{typeof(b), typeof(beas), typeof(element_cache), typeof(dh)}(b, beas, element_cache, dh, chunksizehint)
+    end
+end
+
+function update_operator!(op::PEALinearOperator, time)
+    _update_operator!(op, op.b, time)
+end
+
+# Threaded CPU dispatch
+function _update_operator!(op::PEALinearOperator, b::Vector, time)
+    @unpack element_cache, dh, chunksize = op
+
+    ndofs = ndofs_per_cell(dh)
+    fill!(b, 0.0)
+
+    ncells = getncells(get_grid(dh))
+    nchunks = ceil(Int, ncells / chunksize)
+
+    # Allocate scratch per chunk
+    tlds = [ChunkLocalAssemblyData(CellCache(dh), duplicate_for_parallel(op.element_cache)) for tid in 1:nchunks]
+    @timeit_debug "assemble elements" begin
+        @batch for chunk in 1:nchunks
+            chunkbegin = (chunk-1)*chunksize+1
+            chunkbound = min(size(y, 1), chunk*chunksize)
+            for row in chunkbegin:chunkbound
+                tld = tlds[chunk]
+                reinit!(tld.cc, eid)
+                bₑ = get_data_for_index(op.beas, eid)
+                fill!(bₑ, 0.0)
+                assemble_element!(bₑ, tld.cc, tld.ec, time)
+            end
+        end
+    end
+
+    ea_collapse!(b, op.beas)
+end
+
+Ferrite.add!(b::AbstractVector, op::AbstractLinearOperator) = b .+= op.b
+Base.eltype(op::AbstractLinearOperator) = eltype(op.b)
+Base.size(op::AbstractLinearOperator) = sisze(op.b)
 
 # TODO where to put these?
-function create_linear_operator(dh, ::NoStimulationProtocol) 
+function create_linear_operator(dh, ::NoStimulationProtocol)
     check_subdomains(dh)
     LinearNullOperator{Float64, ndofs(dh)}()
 end
@@ -444,14 +494,14 @@ function create_linear_operator(dh, protocol::AnalyticalTransmembraneStimulation
     ip_g = Ferrite.geometric_interpolation(typeof(getcells(Ferrite.get_grid(dh), 1)))
     qr = QuadratureRule{Ferrite.getrefshape(ip_g)}(Ferrite.getorder(ip_g)+1)
     cv = CellValues(qr, ip, ip_g) # TODO replace with something more lightweight
-    return LinearOperator(
+    return PEALinearOperator(
         zeros(ndofs(dh)),
         AnalyticalCoefficientElementCache(
             protocol.f,
             protocol.nonzero_intervals,
             cv
         ),
-        dh
+        dh,
     )
 end
 struct AnalyticalCoefficientElementCache{F <: AnalyticalCoefficient, T, CV}
@@ -459,7 +509,7 @@ struct AnalyticalCoefficientElementCache{F <: AnalyticalCoefficient, T, CV}
     nonzero_intervals::Vector{SVector{2,T}}
     cv::CV
 end
-
+duplicate_for_parallel(ec::AnalyticalCoefficientElementCache) = AnalyticalCoefficientElementCache(ec.f, ec.nonzero_intervals, ec.cv)
 function assemble_element!(bₑ, cell, element_cache::AnalyticalCoefficientElementCache, time)
     _assemble_element!(bₑ, getcoordinates(cell), element_cache::AnalyticalCoefficientElementCache, time)
 end
@@ -484,9 +534,18 @@ end
     end
 end
 
-function needs_update(op::LinearOperator{<:Any, <: AnalyticalCoefficientElementCache}, t)
+
+function needs_update(op::Union{LinearOperator, PEALinearOperator}, t)
+    return _needs_update(op, op.element_cache, t)
+end
+
+function _needs_update(op::Union{LinearOperator, PEALinearOperator}, element_cache::AnalyticalCoefficientElementCache, t)
     for nonzero_interval ∈ op.element_cache.nonzero_intervals
         nonzero_interval[1] ≤ t ≤ nonzero_interval[2] && return true
     end
+    return false
+end
+
+function _needs_update(op::Union{LinearOperator, PEALinearOperator}, element_cache::Any, t)
     return false
 end

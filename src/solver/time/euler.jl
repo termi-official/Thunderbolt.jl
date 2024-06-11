@@ -34,7 +34,7 @@ function implicit_euler_heat_solver_update_system_matrix!(cache::BackwardEulerSo
     cache.Δt_last = Δt
 end
 
-_implicit_euler_heat_solver_update_system_matrix!(A, M, K, Δt) = @. A = M.A - Δt*K.A
+_implicit_euler_heat_solver_update_system_matrix!(A, M, K, Δt) = @. A.nzval = M.A.nzval - Δt*K.A.nzval
 _implicit_euler_heat_solver_update_system_matrix!(A::ThreadedSparseMatrixCSR, M, K, Δt) = _implicit_euler_heat_solver_update_system_matrix!(A.A, M, K, Δt)
 
 function implicit_euler_heat_update_source_term!(cache::BackwardEulerSolverCache, t)
@@ -58,7 +58,7 @@ function perform_step!(f::TransientHeatFunction, cache::BackwardEulerSolverCache
     end
     # Solve linear problem
     @timeit_debug "inner solve" LinearSolve.solve!(inner_solver)
-    # @info inner_solver.stats
+    # @info inner_solver.cacheval.stats
     return true
 end
 
@@ -89,7 +89,6 @@ function setup_solver_cache(f::TransientHeatFunction, solver::BackwardEulerSolve
     )
 
     A = ThreadedSparseMatrixCSR(transpose(create_sparsity_pattern(dh))) # TODO this should be decided via some interface
-    A = create_sparsity_pattern(dh)
     b = zeros(solution_size(f))
     u0 = zeros(solution_size(f))
     inner_prob = LinearSolve.LinearProblem(
