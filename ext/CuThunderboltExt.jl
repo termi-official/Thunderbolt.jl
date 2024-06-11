@@ -43,9 +43,46 @@ struct GPUDofHandlerData{sdim, G<:AbstractGrid{sdim}, #=nfields,=# SDHTupleType,
     ndofs::Int
 end
 
+function Base.show(io::IO, mime, data::GPUDofHandlerData{sdim}) where sdim
+    _show(io, mime, data, 0)
+end
+
+function _show(io::IO, mime::MIME"text/plain", data::GPUDofHandlerData{sdim}, indent::Int) where sdim
+    offset = " "^indent
+    println(io, offset, "GPUDofHandlerData{sdim=", sdim, "}")
+    _show(io, mime, data.grid, indent+2)
+    println(io, offset, "  SubDofHandlers: ", length(data.subdofhandlers))
+end
+
 struct GPUDofHandler{DHType <: AbstractDofHandler, GPUDataType} <: AbstractDofHandler
     dh::DHType
     gpudata::GPUDataType
+end
+
+function Base.show(io::IO, mime::MIME"text/plain", dh_::GPUDofHandler)
+    dh = dh_.dh
+    println(io, "GPUDofHandler")
+    if length(dh.subdofhandlers) == 1
+        Ferrite._print_field_information(io, mime, dh.subdofhandlers[1])
+    else
+        println(io, "  Fields:")
+        for fieldname in getfieldnames(dh)
+            ip = getfieldinterpolation(dh, find_field(dh, fieldname))
+            if ip isa ScalarInterpolation
+                field_type = "scalar"
+            elseif ip isa VectorInterpolation
+                _getvdim(::VectorInterpolation{vdim}) where vdim = vdim
+                field_type = "Vec{$(_getvdim(ip))}"
+            end
+            println(io, "    ", repr(fieldname), ", ", field_type)
+        end
+    end
+    if !Ferrite.isclosed(dh)
+        println(io, "  Not closed!")
+    else
+        println(io, "  Total dofs: ", ndofs(dh))
+    end
+    _show(io, mime, dh_.gpudata, 2)
 end
 
 Ferrite.isclosed(::GPUDofHandler) = true
@@ -87,6 +124,23 @@ struct GPUGrid{sdim, C<:AbstractCell, T<:Real, CellDataType <: AbstractGPUVector
     cells::CellDataType
     nodes::NodeDataType
     #TODO subdomain info
+end
+
+function Base.show(io::IO, mime::MIME"text/plain", data::GPUGrid)
+    _show(io, mime, data, 0)
+end
+
+function _show(io::IO, mime::MIME"text/plain", grid::GPUGrid{sdim, C, T}, indent) where {sdim, C, T}
+    offset = " "^indent
+    print(io, offset, "GPUGrid{sdim=", sdim, ", T=", T, "}")
+    if isconcretetype(eltype(grid.cells))
+        typestrs = [repr(eltype(grid.cells))]
+    else
+        typestrs = sort!(repr.(OrderedSet(typeof(x) for x in grid.cells)))
+    end
+    print(io, " with ")
+    join(io, typestrs, '/')
+    println(io, " cells and $(length(grid.nodes)) nodes")
 end
 
 function Adapt.adapt_structure(to::Type{<:CuArray}, grid::Grid{sdim, cell_type, T}) where {sdim, cell_type, T}
