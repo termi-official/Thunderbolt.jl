@@ -3,7 +3,7 @@ module CuThunderboltExt
 using Thunderbolt, CUDA
 
 import CUDA:
-    AbstractGPUArray
+    AbstractGPUVector, AbstractGPUArray
 
 import Thunderbolt:
     SimpleMesh,
@@ -21,7 +21,7 @@ function Adapt.adapt_structure(to, grid::SimpleMesh)
 end
 
 # Utility which holds partial information for assembly.
-struct GPUSubDofHandlerData{IndexType, IndexVectorType <: AbstractGPUArray{IndexType,1}} <: AbstractDofHandler
+struct GPUSubDofHandlerData{IndexType, IndexVectorType <: AbstractGPUVector{IndexType}} <: AbstractDofHandler
     # Relevant fields from GPUDofHandler
     cell_dofs::IndexVectorType
     cell_dofs_offset::IndexVectorType
@@ -32,7 +32,7 @@ struct GPUSubDofHandlerData{IndexType, IndexVectorType <: AbstractGPUArray{Index
 end
 
 # Utility which holds partial information for assembly.
-struct GPUDofHandlerData{sdim, G<:AbstractGrid{sdim}, #=nfields,=# SDHTupleType, IndexType, IndexVectorType <: AbstractGPUArray{IndexType,1}} <: AbstractDofHandler
+struct GPUDofHandlerData{sdim, G<:AbstractGrid{sdim}, #=nfields,=# SDHTupleType, IndexType, IndexVectorType <: AbstractGPUVector{IndexType}} <: AbstractDofHandler
     grid::G
     subdofhandlers::SDHTupleType
     # field_names::SVector{Symbol, nfields}
@@ -43,57 +43,58 @@ struct GPUDofHandlerData{sdim, G<:AbstractGrid{sdim}, #=nfields,=# SDHTupleType,
     ndofs::Int
 end
 
-struct GPUDofHandler{sdim, DHType <: AbstractDofHandler, GPUDataType} <: AbstractDofHandler
+struct GPUDofHandler{DHType <: AbstractDofHandler, GPUDataType} <: AbstractDofHandler
     dh::DHType
     gpudata::GPUDataType
 end
 
 Ferrite.isclosed(::GPUDofHandler) = true
 
-function _convert_subdofhandler_to_gpu(to, cell_dofs, cell_dof_soffset, sdh::SubDofHandler)
+function _convert_subdofhandler_to_gpu(cell_dofs, cell_dof_soffset, sdh::SubDofHandler)
     GPUSubDofHandler(
         cell_dofs,
         cell_dofs_offset,
-        adapt(to, collect(sdh.cellset)),
+        adapt(typeof(cell_dofs), collect(sdh.cellset)),
         Tuple(sym for sym in sdh.field_names),
         Tuple(sym for sym in sdh.field_n_components),
         sdh.ndofs_per_cell.x,
     )
 end
 
-function Adapt.adapt_structure(to, dh::DofHandler{sdim}) where sdim
-    grid = adapt_structure(to, dh.grid)
-    field_names      = Tuple(sym for sym in dh.field_names)
-    cell_dofs        = adapt(to, dh.cell_dofs)
-    cell_dofs_offset = adapt(to, dh.cell_dofs_offsett)
-    cellset          = adapt(to, collect(dh.cellset))
-    subdofhandlers   = Tuple(i->_convert_subdofhandler_to_gpu(to, cell_dofs, cell_dofs_offset, sdh) for sdh in dh.subdofhandlers)
-    data = GPUDofHandlerData(
+function Adapt.adapt_structure(to::Type{<:CuArray}, dh::DofHandler{sdim}) where sdim
+    grid             = adapt_structure(to, dh.grid)
+    # field_names      = Tuple(sym for sym in dh.field_names)
+    IndexType        = eltype(dh.cell_dofs)
+    IndexVectorType  = CuVector{IndexType}
+    cell_dofs        = adapt(IndexVectorType, dh.cell_dofs)
+    cell_dofs_offset = adapt(IndexVectorType, dh.cell_dofs_offset)
+    cell_to_sdh      = adapt(IndexVectorType, dh.cell_to_subdofhandler)
+    subdofhandlers   = Tuple(i->_convert_subdofhandler_to_gpu(cell_dofs, cell_dofs_offset, sdh) for sdh in dh.subdofhandlers)
+    gpudata = GPUDofHandlerData(
+        grid,
         subdofhandlers,
-        field_names,
+        # field_names,
         cell_dofs,
         cell_dofs_offset,
-        cell_to_subdofhandler,
+        cell_to_sdh,
         dh.ndofs.x,
     )
-    return GPUDofHandler{sdim, typeof(subdofhandlers), eltype(cell_dofs), typeof(cell_dofs)}(
-        dh,
-        data
-    )
+    return GPUDofHandler(dh, gpudata)
 end
 
 # Utility which holds partial information for assembly.
-struct GPUGrid{sdim, C<:AbstractCell, T<:Real, CellDataType <: AbstractGPUArray{C, 1}, NodeDataType <: AbstractGPUArray{C, 1}} <: AbstractGrid{sdim}
+struct GPUGrid{sdim, C<:AbstractCell, T<:Real, CellDataType <: AbstractGPUVector{C}, NodeDataType <: AbstractGPUVector} <: AbstractGrid{sdim}
     cells::CellDataType
     nodes::NodeDataType
     #TODO subdomain info
 end
 
-function Adapt.adapt_structure(to, grid::Grid)
-    cells = adapt(to, grid.cells)
-    nodes = adapt(to, grid.nodes)
+function Adapt.adapt_structure(to::Type{<:CuArray}, grid::Grid{sdim, cell_type, T}) where {sdim, cell_type, T}
+    node_type = typeof(first(grid.nodes))
+    cells = Adapt.adapt_structure(CuVector{cell_type}, grid.cells)
+    nodes = Adapt.adapt_structure(CuVector{node_type}, grid.nodes)
     #TODO subdomain info
-    return GPUGrid(cells, nodes)
+    return GPUGrid{sdim, cell_type, T, typeof(cells), typeof(nodes)}(cells, nodes)
 end
 
 function Thunderbolt.setup_operator(protocol::Thunderbolt.AnalyticalTransmembraneStimulationProtocol, solver::Thunderbolt.AbstractSolver, dh::GPUDofHandler, field_name::Symbol, qr)
