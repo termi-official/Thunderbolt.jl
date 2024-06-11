@@ -439,10 +439,10 @@ struct PEALinearOperator{VectorType, EAType, CacheType, DHType <: AbstractDofHan
     element_cache::CacheType # Linear operators do have a static cache only
     dh::DHType
     batchsizehint::Int
-    function PEALinearOperator(b::AbstractVector, element_cache, dh::AbstractDofHandler; batchsizehint=32)
+    function PEALinearOperator(b::AbstractVector, element_cache, dh::AbstractDofHandler; batchsizehint=64)
         check_subdomains(dh)
         beas = EAVector(dh)
-        new{typeof(b), typeof(beas), typeof(element_cache), typeof(dh), Int}(b, beas, element_cache, dh, batchsizehint)
+        new{typeof(b), typeof(beas), typeof(element_cache), typeof(dh)}(b, beas, element_cache, dh, batchsizehint)
     end
 end
 
