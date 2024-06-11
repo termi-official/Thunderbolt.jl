@@ -438,10 +438,11 @@ struct PEALinearOperator{VectorType, EAType, CacheType, DHType <: AbstractDofHan
                   # global test function index -> element indices
     element_cache::CacheType # Linear operators do have a static cache only
     dh::DHType
-    function PEALinearOperator(b::AbstractVector, element_cache, dh::AbstractDofHandler)
+    batchsizehint::Int
+    function PEALinearOperator(b::AbstractVector, element_cache, dh::AbstractDofHandler; batchsizehint=32)
         check_subdomains(dh)
         beas = EAVector(dh)
-        new{typeof(b), typeof(beas), typeof(element_cache), typeof(dh)}(b, beas, element_cache, dh)
+        new{typeof(b), typeof(beas), typeof(element_cache), typeof(dh), Int}(b, beas, element_cache, dh, batchsizehint)
     end
 end
 
@@ -459,7 +460,7 @@ function _update_operator!(op::PEALinearOperator, b::Vector, time)
     ncells = getncells(get_grid(dh))
     tlds = [ThreadLocalAssemblyData(CellCache(dh), duplicate_for_parallel(op.element_cache)) for tid in 1:Threads.nthreads()]
 
-    @timeit_debug "assemble elements" @batch for eid in 1:ncells # TODO subdomain support
+    @timeit_debug "assemble elements" @batch minbatch=op.batchsizehint for eid in 1:ncells # TODO subdomain support
         tld = tlds[Threads.threadid()]
         reinit!(tld.cc, eid)
         bₑ = get_data_for_index(op.beas, eid)
