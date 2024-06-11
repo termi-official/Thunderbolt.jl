@@ -5,11 +5,7 @@ abstract type AbstractNonlinearSolverCache end
 
 abstract type AbstractTimeSolverCache end
 
-function setup_operator(f::NullFunction, solver)
-    return NullOperator{Float64,solution_size(f),solution_size(f)}()
-end
-
-function setup_operator(f::NullFunction, couplings, solver)
+function setup_operator(f::NullFunction, solver::AbstractSolver)
     return NullOperator{Float64,solution_size(f),solution_size(f)}()
 end
 
@@ -20,13 +16,38 @@ function setup_operator(f::AbstractQuasiStaticFunction, solver::AbstractNonlinea
 
     displacement_symbol = first(dh.field_names)
 
-    intorder = quadrature_order(f, displacement_symbol)
+    intorder = quadrature_order(f, displacement_symbol)::Int
     qr = QuadratureRuleCollection(intorder)
     qr_face = FacetQuadratureRuleCollection(intorder)
 
     return AssembledNonlinearOperator(
         dh, displacement_symbol, constitutive_model, qr, face_models, qr_face
     )
+end
+
+function setup_operator(::NoStimulationProtocol, solver::AbstractSolver, dh::AbstractDofHandler, field_name::Symbol, qr)
+    check_subdomains(dh)
+    LinearNullOperator{Float64, ndofs(dh)}()
+end
+
+function setup_operator(protocol::AnalyticalTransmembraneStimulationProtocol, solver::AbstractSolver, dh::AbstractDofHandler, field_name::Symbol, qr)
+    check_subdomains(dh)
+    ip_g = Ferrite.geometric_interpolation(typeof(getcells(grid, 1)))
+    qr = QuadratureRule{Ferrite.getrefshape(ip_g)}(Ferrite.getorder(ip_g)+1)
+    cv = CellValues(qr, ip, ip_g) # TODO replace with something more lightweight
+    return PEALinearOperator(
+        zeros(ndofs(dh)),
+        AnalyticalCoefficientElementCache(
+            protocol.f,
+            protocol.nonzero_intervals,
+            cv
+        ),
+        dh,
+    )
+end
+
+function setup_operator(integrator::AbstractBilinearIntegrator, solver::AbstractSolver, dh::AbstractDofHandler, field_name::Symbol, qr)
+    return AssembledBilinearOperator(dh, field_name, integrator, qr)
 end
 
 # function setup_operator(problem::QuasiStaticProblem, relevant_coupler, solver::AbstractNonlinearSolver)

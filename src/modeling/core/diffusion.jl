@@ -6,7 +6,7 @@
 """
     Represents the integrand of the bilinear form <ϕ,ψ> = -∫ D∇ϕ ⋅ ∇ψ dΩ .
 """
-struct BilinearDiffusionIntegrator{CoefficientType}
+struct BilinearDiffusionIntegrator{CoefficientType} <: AbstractBilinearIntegrator
     D::CoefficientType
     # coordinate_system
 end

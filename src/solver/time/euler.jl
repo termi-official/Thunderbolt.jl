@@ -70,22 +70,23 @@ function setup_solver_cache(f::TransientHeatFunction, solver::BackwardEulerSolve
     intorder = quadrature_order(f, field_name)
     qr = QuadratureRuleCollection(intorder) # TODO how to pass this one down here?
 
-    # TODO How to choose the exact operator types here?
-    #      Maybe via some parameter in BackwardEulerSolver?
-    mass_operator = AssembledBilinearOperator(
-        dh, field_name,
+    mass_operator = setup_operator(
         BilinearMassIntegrator(
             ConstantCoefficient(1.0)
         ),
-        qr
+        solver, dh, field_name, qr
     )
 
-    diffusion_operator = AssembledBilinearOperator(
-        dh, field_name,
+    diffusion_operator = setup_operator(
         BilinearDiffusionIntegrator(
             f.diffusion_tensor_field,
         ),
-        qr
+        solver, dh, field_name, qr
+    )
+
+    source_operator = setup_operator(
+        f.source_term,
+        solver, dh, field_name, qr
     )
 
     A = ThreadedSparseMatrixCSR(transpose(create_sparsity_pattern(dh))) # TODO this should be decided via some interface
@@ -101,7 +102,7 @@ function setup_solver_cache(f::TransientHeatFunction, solver::BackwardEulerSolve
         zeros(solution_size(f)), # uprev
         mass_operator,
         diffusion_operator,
-        create_linear_operator(dh, f.source_term),
+        source_operator,
         inner_cache,
         0.0
     )

@@ -484,26 +484,6 @@ Base.eltype(op::AbstractLinearOperator) = eltype(op.b)
 Base.size(op::AbstractLinearOperator) = sisze(op.b)
 
 # TODO where to put these?
-function create_linear_operator(dh, ::NoStimulationProtocol)
-    check_subdomains(dh)
-    LinearNullOperator{Float64, ndofs(dh)}()
-end
-function create_linear_operator(dh, protocol::AnalyticalTransmembraneStimulationProtocol)
-    check_subdomains(dh)
-    ip = dh.subdofhandlers[1].field_interpolations[1]
-    ip_g = Ferrite.geometric_interpolation(typeof(getcells(Ferrite.get_grid(dh), 1)))
-    qr = QuadratureRule{Ferrite.getrefshape(ip_g)}(Ferrite.getorder(ip_g)+1)
-    cv = CellValues(qr, ip, ip_g) # TODO replace with something more lightweight
-    return PEALinearOperator(
-        zeros(ndofs(dh)),
-        AnalyticalCoefficientElementCache(
-            protocol.f,
-            protocol.nonzero_intervals,
-            cv
-        ),
-        dh,
-    )
-end
 struct AnalyticalCoefficientElementCache{F <: AnalyticalCoefficient, T, CV}
     f::F
     nonzero_intervals::Vector{SVector{2,T}}
