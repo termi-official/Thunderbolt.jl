@@ -2,8 +2,16 @@ module CuThunderboltExt
 
 using Thunderbolt, CUDA
 
-import Thunderbolt: SimpleMesh
-import Ferrite: AbstractDofHandler, AbstractGrid, AbstractCell
+import CUDA:
+    AbstractGPUArray
+
+import Thunderbolt:
+    SimpleMesh,
+    SparseMatrixCSR, SparseMatrixCSC
+
+import Ferrite:
+    AbstractDofHandler,
+    AbstractGrid, AbstractCell
 
 import Adapt: Adapt, adapt_structure, adapt
 
@@ -35,7 +43,7 @@ struct GPUDofHandlerData{sdim, G<:AbstractGrid{sdim}, #=nfields,=# SDHTupleType,
     ndofs::Int
 end
 
-struct GPUDofHandler{sdim, DHType <: AbstractDofHandler{sdim}, GPUDataType} <: AbstractDofHandler{sdim}
+struct GPUDofHandler{sdim, DHType <: AbstractDofHandler, GPUDataType} <: AbstractDofHandler
     dh::DHType
     gpudata::GPUDataType
 end
