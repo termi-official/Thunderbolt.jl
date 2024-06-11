@@ -1,3 +1,5 @@
+module CuThunderboltExt
+
 using Thunderbolt, CUDA
 
 import Thunderbolt: SimpleMesh
@@ -108,3 +110,4 @@ Ferrite.create_sparsity_pattern(dh::GPUDofHandler) = _create_sparsity_pattern(dh
 _create_sparsity_pattern(dh::GPUDofHandler, A::SparseMatrixCSR, ::CuVector) = CuSparseMatrixCSR(A)
 _create_sparsity_pattern(dh::GPUDofHandler, A::SparseMatrixCSC, ::CuVector) = CuSparseMatrixCSC(A)
 
+end
