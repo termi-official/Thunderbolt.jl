@@ -64,7 +64,6 @@ integrator = OS.init(problem, timestepper, dt=dt₀, verbose=true)
 io = ParaViewWriter("spiral-wave-test")
 
 TimerOutputs.enable_debug_timings(Thunderbolt)
-# TimerOutputs.enable_debug_timings(Main)
 TimerOutputs.reset_timer!()
 for (u, t) in OS.TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
     dh = odeform.functions[1].dh
@@ -80,7 +79,6 @@ for (u, t) in OS.TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
     end
 end
 TimerOutputs.print_timer()
-# TimerOutputs.disable_debug_timings(Main)
 TimerOutputs.disable_debug_timings(Thunderbolt)
 
 # v2

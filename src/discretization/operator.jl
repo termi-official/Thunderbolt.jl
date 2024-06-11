@@ -22,7 +22,7 @@ abstract type AbstractNonlinearOperator end
 """
     update_linearization!(op, residual, u, t)
 
-Setup the linearized operator `Jᵤ(u) := dᵤF(u)` in op and its residual `F(u)` in 
+Setup the linearized operator `Jᵤ(u) := dᵤF(u)` in op and its residual `F(u)` in
 preparation to solve for the increment `Δu` with the linear problem `J(u) Δu = F(u)`.
 """
 update_linearization!(Jᵤ::AbstractNonlinearOperator, residual::AbstractVector, u::AbstractVector, t)
@@ -104,7 +104,7 @@ function update_linearization!(op::BlockOperator, u::BlockVector, residual::Bloc
     nrows = isqrt(nops)
     for i ∈ 1:nops
         row, col = divrem(i-1, nrows) .+ 1 # index shift due to 1-based indices
-        i1 = Block(row) 
+        i1 = Block(row)
         row_residual = @view residual[i1]
         @timeit_debug "update block ($row,$col)" update_linearization!(op.operators[i], u, row_residual, time) # :)
     end
@@ -123,7 +123,7 @@ function mul!(out::BlockVector, op::BlockOperator, in::BlockVector, α, β)
     nrows = isqrt(nops)
     for i ∈ 1:nops
         i1, i2 = Block.(divrem(i-1, nrows) .+1) # index shift due to 1-based indices
-        in_next  = @view in[i1] 
+        in_next  = @view in[i1]
         out_next = @view out[i2]
         mul!(out_next, op.operators[i], in_next, α, β)
     end
@@ -438,11 +438,11 @@ struct PEALinearOperator{VectorType, EAType, CacheType, DHType <: AbstractDofHan
                   # global test function index -> element indices
     element_cache::CacheType # Linear operators do have a static cache only
     dh::DHType
-    batchsizehint::Int
-    function PEALinearOperator(b::AbstractVector, element_cache, dh::AbstractDofHandler; batchsizehint=64)
+    chunksize::Int
+    function PEALinearOperator(b::AbstractVector, element_cache, dh::AbstractDofHandler; chunksizehint=64)
         check_subdomains(dh)
         beas = EAVector(dh)
-        new{typeof(b), typeof(beas), typeof(element_cache), typeof(dh)}(b, beas, element_cache, dh, batchsizehint)
+        new{typeof(b), typeof(beas), typeof(element_cache), typeof(dh)}(b, beas, element_cache, dh, chunksizehint)
     end
 end
 
@@ -452,20 +452,28 @@ end
 
 # Threaded CPU dispatch
 function _update_operator!(op::PEALinearOperator, b::Vector, time)
-    @unpack element_cache, dh  = op
+    @unpack element_cache, dh, chunksize = op
 
     ndofs = ndofs_per_cell(dh)
     fill!(b, 0.0)
 
     ncells = getncells(get_grid(dh))
-    tlds = [ThreadLocalAssemblyData(CellCache(dh), duplicate_for_parallel(op.element_cache)) for tid in 1:Threads.nthreads()]
+    nchunks = ceil(Int, ncells / chunksize)
 
-    @timeit_debug "assemble elements" @batch minbatch=op.batchsizehint for eid in 1:ncells # TODO subdomain support
-        tld = tlds[Threads.threadid()]
-        reinit!(tld.cc, eid)
-        bₑ = get_data_for_index(op.beas, eid)
-        fill!(bₑ, 0.0)
-        assemble_element!(bₑ, tld.cc, tld.ec, time)
+    # Allocate scratch per chunk
+    tlds = [ChunkLocalAssemblyData(CellCache(dh), duplicate_for_parallel(op.element_cache)) for tid in 1:nchunks]
+    @timeit_debug "assemble elements" begin
+        @batch for chunk in 1:nchunks
+            chunkbegin = (chunk-1)*chunksize+1
+            chunkbound = min(size(y, 1), chunk*chunksize)
+            for row in chunkbegin:chunkbound
+                tld = tlds[chunk]
+                reinit!(tld.cc, eid)
+                bₑ = get_data_for_index(op.beas, eid)
+                fill!(bₑ, 0.0)
+                assemble_element!(bₑ, tld.cc, tld.ec, time)
+            end
+        end
     end
 
     ea_collapse!(b, op.beas)
@@ -476,7 +484,7 @@ Base.eltype(op::AbstractLinearOperator) = eltype(op.b)
 Base.size(op::AbstractLinearOperator) = sisze(op.b)
 
 # TODO where to put these?
-function create_linear_operator(dh, ::NoStimulationProtocol) 
+function create_linear_operator(dh, ::NoStimulationProtocol)
     check_subdomains(dh)
     LinearNullOperator{Float64, ndofs(dh)}()
 end

@@ -263,7 +263,7 @@ end
 # Transfer the element data into a vector
 function ea_collapse!(b::Vector, bes::EAVector)
     ndofs = size(b, 1)
-    @batch for dof ∈ 1:ndofs
+    @batch minbatch=ndofs÷Threads.nthreads() for dof ∈ 1:ndofs
         _ea_collapse_kernel!(b, dof, bes)
     end
 end
@@ -275,7 +275,7 @@ end
     end
 end
 
-struct ThreadLocalAssemblyData{CellCacheType, ElementCacheType}
+struct ChunkLocalAssemblyData{CellCacheType, ElementCacheType}
     cc::CellCacheType
     ec::ElementCacheType
 end
