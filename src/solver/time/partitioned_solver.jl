@@ -20,13 +20,14 @@ mutable struct ForwardEulerCellSolverCache{duType, uType, dumType, umType} <: Ab
     dumat::dumType
     uₙmat::umType
     # uₙ₋₁mat::umType
+    batch_size_hint::Int
 end
 
 # This controls the outer loop over the ODEs
 function _pointwise_step_outer_kernel!(f::PointwiseODEFunction, t::Real, Δt::Real, solver_cache::AbstractPointwiseSolverCache, ::Vector)
     @unpack npoints = f
 
-    @batch for i ∈ 1:npoints
+    @batch minbatch=solver_cache.batch_size_hint for i ∈ 1:npoints
         _pointwise_step_inner_kernel!(f, i, t, Δt, solver_cache) || return false
     end
 
@@ -64,10 +65,8 @@ function setup_solver_cache(f::PointwiseODEFunction, solver::ForwardEulerCellSol
     uₙ      = create_system_vector(solver.solution_vector_type, f)
     uₙ₋₁    = create_system_vector(solver.solution_vector_type, f)
     uₙmat   = reshape(uₙ, (npoints,ndofs_local))
-    # uₙ₋₁mat = reshape(uₙ₋₁, (npoints,ndofs_local))
 
-    # return ForwardEulerCellSolverCache(du, uₙ, uₙ₋₁, uₙmat, uₙ₋₁mat)
-    return ForwardEulerCellSolverCache(du, uₙ, uₙ₋₁, dumat, uₙmat)
+    return ForwardEulerCellSolverCache(du, uₙ, uₙ₋₁, dumat, uₙmat, solver.batch_size_hint)
 end
 
 Base.@kwdef struct AdaptiveForwardEulerReactionSubCellSolver{T} <: AbstractPointwiseSolver
