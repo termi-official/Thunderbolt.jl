@@ -178,6 +178,7 @@ export
     ForwardEulerSolver,
     BackwardEulerSolver,
     ForwardEulerCellSolver,
+    AdaptiveForwardEulerSubstepper,
     # Integrator
     get_parent_index,
     get_parent_value,

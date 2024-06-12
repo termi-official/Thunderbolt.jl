@@ -23,8 +23,7 @@ NewtonRaphsonSolver
 BackwardEulerSolver
 ForwardEulerSolver
 ForwardEulerCellSolver
-Thunderbolt.AdaptiveForwardEulerReactionSubCellSolver
-Thunderbolt.ThreadedForwardEulerCellSolver
+AdaptiveForwardEulerSubstepper
 LoadDrivenSolver
 ```
 

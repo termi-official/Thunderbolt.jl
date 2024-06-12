@@ -56,7 +56,7 @@ problem = OS.OperatorSplittingProblem(odeform, u₀, tspan)
 
 timestepper = OS.LieTrotterGodunov((
     BackwardEulerSolver(),
-    ForwardEulerCellSolver(),
+    AdaptiveForwardEulerSubstepper(),
 ))
 
 integrator = OS.init(problem, timestepper, dt=dt₀, verbose=true)
