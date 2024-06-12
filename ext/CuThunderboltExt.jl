@@ -186,8 +186,6 @@ end
 
 # This controls the outer loop over the ODEs
 function Thunderbolt._pointwise_step_outer_kernel!(f::PointwiseODEFunction, t::Real, Δt::Real, cache::AbstractPointwiseSolverCache, ::CuVector)
-    @unpack npoints = f
-
     # ignore batch_size_hint for now
     @cuda _cuda_pointwise_step_inner_kernel_wrapper!(f, t, Δt, cache) # || return false
 
