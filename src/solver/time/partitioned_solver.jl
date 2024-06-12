@@ -39,7 +39,7 @@ struct ForwardEulerCellSolverCache{duType, uType, dumType, umType} <: AbstractPo
 end
 
 # This is the actual solver
-function _pointwise_step_inner_kernel!(f::PointwiseODEFunction, i::Int, t::Real, Δt::Real, cache::ForwardEulerCellSolverCache)
+@inline function _pointwise_step_inner_kernel!(f::PointwiseODEFunction, i::Int, t::Real, Δt::Real, cache::ForwardEulerCellSolverCache)
     cell_model = f.ode
     u_local    = @view cache.uₙmat[i, :]
     du_local   = @view cache.dumat[i, :]
@@ -50,7 +50,9 @@ function _pointwise_step_inner_kernel!(f::PointwiseODEFunction, i::Int, t::Real,
     # #TODO get spatial coordinate x and Cₘ
     cell_rhs!(du_local, φₘ_cell, s_cell, nothing, t, cell_model)
 
-    @. u_local = u_local + Δt*du_local
+    @inbounds for j in 1:length(u_local)
+        u_local[j] += Δt*du_local[j]
+    end
 
     return true
 end
@@ -102,10 +104,14 @@ function _pointwise_step_inner_kernel!(f::PointwiseODEFunction, i::Int, t::Real,
     cell_rhs!(du_local, φₘ_cell, s_cell, nothing, t, cell_model)
 
     if du_local[1] < cache.reaction_threshold
-        @. u_local = u_local + Δt*du_local
+        for j in 1:length(u_local)
+            u_local[j] += Δt*du_local[j]
+        end
     else
         Δtₛ = Δt/cache.substeps
-        @. u_local = u_local + Δtₛ*du_local
+        for j in 1:length(u_local)
+            u_local[j] += Δtₛ*du_local[j]
+        end
 
         for substep ∈ 2:cache.substeps
             tₛ = t + substep*Δtₛ
@@ -114,7 +120,9 @@ function _pointwise_step_inner_kernel!(f::PointwiseODEFunction, i::Int, t::Real,
             #TODO get x and Cₘ
             cell_rhs!(du_local, φₘ_cell, s_cell, nothing, tₛ, cell_model)
 
-            @. u_local = u_local + Δtₛ*du_local
+            for j in 1:length(u_local)
+                u_local[j] += Δtₛ*du_local[j]
+            end
         end
     end
 

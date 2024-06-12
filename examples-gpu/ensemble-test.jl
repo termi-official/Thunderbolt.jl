@@ -40,7 +40,7 @@ end
 
 uniform_initializer!(u₀, odefun)
 u₀gpu          = CuVector(u₀)
-gputimestepper = ForwardEulerCellSolver(solution_vector_type=CuVector{Float32})
+gputimestepper = ForwardEulerCellSolver(solution_vector_type=CuVector{Float32}, batch_size_hint=1)
 gpuproblem     = PointwiseODEProblem(odefun, u₀gpu, tspan)
 gpuintegrator  = init(gpuproblem, gputimestepper, dt=dt₀)
 
@@ -48,4 +48,8 @@ for (u, t) in TimeChoiceIterator(gpuintegrator, tspan[1]:dtvis:tspan[2])
     @info (u, t)
 end
 
-Adapt.@adapt_structure Thunderbolt.ForwardEulerCellSolverCache
+try 
+    Thunderbolt._pointwise_step_outer_kernel!(odefun,1.0, 1.0, gpuintegrator.cache, u₀gpu)
+catch err
+    code_typed(err; interactive = true)
+end
