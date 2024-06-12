@@ -1,13 +1,13 @@
 #########################################################
 ########################## TIME #########################
 #########################################################
-struct BackwardEulerSolver{SolverType} <: AbstractSolver
-    inner_solver::SolverType
+Base.@kwdef struct BackwardEulerSolver{SolverType, SolutionVectorType, SystemMatrixType} <: AbstractSolver
+    inner_solver::SolverType = LinearSolve.KrylovJL_CG()
+    solution_vector_type::Type{SolutionVectorType} = Vector
+    system_matrix_type::Type{SystemMatrixType} = ThreadedSparseMatrixCSR
     # mass operator info
     # diffusion opeartor info
 end
-
-BackwardEulerSolver() = BackwardEulerSolver(LinearSolve.KrylovJL_CG())
 
 # TODO decouple from heat problem via special ODEFunction (AffineODEFunction)
 mutable struct BackwardEulerSolverCache{SolutionType, MassMatrixType, DiffusionMatrixType, SourceTermType, SolverCacheType} <: AbstractTimeSolverCache
@@ -67,9 +67,10 @@ function setup_solver_cache(f::TransientHeatFunction, solver::BackwardEulerSolve
     @unpack inner_solver = solver
     @assert length(dh.field_names) == 1 # TODO relax this assumption, maybe.
     field_name = dh.field_names[1]
-    intorder = quadrature_order(f, field_name)
-    qr = QuadratureRuleCollection(intorder) # TODO how to pass this one down here?
 
+    qr = create_quadrature_rule(f, solver, field_name)
+
+    # Left hand side ∫dₜu δu dV
     mass_operator = setup_operator(
         BilinearMassIntegrator(
             ConstantCoefficient(1.0)
@@ -77,29 +78,32 @@ function setup_solver_cache(f::TransientHeatFunction, solver::BackwardEulerSolve
         solver, dh, field_name, qr
     )
 
+    # Affine right hand side ∫D grad(u) grad(δu) dV + ...
     diffusion_operator = setup_operator(
         BilinearDiffusionIntegrator(
             f.diffusion_tensor_field,
         ),
         solver, dh, field_name, qr
     )
-
-    source_operator = setup_operator(
+    # ... + ∫f δu dV
+    source_operator    = setup_operator(
         f.source_term,
         solver, dh, field_name, qr
     )
 
-    A = ThreadedSparseMatrixCSR(transpose(create_sparsity_pattern(dh))) # TODO this should be decided via some interface
-    b = zeros(solution_size(f))
-    u0 = zeros(solution_size(f))
-    inner_prob = LinearSolve.LinearProblem(
+    A     = create_system_matrix(solver.system_matrix_type, f)
+    b     = create_system_vector(solver.solution_vector_type, f)
+    u0    = create_system_vector(solver.solution_vector_type, f)
+    uprev = create_system_vector(solver.solution_vector_type, f)
+
+    inner_prob  = LinearSolve.LinearProblem(
         A, b; u0
     )
     inner_cache = init(inner_prob, inner_solver)
 
-    cache = BackwardEulerSolverCache(
+    cache       = BackwardEulerSolverCache(
         u0, # u
-        zeros(solution_size(f)), # uprev
+        uprev,
         mass_operator,
         diffusion_operator,
         source_operator,
@@ -110,6 +114,7 @@ function setup_solver_cache(f::TransientHeatFunction, solver::BackwardEulerSolve
     @timeit_debug "initial assembly" begin
         update_operator!(mass_operator, t₀)
         update_operator!(diffusion_operator, t₀)
+        update_operator!(source_operator, t₀)
     end
 
     return cache
