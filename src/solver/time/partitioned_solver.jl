@@ -30,6 +30,7 @@ mutable struct ForwardEulerCellSolverCache{duType, uType, dumType, umType} <: Ab
     # These vectors hold the data
     uₙ::uType
     uₙ₋₁::uType
+    tmp::uType
     # These array view the data above to give easy indices of the form [ode index, local state index]
     dumat::dumType
     uₙmat::umType
@@ -62,9 +63,10 @@ function setup_solver_cache(f::PointwiseODEFunction, solver::ForwardEulerCellSol
     dumat   = reshape(du, (npoints,ndofs_local))
     uₙ      = create_system_vector(solver.solution_vector_type, f)
     uₙ₋₁    = create_system_vector(solver.solution_vector_type, f)
+    tmp     = create_system_vector(solver.solution_vector_type, f)
     uₙmat   = reshape(uₙ, (npoints,ndofs_local))
 
-    return ForwardEulerCellSolverCache(du, uₙ, uₙ₋₁, dumat, uₙmat, solver.batch_size_hint)
+    return ForwardEulerCellSolverCache(du, uₙ, uₙ₋₁, tmp, dumat, uₙmat, solver.batch_size_hint)
 end
 
 Base.@kwdef struct AdaptiveForwardEulerSubstepper{T, SolutionVectorType <: AbstractVector{T}} <: AbstractPointwiseSolver

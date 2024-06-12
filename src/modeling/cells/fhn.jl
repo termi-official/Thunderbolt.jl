@@ -27,13 +27,13 @@ function cell_rhs!(du::TD,φₘ::TV,s::TS,x::TX,t::TT,cell_parameters::TP) where
     return nothing
 end
 
-@inline function reaction_rhs!(dφₘ::TD,φₘ::TV,s::TS,x::TX,t::TT,cell_parameters::FHNModel) where {TD<:SubArray,TV,TS,TX,TT}
+@inline function reaction_rhs!(dφₘ::TD,φₘ::TV,s::TS,x::TX,t::TT,cell_parameters::ParametrizedFHNModel) where {TD<:SubArray,TV,TS,TX,TT}
     @unpack a = cell_parameters
     dφₘ .= φₘ*(1-φₘ)*(φₘ-a) -s[1]
     return nothing
 end
 
-@inline function state_rhs!(ds::TD,φₘ::TV,s::TS,x::TX,t::TT,cell_parameters::FHNModel) where {TD<:SubArray,TV,TS,TX,TT}
+@inline function state_rhs!(ds::TD,φₘ::TV,s::TS,x::TX,t::TT,cell_parameters::ParametrizedFHNModel) where {TD<:SubArray,TV,TS,TX,TT}
     @unpack b,c,d,e = cell_parameters
     ds .= e*(b*φₘ - c*s[1] - d)
     return nothing

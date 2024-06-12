@@ -38,6 +38,16 @@ solution_size(prob::AbstractSemidiscreteProblem) = solution_size(prob.f)
 
 abstract type AbstractPointwiseProblem <: AbstractSemidiscreteProblem end
 
+struct PointwiseODEProblem{fType <: AbstractPointwiseFunction, uType, tType, pType} <: AbstractPointwiseProblem
+    f::fType
+    u0::uType
+    tspan::tType
+    p::pType
+end
+
+PointwiseODEProblem(f::AbstractPointwiseFunction, tspan::Tuple{<:Real, <:Real}) = PointwiseODEProblem(f, zeros(solution_size(f)), tspan, DiffEqBase.NullParameters())
+PointwiseODEProblem(f::AbstractPointwiseFunction, u0::AbstractVector, tspan::Tuple{<:Real, <:Real}) = PointwiseODEProblem(f, u0, tspan, DiffEqBase.NullParameters())
+
 function DiffEqBase.build_solution(prob::AbstractSemidiscreteProblem,
         alg, t, u; timeseries_errors = length(u) > 2,
         dense = false, dense_errors = dense,

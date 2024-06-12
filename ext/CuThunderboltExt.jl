@@ -6,8 +6,11 @@ import CUDA:
     AbstractGPUVector, AbstractGPUArray
 
 import Thunderbolt:
+    UnPack.@unpack,
     SimpleMesh,
-    SparseMatrixCSR, SparseMatrixCSC
+    SparseMatrixCSR, SparseMatrixCSC,
+    AbstractSemidiscreteFunction, solution_size,
+    AbstractPointwiseSolverCache
 
 import Ferrite:
     AbstractDofHandler,
@@ -172,5 +175,23 @@ Ferrite.create_sparsity_pattern(dh::GPUDofHandler) = _create_sparsity_pattern(dh
 
 _create_sparsity_pattern(dh::GPUDofHandler, A::SparseMatrixCSR, ::CuVector) = CuSparseMatrixCSR(A)
 _create_sparsity_pattern(dh::GPUDofHandler, A::SparseMatrixCSC, ::CuVector) = CuSparseMatrixCSC(A)
+
+Thunderbolt.create_system_vector(::Type{<:CuVector{T}}, f::AbstractSemidiscreteFunction) where T = CUDA.zeros(T, solution_size(f))
+
+function _cuda_pointwise_step_inner_kernel_wrapper!(f, t, Δt, cache)
+    i = threadIdx().x
+    _pointwise_step_inner_kernel!(f, i, t, Δt, cache)
+    return nothing
+end
+
+# This controls the outer loop over the ODEs
+function Thunderbolt._pointwise_step_outer_kernel!(f::PointwiseODEFunction, t::Real, Δt::Real, cache::AbstractPointwiseSolverCache, ::CuVector)
+    @unpack npoints = f
+
+    # ignore batch_size_hint for now
+    @cuda _cuda_pointwise_step_inner_kernel_wrapper!(f, t, Δt, cache) # || return false
+
+    return true
+end
 
 end
