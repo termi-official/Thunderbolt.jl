@@ -180,15 +180,18 @@ Thunderbolt.create_system_vector(::Type{<:CuVector{T}}, f::AbstractSemidiscreteF
 
 function _cuda_pointwise_step_inner_kernel_wrapper!(f, t, Δt, cache)
     i = threadIdx().x
-    _pointwise_step_inner_kernel!(f, i, t, Δt, cache)
+    i > f.npoints*num_states(f.ode) && return nothing
+    Thunderbolt._pointwise_step_inner_kernel!(f, i, t, Δt, cache)
     return nothing
 end
 
+Adapt.@adapt_structure Thunderbolt.ForwardEulerCellSolverCache
+Adapt.@adapt_structure Thunderbolt.AdaptiveForwardEulerSubstepperCache
+
 # This controls the outer loop over the ODEs
 function Thunderbolt._pointwise_step_outer_kernel!(f::PointwiseODEFunction, t::Real, Δt::Real, cache::AbstractPointwiseSolverCache, ::CuVector)
-    # ignore batch_size_hint for now
-    @cuda _cuda_pointwise_step_inner_kernel_wrapper!(f, t, Δt, cache) # || return false
-
+    nblocks = ceil(Int, f.npoints / cache.batch_size_hint)
+    @cuda threads=cache.batch_size_hint _cuda_pointwise_step_inner_kernel_wrapper!(f, t, Δt, cache) # || return false
     return true
 end
 

@@ -25,7 +25,7 @@ Base.@kwdef struct ForwardEulerCellSolver{SolutionVectorType} <: AbstractPointwi
     batch_size_hint::Int                           = 32
 end
 
-mutable struct ForwardEulerCellSolverCache{duType, uType, dumType, umType} <: AbstractPointwiseSolverCache
+struct ForwardEulerCellSolverCache{duType, uType, dumType, umType} <: AbstractPointwiseSolverCache
     du::duType
     # These vectors hold the data
     uₙ::uType

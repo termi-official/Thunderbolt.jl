@@ -48,10 +48,10 @@ end
 
 solution_size(f::ODEFunction) = num_states(f.ode)
 
-
-struct PointwiseODEFunction{ODET} <: AbstractPointwiseFunction
-    npoints::Int
-    ode::ODET
+# See https://github.com/JuliaGPU/Adapt.jl/issues/84 for the reason why hardcoding Int does not work
+struct PointwiseODEFunction{IndexType <: Integer, ODEType} <: AbstractPointwiseFunction
+    npoints::IndexType
+    ode::ODEType
 end
 
 solution_size(f::PointwiseODEFunction) = f.npoints*num_states(f.ode)

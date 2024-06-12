@@ -22,10 +22,6 @@ odefun = PointwiseODEFunction(
     2,
     Thunderbolt.ParametrizedFHNModel{Float32}(),
 )
-g(f::T) where T = length(T.parameters)
-@assert g(odefun) == 1
-
-Adapt.adapt_structure(u₀, odefun)
 
 u₀ = zeros(Float32, solution_size(odefun))
 uniform_initializer!(u₀, odefun)
@@ -48,9 +44,8 @@ gputimestepper = ForwardEulerCellSolver(solution_vector_type=CuVector{Float32})
 gpuproblem     = PointwiseODEProblem(odefun, u₀gpu, tspan)
 gpuintegrator  = init(gpuproblem, gputimestepper, dt=dt₀)
 
-
-function f(gpuintegrator, tspan, dtvis)
-    for (u, t) in TimeChoiceIterator(gpuintegrator, tspan[1]:dtvis:tspan[2])
-        @info (u, t)
-    end
+for (u, t) in TimeChoiceIterator(gpuintegrator, tspan[1]:dtvis:tspan[2])
+    @info (u, t)
 end
+
+Adapt.@adapt_structure Thunderbolt.ForwardEulerCellSolverCache
