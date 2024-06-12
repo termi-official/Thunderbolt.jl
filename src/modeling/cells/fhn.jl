@@ -14,7 +14,7 @@ end;
 
 const FHNModel = ParametrizedFHNModel{Float64};
 
-num_states(::ParametrizedFHNModel{T}) where{T} = 1
+num_states(::ParametrizedFHNModel{T}) where{T} = 2
 default_initial_state(::ParametrizedFHNModel{T}) where {T} = [0.0, 0.0]
 
 function cell_rhs!(du::TD,φₘ::TV,s::TS,x::TX,t::TT,cell_parameters::TP) where {TD,TV,TS,TX,TT,TP <: AbstractIonicModel}

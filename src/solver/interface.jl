@@ -98,12 +98,12 @@ update_constraints_block!(f::DiffEqBase.AbstractDiffEqFunction, i::Block, solver
 update_constraints_block!(f::NullFunction, i::Block, solver_cache::AbstractTimeSolverCache, t) = nothing
 
 
-function create_system_matrix(::Type{ThreadedSparseMatrixCSR}, f::AbstractSemidiscreteFunction)
+function create_system_matrix(::Type{<:ThreadedSparseMatrixCSR}, f::AbstractSemidiscreteFunction)
     return ThreadedSparseMatrixCSR(transpose(create_sparsity_pattern(f.dh)))
 end
 
-function create_system_vector(::Type{Vector}, f::AbstractSemidiscreteFunction)
-    return zeros(solution_size(f))
+function create_system_vector(::Type{<:Vector{T}}, f::AbstractSemidiscreteFunction) where T
+    return zeros(T, solution_size(f))
 end
 
 function create_quadrature_rule(f::AbstractSemidiscreteFunction, solver::AbstractSolver, field_name::Symbol)

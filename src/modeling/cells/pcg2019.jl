@@ -129,7 +129,7 @@ function pcg2019_rhs!(du,u,p,t)
     pcg2019_rhs_slow!(du,u,p,t)
 end
 
-num_states(::ParametrizedPCG2019Model) = 6
+num_states(::ParametrizedPCG2019Model) = 7
 function default_initial_state(p::ParametrizedPCG2019Model{T}) where {T}
     sigmoid(φ, E_Y, k_Y, sign) = 1.0 / (1.0 + exp(sign * (φ - E_Y) / k_Y))
 

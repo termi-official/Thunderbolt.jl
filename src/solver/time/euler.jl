@@ -2,15 +2,15 @@
 ########################## TIME #########################
 #########################################################
 Base.@kwdef struct BackwardEulerSolver{SolverType, SolutionVectorType, SystemMatrixType} <: AbstractSolver
-    inner_solver::SolverType = LinearSolve.KrylovJL_CG()
-    solution_vector_type::Type{SolutionVectorType} = Vector
-    system_matrix_type::Type{SystemMatrixType} = ThreadedSparseMatrixCSR
+    inner_solver::SolverType                       = LinearSolve.KrylovJL_CG()
+    solution_vector_type::Type{SolutionVectorType} = Vector{Float64}
+    system_matrix_type::Type{SystemMatrixType}     = ThreadedSparseMatrixCSR
     # mass operator info
     # diffusion opeartor info
 end
 
 # TODO decouple from heat problem via special ODEFunction (AffineODEFunction)
-mutable struct BackwardEulerSolverCache{SolutionType, MassMatrixType, DiffusionMatrixType, SourceTermType, SolverCacheType} <: AbstractTimeSolverCache
+mutable struct BackwardEulerSolverCache{T, SolutionType <: AbstractVector{T}, MassMatrixType, DiffusionMatrixType, SourceTermType, SolverCacheType} <: AbstractTimeSolverCache
     # Current solution buffer
     uₙ::SolutionType
     # Last solution buffer
@@ -24,7 +24,7 @@ mutable struct BackwardEulerSolverCache{SolutionType, MassMatrixType, DiffusionM
     # Linear solver for (M - Δtₙ₋₁ K) uₙ = M uₙ₋₁
     inner_solver::SolverCacheType
     # Last time step length as a check if we have to update K
-    Δt_last::Float64
+    Δt_last::T
 end
 
 # Helper to get A into the right form
@@ -121,8 +121,9 @@ function setup_solver_cache(f::TransientHeatFunction, solver::BackwardEulerSolve
 end
 
 # Multi-rate version
-struct ForwardEulerSolver <: AbstractSolver
+Base.@kwdef struct ForwardEulerSolver{SolutionVectorType} <: AbstractSolver
     rate::Int
+    solution_vector_type::Type{SolutionVectorType} = Vector
 end
 
 mutable struct ForwardEulerSolverCache{VT,F} <: AbstractTimeSolverCache
@@ -148,9 +149,9 @@ end
 function setup_solver_cache(f::ODEFunction, solver::ForwardEulerSolver, t₀)
     return ForwardEulerSolverCache(
         solver.rate,
-        zeros(num_states(f.ode)),
-        zeros(num_states(f.ode)),
-        zeros(num_states(f.ode)),
+        create_system_vector(solver.solution_vector_type, f),
+        create_system_vector(solver.solution_vector_type, f),
+        create_system_vector(solver.solution_vector_type, f),
         f.f
     )
 end

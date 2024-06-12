@@ -48,7 +48,7 @@ function semidiscretize(split::ReactionDiffusionSplit{<:MonodomainModel}, discre
     # TODO This is a faulty assumption. We can have varying ndofs per cell.
     nstates_per_cell = num_states(odefun.ode)
     # TODO this assumes that the transmembrane potential is the first field. Relax this.
-    ode_dofrange = 1:(1+nstates_per_cell)*ndofsφ
+    ode_dofrange = 1:nstates_per_cell*ndofsφ
     #
     semidiscrete_ode = GenericSplitFunction(
         (heatfun, odefun),

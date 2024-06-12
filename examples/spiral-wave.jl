@@ -12,7 +12,7 @@ function spiral_wave_initializer!(u₀, f::GenericSplitFunction)
     dh = heatfun.dh
     s₀flat = @view u₀[(ndofs(dh)+1):end];
     # Should not be reshape but some array of arrays fun
-    s₀ = reshape(s₀flat, (ndofs(dh), Thunderbolt.num_states(ionic_model)));
+    s₀ = reshape(s₀flat, (ndofs(dh), Thunderbolt.num_states(ionic_model)-1));
 
     for cell in CellIterator(dh)
         _celldofs = celldofs(cell)
