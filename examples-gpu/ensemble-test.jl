@@ -17,7 +17,7 @@ function uniform_initializer!(u₀, f::PointwiseODEFunction)
 end
 
 odefun = PointwiseODEFunction(
-    3,
+    2^8,
     Thunderbolt.ParametrizedFHNModel{Float32}(),
 )
 
@@ -33,7 +33,7 @@ cpuproblem     = PointwiseODEProblem(odefun, u₀, tspan)
 cpuintegrator  = init(cpuproblem, cputimestepper, dt=dt₀)
 
 for (u, t) in TimeChoiceIterator(cpuintegrator, tspan[1]:dtvis:tspan[2])
-    @info (u, t)
+    @info (norm(u), t)
     t > 0.0 && @assert u₀ ≉ u
 end
 
@@ -41,12 +41,12 @@ end
 
 uniform_initializer!(u₀, odefun)
 u₀gpu          = CuVector(u₀)
-gputimestepper = ForwardEulerCellSolver(solution_vector_type=CuVector{Float32}, batch_size_hint=1)
+gputimestepper = ForwardEulerCellSolver(solution_vector_type=CuVector{Float32}, batch_size_hint=32)
 gpuproblem     = PointwiseODEProblem(odefun, u₀gpu, tspan)
 gpuintegrator  = init(gpuproblem, gputimestepper, dt=dt₀)
 
 for (u, t) in TimeChoiceIterator(gpuintegrator, tspan[1]:dtvis:tspan[2])
-    @info (u, t)
+    @info (norm(u), t)
     t > 0.0 && @assert u₀ ≉ Vector(u)
 end
 
