@@ -4,7 +4,7 @@ using UnPack
 
 @testset "Operator Splitting API" begin
 
-ODEFunction = Thunderbolt.ModelingToolkit.OrdinaryDiffEq.ODEFunction
+ODEFunction = Thunderbolt.DiffEqBase.ODEFunction
 
 # For testing purposes
 struct DummyForwardEuler

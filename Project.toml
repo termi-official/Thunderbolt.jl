@@ -36,8 +36,10 @@ CuThunderboltExt = "CUDA"
 
 [compat]
 Aqua = "0.8"
-Ferrite = "0.3.14"
+BlockArrays = "1"
 julia = "1.10"
+LinearSolve = "2"
+ModelingToolkit = "9"
 
 [extras]
 Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
