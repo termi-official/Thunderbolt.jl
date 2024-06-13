@@ -39,7 +39,7 @@ struct ForwardEulerCellSolverCache{duType, uType, dumType, umType} <: AbstractPo
 end
 
 # This is the actual solver
-@inline function _pointwise_step_inner_kernel!(f::PointwiseODEFunction, i::Int, t::Real, Δt::Real, cache::ForwardEulerCellSolverCache)
+@inline function _pointwise_step_inner_kernel!(f::F, i::I, t::T, Δt::T, cache::C) where {F <: PointwiseODEFunction, C <: ForwardEulerCellSolverCache, T <: Real, I <: Integer}
     cell_model = f.ode
     u_local    = @view cache.uₙmat[i, :]
     du_local   = @view cache.dumat[i, :]
@@ -92,7 +92,7 @@ struct AdaptiveForwardEulerSubstepperCache{T, duType, uType, dumType, umType} <:
     batch_size_hint::Int
 end
 
-function _pointwise_step_inner_kernel!(f::PointwiseODEFunction, i::Int, t::Real, Δt::Real, cache::AdaptiveForwardEulerSubstepperCache)
+@inline function _pointwise_step_inner_kernel!(f::F, i::I, t::T, Δt::T, cache::C) where {F <: PointwiseODEFunction, C <: AdaptiveForwardEulerSubstepperCache, T <: Real, I <: Integer}
     cell_model = f.ode
     u_local    = @view cache.uₙmat[i, :]
     du_local   = @view cache.dumat[i, :]
