@@ -1,4 +1,4 @@
-using Thunderbolt, CUDA
+using Thunderbolt, Thunderbolt.TimerOutputs, CUDA
 
 function spiral_wave_initializer!(u₀, f::GenericSplitFunction)
     # TODO cleaner implementation. We need to extract this from the types or via dispatch.
@@ -58,11 +58,12 @@ problem = OS.OperatorSplittingProblem(odeform, u₀gpu, tspan)
 timestepper = OS.LieTrotterGodunov((
     BackwardEulerSolver(
         solution_vector_type=CuVector{Float32},
-        system_matrix_type=CUDA.CUSPARSE.CuSparseMatrixCSC{Float32, Int32},
+        system_matrix_type=CUDA.CUSPARSE.CuSparseMatrixCSR{Float32, Int32},
+        inner_solver=LinearSolve.KrylovJL_CG(atol=1.0f-6, rtol=1.0f-5),
     ),
-    ForwardEulerCellSolver(
+    AdaptiveForwardEulerSubstepper(
         solution_vector_type=CuVector{Float32},
-        batch_size_hint=32,
+        reaction_threshold=0.1f0,
     ),
 ))
 
@@ -71,7 +72,7 @@ integrator = OS.init(problem, timestepper, dt=dt₀, verbose=true)
 io = ParaViewWriter("spiral-wave-test")
 
 # TimerOutputs.enable_debug_timings(Thunderbolt)
-# TimerOutputs.reset_timer!()
+TimerOutputs.reset_timer!()
 for (u, t) in OS.TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
     dh = odeform.functions[1].dh
     φ = u[odeform.dof_ranges[1]]
@@ -85,5 +86,5 @@ for (u, t) in OS.TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
         # end
     end
 end
-# TimerOutputs.print_timer()
+TimerOutputs.print_timer()
 # TimerOutputs.disable_debug_timings(Thunderbolt)

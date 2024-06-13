@@ -64,7 +64,7 @@ function perform_step!(f::TransientHeatFunction, cache::BackwardEulerSolverCache
     end
     # Solve linear problem
     @timeit_debug "inner solve" LinearSolve.solve!(inner_solver)
-    # @info inner_solver.cacheval.stats
+    @info inner_solver.cacheval.stats
     return true
 end
 
@@ -135,7 +135,7 @@ end
 # Multi-rate version
 Base.@kwdef struct ForwardEulerSolver{SolutionVectorType} <: AbstractSolver
     rate::Int
-    solution_vector_type::Type{SolutionVectorType} = Vector
+    solution_vector_type::Type{SolutionVectorType} = Vector{Float64}
 end
 
 mutable struct ForwardEulerSolverCache{VT,F} <: AbstractTimeSolverCache

@@ -205,11 +205,4 @@ function Thunderbolt.create_system_matrix(SpMatType::Type{<:Union{CUDA.CUSPARSE.
     return SpMatType(colptrgpu, rowvalgpu, nzvalgpu, (Acpu.m, Acpu.n))
 end
 
-function Thunderbolt.OS.linear_interpolation!(y::CuArray,t,y1::CuArray,y2::CuArray,t1,t2)
-    y  .= y2
-    y .-= y1
-    y .*= (t-t1)/(t2-t1)
-    y .+= y1 
-end
-
 end
