@@ -9,7 +9,7 @@ import Thunderbolt:
     UnPack.@unpack,
     SimpleMesh,
     SparseMatrixCSR, SparseMatrixCSC,
-    AbstractSemidiscreteFunction, solution_size,
+    AbstractSemidiscreteFunction, AbstractPointwiseFunction, solution_size,
     AbstractPointwiseSolverCache
 
 import Ferrite:
@@ -178,27 +178,10 @@ _create_sparsity_pattern(dh::GPUDofHandler, A::SparseMatrixCSC, ::CuVector) = Cu
 
 Thunderbolt.create_system_vector(::Type{<:CuVector{T}}, f::AbstractSemidiscreteFunction) where T = CUDA.zeros(T, solution_size(f))
 
-function _gpu_pointwise_step_inner_kernel_wrapper!(f::F, t, Δt, cache::Thunderbolt.ForwardEulerCellSolverCache) where F <: PointwiseODEFunction # FIX LAST PARAMETER
+function _gpu_pointwise_step_inner_kernel_wrapper!(f::AbstractPointwiseFunction, t, Δt, cache::AbstractPointwiseSolverCache)
     i = (blockIdx().x - Int32(1)) * blockDim().x + threadIdx().x
     i > Thunderbolt.solution_size(f) && return nothing
     Thunderbolt._pointwise_step_inner_kernel!(f, i, t, Δt, cache)
-    # FIXME this crashes with unsupported dynamic function invocation (call to _pointwise_step_inner_kernel!)...
-    # The code below is literally a copy-paste of the function contents
-
-    # cell_model = f.ode
-    # u_local    = @view cache.uₙmat[i, :]
-    # du_local   = @view cache.dumat[i, :]
-    # # TODO this should happen in rhs call below
-    # @inbounds φₘ_cell = u_local[1]
-    # @inbounds s_cell  = @view u_local[2:end]
-
-    # # #TODO get spatial coordinate x and Cₘ
-    # Thunderbolt.cell_rhs!(du_local, φₘ_cell, s_cell, nothing, t, cell_model)
-
-    # for j in 1:length(u_local)
-    #     u_local[j] += Δt*du_local[j]
-    # end
-    
     return nothing
 end
 
@@ -206,7 +189,7 @@ Adapt.@adapt_structure Thunderbolt.ForwardEulerCellSolverCache
 Adapt.@adapt_structure Thunderbolt.AdaptiveForwardEulerSubstepperCache
 
 # This controls the outer loop over the ODEs
-function Thunderbolt._pointwise_step_outer_kernel!(f::PointwiseODEFunction, t::Real, Δt::Real, cache::AbstractPointwiseSolverCache, ::CuVector)
+function Thunderbolt._pointwise_step_outer_kernel!(f::AbstractPointwiseFunction, t::Real, Δt::Real, cache::AbstractPointwiseSolverCache, ::CuVector)
     blocks = ceil(Int, f.npoints / cache.batch_size_hint)
     @cuda threads=cache.batch_size_hint blocks _gpu_pointwise_step_inner_kernel_wrapper!(f, t, Δt, cache) # || return false
     return true
