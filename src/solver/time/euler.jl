@@ -4,7 +4,7 @@
 Base.@kwdef struct BackwardEulerSolver{SolverType, SolutionVectorType, SystemMatrixType} <: AbstractSolver
     inner_solver::SolverType                       = LinearSolve.KrylovJL_CG()
     solution_vector_type::Type{SolutionVectorType} = Vector{Float64}
-    system_matrix_type::Type{SystemMatrixType}     = ThreadedSparseMatrixCSR
+    system_matrix_type::Type{SystemMatrixType}     = ThreadedSparseMatrixCSR{Float64, Int64}
     # mass operator info
     # diffusion opeartor info
 end
@@ -15,6 +15,8 @@ mutable struct BackwardEulerSolverCache{T, SolutionType <: AbstractVector{T}, Ma
     uₙ::SolutionType
     # Last solution buffer
     uₙ₋₁::SolutionType
+    # Temporary buffer for interpolations and stuff
+    tmp::SolutionType
     # Mass matrix
     M::MassMatrixType
     # Diffusion matrix
@@ -34,8 +36,12 @@ function implicit_euler_heat_solver_update_system_matrix!(cache::BackwardEulerSo
     cache.Δt_last = Δt
 end
 
-_implicit_euler_heat_solver_update_system_matrix!(A, M, K, Δt) = @. A.nzval = M.A.nzval - Δt*K.A.nzval
-_implicit_euler_heat_solver_update_system_matrix!(A::ThreadedSparseMatrixCSR, M, K, Δt) = _implicit_euler_heat_solver_update_system_matrix!(A.A, M, K, Δt)
+function _implicit_euler_heat_solver_update_system_matrix!(A, M, K, Δt)
+    # nonzeros(A) .= nonzeros(M.A) - Δt*nonzeros(K.A)
+    nonzeros(A) .= nonzeros(K.A)
+    nonzeros(A) .*= -Δt
+    nonzeros(A) .+= -nonzeros(M.A)
+end
 
 function implicit_euler_heat_update_source_term!(cache::BackwardEulerSolverCache, t)
     needs_update(cache.source_term, t) && update_operator!(cache.source_term, t)
@@ -68,12 +74,20 @@ function setup_solver_cache(f::TransientHeatFunction, solver::BackwardEulerSolve
     @assert length(dh.field_names) == 1 # TODO relax this assumption, maybe.
     field_name = dh.field_names[1]
 
+    A     = create_system_matrix(solver.system_matrix_type  , f)
+    b     = create_system_vector(solver.solution_vector_type, f)
+    u0    = create_system_vector(solver.solution_vector_type, f)
+    uprev = create_system_vector(solver.solution_vector_type, f)
+    tmp   = create_system_vector(solver.solution_vector_type, f)
+
+    T = eltype(A)
+
     qr = create_quadrature_rule(f, solver, field_name)
 
     # Left hand side ∫dₜu δu dV
     mass_operator = setup_operator(
         BilinearMassIntegrator(
-            ConstantCoefficient(1.0)
+            ConstantCoefficient(T(1.0))
         ),
         solver, dh, field_name, qr
     )
@@ -91,10 +105,7 @@ function setup_solver_cache(f::TransientHeatFunction, solver::BackwardEulerSolve
         solver, dh, field_name, qr
     )
 
-    A     = create_system_matrix(solver.system_matrix_type, f)
-    b     = create_system_vector(solver.solution_vector_type, f)
-    u0    = create_system_vector(solver.solution_vector_type, f)
-    uprev = create_system_vector(solver.solution_vector_type, f)
+
 
     inner_prob  = LinearSolve.LinearProblem(
         A, b; u0
@@ -104,11 +115,12 @@ function setup_solver_cache(f::TransientHeatFunction, solver::BackwardEulerSolve
     cache       = BackwardEulerSolverCache(
         u0, # u
         uprev,
+        tmp,
         mass_operator,
         diffusion_operator,
         source_operator,
         inner_cache,
-        0.0
+        T(0.0)
     )
 
     @timeit_debug "initial assembly" begin

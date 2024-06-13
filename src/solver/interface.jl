@@ -46,8 +46,23 @@ function setup_operator(protocol::AnalyticalTransmembraneStimulationProtocol, so
     )
 end
 
-function setup_operator(integrator::AbstractBilinearIntegrator, solver::AbstractSolver, dh::AbstractDofHandler, field_name::Symbol, qr)
-    return AssembledBilinearOperator(dh, field_name, integrator, qr)
+function setup_operator(integrator::AbstractBilinearIntegrator, solver::AbstractSolver, dh::AbstractDofHandler, field_name::Symbol, qrc)
+    @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the bilinear opeartor."
+
+    firstcell = getcells(Ferrite.get_grid(dh), first(dh.subdofhandlers[1].cellset))
+    ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], field_name)
+    ip_geo = Ferrite.geometric_interpolation(typeof(firstcell))
+    element_qr = getquadraturerule(qrc, firstcell)
+
+    element_cache = setup_element_cache(integrator, element_qr, ip, ip_geo)
+
+    A  = create_system_matrix(solver.system_matrix_type, dh)
+    A_ = create_sparsity_pattern(dh) #  TODO how to query this?
+    return AssembledBilinearOperator(
+        A, A_,
+        element_cache,
+        dh,
+    )
 end
 
 # function setup_operator(problem::QuasiStaticProblem, relevant_coupler, solver::AbstractNonlinearSolver)
@@ -98,12 +113,24 @@ update_constraints_block!(f::DiffEqBase.AbstractDiffEqFunction, i::Block, solver
 update_constraints_block!(f::NullFunction, i::Block, solver_cache::AbstractTimeSolverCache, t) = nothing
 
 
-function create_system_matrix(::Type{<:ThreadedSparseMatrixCSR}, f::AbstractSemidiscreteFunction)
-    return ThreadedSparseMatrixCSR(transpose(create_sparsity_pattern(f.dh)))
+create_system_matrix(T::Type{<:AbstractMatrix}, f::AbstractSemidiscreteFunction) = create_system_matrix(T, f.dh)
+
+function create_system_matrix(::Type{<:ThreadedSparseMatrixCSR{Tv,Ti}}, dh::AbstractDofHandler) where {Tv,Ti}
+    Acsct = transpose(convert(SparseMatrixCSC{Tv,Ti}, create_sparsity_pattern(dh)))
+    return ThreadedSparseMatrixCSR(Acsct)
+end
+
+function create_system_matrix(SpMatType::Type{<:SparseMatrixCSC}, dh::AbstractDofHandler)
+    A = convert(SpMatType, create_sparsity_pattern(dh))
+    return A
 end
 
 function create_system_vector(::Type{<:Vector{T}}, f::AbstractSemidiscreteFunction) where T
     return zeros(T, solution_size(f))
+end
+
+function create_system_vector(::Type{<:Vector{T}}, dh::DofHandler) where T
+    return zeros(T, ndofs(dh))
 end
 
 function create_quadrature_rule(f::AbstractSemidiscreteFunction, solver::AbstractSolver, field_name::Symbol)

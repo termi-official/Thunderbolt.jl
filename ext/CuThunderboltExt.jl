@@ -177,6 +177,7 @@ _create_sparsity_pattern(dh::GPUDofHandler, A::SparseMatrixCSR, ::CuVector) = Cu
 _create_sparsity_pattern(dh::GPUDofHandler, A::SparseMatrixCSC, ::CuVector) = CuSparseMatrixCSC(A)
 
 Thunderbolt.create_system_vector(::Type{<:CuVector{T}}, f::AbstractSemidiscreteFunction) where T = CUDA.zeros(T, solution_size(f))
+Thunderbolt.create_system_vector(::Type{<:CuVector{T}}, dh::DofHandler) where T                  = CUDA.zeros(T, ndofs(dh))
 
 function _gpu_pointwise_step_inner_kernel_wrapper!(f::AbstractPointwiseFunction, t, Δt, cache::AbstractPointwiseSolverCache)
     i = (blockIdx().x - Int32(1)) * blockDim().x + threadIdx().x
@@ -194,5 +195,17 @@ function Thunderbolt._pointwise_step_outer_kernel!(f::AbstractPointwiseFunction,
     @cuda threads=cache.batch_size_hint blocks _gpu_pointwise_step_inner_kernel_wrapper!(f, t, Δt, cache) # || return false
     return true
 end
+
+function Thunderbolt.create_system_matrix(SpMatType::Type{<:Union{CUDA.CUSPARSE.CuSparseMatrixCSC, CUDA.CUSPARSE.CuSparseMatrixCSR}}, dh::AbstractDofHandler)
+    # FIXME in general the pattern is not symmetric
+    Acpu      = create_sparsity_pattern(dh)
+    colptrgpu = CuArray(Acpu.colptr)
+    rowvalgpu = CuArray(Acpu.rowval)
+    nzvalgpu  = CuArray(Acpu.nzval)
+    return SpMatType(colptrgpu, rowvalgpu, nzvalgpu, (Acpu.m, Acpu.n))
+end
+
+# FIXME
+# Thunderbolt._implicit_euler_heat_solver_update_system_matrix!(A::Union{CUDA.CUSPARSE.CuSparseMatrixCSC, CUDA.CUSPARSE.CuSparseMatrixCSR}}, M, K, Δt) = @. A.nzVal = M.A.nzval - Δt*K.A.nzval
 
 end

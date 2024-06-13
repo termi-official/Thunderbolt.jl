@@ -20,6 +20,24 @@ end
 
 semidiscretize(::CoupledModel, discretization, grid) = @error "No implementation for the generic discretization of coupled problems available yet."
 
+function semidiscretize(model::TransientHeatModel, discretization::FiniteElementDiscretization, grid::AbstractGrid)
+    ets = elementtypes(grid)
+    @assert length(ets) == 1
+
+    sym = model.solution_variable_symbol
+
+    # TODO factor this out to make a isolated transient heat problem and call semidiscretize here. This should simplify testing.
+    ip = getinterpolation(discretization.interpolations[sym], getcells(grid, 1))
+    dh = DofHandler(grid)
+    Ferrite.add!(dh, sym, ip)
+    close!(dh);
+    return TransientHeatFunction(
+        model.κ,
+        model.source,
+        dh
+    )
+end
+
 function semidiscretize(split::ReactionDiffusionSplit{<:MonodomainModel}, discretization::FiniteElementDiscretization, grid::AbstractGrid)
     epmodel = split.model
 

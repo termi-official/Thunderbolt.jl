@@ -36,3 +36,9 @@ function assemble_element!(Kₑ, cell, element_cache::BilinearDiffusionElementCa
 end
 
 setup_element_cache(element_model::BilinearDiffusionIntegrator, qr, ip, ip_geo) = BilinearDiffusionElementCache(element_model, CellValues(qr, ip, ip_geo))
+
+struct TransientHeatModel{ConductivityCoefficientType, SourceType}
+    κ::ConductivityCoefficientType
+    source::SourceType
+    solution_variable_symbol::Symbol
+end
