@@ -181,7 +181,7 @@ Thunderbolt.create_system_vector(::Type{<:CuVector{T}}, dh::DofHandler) where T 
 
 function _gpu_pointwise_step_inner_kernel_wrapper!(f::AbstractPointwiseFunction, t, Δt, cache::AbstractPointwiseSolverCache)
     i = (blockIdx().x - Int32(1)) * blockDim().x + threadIdx().x
-    i > Thunderbolt.solution_size(f) && return nothing
+    i > size(cache.dumat, 1) && return nothing
     Thunderbolt._pointwise_step_inner_kernel!(f, i, t, Δt, cache)
     return nothing
 end
@@ -205,7 +205,11 @@ function Thunderbolt.create_system_matrix(SpMatType::Type{<:Union{CUDA.CUSPARSE.
     return SpMatType(colptrgpu, rowvalgpu, nzvalgpu, (Acpu.m, Acpu.n))
 end
 
-# FIXME
-# Thunderbolt._implicit_euler_heat_solver_update_system_matrix!(A::Union{CUDA.CUSPARSE.CuSparseMatrixCSC, CUDA.CUSPARSE.CuSparseMatrixCSR}}, M, K, Δt) = @. A.nzVal = M.A.nzval - Δt*K.A.nzval
+function Thunderbolt.OS.linear_interpolation!(y::CuArray,t,y1::CuArray,y2::CuArray,t1,t2)
+    y  .= y2
+    y .-= y1
+    y .*= (t-t1)/(t2-t1)
+    y .+= y1 
+end
 
 end
