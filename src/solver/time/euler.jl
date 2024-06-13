@@ -40,7 +40,7 @@ function _implicit_euler_heat_solver_update_system_matrix!(A, M, K, Δt)
     # nonzeros(A) .= nonzeros(M.A) - Δt*nonzeros(K.A)
     nonzeros(A) .= nonzeros(K.A)
     nonzeros(A) .*= -Δt
-    nonzeros(A) .+= -nonzeros(M.A)
+    nonzeros(A) .+= nonzeros(M.A)
 end
 
 function implicit_euler_heat_update_source_term!(cache::BackwardEulerSolverCache, t)

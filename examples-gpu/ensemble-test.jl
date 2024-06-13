@@ -2,8 +2,6 @@ using Thunderbolt, CUDA
 
 import Thunderbolt: solution_size, num_states, FHNModel
 
-using Adapt
-
 function uniform_initializer!(u₀, f::PointwiseODEFunction)
     ionic_model = f.ode
     ndofs       = solution_size(f)
@@ -28,7 +26,7 @@ uniform_initializer!(u₀, odefun)
 
 tspan = (0.0f0, 10.0f0)
 dt₀   = 0.1f0
-dtvis = 10.0f0
+dtvis = 1.0f0
 
 cputimestepper = ForwardEulerCellSolver(solution_vector_type=Vector{Float32})
 cpuproblem     = PointwiseODEProblem(odefun, u₀, tspan)
@@ -36,7 +34,10 @@ cpuintegrator  = init(cpuproblem, cputimestepper, dt=dt₀)
 
 for (u, t) in TimeChoiceIterator(cpuintegrator, tspan[1]:dtvis:tspan[2])
     @info (u, t)
+    t > 0.0 && @assert u₀ ≉ u
 end
+
+@assert u₀ ≉ cpuintegrator.u
 
 uniform_initializer!(u₀, odefun)
 u₀gpu          = CuVector(u₀)
@@ -46,4 +47,7 @@ gpuintegrator  = init(gpuproblem, gputimestepper, dt=dt₀)
 
 for (u, t) in TimeChoiceIterator(gpuintegrator, tspan[1]:dtvis:tspan[2])
     @info (u, t)
+    t > 0.0 && @assert u₀ ≉ Vector(u)
 end
+
+@assert Vector(gpuintegrator.u) ≈ cpuintegrator.u
