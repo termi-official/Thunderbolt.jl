@@ -46,7 +46,7 @@ function setup_operator(protocol::AnalyticalTransmembraneStimulationProtocol, so
     )
 end
 
-function setup_operator(integrator::AbstractBilinearIntegrator, solver::AbstractSolver, dh::AbstractDofHandler, field_name::Symbol, qrc)
+function setup_assembled_operator(integrator::AbstractBilinearIntegrator, system_matrix_type::Type, dh::AbstractDofHandler, field_name::Symbol, qrc)
     @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the bilinear opeartor."
 
     firstcell = getcells(Ferrite.get_grid(dh), first(dh.subdofhandlers[1].cellset))
@@ -56,13 +56,17 @@ function setup_operator(integrator::AbstractBilinearIntegrator, solver::Abstract
 
     element_cache = setup_element_cache(integrator, element_qr, ip, ip_geo)
 
-    A  = create_system_matrix(solver.system_matrix_type, dh)
+    A  = create_system_matrix(system_matrix_type, dh)
     A_ = create_sparsity_pattern(dh) #  TODO how to query this?
     return AssembledBilinearOperator(
         A, A_,
         element_cache,
         dh,
     )
+end
+
+function setup_operator(integrator::AbstractBilinearIntegrator, solver::AbstractSolver, dh::AbstractDofHandler, field_name::Symbol, qrc)
+    setup_assembled_operator(integrator, solver.system_matrix_type, dh, field_name, qrc)
 end
 
 # function setup_operator(problem::QuasiStaticProblem, relevant_coupler, solver::AbstractNonlinearSolver)

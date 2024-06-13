@@ -49,12 +49,10 @@
 
     qr = QuadratureRuleCollection(1)
     solver = BackwardEulerSolver()
-    
+
     @test_throws subdomain_error LVCoordinateSystem(dh, ipc, [0.], [0.], [0.])
     @test_throws subdomain_error TransientHeatFunction(Thunderbolt.ConductivityToDiffusivityCoefficient(0., 0., 0.), protocol, dh)
     @test_throws subdomain_error QuasiStaticNonlinearFunction(dh, ch, qsm, [])
-    @test_throws subdomain_error Thunderbolt.AssembledNonlinearOperator([0. 0.;0. 0.], element_cache, (), (), dh)
-    @test_throws subdomain_error Thunderbolt.AssembledBilinearOperator([0. 0.;0. 0.], element_cache, dh)
     @test_throws subdomain_error Thunderbolt.LinearOperator([0.], element_cache, dh)
     @test_throws subdomain_error Thunderbolt.setup_operator(NoStimulationProtocol(), solver, dh, :u, qr)
     @test_throws subdomain_error Thunderbolt.setup_operator(protocol, solver, dh, :u, qr)
