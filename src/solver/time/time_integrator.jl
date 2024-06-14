@@ -84,11 +84,11 @@ function OS.advance_solution_to!(integrator::ThunderboltTimeIntegrator, cache::A
 end
 @inline function OS.prepare_local_step!(subintegrator::ThunderboltTimeIntegrator)
     # Copy solution into subproblem
-    # uparentview = @view subintegrator.uparent[subintegrator.indexset]
-    # subintegrator.u .= subintegrator.uparent[subintegrator.indexset]
-    for (i,imain) in enumerate(subintegrator.indexset)
-        subintegrator.u[i] = subintegrator.uparent[imain]
-    end
+    uparentview      = @view subintegrator.uparent[subintegrator.indexset]
+    subintegrator.u .= uparentview
+    # for (i,imain) in enumerate(subintegrator.indexset)
+    #     subintegrator.u[i] = subintegrator.uparent[imain]
+    # end
     # Mark previous solution
     subintegrator.uprev .= subintegrator.u
     syncronize_parameters!(subintegrator, subintegrator.f, subintegrator.synchronizer)
@@ -96,11 +96,11 @@ end
 @inline function OS.finalize_local_step!(subintegrator::ThunderboltTimeIntegrator)
     # Copy solution out of subproblem
     #
-    # uparentview = @view subintegrator.uparent[subintegrator.indexset]
-    # uparentview .= subintegrator.u
-    for (i,imain) in enumerate(subintegrator.indexset)
-        subintegrator.uparent[imain] = subintegrator.u[i]
-    end
+    uparentview = @view subintegrator.uparent[subintegrator.indexset]
+    uparentview .= subintegrator.u
+    # for (i,imain) in enumerate(subintegrator.indexset)
+    #     subintegrator.uparent[imain] = subintegrator.u[i]
+    # end
 end
 # Glue code
 function OS.build_subintegrators_recursive(f, synchronizer, p::Any, cache::AbstractTimeSolverCache, u::AbstractArray, uprev::AbstractArray, t, dt, dof_range, uparent, tstops, _tstops, saveat, _saveat)

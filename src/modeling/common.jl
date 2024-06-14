@@ -7,5 +7,7 @@ include("core/coefficients.jl")
 
 include("core/boundary_conditions.jl")
 
+abstract type AbstractSourceTerm end
+abstract type AbstractBilinearIntegrator end
 include("core/mass.jl")
 include("core/diffusion.jl")

@@ -9,18 +9,12 @@
         close!(dh);
         u = zeros(ndofs(dh))
 
-        # xref copy pasta from src/solver/euler.jl#setup_solver_caches
-        qr = QuadratureRule{refshape}(2)
-        cv = CellValues(qr, ip)
-        op = Thunderbolt.AssembledBilinearOperator(
-            create_sparsity_pattern(dh),
-            Thunderbolt.BilinearDiffusionElementCache(
-                Thunderbolt.BilinearDiffusionIntegrator(
-                    ConstantCoefficient(SymmetricTensor{2,3,Float64}((1.0, 0, 0, 1.0, 0, 1.0))),
-                ),
-                cv,
+        op = Thunderbolt.setup_assembled_operator(
+            Thunderbolt.BilinearDiffusionIntegrator(
+                ConstantCoefficient(SymmetricTensor{2,3,Float64}((1.0, 0, 0, 1.0, 0, 1.0))),
             ),
-            dh,
+            Thunderbolt.SparseMatrixCSC,
+            dh, :ϕₘ, QuadratureRuleCollection(1), 
         )
         Thunderbolt.update_operator!(op, 0.0) # trigger assembly
 

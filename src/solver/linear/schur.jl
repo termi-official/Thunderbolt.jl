@@ -36,8 +36,10 @@ struct SchurComplementLinearSolverScratch{z1Type <: AbstractVector, z2Type <: Ab
 end
 
 function allocate_scratch(alg::SchurComplementLinearSolver, A, b ,u)
-    bs = blocksizes(A)[1]
-    return SchurComplementLinearSolverScratch(zeros(bs[1]), zeros(bs[1], bs[2]), zeros(bs[2]), zeros(bs[2], bs[2]))
+    bs = blocksizes(A)
+    s1 = bs[1,1][1]
+    s2 = bs[2,2][1]
+    return SchurComplementLinearSolverScratch(zeros(s1), zeros(s1, s2), zeros(s2), zeros(s2, s2))
 end
 
 struct NestedLinearCache{AType, bType, innerSolveType, scratchType}
@@ -53,13 +55,13 @@ LinearSolve.default_alias_A(alg::AbstractLinearBlockAlgorithm, A::AbstractBlockM
 function LinearSolve.init_cacheval(alg::AbstractLinear2x2BlockAlgorithm, A::AbstractBlockMatrix, b::AbstractVector, u::AbstractVector, Pl, Pr, maxiters::Int, abstol, reltol, verbose::Bool, assumptions::LinearSolve.OperatorAssumptions; zeroinit = true)
     # Check if input is okay
     bs = blocksizes(A)
-    nblocks = length.(bs)
-    @assert nblocks == (2,2) "Input matrix is not a 2x2 block matrix. Block sizes are actually $(nblocks)."
-    @assert bs[1] == bs[2] "Diagonal blocks do not form quadratic matrices ($(bs[1]) != $(bs[2])). Aborting."
-
+    @assert size(bs) == (2,2) "Input matrix is not a 2x2 block matrix. Block sizes are actually $(size(bs))."
+    @assert bs[1,1][1] == bs[1,1][2] && bs[2,2][1] == bs[2,2][2] "Diagonal blocks are not quadratic matrices ($(bs)). Aborting."
+    s1 = bs[1,1][1]
+    s2 = bs[2,2][1]
     # Transform Vectors to block vectors
-    ub = PseudoBlockVector(u, bs[1])
-    bb = PseudoBlockVector(b, bs[1])
+    ub = BlockedVector(u, [s1, s2])
+    bb = BlockedVector(b, [s1, s2])
 
     # Note that the inner solver does not solve for the u₁ via b₁, but for a helper zᵢ via cᵢ, which is then used to update u₁
     u₁ = @view ub[Block(1)]
@@ -106,14 +108,16 @@ function LinearSolve.solve!(cache::LinearSolve.LinearCache, alg::SchurComplement
 
     # Unpack definitions into readable form without invoking copies
     @unpack z₁, z₂, A₂₁z₁₊b₂, A₂₁z₂₊A₂₂ = algscratch
-    bs = blocksizes(A)[1] # 5 allocs
+    bs = blocksizes(A)
+    s1 = bs[1,1][1]
+    s2 = bs[2,2][1]
     A₁₂ = @view A[Block(1, 2)]
     A₂₁ = @view A[Block(2, 1)]
     A₂₂ = @view A[Block(2, 2)]
-    u₁ = @view u[1:bs[1]]
-    u₂ = @view u[(bs[1]+1):(bs[1]+bs[2])]
-    b₁ = @view b[1:bs[1]]
-    b₂ = @view b[(bs[1]+1):(bs[1]+bs[2])]
+    u₁ = @view u[1:s1]
+    u₂ = @view u[(s1+1):(s1+s2)]
+    b₁ = @view b[1:s1]
+    b₂ = @view b[(s1+1):(s1+s2)]
 
     # Sync inner solver with outer solver
     innersolve.isfresh = cache.isfresh
@@ -127,7 +131,7 @@ function LinearSolve.solve!(cache::LinearSolve.LinearCache, alg::SchurComplement
         return LinearSolve.SciMLBase.build_linear_solution(alg, u, nothing, cache; retcode = solz₁.retcode)
     end
     # Next step is solving for the transfer matrix A₁₁ z₂ = A₁₂
-    for i ∈ 1:bs[2]
+    for i ∈ 1:s2
         # Setup
         A₁₂i = @view A₁₂[:,i]
         innersolve.b .= A₁₂i

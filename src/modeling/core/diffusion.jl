@@ -6,7 +6,7 @@
 """
     Represents the integrand of the bilinear form <ϕ,ψ> = -∫ D∇ϕ ⋅ ∇ψ dΩ .
 """
-struct BilinearDiffusionIntegrator{CoefficientType}
+struct BilinearDiffusionIntegrator{CoefficientType} <: AbstractBilinearIntegrator
     D::CoefficientType
     # coordinate_system
 end
@@ -36,3 +36,9 @@ function assemble_element!(Kₑ, cell, element_cache::BilinearDiffusionElementCa
 end
 
 setup_element_cache(element_model::BilinearDiffusionIntegrator, qr, ip, ip_geo) = BilinearDiffusionElementCache(element_model, CellValues(qr, ip, ip_geo))
+
+struct TransientHeatModel{ConductivityCoefficientType, SourceType <: AbstractSourceTerm}
+    κ::ConductivityCoefficientType
+    source::SourceType
+    solution_variable_symbol::Symbol
+end

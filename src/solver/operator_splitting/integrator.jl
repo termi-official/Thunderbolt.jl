@@ -181,7 +181,7 @@ function linear_interpolation!(y,t,y1,y2,t1,t2)
     y .= y1 + (t-t1) * (y2-y1)/(t2-t1)
 end
 function (integrator::OperatorSplittingIntegrator)(tmp, t)
-    linear_interpolation!(tmp, t, integrator.uprev, integrator.u, integrator.t-integrator.dt, integrator.t)
+    linear_interpolation!(tmp, t, integrator.uprev, integrator.u, integrator.tprev, integrator.t)
 end
 
 

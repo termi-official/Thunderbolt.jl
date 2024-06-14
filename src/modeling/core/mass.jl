@@ -6,7 +6,7 @@
 """
     Represents the integrand of the bilinear form <ϕ,ψ> = ∫ ρϕ ⋅ ψ dΩ .
 """
-struct BilinearMassIntegrator{CoefficientType}
+struct BilinearMassIntegrator{CoefficientType} <: AbstractBilinearIntegrator
     ρ::CoefficientType
     # coordinate_system
 end

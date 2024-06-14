@@ -34,6 +34,11 @@ import ModelingToolkit
 import ModelingToolkit: @variables, @parameters, @component, @named,
         compose, ODESystem, Differential
 
+# Accelerator support libraries
+import GPUArraysCore: AbstractGPUVector, AbstractGPUArray
+import Adapt:
+    Adapt, adapt_structure, adapt
+
 include("utils.jl")
 
 include("mesh/meshes.jl")
@@ -74,6 +79,9 @@ include("disambiguation.jl")
 include("modeling/rsafdq2022.jl")
 include("discretization/rsafdq-operator.jl")
 
+include("accelerator/grid.jl")
+include("accelerator/dofhandler.jl")
+
 # TODO put exports into the individual submodules above!
 export
     # Coefficients
@@ -102,6 +110,13 @@ export
     generate_quadratic_ring_mesh,
     generate_quadratic_open_ring_mesh,
     generate_ideal_lv_mesh,
+    # Generic models
+    ODEProblem,
+    TransientHeatModel,
+    TransientHeatFunction,
+    # Local API
+    PointwiseODEProblem,
+    PointwiseODEFunction,
     # Mechanics
     StructuralModel,
     QuasiStaticProblem,
@@ -135,7 +150,6 @@ export
     PiersantiActiveStress,
     # Electrophysiology
     MonodomainModel,
-    TransientHeatFunction,
     # ParabolicParabolicBidomainModel,
     # ParabolicEllipticBidomainModel,
     NoStimulationProtocol,
@@ -178,6 +192,7 @@ export
     ForwardEulerSolver,
     BackwardEulerSolver,
     ForwardEulerCellSolver,
+    AdaptiveForwardEulerSubstepper,
     # Integrator
     get_parent_index,
     get_parent_value,

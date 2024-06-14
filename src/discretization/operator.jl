@@ -289,37 +289,21 @@ Base.size(op::AssembledNonlinearOperator, axis) = size(op.J, axis)
 
 abstract type AbstractBilinearOperator <: AbstractNonlinearOperator end
 
-struct AssembledBilinearOperator{MatrixType, CacheType, DHType <: AbstractDofHandler} <: AbstractBilinearOperator
+struct AssembledBilinearOperator{MatrixType, MatrixType2, CacheType, DHType <: AbstractDofHandler} <: AbstractBilinearOperator
     A::MatrixType
+    A_::MatrixType2 # FIXME we need this if we assemble on a different device type than we solve on (e.g. CPU and GPU)
     element_cache::CacheType
     dh::DHType
-    function AssembledBilinearOperator(A::MatrixType, element_cache::CacheType, dh::DHType) where {MatrixType, CacheType, DHType <: AbstractDofHandler}
+    function AssembledBilinearOperator(A::MatrixType, A_::MatrixType2, element_cache::CacheType, dh::DHType) where {MatrixType, MatrixType2, CacheType, DHType <: AbstractDofHandler}
         check_subdomains(dh)
-        return new{MatrixType, CacheType, DHType}(A, element_cache, dh)
+        return new{MatrixType, MatrixType2, CacheType, DHType}(A, A_, element_cache, dh)
     end
 end
 
-function AssembledBilinearOperator(dh::AbstractDofHandler, field_name::Symbol, integrator, element_qrc::QuadratureRuleCollection)
-    @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the bilinear opeartor."
-
-    firstcell = getcells(Ferrite.get_grid(dh), first(dh.subdofhandlers[1].cellset))
-    ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], field_name)
-    ip_geo = Ferrite.geometric_interpolation(typeof(firstcell))
-    element_qr = getquadraturerule(element_qrc, firstcell)
-
-    element_cache = setup_element_cache(integrator, element_qr, ip, ip_geo)
-
-    return AssembledBilinearOperator(
-        create_sparsity_pattern(dh),
-        element_cache,
-        dh,
-    )
-end
-
 function update_operator!(op::AssembledBilinearOperator, time)
-    @unpack A, element_cache, dh  = op
+    @unpack A, A_, element_cache, dh  = op
 
-    assembler = start_assemble(A)
+    assembler = start_assemble(A_)
 
     ndofs = ndofs_per_cell(dh)
     Aₑ = zeros(ndofs, ndofs)
@@ -332,6 +316,8 @@ function update_operator!(op::AssembledBilinearOperator, time)
     end
 
     #finish_assemble(assembler)
+
+    copyto!(nonzeros(A), nonzeros(A_))
 end
 
 update_linearization!(op::AbstractBilinearOperator, u::AbstractVector, residual::AbstractVector, time) = update_operator!(op, time)
@@ -393,6 +379,7 @@ Literally the null vector.
 """
 struct LinearNullOperator{T,S} <: AbstractLinearOperator
 end
+Ferrite.add!(b::AbstractVector, op::LinearNullOperator) = b
 Base.eltype(op::LinearNullOperator{T,S}) where {T,S} = T
 Base.size(op::LinearNullOperator{T,S}) where {T,S} = S
 
@@ -484,26 +471,6 @@ Base.eltype(op::AbstractLinearOperator) = eltype(op.b)
 Base.size(op::AbstractLinearOperator) = sisze(op.b)
 
 # TODO where to put these?
-function create_linear_operator(dh, ::NoStimulationProtocol)
-    check_subdomains(dh)
-    LinearNullOperator{Float64, ndofs(dh)}()
-end
-function create_linear_operator(dh, protocol::AnalyticalTransmembraneStimulationProtocol)
-    check_subdomains(dh)
-    ip = dh.subdofhandlers[1].field_interpolations[1]
-    ip_g = Ferrite.geometric_interpolation(typeof(getcells(Ferrite.get_grid(dh), 1)))
-    qr = QuadratureRule{Ferrite.getrefshape(ip_g)}(Ferrite.getorder(ip_g)+1)
-    cv = CellValues(qr, ip, ip_g) # TODO replace with something more lightweight
-    return PEALinearOperator(
-        zeros(ndofs(dh)),
-        AnalyticalCoefficientElementCache(
-            protocol.f,
-            protocol.nonzero_intervals,
-            cv
-        ),
-        dh,
-    )
-end
 struct AnalyticalCoefficientElementCache{F <: AnalyticalCoefficient, T, CV}
     f::F
     nonzero_intervals::Vector{SVector{2,T}}

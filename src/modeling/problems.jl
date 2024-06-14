@@ -13,6 +13,8 @@ DiffEqBase.isinplace(::AbstractSemidiscreteProblem) = true
 solution_size(prob::AbstractSemidiscreteProblem) = solution_size(prob.f)
 
 
+abstract type AbstractPointwiseProblem <: AbstractSemidiscreteProblem end
+
 # """
 #     AbstractSemidiscreteDAEProblem <: AbstractSemidiscreteProblem
 
@@ -35,8 +37,6 @@ solution_size(prob::AbstractSemidiscreteProblem) = solution_size(prob.f)
 # Supertype for discretizations of time-dependent PDEs without explicit time derivatives.
 # """
 # abstract type AbstractSemidiscreteNonlinearProblem <: AbstractSemidiscreteProblem end
-
-abstract type AbstractPointwiseProblem <: AbstractSemidiscreteProblem end
 
 function DiffEqBase.build_solution(prob::AbstractSemidiscreteProblem,
         alg, t, u; timeseries_errors = length(u) > 2,
@@ -123,3 +123,26 @@ struct QuasiStaticProblem{fType <: AbstractQuasiStaticFunction, uType, tType, pT
 end
 
 QuasiStaticProblem(f::AbstractQuasiStaticFunction, tspan::Tuple{<:Real, <:Real}) = QuasiStaticProblem(f, zeros(ndofs(f.dh)), tspan, DiffEqBase.NullParameters())
+QuasiStaticProblem(f::AbstractQuasiStaticFunction, u0::AbstractVector, tspan::Tuple{<:Real, <:Real}) = QuasiStaticProblem(f, u0, tspan, DiffEqBase.NullParameters())
+
+
+struct PointwiseODEProblem{fType <: AbstractPointwiseFunction, uType, tType, pType} <: AbstractPointwiseProblem
+    f::fType
+    u0::uType
+    tspan::tType
+    p::pType
+end
+
+PointwiseODEProblem(f::AbstractPointwiseFunction, tspan::Tuple{<:Real, <:Real}) = PointwiseODEProblem(f, zeros(solution_size(f)), tspan, DiffEqBase.NullParameters())
+PointwiseODEProblem(f::AbstractPointwiseFunction, u0::AbstractVector, tspan::Tuple{<:Real, <:Real}) = PointwiseODEProblem(f, u0, tspan, DiffEqBase.NullParameters())
+
+
+struct ODEProblem{fType <: AbstractSemidiscreteFunction, uType, tType, pType} <: AbstractSemidiscreteProblem
+    f::fType
+    u0::uType
+    tspan::tType
+    p::pType
+end
+
+ODEProblem(f::AbstractSemidiscreteFunction, tspan::Tuple{<:Real, <:Real})  = ODEProblem(f, zeros(ndofs(f.dh)), tspan, DiffEqBase.NullParameters())
+ODEProblem(f::AbstractSemidiscreteFunction, u0::AbstractVector, tspan::Tuple{<:Real, <:Real})  = ODEProblem(f, u0, tspan, DiffEqBase.NullParameters())

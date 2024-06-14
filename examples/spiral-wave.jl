@@ -12,7 +12,7 @@ function spiral_wave_initializer!(u₀, f::GenericSplitFunction)
     dh = heatfun.dh
     s₀flat = @view u₀[(ndofs(dh)+1):end];
     # Should not be reshape but some array of arrays fun
-    s₀ = reshape(s₀flat, (ndofs(dh), Thunderbolt.num_states(ionic_model)));
+    s₀ = reshape(s₀flat, (ndofs(dh), Thunderbolt.num_states(ionic_model)-1));
 
     for cell in CellIterator(dh)
         _celldofs = celldofs(cell)
@@ -39,7 +39,8 @@ model = MonodomainModel(
     ConstantCoefficient(1.0),
     ConstantCoefficient(SymmetricTensor{2,2,Float64}((4.5e-5, 0, 2.0e-5))),
     NoStimulationProtocol(),
-    Thunderbolt.FHNModel()
+    Thunderbolt.FHNModel(),
+    :φₘ, :s,
 )
 
 mesh = generate_mesh(Quadrilateral, (2^7, 2^7), Vec{2}((0.0,0.0)), Vec{2}((2.5,2.5)))
@@ -56,7 +57,7 @@ problem = OS.OperatorSplittingProblem(odeform, u₀, tspan)
 
 timestepper = OS.LieTrotterGodunov((
     BackwardEulerSolver(),
-    ForwardEulerCellSolver(),
+    AdaptiveForwardEulerSubstepper(),
 ))
 
 integrator = OS.init(problem, timestepper, dt=dt₀, verbose=true)

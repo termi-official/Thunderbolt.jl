@@ -181,16 +181,18 @@ end
 *(A::ThreadedSparseMatrixCSR, v::BlockArrays.FillArrays.AbstractZeros{<:Any, 1}) = mul(A,v)
 *(A::ThreadedSparseMatrixCSR, v::BlockArrays.ArrayLayouts.LayoutVector) = mul(A,v)
 
-Base.eltype(A::ThreadedSparseMatrixCSR) = Base.eltype(A.A)
-getrowptr(A::ThreadedSparseMatrixCSR) = getrowptr(A.A)
-getnzval(A::ThreadedSparseMatrixCSR) = getnzval(A.A)
-getcolval(A::ThreadedSparseMatrixCSR) = getnzval(A.A)
-issparse(A::ThreadedSparseMatrixCSR) = issparse(A.A)
-nnz(A::ThreadedSparseMatrixCSR) = nnz(A.A)
-nonzeros(A::ThreadedSparseMatrixCSR) = nonzeros(A.A)
-Base.size(A::ThreadedSparseMatrixCSR) = Base.size(A.A)
-Base.size(A::ThreadedSparseMatrixCSR,i) = Base.size(A.A,i)
-IndexStyle(::Type{<:ThreadedSparseMatrixCSR}) = IndexCartesian()
+Base.eltype(A::ThreadedSparseMatrixCSR)            = Base.eltype(A.A)
+Base.size(A::ThreadedSparseMatrixCSR)              = Base.size(A.A)
+Base.size(A::ThreadedSparseMatrixCSR,i)            = Base.size(A.A,i)
+Base.IndexStyle(::Type{<:ThreadedSparseMatrixCSR}) = IndexCartesian()
+
+SparseMatricesCSR.getrowptr(A::ThreadedSparseMatrixCSR) = SparseMatricesCSR.getrowptr(A.A)
+SparseMatricesCSR.getnzval(A::ThreadedSparseMatrixCSR)  = SparseMatricesCSR.getnzval(A.A)
+SparseMatricesCSR.getcolval(A::ThreadedSparseMatrixCSR) = SparseMatricesCSR.getcolval(A.A)
+
+SparseArrays.issparse(A::ThreadedSparseMatrixCSR) = issparse(A.A)
+SparseArrays.nnz(A::ThreadedSparseMatrixCSR)      = nnz(A.A)
+SparseArrays.nonzeros(A::ThreadedSparseMatrixCSR) = nonzeros(A.A)
 
 # Internal helper to throw uniform error messages on problems with multiple subdomains
 @noinline check_subdomains(dh::Ferrite.AbstractDofHandler) = length(dh.subdofhandlers) == 1 || throw(ArgumentError("Using DofHandler with multiple subdomains is not currently supported"))
