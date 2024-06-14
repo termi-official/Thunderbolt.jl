@@ -25,6 +25,7 @@ Base.@kwdef struct ForwardEulerCellSolver{SolutionVectorType} <: AbstractPointwi
     batch_size_hint::Int                           = 32
 end
 
+# Fully accelerator compatible
 struct ForwardEulerCellSolverCache{duType, uType, dumType, umType} <: AbstractPointwiseSolverCache
     du::duType
     # These vectors hold the data
@@ -37,6 +38,7 @@ struct ForwardEulerCellSolverCache{duType, uType, dumType, umType} <: AbstractPo
     # uₙ₋₁mat::umType
     batch_size_hint::Int
 end
+Adapt.@adapt_structure ForwardEulerCellSolverCache
 
 # This is the actual solver
 @inline function _pointwise_step_inner_kernel!(f::F, i::I, t::T, Δt::T, cache::C) where {F <: PointwiseODEFunction, C <: ForwardEulerCellSolverCache, T <: Real, I <: Integer}
@@ -78,6 +80,7 @@ Base.@kwdef struct AdaptiveForwardEulerSubstepper{T, SolutionVectorType <: Abstr
     batch_size_hint::Int                           = 32
 end
 
+# Fully accelerator compatible
 struct AdaptiveForwardEulerSubstepperCache{T, duType, uType, dumType, umType} <: AbstractPointwiseSolverCache
     du::duType
     # These vectors hold the data
@@ -91,6 +94,7 @@ struct AdaptiveForwardEulerSubstepperCache{T, duType, uType, dumType, umType} <:
     reaction_threshold::T
     batch_size_hint::Int
 end
+Adapt.@adapt_structure AdaptiveForwardEulerSubstepperCache
 
 @inline function _pointwise_step_inner_kernel!(f::F, i::I, t::T, Δt::T, cache::C) where {F <: PointwiseODEFunction, C <: AdaptiveForwardEulerSubstepperCache, T <: Real, I <: Integer}
     cell_model = f.ode

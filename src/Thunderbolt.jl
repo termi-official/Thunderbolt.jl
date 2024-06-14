@@ -34,6 +34,11 @@ import ModelingToolkit
 import ModelingToolkit: @variables, @parameters, @component, @named,
         compose, ODESystem, Differential
 
+# Accelerator support libraries
+import GPUArraysCore: AbstractGPUVector, AbstractGPUArray
+import Adapt:
+    Adapt, adapt_structure, adapt
+
 include("utils.jl")
 
 include("mesh/meshes.jl")
@@ -73,6 +78,9 @@ include("disambiguation.jl")
 # TODO where to put these?
 include("modeling/rsafdq2022.jl")
 include("discretization/rsafdq-operator.jl")
+
+include("accelerator/grid.jl")
+include("accelerator/dofhandler.jl")
 
 # TODO put exports into the individual submodules above!
 export
