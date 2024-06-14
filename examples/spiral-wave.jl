@@ -39,7 +39,8 @@ model = MonodomainModel(
     ConstantCoefficient(1.0),
     ConstantCoefficient(SymmetricTensor{2,2,Float64}((4.5e-5, 0, 2.0e-5))),
     NoStimulationProtocol(),
-    Thunderbolt.FHNModel()
+    Thunderbolt.FHNModel(),
+    :φₘ, :s,
 )
 
 mesh = generate_mesh(Quadrilateral, (2^7, 2^7), Vec{2}((0.0,0.0)), Vec{2}((2.5,2.5)))

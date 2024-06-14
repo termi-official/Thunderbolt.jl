@@ -126,7 +126,7 @@ struct FitzHughNagumoModel <: HodgkinHuxleyTypeModel end;
 
 abstract type AbstractEPModel end;
 
-abstract type AbstractStimulationProtocol end;
+abstract type AbstractStimulationProtocol <: AbstractSourceTerm end;
 
 @doc raw"""
 Supertype for all stimulation protocols fulfilling $I_{\rm{stim,e}} = I_{\rm{stim,i}}$.
@@ -146,48 +146,48 @@ struct AnalyticalTransmembraneStimulationProtocol{F <: AnalyticalCoefficient, T}
     nonzero_intervals::Vector{SVector{2,T}} # helper to speed up rhs
 end
 
-"""
-The original model formulation (TODO citation) with the structure
+# """
+# The original model formulation (TODO citation) with the structure
 
- χCₘ∂ₜφₘ = ∇⋅κᵢ∇φᵢ + χ(Iᵢₒₙ(φₘ,𝐬,x) + Iₛₜᵢₘ,ᵢ(x,t))
- χCₘ∂ₜφₘ = ∇⋅κₑ∇φₑ - χ(Iᵢₒₙ(φₘ,𝐬,x) + Iₛₜᵢₘ,ₑ(x,t))
-    ∂ₜ𝐬  = g(φₘ,𝐬,x)
- φᵢ - φₑ = φₘ
+#  χCₘ∂ₜφₘ = ∇⋅κᵢ∇φᵢ + χ(Iᵢₒₙ(φₘ,𝐬,x) + Iₛₜᵢₘ,ᵢ(x,t))
+#  χCₘ∂ₜφₘ = ∇⋅κₑ∇φₑ - χ(Iᵢₒₙ(φₘ,𝐬,x) + Iₛₜᵢₘ,ₑ(x,t))
+#     ∂ₜ𝐬  = g(φₘ,𝐬,x)
+#  φᵢ - φₑ = φₘ
 
-!!! note 
-    Not implemented yet.
-"""
-struct ParabolicParabolicBidomainModel <: AbstractEPModel
-    χ
-    Cₘ
-    κᵢ
-    κₑ
-    stim::AbstractStimulationProtocol
-    ion::AbstractIonicModel
-end
+# !!! note 
+#     Not implemented yet.
+# """
+# struct ParabolicParabolicBidomainModel <: AbstractEPModel
+#     χ
+#     Cₘ
+#     κᵢ
+#     κₑ
+#     stim::AbstractStimulationProtocol
+#     ion::AbstractIonicModel
+# end
 
-"""
-Transformed bidomain model with the structure
+# """
+# Transformed bidomain model with the structure
 
- χCₘ∂ₜφₘ = ∇⋅κᵢ∇φₘ + ∇⋅κᵢ∇φₑ      + χ(Iᵢₒₙ(φₘ,𝐬,x) + Iₛₜᵢₘ(x,t))
-      0  = ∇⋅κᵢ∇φₘ + ∇⋅(κᵢ+κₑ)∇φₑ +  Iₛₜᵢₘ,ₑ(t) - Iₛₜᵢₘ,ᵢ(t)
-    ∂ₜ𝐬  = g(φₘ,𝐬,x)
-      φᵢ = φₘ + φₑ
+#  χCₘ∂ₜφₘ = ∇⋅κᵢ∇φₘ + ∇⋅κᵢ∇φₑ      + χ(Iᵢₒₙ(φₘ,𝐬,x) + Iₛₜᵢₘ(x,t))
+#       0  = ∇⋅κᵢ∇φₘ + ∇⋅(κᵢ+κₑ)∇φₑ +  Iₛₜᵢₘ,ₑ(t) - Iₛₜᵢₘ,ᵢ(t)
+#     ∂ₜ𝐬  = g(φₘ,𝐬,x)
+#       φᵢ = φₘ + φₑ
 
-This formulation is a transformation of the parabolic-parabolic
-form (c.f. TODO citation) and has been derived by (TODO citation) first.
+# This formulation is a transformation of the parabolic-parabolic
+# form (c.f. TODO citation) and has been derived by (TODO citation) first.
 
-!!! note 
-    Not implemented yet.
-"""
-struct ParabolicEllipticBidomainModel <: AbstractEPModel
-    χ
-    Cₘ
-    κᵢ
-    κₑ
-    stim::AbstractStimulationProtocol
-    ion::AbstractIonicModel
-end
+# !!! note 
+#     Not implemented yet.
+# """
+# struct ParabolicEllipticBidomainModel <: AbstractEPModel
+#     χ
+#     Cₘ
+#     κᵢ
+#     κₑ
+#     stim::AbstractStimulationProtocol
+#     ion::AbstractIonicModel
+# end
 
 """
 Simplification of the bidomain model with the structure
@@ -205,6 +205,8 @@ struct MonodomainModel{F1,F2,F3,STIM<:TransmembraneStimulationProtocol,ION<:Abst
     κ::F3
     stim::STIM
     ion::ION
+    transmembrane_solution_symbol::Symbol
+    internal_state_symbol::Symbol
 end
 
 """

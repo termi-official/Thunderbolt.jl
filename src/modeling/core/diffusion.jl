@@ -37,7 +37,7 @@ end
 
 setup_element_cache(element_model::BilinearDiffusionIntegrator, qr, ip, ip_geo) = BilinearDiffusionElementCache(element_model, CellValues(qr, ip, ip_geo))
 
-struct TransientHeatModel{ConductivityCoefficientType, SourceType}
+struct TransientHeatModel{ConductivityCoefficientType, SourceType <: AbstractSourceTerm}
     κ::ConductivityCoefficientType
     source::SourceType
     solution_variable_symbol::Symbol

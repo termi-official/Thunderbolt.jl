@@ -40,32 +40,35 @@ end
 
 function semidiscretize(split::ReactionDiffusionSplit{<:MonodomainModel}, discretization::FiniteElementDiscretization, grid::AbstractGrid)
     epmodel = split.model
-
+    φsym = epmodel.transmembrane_solution_symbol
     ets = elementtypes(grid)
     @assert length(ets) == 1
 
-    # TODO factor this out to make a isolated transient heat problem and call semidiscretize here. This should simplify testing.
-    ip = getinterpolation(discretization.interpolations[:φₘ], getcells(grid, 1))
-    dh = DofHandler(grid)
-    Ferrite.add!(dh, :φₘ, ip)
-    close!(dh);
-    heatfun = TransientHeatFunction(
+    heat_model = TransientHeatModel(
         ConductivityToDiffusivityCoefficient(epmodel.κ, epmodel.Cₘ, epmodel.χ),
         epmodel.stim,
-        dh
+        φsym,
     )
+
+    heatfun = semidiscretize(
+        heat_model,
+        discretization,
+        grid,
+    )
+
+    dh = heatfun.dh
     ndofsφ = ndofs(dh)
-    heat_dofrange = 1:ndofsφ
     # TODO we need some information about the discretization of this one, e.g. dofs a nodes vs dofs at quadrature points
-    # TODO we should call semidiscretize here too
+    # TODO we should call semidiscretize here too - This is a placeholder for the nodal discretization
     odefun = PointwiseODEFunction(
         # TODO epmodel.Cₘ(x) and coordinates
-        ndofs(dh),
+        ndofsφ,
         epmodel.ion
     )
     # TODO This is a faulty assumption. We can have varying ndofs per cell.
     nstates_per_cell = num_states(odefun.ode)
     # TODO this assumes that the transmembrane potential is the first field. Relax this.
+    heat_dofrange = 1:ndofsφ
     ode_dofrange = 1:nstates_per_cell*ndofsφ
     #
     semidiscrete_ode = GenericSplitFunction(
