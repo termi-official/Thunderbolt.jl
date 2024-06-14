@@ -28,7 +28,8 @@ model = MonodomainModel(
     ConstantCoefficient(1.0),
     ConstantCoefficient(SymmetricTensor{2,3,Float64}((4.5e-5, 0, 0, 2.0e-5, 0, 1.0e-5))),
     NoStimulationProtocol(),
-    Thunderbolt.FHNModel()
+    Thunderbolt.FHNModel(),
+    :φₘ, :s
 )
 
 mesh = generate_mesh(Hexahedron, (4, 4, 4), Vec{3}((0.0,0.0,0.0)), Vec{3}((1.0,1.0,1.0)))
