@@ -21,7 +21,7 @@ struct GPUDofHandlerData{sdim, G<:AbstractGrid{sdim}, #=nfields,=# SDHTupleType,
     ndofs::Int
 end
 
-function Base.show(io::IO, mime, data::GPUDofHandlerData{sdim}) where sdim
+function Base.show(io::IO, mime::MIME"text/plain", data::GPUDofHandlerData{sdim}) where sdim
     _show(io, mime, data, 0)
 end
 
