@@ -35,9 +35,19 @@ struct PK1Model{PMat, IMod, CFType} <: QuasiStaticModel
     coefficient_field::CFType
 end
 
-setup_internal_model_cache(cv, constitutive_model::PK1Model{<:Any, Nothing}) = EmptyInternalVariableCache()
+function material_routine(model::PK1Model, F, internal_state, geometry_cache::Ferrite.CellCache, qp::QuadraturePoint, time)
+    coefficients = evaluate_coefficient(model.coefficient_field, geometry_cache, qp, time)
+    ∂²Ψ∂F², ∂Ψ∂F = Tensors.hessian(
+            F_ad -> Ψ(F_ad,     coefficients, model.material),
+        F, :all
+    )
 
-function material_routine(F::Tensor{2,dim}, coefficients, internal_state::Nothing, model::PK1Model) where {dim}
+    return ∂Ψ∂F, ∂²Ψ∂F²
+end
+
+setup_internal_model_cache(cv, constitutive_model::PK1Model) = setup_internal_model_cache(cv, constitutive_model.internal_model)
+
+function material_routine(F::Tensor, coefficients, ::EmptyInternalVariable, model::PK1Model) where {dim}
     ∂²Ψ∂F², ∂Ψ∂F = Tensors.hessian(
         F_ad ->
               Ψ(F_ad,     coefficients, model.material)

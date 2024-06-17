@@ -1,11 +1,16 @@
 # Common modeling primitives are found here
 abstract type SteadyStateInternalVariable end
 
+struct EmptyInternalVariableModel <: SteadyStateInternalVariable
+end
+
 struct EmptyInternalVariableCache
 end
 
-struct EmptyInternalVariable <: SteadyStateInternalVariable
+struct EmptyInternalVariable
 end
+
+setup_internal_model_cache(cv, ::EmptyInternalVariableModel) = EmptyInternalVariableCache()
 
 function state(model_cache::EmptyInternalVariableCache, geometry_cache, qp::QuadraturePoint, time)
     return EmptyInternalVariable()
