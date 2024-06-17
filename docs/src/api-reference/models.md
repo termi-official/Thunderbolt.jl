@@ -42,6 +42,8 @@ StructuralModel
 ExtendedHillModel
 GeneralizedHillModel
 ActiveStressModel
+PK1Model
+PrestressedMechanicalModel
 ```
 
 ### Passive Energies

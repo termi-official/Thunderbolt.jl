@@ -46,7 +46,6 @@ end
 
 # Interpolation
 # TODO via https://github.com/SciML/SciMLBase.jl/blob/master/src/interpolation.jl
-# TODO deduplicate with OS module
 function (integrator::ThunderboltTimeIntegrator)(tmp, t)
     OS.linear_interpolation!(tmp, t, integrator.uprev, integrator.u, integrator.t-integrator.dt, integrator.t)
 end
@@ -56,12 +55,12 @@ function DiffEqBase.step!(integrator::ThunderboltTimeIntegrator, dt, stop_at_tdt
     dt <= zero(dt) && error("dt must be positive")
     tnext = integrator.t + dt
     while !OS.reached_tstop(integrator, tnext, stop_at_tdt)
-        # Solve inner problem
-        perform_step!(integrator, integrator.cache)
-        # TODO check for solver failure
         # Update integrator
         integrator.tprev = integrator.t
         integrator.t = integrator.t + integrator.dt
+        # Solve inner problem
+        perform_step!(integrator, integrator.cache)
+        # TODO check for solver failure
     end
 
     while !isempty(tstops) && OS.reached_tstop(integrator, first(tstops))

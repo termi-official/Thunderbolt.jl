@@ -121,6 +121,8 @@ export
     StructuralModel,
     QuasiStaticProblem,
     QuasiStaticNonlinearFunction,
+    PK1Model,
+    PrestressedMechanicalModel,
     # Passive material models
     NullEnergyModel,
     NullCompressionPenalty,
@@ -171,6 +173,8 @@ export
     # Microstructure
     AnisotropicPlanarMicrostructureModel,
     OrthotropicMicrostructureModel,
+    OrthotropicMicrostructure,
+    TransverselyIsotropicMicrostructure,
     create_simple_microstructure_model,
     # Coordinate system
     LVCoordinateSystem,

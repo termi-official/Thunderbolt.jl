@@ -35,14 +35,14 @@ function test_solve_contractile_cuboid(constitutive_model)
     timestepper = LoadDrivenSolver(
         NewtonRaphsonSolver(;max_iter=10)
     )
-    integrator = DiffEqBase.init(problem, timestepper, dt=Δt, verbose=true)
+    integrator = init(problem, timestepper, dt=Δt, verbose=true)
     u₀ = copy(integrator.u)
-    DiffEqBase.solve!(integrator)
+    solve!(integrator)
     @test integrator.sol.retcode == DiffEqBase.ReturnCode.Success
     @test integrator.u ≉ u₀
 end
 @testset "Contracting cuboid" begin
-microstructure_model = ConstantCoefficient((
+microstructure_model = ConstantCoefficient(OrthotropicMicrostructure(
     Vec((1.0, 0.0, 0.0)),
     Vec((0.0, 1.0, 0.0)),
     Vec((0.0, 0.0, 1.0)),

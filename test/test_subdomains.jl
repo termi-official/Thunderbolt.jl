@@ -17,11 +17,13 @@
 
     # Dummy QuasiStaticModel
     struct DummyCalciumHatField end
-    microstructure_model = ConstantCoefficient((
-    Vec((1.0, 0.0, 0.0)),
-    Vec((0.0, 1.0, 0.0)),
-    Vec((0.0, 0.0, 1.0)),
-    ))
+    microstructure_model = ConstantCoefficient(
+        OrthotropicMicrostructure(
+            Vec((1.0, 0.0, 0.0)),
+            Vec((0.0, 1.0, 0.0)),
+            Vec((0.0, 0.0, 1.0)),
+        )
+    )
     qsm = GeneralizedHillModel(
         LinYinPassiveModel(),
         ActiveMaterialAdapter(LinYinActiveModel()),
