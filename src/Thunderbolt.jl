@@ -121,6 +121,8 @@ export
     StructuralModel,
     QuasiStaticProblem,
     QuasiStaticNonlinearFunction,
+    PK1Model,
+    PrestressedMechanicalModel,
     # Passive material models
     NullEnergyModel,
     NullCompressionPenalty,

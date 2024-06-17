@@ -8,19 +8,19 @@ function material_routine(constitutive_model::QuasiStaticModel, F, internal_stat
 end
 
 @doc raw"""
-    PrestressedMaterialModel(inner_model, prestress_field)
+    PrestressedMechanicalModel(inner_model, prestress_field)
 """
-struct PrestressedMaterialModel{MM, FF} <: QuasiStaticModel
+struct PrestressedMechanicalModel{MM, FF} <: QuasiStaticModel
     inner_model::MM
     prestress_field::FF
 end
 
-function material_routine(constitutive_model::PrestressedMaterialModel, F, internal_state, geometry_cache::Ferrite.CellCache, qp::QuadraturePoint, time)
+function material_routine(constitutive_model::PrestressedMechanicalModel, F, internal_state, geometry_cache::Ferrite.CellCache, qp::QuadraturePoint, time)
     F₀ = evaluate_coefficient(constitutive_model.prestress_field, geometry_cache, qp, time)
     return material_routine(constitutive_model.inner_model, F ⋅ F₀, internal_state, geometry_cache, qp, time)
 end
 
-setup_internal_model_cache(cv, constitutive_model::PrestressedMaterialModel) = setup_internal_model_cache(cv, constitutive_model.inner_model)
+setup_internal_model_cache(cv, constitutive_model::PrestressedMechanicalModel) = setup_internal_model_cache(cv, constitutive_model.inner_model)
 
 @doc raw"""
     PK1Model(material, internal_model, coefficient_field)

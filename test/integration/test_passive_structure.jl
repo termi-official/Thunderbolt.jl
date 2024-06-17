@@ -40,7 +40,7 @@ end
 @testset "Passive Structure" begin
 
 u₁ = test_solve_passive_structure(
-    Thunderbolt.PK1Model(
+    PK1Model(
         HolzapfelOgden2009Model(),
         Thunderbolt.EmptyInternalVariableModel(),
         ConstantCoefficient(OrthotropicMicrostructure(
@@ -52,8 +52,8 @@ u₁ = test_solve_passive_structure(
 )
 
 u₂ = test_solve_passive_structure(
-    Thunderbolt.PrestressedMaterialModel(
-        Thunderbolt.PK1Model(
+    PrestressedMechanicalModel(
+        PK1Model(
             HolzapfelOgden2009Model(),
             Thunderbolt.EmptyInternalVariableModel(),
             ConstantCoefficient(OrthotropicMicrostructure(
