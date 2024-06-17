@@ -6,7 +6,7 @@ Supertype for all functions coming from PDE discretizations.
 
 ## Interface
 
-solution_size(::AbstractSemidiscreteFunction)
+    solution_size(::AbstractSemidiscreteFunction)
 """
 abstract type AbstractSemidiscreteFunction <: DiffEqBase.AbstractDiffEqFunction{true} end
 
@@ -19,8 +19,8 @@ Supertype for all functions coming from PDE discretizations with blocked structu
 
 ## Interface
 
-BlockArrays.blocksizes(::AbstractSemidiscreteFunction)
-BlockArrays.blocks(::AbstractSemidiscreteFunction) -> Iterable
+    BlockArrays.blocksizes(::AbstractSemidiscreteFunction)
+    BlockArrays.blocks(::AbstractSemidiscreteFunction) -> Iterable
 """
 abstract type AbstractSemidiscreteBlockedFunction <: AbstractSemidiscreteFunction end
 solution_size(f::AbstractSemidiscreteBlockedFunction) = sum(blocksizes(f))

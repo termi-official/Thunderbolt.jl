@@ -1,0 +1,119 @@
+"""
+Supertype for all caches to integrate over volumes.
+
+Interface:
+
+    setup_element_cache(model, qr, ip, ip_geo)
+
+"""
+abstract type AbstractVolumetricElementCache end
+
+"""
+    assemble_element!(Kₑ::AbstractMatrix, cell::CellCache, element_cache::AbstractVolumetricElementCache, time)
+Main entry point for bilinear operators
+
+    assemble_element!(Kₑ::AbstractMatrix, u::AbstractVector, cell::CellCache, element_cache::AbstractVolumetricElementCache, time)
+Update element matrix in nonlinear operators
+
+    assemble_element!(Kₑ::AbstractMatrix, residualₑ::AbstractVector, u::AbstractVector, cell::CellCache, element_cache::AbstractVolumetricElementCache, time)
+Update element matrix and residual in nonlinear operators
+
+    assemble_element!(residualₑ::AbstractVector, u::AbstractVector, cell::CellCache, element_cache::AbstractVolumetricElementCache, time)
+Update residual in nonlinear operators
+"""
+assemble_element!
+
+
+"""
+    Utility to execute noop assembly.
+"""
+struct EmptyVolumetricElementCache <: AbstractVolumetricElementCache end
+# Main entry point for bilinear operators
+assemble_element!(Kₑ::AbstractMatrix, cell::CellCache, element_cache::EmptyVolumetricElementCache, time) = nothing
+# Update element matrix in nonlinear operators
+assemble_element!(Kₑ::AbstractMatrix, u::AbstractVector, cell::CellCache, element_cache::EmptyVolumetricElementCache, time) = nothing
+# Update element matrix and residual in nonlinear operators
+assemble_element!(Kₑ::AbstractMatrix, residualₑ::AbstractVector, u::AbstractVector, cell::CellCache, element_cache::EmptyVolumetricElementCache, time) = nothing
+# Update residual in nonlinear operators
+assemble_element!(residualₑ::AbstractVector, u::AbstractVector, cell::CellCache, element_cache::EmptyVolumetricElementCache, time) = nothing
+
+
+
+"""
+Supertype for all caches to integrate over surfaces.
+
+Interface:
+
+    setup_boundary_cache(model, qr, ip, ip_geo)
+
+"""
+abstract type AbstractSurfaceElementCache end
+
+"""
+    assemble_face!(Kₑ::AbstractMatrix, cell::CellCache, face_cache::AbstractSurfaceElementCache, time)
+Main entry point for bilinear operators
+
+    assemble_face!(Kₑ::AbstractMatrix, u::AbstractVector, cell::CellCache, face_cache::AbstractSurfaceElementCache, time)
+Update face matrix in nonlinear operators
+
+    assemble_face!(Kₑ::AbstractMatrix, residualₑ::AbstractVector, u::AbstractVector, cell::CellCache, face_cache::AbstractSurfaceElementCache, time)
+Update face matrix and residual in nonlinear operators
+
+    assemble_face!(residualₑ::AbstractVector, u::AbstractVector, cell::CellCache, face_cache::AbstractSurfaceElementCache, time)
+Update residual in nonlinear operators
+"""
+assemble_face!
+
+
+"""
+    Utility to execute noop assembly.
+"""
+struct EmptySurfaceCache <: AbstractSurfaceElementCache end
+# Update element matrix in nonlinear operators
+assemble_face!(Kₑ::AbstractMatrix, u::AbstractVector, cell::CellCache, local_face_index::Int, face_caches::EmptySurfaceCache, time)    = nothing
+assemble_element!(Kₑ::AbstractMatrix, u::AbstractVector, cell::CellCache, local_face_index::Int, face_caches::EmptySurfaceCache, time) = nothing
+# Update element matrix and residual in nonlinear operators
+assemble_face!(Kₑ::AbstractMatrix, residualₑ::AbstractVector, u::AbstractVector, cell, local_face_index::Int, face_caches::EmptySurfaceCache, time)    = nothing
+assemble_element!(Kₑ::AbstractMatrix, residualₑ::AbstractVector, u::AbstractVector, cell, local_face_index::Int, face_caches::EmptySurfaceCache, time) = nothing
+# Update residual in nonlinear operators
+assemble_face!(residualₑ::AbstractVector, u::AbstractVector, cell, local_face_index::Int, face_caches::EmptySurfaceCache, time)    = nothing
+assemble_element!(residualₑ::AbstractVector, u::AbstractVector, cell, local_face_index::Int, face_caches::EmptySurfaceCache, time) = nothing
+@inline is_facet_in_cache(::FacetIndex, cell, ::EmptySurfaceCache) = false
+
+"""
+Supertype for all caches to integrate over interfaces.
+
+Interface:
+
+    setup_interface_cache(model, qr, ip, ip_geo)
+
+"""
+abstract type AbstractInterfaceElementCache end
+
+"""
+    assemble_interface!(Kₑ::AbstractMatrix, cell::CellCache, face_cache::AbstractSurfaceElementCache, time)
+Main entry point for bilinear operators
+
+    assemble_interface!(Kₑ::AbstractMatrix, u::AbstractVector, cell::CellCache, face_cache::AbstractSurfaceElementCache, time)
+Update face matrix in nonlinear operators
+
+    assemble_interface!(Kₑ::AbstractMatrix, residualₑ::AbstractVector, u::AbstractVector, cell::CellCache, face_cache::AbstractSurfaceElementCache, time)
+Update face matrix and residual in nonlinear operators
+
+    assemble_interface!(residualₑ::AbstractVector, u::AbstractVector, cell::CellCache, face_cache::AbstractSurfaceElementCache, time)
+Update residual in nonlinear operators
+"""
+assemble_interface!
+
+
+"""
+Utility to execute noop assembly.
+"""
+struct EmptyInterfaceCache <: AbstractInterfaceElementCache end
+# Update element matrix in nonlinear operators
+assemble_interface!(Kₑ::AbstractMatrix, u::AbstractVector, cell::CellCache, local_face_index::Int, face_caches::EmptyInterfaceCache, time)            = nothing
+# Update element matrix and residual in nonlinear operators
+assemble_interface!(Kₑ::AbstractMatrix, residualₑ::AbstractVector, u::AbstractVector, cell, local_face_index::Int, face_caches::EmptyInterfaceCache, time) = nothing
+# Update residual in nonlinear operators
+assemble_interface!(residualₑ::AbstractVector, u::AbstractVector, cell, local_face_index::Int, face_caches::EmptyInterfaceCache, time) = nothing
+

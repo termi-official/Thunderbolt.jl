@@ -63,7 +63,10 @@ bibtex_plugin = CitationBibliography(
             "api-reference/solver.md",
             "api-reference/utility.md",
         ],
-        "devdocs/index.md",
+        "Developer Documentation" => [
+            "Overview" => "devdocs/index.md",
+            "devdocs/element_interface.md",
+        ],
         "references.md",
         ],
     plugins = [

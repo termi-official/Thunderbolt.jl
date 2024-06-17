@@ -236,9 +236,10 @@ function update_linearization!(op::AssembledNonlinearOperator, u::AbstractVector
         @timeit_debug "assemble element" assemble_element!(Jₑ, uₑ, cell, element_cache, time)
         # TODO maybe it makes sense to merge this into the element routine in a modular fasion?
         # TODO benchmark against putting this into the FacetIterator
-        @timeit_debug "assemble faces" for local_face_index ∈ 1:nfacets(cell)
-            assemble_face!(Jₑ, uₑ, cell, local_face_index, face_cache, time)
-        end
+        # @timeit_debug "assemble faces" for local_face_index ∈ 1:nfacets(cell)
+        #     assemble_face!(Jₑ, uₑ, cell, local_face_index, face_cache, time)
+        # end
+        @timeit_debug "assemble faces" assemble_element!(Jₑ, uₑ, cell, local_face_index, face_cache, time)
         @timeit_debug "assemble tying"  assemble_tying!(Jₑ, uₑ, uₜ, cell, tying_cache, time)
         assemble!(assembler, celldofs(cell), Jₑ)
     end
@@ -264,9 +265,10 @@ function update_linearization!(op::AssembledNonlinearOperator, u::AbstractVector
         @timeit_debug "assemble element" assemble_element!(Jₑ, rₑ, uₑ, cell, element_cache, time)
         # TODO maybe it makes sense to merge this into the element routine in a modular fasion?
         # TODO benchmark against putting this into the FacetIterator
-        @timeit_debug "assemble faces" for local_face_index ∈ 1:nfacets(cell)
-            assemble_face!(Jₑ, rₑ, uₑ, cell, local_face_index, face_cache, time)
-        end
+        # @timeit_debug "assemble faces" for local_face_index ∈ 1:nfacets(cell)
+        #     assemble_face!(Jₑ, rₑ, uₑ, cell, local_face_index, face_cache, time)
+        # end
+        @timeit_debug "assemble faces" assemble_element!(Jₑ, rₑ, uₑ, cell, face_cache, time)
         @timeit_debug "assemble tying"  assemble_tying!(Jₑ, rₑ, uₑ, uₜ, cell, tying_cache, time)
         assemble!(assembler, dofs, Jₑ, rₑ)
     end
@@ -469,38 +471,6 @@ end
 Ferrite.add!(b::AbstractVector, op::AbstractLinearOperator) = b .+= op.b
 Base.eltype(op::AbstractLinearOperator) = eltype(op.b)
 Base.size(op::AbstractLinearOperator) = sisze(op.b)
-
-# TODO where to put these?
-struct AnalyticalCoefficientElementCache{F <: AnalyticalCoefficient, T, CV}
-    f::F
-    nonzero_intervals::Vector{SVector{2,T}}
-    cv::CV
-end
-duplicate_for_parallel(ec::AnalyticalCoefficientElementCache) = AnalyticalCoefficientElementCache(ec.f, ec.nonzero_intervals, ec.cv)
-function assemble_element!(bₑ, cell, element_cache::AnalyticalCoefficientElementCache, time)
-    _assemble_element!(bₑ, getcoordinates(cell), element_cache::AnalyticalCoefficientElementCache, time)
-end
-# We want this to be as fast as possible, so throw away everything unused
-@inline function _assemble_element!(bₑ, coords::AbstractVector{<:Vec{dim,T}}, element_cache::AnalyticalCoefficientElementCache, time) where {dim,T}
-    @unpack f, cv = element_cache
-    n_geom_basefuncs = Ferrite.getngeobasefunctions(cv)
-    @inbounds for (qp, w) in pairs(Ferrite.getweights(cv.qr))
-        # Compute dΩ
-        mapping = Ferrite.calculate_mapping(cv.geo_mapping, qp, coords)
-        dΩ = Ferrite.calculate_detJ(Ferrite.getjacobian(mapping)) * w
-        # Compute x
-        x = spatial_coordinate(cv, qp, coords)
-        # Evaluate f
-        fx = f.f(x,time)
-        # TODO replace with evaluate_coefficient
-        # Evaluate all basis functions
-        @inbounds for j ∈ 1:getnbasefunctions(cv)
-            δu = shape_value(cv, qp, j)
-            bₑ[j] += fx * δu * dΩ
-        end
-    end
-end
-
 
 function needs_update(op::Union{LinearOperator, PEALinearOperator}, t)
     return _needs_update(op, op.element_cache, t)

@@ -11,7 +11,6 @@ Thunderbolt.PartitionedProblem
 Thunderbolt.ODEProblem
 Thunderbolt.AbstractPointwiseProblem
 Thunderbolt.PointwiseODEProblem
-Thunderbolt.TransientHeatProblem
 Thunderbolt.QuasiStaticNonlinearProblem
 Thunderbolt.QuasiStaticODEProblem
 Thunderbolt.QuasiStaticDAEProblem

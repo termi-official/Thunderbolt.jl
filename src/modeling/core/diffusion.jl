@@ -1,17 +1,16 @@
-# @doc raw"""
-#     BilinearDiffusionIntegrator{CoefficientType}
+@doc raw"""
+    BilinearDiffusionIntegrator{CoefficientType}
 
-# Assembles the matrix associated to the bilinearform ``a(u,v) = -\int \nabla v(x) \cdot D(x) \nabla u(x) dx`` for a given diffusion tensor ``D(x)`` and ``u,v`` from the same function space.
-# """
-"""
-    Represents the integrand of the bilinear form <ϕ,ψ> = -∫ D∇ϕ ⋅ ∇ψ dΩ .
+Represents the integrand of the bilinear form ``a(u,v) = -\int \nabla v(x) \cdot D(x) \nabla u(x) dx`` for a given diffusion tensor ``D(x)`` and ``u,v`` from the same function space.
 """
 struct BilinearDiffusionIntegrator{CoefficientType} <: AbstractBilinearIntegrator
     D::CoefficientType
-    # coordinate_system
 end
 
-struct BilinearDiffusionElementCache{IT <: BilinearDiffusionIntegrator, CV}
+"""
+The cache associated with [`BilinearDiffusionIntegrator`](@ref) to assemble element diffusion matrices.
+"""
+struct BilinearDiffusionElementCache{IT <: BilinearDiffusionIntegrator, CV} <: AbstractVolumetricElementCache
     integrator::IT
     cellvalues::CV
 end
@@ -37,6 +36,11 @@ end
 
 setup_element_cache(element_model::BilinearDiffusionIntegrator, qr, ip, ip_geo) = BilinearDiffusionElementCache(element_model, CellValues(qr, ip, ip_geo))
 
+@doc raw"""
+    TransientHeatModel(conductivity_coefficient, source_term, solution_variable_symbol)
+
+Model formulated as ``\partial_t u = \nabla \cdot \kappa(x) \nabla u``
+"""
 struct TransientHeatModel{ConductivityCoefficientType, SourceType <: AbstractSourceTerm}
     κ::ConductivityCoefficientType
     source::SourceType
