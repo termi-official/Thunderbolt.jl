@@ -47,7 +47,7 @@ end
 
 setup_internal_model_cache(cv, constitutive_model::PK1Model) = setup_internal_model_cache(cv, constitutive_model.internal_model)
 
-function material_routine(F::Tensor, coefficients, ::EmptyInternalVariable, model::PK1Model) where {dim}
+function material_routine(F::Tensor, coefficients, ::EmptyInternalVariable, model::PK1Model)
     ∂²Ψ∂F², ∂Ψ∂F = Tensors.hessian(
         F_ad ->
               Ψ(F_ad,     coefficients, model.material)
