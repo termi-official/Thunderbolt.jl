@@ -34,11 +34,12 @@ function test_solve_passive_structure(constitutive_model)
     solve!(integrator)
     @test integrator.sol.retcode == DiffEqBase.ReturnCode.Success
     @test integrator.u ≉ u₀
+    return integrator.u
 end
 
 @testset "Passive Structure" begin
 
-test_solve_passive_structure(
+u₁ = test_solve_passive_structure(
     Thunderbolt.PK1Model(
         HolzapfelOgden2009Model(),
         Thunderbolt.EmptyInternalVariableModel(),
@@ -49,5 +50,27 @@ test_solve_passive_structure(
         )),
     )
 )
+
+u₂ = test_solve_passive_structure(
+    Thunderbolt.PrestressedMaterialModel(
+        Thunderbolt.PK1Model(
+            HolzapfelOgden2009Model(),
+            Thunderbolt.EmptyInternalVariableModel(),
+            ConstantCoefficient(OrthotropicMicrostructure(
+                Vec((1.0, 0.0, 0.0)),
+                Vec((0.0, 1.0, 0.0)),
+                Vec((0.0, 0.0, 1.0)),
+            )),
+        ),
+        ConstantCoefficient(Tensor{2,3}((
+            1.1,0.1,0.0,
+            0.2,0.9,0.1,
+            -0.1,0.0,1.0,
+        ))),
+    )
+)
+
+# The prestress should force a different solution
+@test u₁ ≉ u₂
 
 end

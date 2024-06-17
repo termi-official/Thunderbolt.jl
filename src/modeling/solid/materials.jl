@@ -10,7 +10,7 @@ end
 @doc raw"""
     PrestressedMaterialModel(inner_model, prestress_field)
 """
-struct PrestressedMaterialModel{MM, FF}
+struct PrestressedMaterialModel{MM, FF} <: QuasiStaticModel
     inner_model::MM
     prestress_field::FF
 end
