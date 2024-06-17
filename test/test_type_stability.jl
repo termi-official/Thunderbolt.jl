@@ -2,7 +2,8 @@
     f₀ = Tensors.Vec{3,Float64}((1.0,0.0,0.0))
     s₀ = Tensors.Vec{3,Float64}((0.0,1.0,0.0))
     n₀ = Tensors.Vec{3,Float64}((0.0,0.0,1.0))
-    fsn = ConstantCoefficient((f₀, s₀, n₀))
+    fsncoeff = ConstantCoefficient(OrthotropicMicrostructure(f₀, s₀, n₀))
+    fsneval  = Thunderbolt.OrthotropicMicrostructure(f₀, s₀, n₀)
     F = one(Tensors.Tensor{2,3})
     Caᵢ = 1.0
 
@@ -17,7 +18,7 @@
         HumphreyStrumpfYinModel(),
     ]
     @testset "Energies $material_model" for material_model ∈ material_model_set
-        @test_opt Thunderbolt.Ψ(F, f₀, s₀, n₀, material_model)
+        @test_opt Thunderbolt.Ψ(F, fsneval, material_model)
     end
 
     @testset "Constitutive Models" begin
@@ -31,9 +32,9 @@
                     passive_spring,
                     PiersantiActiveStress(2.0, 1.0, 0.75, 0.0),
                     PelceSunLangeveld1995Model(;calcium_field=ConstantCoefficient(1.0)),
-                    fsn,
+                    fsncoeff,
                 )
-                @test_opt Thunderbolt.material_routine(F, f₀, s₀, n₀, Caᵢ, model)
+                @test_opt Thunderbolt.material_routine(F, fsneval, Caᵢ, model)
             end
         end
 
@@ -55,9 +56,9 @@
                             ActiveMaterialAdapter(passive_spring),
                             Fᵃmodel,
                             contraction_model,
-                            fsn,
+                            fsncoeff,
                         )
-                        @test_opt Thunderbolt.material_routine(F, f₀, s₀, n₀, Caᵢ, model)
+                        @test_opt Thunderbolt.material_routine(F, fsneval, Caᵢ, model)
                     end
                 end
             end

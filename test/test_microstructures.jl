@@ -38,9 +38,9 @@
                 fdir = sdir × ndir
 
                 fsn = evaluate_coefficient(ms, cellcache, qp, 0.0)
-                @test fsn[1] ≈ fdir atol=0.05
-                @test fsn[2] ≈ sdir
-                @test fsn[3] ≈ ndir atol=0.05
+                @test fsn.f ≈ fdir atol=0.05
+                @test fsn.s ≈ sdir
+                @test fsn.n ≈ ndir atol=0.05
             end
         end
     end

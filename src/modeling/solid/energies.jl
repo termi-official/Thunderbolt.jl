@@ -1,18 +1,10 @@
 # This file contains some common energies.
 
-# abstract type AbstractMaterialModel end
-
-# abstract type IsotropicMaterialModel <: AbstractMaterialModel end
-
-# abstract type TransverseIsotropicMaterialModel <: AbstractMaterialModel end
-
-# abstract type OrthotropicMaterialModel <: AbstractMaterialModel end
-
 @doc raw"""
 A simple dummy energy with $\Psi = 0$.
 """
 struct NullEnergyModel end
-Ψ(F, f₀, s₀, n₀, mp::NullEnergyModel) = 0.0
+Ψ(F, coefficients, mp::NullEnergyModel) = 0.0
 
 
 @doc raw"""
@@ -102,8 +94,10 @@ https://onlinelibrary.wiley.com/doi/epdf/10.1002/cnm.2866
 
     mpU::TU = HartmannNeffCompressionPenalty1()
 end
-function Ψ(F, f₀, s₀, n₀, mp::TransverseIsotopicNeoHookeanModel)
+function Ψ(F, coeff::AbstractTransverselyIsotropicMicrostructure, mp::TransverseIsotopicNeoHookeanModel)
     @unpack a₁, a₂, α₁, α₂, mpU = mp
+    f₀= coeff.f
+
     C = tdot(F)
     I₁ = tr(C)
     I₃ = det(C)
@@ -142,9 +136,10 @@ Base.@kwdef struct HolzapfelOgden2009Model{TD,TU} #<: OrthotropicMaterialModel
     bᶠˢ::TD = 11.436
     mpU::TU = SimpleCompressionPenalty()
 end
-function Ψ(F, f₀, s₀, n₀, mp::HolzapfelOgden2009Model)
+function Ψ(F, coeff::AbstractOrthotropicMicrostructure, mp::HolzapfelOgden2009Model)
     # Modified version of https://onlinelibrary.wiley.com/doi/epdf/10.1002/cnm.2866
     @unpack a, b, aᶠ, bᶠ, aˢ, bˢ, aᶠˢ, bᶠˢ, mpU = mp
+    f₀, s₀, n₀ = coeff.f, coeff.s, coeff.n
 
     C = tdot(F)
     I₃ = det(C)
@@ -179,8 +174,9 @@ Base.@kwdef struct LinYinPassiveModel{TD,TU} #<: TransverseIsotropicMaterialMode
     C₄::TD = 0.08
     mpU::TU = SimpleCompressionPenalty()
 end
-function Ψ(F, f₀, s₀, n₀, model::LinYinPassiveModel)
+function Ψ(F, coeff::AbstractTransverselyIsotropicMicrostructure, model::LinYinPassiveModel)
     @unpack C₁, C₂, C₃, C₄, mpU = model
+    f₀ = coeff.f
 
     C = tdot(F) # = FᵀF
 
@@ -209,9 +205,9 @@ Base.@kwdef struct LinYinActiveModel{TD,TU} #<: TransverseIsotropicMaterialModel
     C₅::TD = 1.62
     mpU::TU = SimpleCompressionPenalty()
 end
-function Ψ(F, f₀, s₀, n₀, model::LinYinActiveModel)
+function Ψ(F, coeff::AbstractTransverselyIsotropicMicrostructure, model::LinYinActiveModel)
     @unpack C₀, C₁, C₂, C₃, C₄, C₅, mpU = model
-
+    f₀ = coeff.f
     C = tdot(F) # = FᵀF
 
     # Invariants
@@ -235,9 +231,9 @@ Base.@kwdef struct HumphreyStrumpfYinModel{TD,TU} #<: TransverseIsotropicMateria
     C₄::TD = 30.21
     mpU::TU = SimpleCompressionPenalty()
 end
-function Ψ(F, f₀, s₀, n₀, model::HumphreyStrumpfYinModel)
+function Ψ(F, coeff::AbstractTransverselyIsotropicMicrostructure, model::HumphreyStrumpfYinModel) 
     @unpack C₁, C₂, C₃, C₄, mpU = model
-
+    f₀ = coeff.f
     C = tdot(F) # = FᵀF
 
     # Invariants
@@ -258,8 +254,9 @@ $\Psi^{\rm{a}} = \frac{a^{\rm{f}}}{2}(I_e^{\rm{e}}-1)^2$
     η::TD = 10.0
     mpU::TU = NullCompressionPenalty()
 end
-function Ψ(F, f₀, s₀, n₀, mp::LinearSpringModel)
+function Ψ(F, coeff::AbstractTransverselyIsotropicMicrostructure, mp::LinearSpringModel)
     @unpack η = mp
+    f₀ = coeff.f
 
     M = Tensors.unsafe_symmetric(f₀ ⊗ f₀)
     FMF = Tensors.unsafe_symmetric(F ⋅ M ⋅ transpose(F))
@@ -286,8 +283,9 @@ Base.@kwdef struct Guccione1991PassiveModel{CPT}
     Bᶠⁿ::Float64 =  14.4
     mpU::CPT = SimpleCompressionPenalty(50.0)
 end
-function Thunderbolt.Ψ(F, f₀, s₀, n₀, mp::Guccione1991PassiveModel{CPT}) where {CPT}
+function Thunderbolt.Ψ(F, coeff::AbstractOrthotropicMicrostructure, mp::Guccione1991PassiveModel)
     @unpack C₀, Bᶠᶠ, Bˢˢ, Bⁿⁿ, Bⁿˢ, Bᶠˢ, Bᶠⁿ, mpU = mp
+    f₀, s₀, n₀ = coeff.f, coeff.s, coeff.n
 
     C  = tdot(F)
     I₃ = det(C)
@@ -322,9 +320,10 @@ $\Psi^{\rm{a}} = \frac{a^{\rm{f}}}{2}(I_e^{\rm{e}}-1)^2$
 Base.@kwdef struct SimpleActiveSpring
     aᶠ::Float64  = 1.0
 end
-using UnPack
-function Thunderbolt.Ψ(F, Fᵃ, f₀, s₀, n₀, mp::SimpleActiveSpring)
+
+function Thunderbolt.Ψ(F, Fᵃ, coeff::AbstractTransverselyIsotropicMicrostructure, mp::SimpleActiveSpring)
     @unpack aᶠ = mp
+    f₀ = coeff.f
 
     Fᵉ = F ⋅ inv(Fᵃ)
     Cᵉ = tdot(Fᵉ)
@@ -449,7 +448,7 @@ Base.@kwdef struct BioNeoHooekean{TD,TU} #<: IsotropicMaterialModel
     α::TD = 1.0
     mpU::TU = SimpleCompressionPenalty()
 end
-function Ψ(F, f₀, s₀, n₀, mp::BioNeoHooekean)
+function Ψ(F, coeff, mp::BioNeoHooekean)
     # Modified version of https://onlinelibrary.wiley.com/doi/epdf/10.1002/cnm.2866
     @unpack α, mpU = mp
     C = tdot(F)

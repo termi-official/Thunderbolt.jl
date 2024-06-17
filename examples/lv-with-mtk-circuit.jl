@@ -1,5 +1,5 @@
 # NOTE This example is work in progress. Please consult it at a later time again.
-using CirculatorySystemModels, ModelingToolkit, ModelingToolkit.OrdinaryDiffEq
+using CirculatorySystemModels, ModelingToolkit, OrdinaryDiffEq
 using GLMakie
 
 using Thunderbolt

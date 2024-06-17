@@ -1,13 +1,22 @@
 # Common modeling primitives are found here
-
-# TODO actually use this :)
 abstract type SteadyStateInternalVariable end
+
+struct EmptyInternalVariableCache
+end
+
+struct EmptyInternalVariable <: SteadyStateInternalVariable
+end
+
+function state(model_cache::EmptyInternalVariableCache, geometry_cache, qp::QuadraturePoint, time)
+    return EmptyInternalVariable()
+end
+
+abstract type AbstractSourceTerm end
 
 include("core/coefficients.jl")
 
 include("core/boundary_conditions.jl")
 
-abstract type AbstractSourceTerm end
 abstract type AbstractBilinearIntegrator end
 include("core/mass.jl")
 include("core/diffusion.jl")

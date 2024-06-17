@@ -38,8 +38,8 @@ function assemble_element!(Kₑ::Matrix, residualₑ, uₑ, geometry_cache, elem
         F = one(∇u) + ∇u
 
         # Compute stress and tangent
-        contraction_state = state(internal_model_cache, geometry_cache, qp, time)
-        P, ∂P∂F = material_routine(constitutive_model, F, contraction_state, geometry_cache, qp, time)
+        internal_state = state(internal_model_cache, geometry_cache, qp, time)
+        P, ∂P∂F = material_routine(constitutive_model, F, internal_state, geometry_cache, qp, time)
 
         # Loop over test functions
         for i in 1:ndofs

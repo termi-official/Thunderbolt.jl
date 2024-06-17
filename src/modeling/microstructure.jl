@@ -1,4 +1,30 @@
-# TODO Merge the two coefficient below and alias the name
+abstract type AbstractIsotropicMicrostructure end
+
+struct NoMicrostructure <: AbstractIsotropicMicrostructure
+end
+
+struct NoMicrostructureModel
+end
+
+function evaluate_coefficient(fsn::NoMicrostructureModel, cell_cache, qp::QuadraturePoint, t)
+    return NoMicrostructure()
+end
+
+"""
+Struct must define f::Vec
+"""
+abstract type AbstractTransverselyIsotropicMicrostructure <: AbstractIsotropicMicrostructure end
+
+"""
+Struct must define f::Vec, s::Vec and in 3D n::Vec
+"""
+abstract type AbstractOrthotropicMicrostructure <: AbstractTransverselyIsotropicMicrostructure end
+
+struct AnisotropicPlanarMicrostructure{T} <: AbstractOrthotropicMicrostructure
+    f::Vec{2,T}
+    s::Vec{2,T}
+end
+
 struct AnisotropicPlanarMicrostructureModel{FiberCoefficientType, SheetletCoefficientType}
     fiber_coefficient::FiberCoefficientType
     sheetlet_coefficient::SheetletCoefficientType
@@ -8,7 +34,18 @@ function evaluate_coefficient(fsn::AnisotropicPlanarMicrostructureModel, cell_ca
     f = evaluate_coefficient(fsn.fiber_coefficient, cell_cache, qp, t)
     s = evaluate_coefficient(fsn.sheetlet_coefficient, cell_cache, qp, t)
 
-    return SVector(orthogonalize_system(f,s))
+    return AnisotropicPlanarMicrostructure(orthogonalize_system(f,s)...)
+end
+
+
+struct TransverselyIsotropicMicrostructure{dim, T} <: AbstractTransverselyIsotropicMicrostructure
+    f::Vec{dim,T}
+end
+
+struct OrthotropicMicrostructure{T} <: AbstractOrthotropicMicrostructure
+    f::Vec{3,T}
+    s::Vec{3,T}
+    n::Vec{3,T}
 end
 
 struct OrthotropicMicrostructureModel{FiberCoefficientType, SheetletCoefficientType, NormalCoefficientType}
@@ -22,7 +59,7 @@ function evaluate_coefficient(fsn::OrthotropicMicrostructureModel, cell_cache, q
     s = evaluate_coefficient(fsn.sheetlet_coefficient, cell_cache, qp, t)
     n = evaluate_coefficient(fsn.normal_coefficient, cell_cache, qp, t)
 
-    return SVector(orthogonalize_system(f, s, n))
+    return OrthotropicMicrostructure(orthogonalize_system(f, s, n)...)
 end
 
 """
@@ -59,7 +96,7 @@ function streeter_type_fsn(transmural_direction, circumferential_direction, apic
     n₀ = f₀ × s₀
     n₀ /= norm(n₀)
 
-    return f₀, s₀, n₀
+    return OrthotropicMicrostructure(f₀, s₀, n₀)
 end
 
 """
@@ -105,10 +142,10 @@ function create_simple_microstructure_model(coordinate_system, ip_collection::Ve
             helix_angle       = (1-transmural) * endo_helix_angle + (transmural) * epi_helix_angle
             transversal_angle = (1-transmural) * endo_transversal_angle + (transmural) * epi_transversal_angle
 
-            f₀, s₀, n₀ = streeter_type_fsn(transmural_direction, circumferential_direction, apicobasal_direction, helix_angle, transversal_angle, sheetlet_pseudo_angle, make_orthogonal)
-            elementwise_data_f[qp.i, cellindex] = f₀
-            elementwise_data_s[qp.i, cellindex] = s₀
-            elementwise_data_n[qp.i, cellindex] = n₀
+            coeff = streeter_type_fsn(transmural_direction, circumferential_direction, apicobasal_direction, helix_angle, transversal_angle, sheetlet_pseudo_angle, make_orthogonal)
+            elementwise_data_f[qp.i, cellindex] = coeff.f
+            elementwise_data_s[qp.i, cellindex] = coeff.s
+            elementwise_data_n[qp.i, cellindex] = coeff.n
         end
     end
 

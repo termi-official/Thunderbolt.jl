@@ -130,8 +130,8 @@ for (u, t) in OS.TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
 
                 C = tdot(F)
                 E = (C-one(C))/2.0
-                f₀,s₀,n₀ = evaluate_coefficient(problem.f.constitutive_model.microstructure_model, cell, qp, time)
-
+                coeff = evaluate_coefficient(problem.f.constitutive_model.microstructure_model, cell, qp, time)
+                f₀,s₀,n₀ = coeff.f, coeff.s, coeff.n
                 E_ff_cell += f₀ ⋅ E ⋅ f₀
 
                 f₀_current = F⋅f₀

@@ -42,7 +42,7 @@ function test_solve_contractile_cuboid(constitutive_model)
     @test integrator.u ≉ u₀
 end
 @testset "Contracting cuboid" begin
-microstructure_model = ConstantCoefficient((
+microstructure_model = ConstantCoefficient(OrthotropicMicrostructure(
     Vec((1.0, 0.0, 0.0)),
     Vec((0.0, 1.0, 0.0)),
     Vec((0.0, 0.0, 1.0)),
