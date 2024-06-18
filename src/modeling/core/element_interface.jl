@@ -8,7 +8,7 @@ Interface:
 """
 abstract type AbstractVolumetricElementCache end
 
-"""
+@doc raw"""
     assemble_element!(Kₑ::AbstractMatrix, cell::CellCache, element_cache::AbstractVolumetricElementCache, time)
 Main entry point for bilinear operators
 
@@ -54,7 +54,7 @@ Interface:
 """
 abstract type AbstractSurfaceElementCache end
 
-"""
+@doc raw"""
     assemble_face!(Kₑ::AbstractMatrix, cell::CellCache, face_cache::AbstractSurfaceElementCache, time)
 Main entry point for bilinear operators
 
@@ -100,7 +100,7 @@ Interface:
 """
 abstract type AbstractInterfaceElementCache end
 
-"""
+@doc raw"""
     assemble_interface!(Kₑ::AbstractMatrix, cell::CellCache, face_cache::AbstractSurfaceElementCache, time)
 Main entry point for bilinear operators
 
