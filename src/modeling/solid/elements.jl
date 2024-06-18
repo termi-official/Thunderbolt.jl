@@ -16,7 +16,7 @@ end
 
 A generic cache to assemble elements coming from a [StructuralModel](@ref).
 """
-struct StructuralElementCache{M, CMCache, CV}
+struct StructuralElementCache{M, CMCache, CV} <: AbstractVolumetricElementCache
     constitutive_model::M
     internal_model_cache::CMCache
     cv::CV
@@ -24,7 +24,7 @@ end
 
 # TODO how to control dispatch on required input for the material routin?
 # TODO finer granularity on the dispatch here. depending on the evolution law of the internal variable this routine looks slightly different.
-function assemble_element!(Kₑ::Matrix, residualₑ, uₑ, geometry_cache, element_cache::StructuralElementCache, time)
+function assemble_element!(Kₑ::AbstractMatrix, residualₑ::AbstractVector, uₑ::AbstractVector, geometry_cache::CellCache, element_cache::StructuralElementCache, time)
     @unpack constitutive_model, internal_model_cache, cv = element_cache
     ndofs = getnbasefunctions(cv)
 
@@ -49,7 +49,7 @@ function assemble_element!(Kₑ::Matrix, residualₑ, uₑ, geometry_cache, elem
             residualₑ[i] += ∇δui ⊡ P * dΩ
 
             ∇δui∂P∂F = ∇δui ⊡ ∂P∂F # Hoisted computation
-            for j in i:ndofs
+            for j in 1:ndofs
                 ∇δuj = shape_gradient(cv, qp, j)
                 # Add contribution to the tangent
                 Kₑ[i, j] += ( ∇δui∂P∂F ⊡ ∇δuj ) * dΩ
@@ -57,13 +57,13 @@ function assemble_element!(Kₑ::Matrix, residualₑ, uₑ, geometry_cache, elem
         end
 
         # Symmetrize
-        for i in 2:ndofs
-            for j in 1:i
-                ∇δuj = shape_gradient(cv, qp, j)
-                # Add contribution to the tangent
-                Kₑ[i, j] = Kₑ[j, i]
-            end
-        end
+        # for i in 2:ndofs
+        #     for j in 1:i
+        #         ∇δuj = shape_gradient(cv, qp, j)
+        #         # Add contribution to the tangent
+        #         Kₑ[i, j] = Kₑ[j, i]
+        #     end
+        # end
     end
 end
 

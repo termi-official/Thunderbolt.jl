@@ -29,7 +29,7 @@ function evaluate_coefficient(coeff::FieldCoefficient{<:Any,<:Any,<:Any,<:Scalar
     return val
 end
 
-function evaluate_coefficient(coeff::FieldCoefficient{<:Any,<:Any,<:Any,<:VectorizedInterpolationCollection{vdim}}, cell_cache, qp::QuadraturePoint{<:Any, T}, t) where {vdim,T}
+function evaluate_coefficient(coeff::F, cell_cache, qp::QuadraturePoint{<:Any, T}, t) where {vdim, T, F <: FieldCoefficient{<:Any,<:Any,<:Any,<:VectorizedInterpolationCollection{vdim}}}
     @unpack elementwise_data, ip_collection = coeff
     ip = getinterpolation(ip_collection, getcells(cell_cache.grid, cellid(cell_cache)))
     n_base_funcs = Ferrite.getnbasefunctions(ip.ip)
@@ -139,7 +139,7 @@ struct AnalyticalCoefficient{F<:Function, CSYS<:CoordinateSystemCoefficient}
     coordinate_system_coefficient::CSYS
 end
 
-function evaluate_coefficient(coeff::AnalyticalCoefficient{F}, cell_cache, qp::QuadraturePoint{<:Any,T}, t) where {F, T}
+function evaluate_coefficient(coeff::F, cell_cache, qp::QuadraturePoint{<:Any,T}, t) where {F <: AnalyticalCoefficient, T}
     x = evaluate_coefficient(coeff.coordinate_system_coefficient, cell_cache, qp, t)
     return coeff.f(x, t)
 end

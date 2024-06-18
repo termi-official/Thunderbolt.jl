@@ -1,17 +1,16 @@
-# @doc raw"""
-#     BilinearMassIntegrator{MT, CV}
+@doc raw"""
+    BilinearMassIntegrator{MT, CV}
 
-# Assembles the matrix associated to the bilinearform ``a(u,v) = -\int v(x) u(x) dx`` for ``u,v`` from the same function space.
-# """
-"""
-    Represents the integrand of the bilinear form <ϕ,ψ> = ∫ ρϕ ⋅ ψ dΩ .
+Represents the integrand of the bilinearform ``a(u,v) = \int \rho(x) v(x) u(x) dx`` for ``u,v`` from the same function space with some given density field $\rho(x)$.
 """
 struct BilinearMassIntegrator{CoefficientType} <: AbstractBilinearIntegrator
     ρ::CoefficientType
-    # coordinate_system
 end
 
-struct BilinearMassElementCache{IT <: BilinearMassIntegrator, CV}
+"""
+The cache associated with [`BilinearMassIntegrator`](@ref) to assemble element mass matrices.
+"""
+struct BilinearMassElementCache{IT <: BilinearMassIntegrator, CV} <: AbstractVolumetricElementCache
     integrator::IT
     cellvalues::CV
 end

@@ -2,6 +2,8 @@ module Thunderbolt
 
 using TimerOutputs
 
+import Unrolled: @unroll
+
 using Reexport, UnPack
 import LinearAlgebra: mul!
 using SparseMatricesCSR, Polyester, LinearAlgebra

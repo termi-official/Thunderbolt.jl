@@ -1,81 +1,84 @@
-
 @doc raw"""
-RobinBC
-
+Any boundary condition stated in the weak form
 ```math
-\bm{P}(\bm{u}) \cdot \bm{n}_0 = - \alpha \bm{u} \quad \textbf{x} \in \partial \Omega,
+\int f(u, n_0), \delta u \mathrm{d} \partial \Omega_0
 ```
 """
-struct RobinBC
+abstract type AbstractWeakBoundaryCondition end
+
+@doc raw"""
+    RobinBC(α, boundary_name::String)
+
+```math
+\bm{P}(\bm{u}) \cdot \bm{n}_0 = - \alpha \bm{u} \quad \textbf{x} \in \partial \Omega_0,
+```
+"""
+struct RobinBC <: AbstractWeakBoundaryCondition
     α::Float64
     boundary_name::String
 end
 
-#TODO Energy-based interface
-struct NormalSpringBC
+@doc raw"""
+    NormalSpringBC(kₛ boundary_name::String)
+
+```math
+\bm{P}(\bm{u}) \cdot \bm{n}_0 = - k_s \bm{u} \cdot n_0 \quad \textbf{x} \in \partial \Omega_0,
+```
+"""
+struct NormalSpringBC <: AbstractWeakBoundaryCondition
     kₛ::Float64
     boundary_name::String
 end
 
-struct BendingSpringBC
+@doc raw"""
+    BendingSpringBC(kᵇ, boundary_name::String)
+
+```math
+\bm{P}(\bm{u}) \cdot \bm{n}_0 = - \partial_F \frac{1}{2} k_b \left (cof(F) n_0 - n_0 \right) \quad \textbf{x} \in \partial \Omega_0,
+```
+"""
+struct BendingSpringBC <: AbstractWeakBoundaryCondition
     kᵇ::Float64
     boundary_name::String
 end
 
-struct ConstantPressureBC
+@doc raw"""
+    ConstantPressureBC(p::Real, boundary_name::String)
+
+```math
+\bm{P}(\bm{u}) \cdot \bm{n}_0 = - p n_0 \quad \textbf{x} \in \partial \Omega_0,
+```
+"""
+struct ConstantPressureBC <: AbstractWeakBoundaryCondition
     p::Float64
     boundary_name::String
 end
 
-struct PressureFieldBC{C}
+@doc raw"""
+    PressureFieldBC(pressure_field, boundary_name::String)
+
+```math
+\bm{P}(\bm{u}) \cdot \bm{n}_0 = - k_s \bm{u} \cdot n_0 \quad \textbf{x} \in \partial \Omega_0,
+```
+"""
+struct PressureFieldBC{C} <: AbstractWeakBoundaryCondition
     pc::C
     boundary_name::String
 end
 
-
-
-struct EmtpyFacetCache
-end
-
-assemble_face!(Kₑ::Matrix, residualₑ, uₑ, cell, local_face_index, face_caches::EmtpyFacetCache, time) = nothing
-assemble_face!(Kₑ::Matrix, uₑ, cell, local_face_index, face_caches::EmtpyFacetCache, time) = nothing
-
-
-
-function setup_boundary_cache(boundary_models::Union{<:Tuple,<:AbstractVector}, qr::FacetQuadratureRule, ip, ip_geo)
-    length(boundary_models) == 0 && return EmtpyFacetCache()
-    return ntuple(i->setup_boundary_cache(boundary_models[i], qr, ip, ip_geo), length(boundary_models))
-end
-
-function assemble_face!(Kₑ::Matrix, uₑ, cell, local_face_index, face_caches::Tuple, time)
-    for face_cache ∈ face_caches
-        if (cellid(cell), local_face_index) ∈ getfacetset(cell.grid, getboundaryname(face_cache))
-            assemble_face!(Kₑ, uₑ, cell, local_face_index, face_cache, time)
-        end
-    end
-end
-
-function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, cell, local_face_index, face_caches::Tuple, time)
-    for face_cache ∈ face_caches
-        if (cellid(cell), local_face_index) ∈ getfacetset(cell.grid, getboundaryname(face_cache))
-            assemble_face!(Kₑ, residualₑ, uₑ, cell, local_face_index, face_cache, time)
-        end
-    end
-end
-
-
-
-struct SimpleFacetCache{MP, FV}
+"""
+Standard cache for surface integrals.
+"""
+struct SimpleFacetCache{MP, FV} <: AbstractSurfaceElementCache
     mp::MP
     fv::FV
 end
+@inline is_facet_in_cache(facet::FacetIndex, cell::CellCache, face_cache::SimpleFacetCache) = facet ∈ getfacetset(cell.grid, getboundaryname(face_cache))
+@inline getboundaryname(face_cache::SimpleFacetCache) = face_cache.mp.boundary_name
 
-getboundaryname(face_cache::SimpleFacetCache) = face_cache.mp.boundary_name
-
-function setup_boundary_cache(face_model, qr::FacetQuadratureRule, ip, ip_geo)
+function setup_boundary_cache(face_model::AbstractWeakBoundaryCondition, qr::FacetQuadratureRule, ip, ip_geo)
     return SimpleFacetCache(face_model, FacetValues(qr, ip, ip_geo))
 end
-
 
 function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, cell, local_face_index::Int, cache::SimpleFacetCache{<:RobinBC}, time)
     @unpack mp, fv = cache
@@ -86,7 +89,6 @@ function assemble_face!(Kₑ::Matrix, residualₑ, uₑ, cell, local_face_index:
     ndofs_face = getnbasefunctions(fv)
     for qp in QuadratureIterator(fv)
         dΓ = getdetJdV(fv, qp)
-        N = getnormal(fv, qp)
 
         u_q = function_value(fv, qp, uₑ)
         ∂²Ψ∂u², ∂Ψ∂u = Tensors.hessian(u -> α*u⋅u, u_q, :all)
@@ -114,7 +116,6 @@ function assemble_face!(Kₑ::Matrix, uₑ, cell, local_face_index, cache::Simpl
     ndofs_face = getnbasefunctions(fv)
     for qp in QuadratureIterator(fv)
         dΓ = getdetJdV(fv, qp)
-        N = getnormal(fv, qp)
 
         u_q = function_value(fv, qp, uₑ)
         ∂²Ψ∂u², ∂Ψ∂u = Tensors.hessian(u -> α*u⋅u, u_q, :all)

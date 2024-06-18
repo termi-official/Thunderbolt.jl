@@ -7,7 +7,7 @@ eliminate_constraints_from_linearization!(cache::AbstractNonlinearSolverCache, f
 eliminate_constraints_from_increment!(Δu::AbstractVector, f::AbstractSemidiscreteFunction, cache::AbstractNonlinearSolverCache) = apply_zero!(Δu, getch(f))
 function eliminate_constraints_from_increment!(Δu::AbstractVector, f::AbstractSemidiscreteBlockedFunction, cache::AbstractNonlinearSolverCache)
     # TODO be smarter about the block extraction and use info from f
-    Δublocked = PseudoBlockVector(Δu, [blocksizes(f)...])
+    Δublocked = BlockedVector(Δu, [blocksizes(f)...])
     for (i,fi) ∈ enumerate(blocks(f))
         Δublockedi = @view Δublocked[Block(i)]
         eliminate_constraints_from_increment!(Δublockedi, fi, cache)
