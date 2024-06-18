@@ -2,6 +2,10 @@ function hexahedralize(grid::Grid{3, Hexahedron})
     return grid
 end
 
+function hexahedralize(mesh::SimpleMesh{3, Hexahedron})
+    return mesh
+end
+
 # TODO nonlinear version
 function create_center_node(grid::AbstractGrid{dim}, cell::LinearCellGeometry) where {dim}
     center = zero(Vec{dim})
@@ -212,8 +216,16 @@ function hexahedralize_local_face_transfer(cell::Wedge, offset::Int, faceid::Int
     end
 end
 
-function uniform_refinement(grid::Grid{3,C,T}) where {C,T}
-    mgrid = to_mesh(grid) # Helper
+function uniform_refinement(grid::Grid{3})
+    return _uniform_refinement(to_mesh(grid))
+end
+
+function uniform_refinement(mesh::SimpleMesh)
+    return to_mesh(_uniform_refinement(mesh))
+end
+
+function _uniform_refinement(mgrid::SimpleMesh{3,C,T}) where {C,T}
+    grid = mgrid.grid
 
     cells = getcells(grid)
 
@@ -245,8 +257,17 @@ function uniform_refinement(grid::Grid{3,C,T}) where {C,T}
     return Grid(new_cells, [grid.nodes; new_edge_nodes; new_face_nodes; new_cell_nodes])
 end
 
-function hexahedralize(grid::Grid{3,<:Any,T}) where {T}
-    mgrid = to_mesh(grid) # Helper
+function hexahedralize(grid::Grid{3})
+    return _hexahedralize(to_mesh(grid))
+end
+
+function hexahedralize(mesh::SimpleMesh{3})
+    grid = _hexahedralize(mesh)
+    return to_mesh(grid)
+end
+
+function _hexahedralize(mgrid::SimpleMesh{3,<:Any,T}) where {T}
+    grid = mgrid.grid
 
     cells = getcells(grid)
 
@@ -390,22 +411,22 @@ function load_voom2_fsn(filename)
 end
 
 """
-    load_voom2_mesh(filename)
+    load_voom2_grid(filename)
 
 Loader for the [voom2](https://github.com/luigiemp/voom2) legacy format.
 """
-function load_voom2_mesh(filename)
+function load_voom2_grid(filename)
     nodes = load_voom2_nodes("$filename.nodes")
     elements = load_voom2_elements("$filename.ele")
     return Grid(elements, nodes)
 end
 
 """
-    load_mfem_mesh(filename)
+    load_mfem_grid(filename)
 
 Loader for straight mfem meshes supporting v1.0.
 """
-function load_mfem_mesh(filename)
+function load_mfem_grid(filename)
     @info "loading mfem mesh $filename"
 
     open(filename, "r") do file
@@ -559,11 +580,11 @@ function load_carp_nodes(filename)
 end
 
 """
-    load_carp_mesh(filename)
+    load_carp_grid(filename)
 
 Mesh format taken from https://carp.medunigraz.at/file_formats.html .
 """
-function load_carp_mesh(filename)
+function load_carp_grid(filename)
     elements, domains = load_carp_elements(filename * ".elem")
     nodes = load_carp_nodes(filename * ".pts")
     

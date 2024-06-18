@@ -138,3 +138,38 @@ getfacevalues(fv::FacetValueCollection, cell::CellType) where {CellType <: Abstr
     getinterpolation(fv.ipc, cell),
     Ferrite.geometric_interpolation(CellType)
 )
+
+
+"""
+    ElementwiseData(data, offsets)
+
+Container to handle manage quadrature data and friends on mixed grids.
+"""
+struct ElementwiseData{DataType, StorageType <: AbstractVector{DataType}, IndexStorageType <: AbstractVector{<:Int}} <: AbstractMatrix{DataType}
+    data::StorageType
+    offsets::IndexStorageType
+    # FIXME the cells must be ordered ascending for this to work, which is not true in general. Insert the unit ranges here instead.
+end
+
+Base.getindex(data::ElementwiseData, i::Int) = data.data[i]
+Base.length(data::ElementwiseData) = length(data.data)
+Base.size(data::ElementwiseData) = (0, length(data.offsets))
+function Base.show(io::IO, ::MIME"text/plain", data::ElementwiseData{DataType, StorageType, IndexStorageType}) where {DataType, StorageType, IndexStorageType}
+    print(io, "ElementwiseData{DataType=$DataType, StorageType=$StorageType, IndexStorageType=$IndexStorageType} with $(length(data.data)) entries and outer dimension $(length(data.offsets)).")
+end
+
+function Base.setindex!(data::ElementwiseData{T}, v::T, i::Int) where T
+    data.data[i] = v
+end
+
+function Base.getindex(data::ElementwiseData, j::Int, i::Int)
+    os = data.offsets[i]:(data.offsets[i+1]-1)
+    dv = @view data.data[os]
+    return dv[j]
+end
+
+function Base.setindex!(data::ElementwiseData{T}, v::T, j::Int, i::Int) where T
+    os = data.offsets[i]:(data.offsets[i+1]-1)
+    dv = @view data.data[os]
+    dv[j] = v
+end

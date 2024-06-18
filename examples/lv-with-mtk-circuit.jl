@@ -238,7 +238,7 @@ order = 1
 intorder = max(2*order-1,2)
 ip_mech = LagrangeCollection{order}()^3
 qr_u = QuadratureRuleCollection(intorder-1)
-LV_cs = compute_LV_coordinate_system(LV_grid)
+LV_cs = compute_lv_coordinate_system(LV_grid)
 LV_fm = create_simple_microstructure_model(LV_cs, LagrangeCollection{1}()^3, endo_helix_angle = deg2rad(-60.0), epi_helix_angle = deg2rad(70.0), endo_transversal_angle = deg2rad(10.0), epi_transversal_angle = deg2rad(-20.0))
 
 # passive_model = HolzapfelOgden2009Model(; mpU=SimpleCompressionPenalty(1e2))

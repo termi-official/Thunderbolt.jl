@@ -3,7 +3,7 @@
 
 A constant in time data field, interpolated per element with a given interpolation.
 """
-struct FieldCoefficient{T,T2,TA<:Array{T,2},IPC<:InterpolationCollection}
+struct FieldCoefficient{T,T2,TA<:AbstractArray{T,2},IPC<:InterpolationCollection}
     # TODO data structure for this
     elementwise_data::TA #2d ragged array (element_idx, base_fun_idx)
     ip_collection::IPC
@@ -11,8 +11,8 @@ struct FieldCoefficient{T,T2,TA<:Array{T,2},IPC<:InterpolationCollection}
     qbuf::Vector{T2}
 end
 
-FieldCoefficient(data::Array{T,2}, ipc::ScalarInterpolationCollection) where T = FieldCoefficient(data, ipc, T[])
-FieldCoefficient(data::Array{T,2}, ipc::VectorizedInterpolationCollection) where T = FieldCoefficient(data, ipc, eltype(T)[])
+FieldCoefficient(data::AbstractArray{T,2}, ipc::ScalarInterpolationCollection) where T = FieldCoefficient(data, ipc, T[])
+FieldCoefficient(data::AbstractArray{T,2}, ipc::VectorizedInterpolationCollection) where T = FieldCoefficient(data, ipc, eltype(T)[])
 
 function evaluate_coefficient(coeff::FieldCoefficient{<:Any,<:Any,<:Any,<:ScalarInterpolationCollection}, cell_cache, qp::QuadraturePoint{<:Any, T}, t) where T
     @unpack elementwise_data, ip_collection = coeff
