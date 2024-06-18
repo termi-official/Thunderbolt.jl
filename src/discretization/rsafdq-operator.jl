@@ -43,7 +43,10 @@ getJ(op::AssembledRSAFDQ2022Operator, i::Block) = @view op.J[i]
 function update_linearization!(op::AssembledRSAFDQ2022Operator, u_::AbstractVector, time)
     @unpack J, element_cache, face_cache, tying_cache, dh  = op
 
-    u = PseudoBlockVector(u_, blocksizes(J)[1])
+    bs = blocksizes(J)
+    s1 = bs[1,1][1]
+    s2 = bs[2,2][1]
+    u  = BlockedVector(u_, [s1, s2])
     ud = @view u[Block(1)]
     up = @view u[Block(2)]
 
@@ -92,14 +95,17 @@ function update_linearization!(op::AssembledRSAFDQ2022Operator, u_::AbstractVect
     #finish_assemble(assembler)
 end
 
-function update_linearization!(op::AssembledRSAFDQ2022Operator, u_::AbstractVector, residual_::AbstractVector, time)
+function update_linearization!(op::AssembledRSAFDQ2022Operator, residual_::AbstractVector, u_::AbstractVector, time)
     @unpack J, element_cache, face_cache, tying_cache, dh  = op
 
-    u = PseudoBlockVector(u_, blocksizes(J)[1])
+    bs = blocksizes(J)
+    s1 = bs[1,1][1]
+    s2 = bs[2,2][1]
+    u  = BlockedVector(u_, [s1, s2])
     ud = @view u[Block(1)]
     up = @view u[Block(2)]
 
-    residual = PseudoBlockVector(residual_, blocksizes(J)[1])
+    residual  = BlockedVector(residual_, [s1, s2])
     residuald = @view residual[Block(1)]
     residualp = @view residual[Block(2)]
 

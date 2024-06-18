@@ -15,7 +15,7 @@ Interface:
     mul!(out::AbstractVector, op::AbstractNonlinearOperator, in::AbstractVector)
     mul!(out::AbstractVector, op::AbstractNonlinearOperator, in::AbstractVector, α, β)
     update_linearization!(op::AbstractNonlinearOperator, u::AbstractVector, time)
-    update_linearization!(op::AbstractNonlinearOperator, u::AbstractVector, residual::AbstractVector, time)
+    update_linearization!(op::AbstractNonlinearOperator, residual::AbstractVector, u::AbstractVector, time)
 """
 abstract type AbstractNonlinearOperator end
 
@@ -99,14 +99,14 @@ function update_linearization!(op::BlockOperator, u::BlockVector, time)
 end
 
 # TODO can we be clever with broadcasting here?
-function update_linearization!(op::BlockOperator, u::BlockVector, residual::BlockVector, time)
+function update_linearization!(op::BlockOperator, residual::BlockVector, u::BlockVector, time)
     nops = length(op.operators)
     nrows = isqrt(nops)
     for i ∈ 1:nops
         row, col = divrem(i-1, nrows) .+ 1 # index shift due to 1-based indices
         i1 = Block(row)
         row_residual = @view residual[i1]
-        @timeit_debug "update block ($row,$col)" update_linearization!(op.operators[i], u, row_residual, time) # :)
+        @timeit_debug "update block ($row,$col)" update_linearization!(op.operators[i], row_residual, u, time) # :)
     end
 end
 
@@ -247,7 +247,7 @@ function update_linearization!(op::AssembledNonlinearOperator, u::AbstractVector
     #finish_assemble(assembler)
 end
 
-function update_linearization!(op::AssembledNonlinearOperator, u::AbstractVector, residual::AbstractVector, time)
+function update_linearization!(op::AssembledNonlinearOperator, residual::AbstractVector, u::AbstractVector, time)
     @unpack J, element_cache, face_cache, tying_cache, dh  = op
 
     assembler = start_assemble(J, residual)
@@ -322,7 +322,7 @@ function update_operator!(op::AssembledBilinearOperator, time)
     copyto!(nonzeros(A), nonzeros(A_))
 end
 
-update_linearization!(op::AbstractBilinearOperator, u::AbstractVector, residual::AbstractVector, time) = update_operator!(op, time)
+update_linearization!(op::AbstractBilinearOperator, residual::AbstractVector, u::AbstractVector, time) = update_operator!(op, time)
 update_linearization!(op::AbstractBilinearOperator, u::AbstractVector, time) = update_operator!(op, time)
 
 mul!(out::AbstractVector, op::AssembledBilinearOperator, in::AbstractVector) = mul!(out, op.A, in)

@@ -65,7 +65,12 @@ quasistaticform = semidiscretize(
 )
 
 problem = QuasiStaticProblem(quasistaticform, tspan)
-timestepper = LoadDrivenSolver(NewtonRaphsonSolver(;max_iter=100))
+timestepper = LoadDrivenSolver(
+    NewtonRaphsonSolver(
+        max_iter=10,
+        inner_solver=LinearSolve.UMFPACKFactorization(),
+    )
+)
 
 integrator = OS.init(problem, timestepper, dt=dt₀, verbose=true)
 

@@ -187,7 +187,7 @@ u0 = [
     PULVEN.L.q => 0.0
 ]
 
-prob = ODEProblem(circ_sys_init, u0, (0.0, 20.0e3))
+prob = OrdinaryDiffEq.ODEProblem(circ_sys_init, u0, (0.0, 20.0e3))
 ##
 @time circ_sol_init = solve(prob, Tsit5(), reltol=1e-9, abstol=1e-12, saveat=18e3:0.01e3:20e3)
 
@@ -321,7 +321,7 @@ timestepper = LieTrotterGodunov((
             )
         )
     ),
-    ForwardEulerSolver(ceil(Int, dt₀/0.001)), # Force time step to about 0.001
+    ForwardEulerSolver(rate=ceil(Int, dt₀/0.001)), # Force time step to about 0.001
 ))
 
 u₀ = zeros(solution_size(coupledform))

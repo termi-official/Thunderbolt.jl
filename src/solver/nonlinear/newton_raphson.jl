@@ -33,7 +33,9 @@ function setup_solver_cache(f::AbstractSemidiscreteFunction, solver::NewtonRaphs
     inner_prob = LinearSolve.LinearProblem(
         getJ(op), residual; u0=Δu
     )
-    inner_cache = init(inner_prob, inner_solver)
+    inner_cache = init(inner_prob, inner_solver; alias_A=true, alias_b=true)
+    @assert inner_cache.b === residual
+    @assert inner_cache.A === getJ(op)
 
     NewtonRaphsonSolverCache(op, residual, solver, inner_cache)
 end
@@ -50,6 +52,7 @@ function setup_solver_cache(f::AbstractSemidiscreteBlockedFunction, solver::Newt
     )
     inner_cache = init(inner_prob, inner_solver; alias_A=true, alias_b=true)
     @assert inner_cache.b === residual
+    @assert inner_cache.A === getJ(op)
 
     NewtonRaphsonSolverCache(op, residual, solver, inner_cache)
 end
@@ -62,7 +65,7 @@ function nlsolve!(u::AbstractVector, f::AbstractSemidiscreteFunction, cache::New
         newton_itr += 1
 
         residual .= 0.0
-        @timeit_debug "update operator" update_linearization!(op, u, residual, t)
+        @timeit_debug "update operator" update_linearization!(op, residual, u, t)
         @timeit_debug "elimination" eliminate_constraints_from_linearization!(cache, f)
         linear_solver_cache.isfresh = true # Notify linear solver that we touched the system matrix
 
