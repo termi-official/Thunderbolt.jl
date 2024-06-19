@@ -11,7 +11,6 @@ end
 
 function setup_operator(f::AbstractQuasiStaticFunction, solver::AbstractNonlinearSolver)
     @unpack dh, constitutive_model, face_models = f
-    @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the nonlinear solver."
     @assert length(dh.field_names) == 1 "Multiple fields not yet supported in the nonlinear solver."
 
     displacement_symbol = first(dh.field_names)

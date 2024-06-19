@@ -82,10 +82,6 @@ struct QuasiStaticNonlinearFunction{CM <: QuasiStaticModel, DH <: Ferrite.Abstra
     ch::CH
     constitutive_model::CM
     face_models::FACE
-    function QuasiStaticNonlinearFunction(dh::DH, ch::CH, constitutive_model::CM, face_models::FACE) where {CM <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler, FACE, CH}
-        check_subdomains(dh)
-        return new{CM, DH, FACE, CH}(dh, ch, constitutive_model, face_models)
-    end
 end
 
 solution_size(f::QuasiStaticNonlinearFunction) = ndofs(f.dh)

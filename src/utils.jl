@@ -198,10 +198,16 @@ SparseArrays.nonzeros(A::ThreadedSparseMatrixCSR) = nonzeros(A.A)
 @noinline check_subdomains(dh::Ferrite.AbstractDofHandler) = length(dh.subdofhandlers) == 1 || throw(ArgumentError("Using DofHandler with multiple subdomains is not currently supported"))
 @noinline check_subdomains(grid::Ferrite.AbstractGrid) = length(elementtypes(grid)) == 1 || throw(ArgumentError("Using mixed grid is not currently supported"))
 
-@inline function quadrature_order(problem, fieldname)
-    @unpack dh = problem
-    @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the quadrature order determination."
-    2*Ferrite.getorder(Ferrite.getfieldinterpolation(dh.subdofhandlers[1], fieldname))
+@inline function quadrature_order(f, fieldname)
+    @unpack dh = f
+    @assert fieldname ∈ dh.field_names "Field $fieldname not found in dof handler. Available fields are: $(dh.field_names)."
+
+    for sdh in dh.subdofhandlers
+        idx = findfirst(s->s==fieldname, sdh.field_names)
+        idx === nothing && continue
+        ip = sdh.field_interpolations[idx]
+        return 2*Ferrite.getorder(ip)
+    end
 end
 
 

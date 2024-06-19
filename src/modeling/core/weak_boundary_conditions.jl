@@ -66,6 +66,15 @@ struct PressureFieldBC{C} <: AbstractWeakBoundaryCondition
     boundary_name::String
 end
 
+struct EmptyFacetCache <: AbstractSurfaceElementCache
+end
+
+setup_boundary_cache(::Nothing, ::Nothing, qr, ip, ip_geo) = EmptyFacetCache()
+
+@inline assemble_face!(Kₑ::AbstractMatrix, uₑ::AbstractVector, cell, local_face_index, cache::EmptyFacetCache, time) = nothing
+@inline assemble_face!(Kₑ::AbstractMatrix, rₑ::AbstractVector, uₑ::AbstractVector, cell, local_face_index, cache::EmptyFacetCache, time) = nothing
+@inline assemble_face!(rₑ::AbstractVector, uₑ::AbstractVector, cell, local_face_index, cache::EmptyFacetCache, time) = nothing
+
 """
 Standard cache for surface integrals.
 """

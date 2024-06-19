@@ -49,15 +49,6 @@ function add_subdomain!(dh::DofHandler{<:Any, <:SimpleMesh}, name::String, appro
     end
 end
 
-function add_surface_dirichlet!(ch::ConstraintHandler, sym::Symbol, name::String, f::Function)
-    mesh = ch.dh.grid
-    cells = mesh.grid.cells
-    haskey(mesh.surface_subdomains, name) || error("Surface Subdomain $name not found on mesh. Available subdomains: $(keys(mesh.surface_subdomains))")
-    for (celltype, facetset) in mesh.surface_subdomains[name].data
-        Ferrite.add!(ch, Dirichlet(sym, facetset, f))
-    end
-end
-
 # function add_surface_subdomain!(dh::DofHandler{<:Any, <:SimpleMesh}, name::String, approxmations::Vector{ApproximationDescriptor})
 #     mesh = dh.grid
 #     haskey(mesh.surface_subdomains, name) || error("Surface Subdomain $name not found on mesh. Available subdomains: $(keys(mesh.surface_subdomains))")

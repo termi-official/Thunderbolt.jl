@@ -113,7 +113,6 @@ function create_simple_microstructure_model(coordinate_system, ip_collection::Ve
     # TODO this storage is redundant, can we reduce the memory footprint?
     offsets = copy(dh.cell_dofs_offset)
     push!(offsets, length(dh.cell_dofs)+1)
-    @show offsets
 
     # The vectors follow the spatial dimension and precision of the grid
     Tv = get_coordinate_type(get_grid(dh))
@@ -147,7 +146,6 @@ function create_simple_microstructure_model(coordinate_system, ip_collection::Ve
                 transversal_angle = (1-transmural) * endo_transversal_angle + (transmural) * epi_transversal_angle
 
                 coeff = streeter_type_fsn(transmural_direction, circumferential_direction, apicobasal_direction, helix_angle, transversal_angle, sheetlet_pseudo_angle, make_orthogonal)
-                @show cellindex, qp.i
                 f_buf[qp.i, cellindex] = coeff.f
                 s_buf[qp.i, cellindex] = coeff.s
                 n_buf[qp.i, cellindex] = coeff.n
