@@ -15,7 +15,7 @@ function generate_mixed_grid_2D()
         Quadrilateral(2,3,6,5),
     ]
     cellsets = Dict((
-        "Pacemaker" => OrderedSet([1])
+        "Pacemaker" => OrderedSet([1]),
         "Myocardium" => OrderedSet([2,3])
     ))
     return Grid(nodes, elements; cellsets)

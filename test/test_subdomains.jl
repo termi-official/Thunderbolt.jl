@@ -54,7 +54,6 @@
 
     # @test_throws subdomain_error LVCoordinateSystem(dh, ipc, [0.], [0.], [0.])
     @test_throws subdomain_error TransientHeatFunction(Thunderbolt.ConductivityToDiffusivityCoefficient(0., 0., 0.), protocol, dh)
-    @test_throws subdomain_error QuasiStaticNonlinearFunction(dh, ch, qsm, [])
     @test_throws subdomain_error Thunderbolt.LinearOperator([0.], element_cache, dh)
     @test_throws subdomain_error Thunderbolt.setup_operator(NoStimulationProtocol(), solver, dh, :u, qr)
     @test_throws subdomain_error Thunderbolt.setup_operator(protocol, solver, dh, :u, qr)
@@ -64,7 +63,6 @@
 
     # test for crash on mixed grid
     LV_mesh = generate_ideal_lv_mesh(4,1,1)
-    @show LV_mesh.volumetric_subdomains[""].data
     LV_cs   = compute_lv_coordinate_system(LV_mesh)
     LV_fm   = create_simple_microstructure_model(LV_cs, LagrangeCollection{1}()^3)
 end

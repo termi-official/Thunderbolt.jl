@@ -143,7 +143,7 @@ Comes with one entry point for each cache type to handle the most common cases:
 TODO
     assemble_interface! -> update jacobian/residual contribution for interface contributions (e.g. DG or FSI)
 """
-struct AssembledNonlinearOperator{MatrixType, ElementModelType, FacetModelType, TyingModelType, DHType <: AbstractDofHandler} <: AbstractNonlinearOperator
+struct AssembledNonlinearOperator{MatrixType <: AbstractSparseMatrix, ElementModelType, FacetModelType, TyingModelType, DHType <: AbstractDofHandler} <: AbstractNonlinearOperator
     J::MatrixType
     element_model::ElementModelType
     element_qrc::Union{<:QuadratureRuleCollection, Nothing}
@@ -155,8 +155,6 @@ struct AssembledNonlinearOperator{MatrixType, ElementModelType, FacetModelType, 
 end
 
 function AssembledNonlinearOperator(dh::AbstractDofHandler, field_name::Symbol, element_model, element_qrc::QuadratureRuleCollection)
-    @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the nonlinear opeartor."
-
     AssembledNonlinearOperator(
         create_sparsity_pattern(dh),
         element_model, element_qrc,
