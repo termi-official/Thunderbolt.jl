@@ -28,7 +28,7 @@ function assemble_element!(Kₑ, cell, element_cache::BilinearDiffusionElementCa
             ∇Nᵢ = shape_gradient(cellvalues, qp, i)
             for j in 1:n_basefuncs
                 ∇Nⱼ = shape_gradient(cellvalues, qp, j)
-                Kₑ[i,j] -= ((D_loc ⋅ ∇Nᵢ) ⋅ ∇Nⱼ) * dΩ
+                Kₑ[i,j] -= _inner_product_helper(∇Nⱼ, D_loc, ∇Nᵢ) * dΩ
             end
         end
     end

@@ -146,6 +146,8 @@ struct AnalyticalTransmembraneStimulationProtocol{F <: AnalyticalCoefficient, T}
     nonzero_intervals::Vector{SVector{2,T}} # helper to speed up rhs
 end
 
+setup_element_cache(protocol::AnalyticalTransmembraneStimulationProtocol, qr, ip, ip_geo) = AnalyticalCoefficientElementCache(protocol.f, protocol.nonzero_intervals, CellValues(qr, ip, ip_geo))
+
 """
 The original model formulation (TODO citation) with the structure
 

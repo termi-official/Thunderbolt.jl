@@ -61,10 +61,6 @@ struct TransientHeatFunction{DTF, ST, DH} <: AbstractSemidiscreteFunction
     diffusion_tensor_field::DTF
     source_term::ST
     dh::DH
-    function TransientHeatFunction(diffusion_tensor_field::DTF, source_term::ST, dh::DH) where {DTF, ST, DH}
-        check_subdomains(dh)
-        return new{DTF, ST, DH}(diffusion_tensor_field, source_term, dh)
-    end
 end
 
 solution_size(f::TransientHeatFunction) = ndofs(f.dh)

@@ -194,17 +194,18 @@ function update_linearization!(op::AssembledNonlinearOperator, u::AbstractVector
     @unpack tying_model, tying_qrc = op
 
     @assert length(dh.field_names) == 1 "Please use block operators for problems with multiple fields."
-
     field_name = first(dh.field_names)
 
     grid = get_grid(dh)
+    sdim = getspatialdim(grid)
+
     assembler = start_assemble(J)
 
     for sdh in dh.subdofhandlers
         # Prepare evaluation caches
         ip          = Ferrite.getfieldinterpolation(sdh, field_name)
         firstcell   = getcells(grid, first(sdh.cellset))
-        ip_geo      = Ferrite.geometric_interpolation(typeof(firstcell))
+        ip_geo      = Ferrite.geometric_interpolation(typeof(firstcell))^sdim
         element_qr  = getquadraturerule(element_qrc, firstcell)
         face_qr     = face_model === nothing ? nothing : getquadraturerule(face_qrc, firstcell)
         tying_qr    = tying_model === nothing ? nothing : getquadraturerule(tying_qrc, firstcell)
@@ -231,7 +232,7 @@ function _update_linearization_on_subdomain_J!(assembler, sdh, element_cache, fa
         # Prepare buffers
         fill!(Jₑ, 0)
         uₑ .= @view u[celldofs(cell)]
-        
+
         # Fill buffers
         @timeit_debug "assemble element" assemble_element!(Jₑ, uₑ, cell, element_cache, time)
         # TODO maybe it makes sense to merge this into the element routine in a modular fasion?
@@ -252,13 +253,15 @@ function update_linearization!(op::AssembledNonlinearOperator, residual::Abstrac
     field_name = first(dh.field_names)
 
     grid = get_grid(dh)
+    sdim = getspatialdim(grid)
+
     assembler = start_assemble(J, residual)
 
     for sdh in dh.subdofhandlers
         # Prepare evaluation caches
         ip          = Ferrite.getfieldinterpolation(sdh, field_name)
         firstcell   = getcells(grid, first(sdh.cellset))
-        ip_geo      = Ferrite.geometric_interpolation(typeof(firstcell))
+        ip_geo      = Ferrite.geometric_interpolation(typeof(firstcell))^sdim
 
         element_qr  = getquadraturerule(element_qrc, firstcell)
         face_qr     = face_model === nothing ? nothing : getquadraturerule(face_qrc, firstcell)
@@ -272,7 +275,7 @@ function update_linearization!(op::AssembledNonlinearOperator, residual::Abstrac
         # Function barrier
         _update_linearization_on_subdomain_Jr!(assembler, sdh, element_cache, face_cache, tying_cache, u, time)
     end
-    
+
     #finish_assemble(assembler)
 end
 
@@ -316,35 +319,54 @@ Base.size(op::AssembledNonlinearOperator, axis) = size(op.J, axis)
 
 abstract type AbstractBilinearOperator <: AbstractNonlinearOperator end
 
-struct AssembledBilinearOperator{MatrixType, MatrixType2, CacheType, DHType <: AbstractDofHandler} <: AbstractBilinearOperator
+struct AssembledBilinearOperator{MatrixType, MatrixType2, IntegratorType, DHType <: AbstractDofHandler} <: AbstractBilinearOperator
     A::MatrixType
     A_::MatrixType2 # FIXME we need this if we assemble on a different device type than we solve on (e.g. CPU and GPU)
-    element_cache::CacheType
+    integrator::IntegratorType
+    element_qrc::QuadratureRuleCollection
     dh::DHType
-    function AssembledBilinearOperator(A::MatrixType, A_::MatrixType2, element_cache::CacheType, dh::DHType) where {MatrixType, MatrixType2, CacheType, DHType <: AbstractDofHandler}
-        check_subdomains(dh)
-        return new{MatrixType, MatrixType2, CacheType, DHType}(A, A_, element_cache, dh)
-    end
 end
 
 function update_operator!(op::AssembledBilinearOperator, time)
-    @unpack A, A_, element_cache, dh  = op
+    @unpack A, A_, element_qrc, integrator, dh  = op
+
+    @assert length(dh.field_names) == 1 "Please use block operators for problems with multiple fields."
+    field_name = first(dh.field_names)
+
+    grid = get_grid(dh)
+    sdim = getspatialdim(grid)
 
     assembler = start_assemble(A_)
 
-    ndofs = ndofs_per_cell(dh)
-    Aₑ = zeros(ndofs, ndofs)
+    for sdh in dh.subdofhandlers
+        # Prepare evaluation caches
+        ip          = Ferrite.getfieldinterpolation(sdh, field_name)
+        firstcell   = getcells(grid, first(sdh.cellset))
+        ip_geo      = Ferrite.geometric_interpolation(typeof(firstcell))^sdim
+        element_qr  = getquadraturerule(element_qrc, firstcell)
 
-    @inbounds for cell in CellIterator(dh)
-        fill!(Aₑ, 0)
-        # TODO instead of "cell" pass object with geometry information only
-        @timeit_debug "assemble element" assemble_element!(Aₑ, cell, element_cache, time)
-        assemble!(assembler, celldofs(cell), Aₑ)
+        # Build evaluation caches
+        element_cache  = setup_element_cache(integrator, element_qr, ip, ip_geo)
+
+        # Function barrier
+        _update_bilinear_operator_on_subdomain!(assembler, sdh, element_cache, time)
     end
 
     #finish_assemble(assembler)
 
     copyto!(nonzeros(A), nonzeros(A_))
+end
+
+function _update_bilinear_operator_on_subdomain!(assembler, sdh, element_cache, time)
+    ndofs = ndofs_per_cell(sdh)
+    Aₑ = zeros(ndofs, ndofs)
+
+    @inbounds for cell in CellIterator(sdh)
+        fill!(Aₑ, 0)
+        # TODO instead of "cell" pass object with geometry information only
+        @timeit_debug "assemble element" assemble_element!(Aₑ, cell, element_cache, time)
+        assemble!(assembler, celldofs(cell), Aₑ)
+    end
 end
 
 update_linearization!(op::AbstractBilinearOperator, residual::AbstractVector, u::AbstractVector, time) = update_operator!(op, time)
@@ -414,49 +436,66 @@ update_operator!(op::LinearNullOperator, time) = nothing
 Ferrite.add!(b::Vector, op::LinearNullOperator) = nothing
 needs_update(op::LinearNullOperator, t) = false
 
-
-struct LinearOperator{VectorType, CacheType, DHType <: AbstractDofHandler} <: AbstractLinearOperator
+struct LinearOperator{VectorType, IntegrandType, DHType <: AbstractDofHandler} <: AbstractLinearOperator
     b::VectorType
-    element_cache::CacheType
+    integrand::IntegrandType
+    qrc::QuadratureRuleCollection
     dh::DHType
-    function LinearOperator(b::VectorType, element_cache::CacheType, dh::DHType) where {VectorType, CacheType, DHType <: AbstractDofHandler}
-        check_subdomains(dh)
-        return new{VectorType, CacheType, DHType}(b, element_cache, dh)
-    end
 end
 
 function update_operator!(op::LinearOperator, time)
-    @unpack b, element_cache, dh  = op
+    @unpack b, qrc, dh, integrand  = op
 
     # assembler = start_assemble(b)
+    @assert length(dh.field_names) == 1 "Please use block operators for problems with multiple fields."
+    field_name = first(dh.field_names)
 
-    ndofs = ndofs_per_cell(dh)
-    bₑ = zeros(ndofs)
+    grid = get_grid(dh)
+    sdim = getspatialdim(grid)
+
     fill!(b, 0.0)
-    @inbounds for cell in CellIterator(dh)
-        fill!(bₑ, 0)
-        @timeit_debug "assemble element" assemble_element!(bₑ, cell, element_cache, time)
-        # assemble!(assembler, celldofs(cell), bₑ)
-        b[celldofs(cell)] .+= bₑ
+    for sdh in dh.subdofhandlers
+        # Prepare evaluation caches
+        ip          = Ferrite.getfieldinterpolation(sdh, field_name)
+        firstcell   = getcells(grid, first(sdh.cellset))
+        ip_geo      = Ferrite.geometric_interpolation(typeof(firstcell))^sdim
+        element_qr  = getquadraturerule(qrc, firstcell)
+
+        # Build evaluation caches
+        element_cache = setup_element_cache(integrand, element_qr, ip, ip_geo)
+
+        # Function barrier
+        _update_linear_operator_on_subdomain!(b, sdh, element_cache, time)
     end
 
     #finish_assemble(assembler)
 end
 
+function _update_linear_operator_on_subdomain!(b, sdh, element_cache, time)
+    ndofs = ndofs_per_cell(dh)
+    bₑ = zeros(ndofs)
+    @inbounds for cell in CellIterator(sdh)
+        fill!(bₑ, 0)
+        @timeit_debug "assemble element" assemble_element!(bₑ, cell, element_cache, time)
+        # assemble!(assembler, celldofs(cell), bₑ)
+        b[celldofs(cell)] .+= bₑ
+    end
+end
+
 """
 Parallel element assembly linear operator.
 """
-struct PEALinearOperator{VectorType, EAType, CacheType, DHType <: AbstractDofHandler} <: AbstractLinearOperator
+struct PEALinearOperator{VectorType, EAType, ProtocolType, DHType <: AbstractDofHandler} <: AbstractLinearOperator
     b::VectorType # [global test function index]
     beas::EAType  # [element in subdomain, local test function index]
                   # global test function index -> element indices
-    element_cache::CacheType # Linear operators do have a static cache only
+    qrc::QuadratureRuleCollection
+    protocol::ProtocolType
     dh::DHType
     chunksize::Int
-    function PEALinearOperator(b::AbstractVector, element_cache, dh::AbstractDofHandler; chunksizehint=64)
-        check_subdomains(dh)
+    function PEALinearOperator(b::AbstractVector, qrc::QuadratureRuleCollection, protocol, dh::AbstractDofHandler; chunksizehint=64)
         beas = EAVector(dh)
-        new{typeof(b), typeof(beas), typeof(element_cache), typeof(dh)}(b, beas, element_cache, dh, chunksizehint)
+        new{typeof(b), typeof(beas), typeof(protocol), typeof(dh)}(b, beas, qrc, protocol, dh, chunksizehint)
     end
 end
 
@@ -466,31 +505,48 @@ end
 
 # Threaded CPU dispatch
 function _update_operator!(op::PEALinearOperator, b::Vector, time)
-    @unpack element_cache, dh, chunksize = op
+    @unpack qrc, dh, chunksize, protocol = op
 
-    ndofs = ndofs_per_cell(dh)
-    fill!(b, 0.0)
+    @assert length(dh.field_names) == 1 "Please use block operators for problems with multiple fields."
+    field_name = first(dh.field_names)
 
-    ncells = getncells(get_grid(dh))
-    nchunks = ceil(Int, ncells / chunksize)
+    grid = get_grid(dh)
+    sdim = getspatialdim(grid)
 
-    # Allocate scratch per chunk
-    tlds = [ChunkLocalAssemblyData(CellCache(dh), duplicate_for_parallel(op.element_cache)) for tid in 1:nchunks]
-    @timeit_debug "assemble elements" begin
-        @batch for chunk in 1:nchunks
-            chunkbegin = (chunk-1)*chunksize+1
-            chunkbound = min(size(y, 1), chunk*chunksize)
-            for row in chunkbegin:chunkbound
-                tld = tlds[chunk]
-                reinit!(tld.cc, eid)
-                bₑ = get_data_for_index(op.beas, eid)
-                fill!(bₑ, 0.0)
-                assemble_element!(bₑ, tld.cc, tld.ec, time)
-            end
-        end
+    @timeit_debug "assemble elements" for sdh in dh.subdofhandlers
+        # Prepare evaluation caches
+        ip          = Ferrite.getfieldinterpolation(sdh, field_name)
+        firstcell   = getcells(grid, first(sdh.cellset))
+        ip_geo      = Ferrite.geometric_interpolation(typeof(firstcell))^sdim
+        element_qr  = getquadraturerule(qrc, firstcell)
+
+        # Build evaluation caches
+        element_cache = setup_element_cache(protocol, element_qr, ip, ip_geo)
+
+        # Function barrier
+        _update_pealinear_operator_on_subdomain!(op.beas, sdh, element_cache, time, chunksize)
     end
 
+    fill!(b, 0.0)
     ea_collapse!(b, op.beas)
+end
+
+function _update_pealinear_operator_on_subdomain!(beas::EAVector, sdh, element_cache, time, chunksize::Int)
+    ncells = length(sdh.cellset)
+    nchunks = ceil(Int, ncells / chunksize)
+    tlds = [ChunkLocalAssemblyData(CellCache(sdh), duplicate_for_parallel(element_cache)) for tid in 1:nchunks]
+    @batch for chunk in 1:nchunks
+        chunkbegin = (chunk-1)*chunksize+1
+        chunkbound = min(ncells, chunk*chunksize)
+        for i in chunkbegin:chunkbound
+            eid = sdh.cellset[i]
+            tld = tlds[chunk]
+            reinit!(tld.cc, eid)
+            bₑ = get_data_for_index(beas, eid)
+            fill!(bₑ, 0.0)
+            assemble_element!(bₑ, tld.cc, tld.ec, time)
+        end
+    end
 end
 
 Ferrite.add!(b::AbstractVector, op::AbstractLinearOperator) = b .+= op.b
@@ -498,16 +554,16 @@ Base.eltype(op::AbstractLinearOperator) = eltype(op.b)
 Base.size(op::AbstractLinearOperator) = sisze(op.b)
 
 function needs_update(op::Union{LinearOperator, PEALinearOperator}, t)
-    return _needs_update(op, op.element_cache, t)
+    return _needs_update(op, op.protocol, t)
 end
 
-function _needs_update(op::Union{LinearOperator, PEALinearOperator}, element_cache::AnalyticalCoefficientElementCache, t)
-    for nonzero_interval ∈ op.element_cache.nonzero_intervals
+function _needs_update(op::Union{LinearOperator, PEALinearOperator}, protocol::AnalyticalTransmembraneStimulationProtocol, t)
+    for nonzero_interval ∈ protocol.nonzero_intervals
         nonzero_interval[1] ≤ t ≤ nonzero_interval[2] && return true
     end
     return false
 end
 
-function _needs_update(op::Union{LinearOperator, PEALinearOperator}, element_cache::Any, t)
+function _needs_update(op::Union{LinearOperator, PEALinearOperator}, protocol::NoStimulationProtocol, t)
     return false
 end

@@ -13,11 +13,8 @@ struct FiniteElementDiscretization
     subdomains::Vector{String}
     """
     """
-    function FiniteElementDiscretization(ips::Dict{Symbol, <: InterpolationCollection})
-        new(ips, Dirichlet[], String[""])
-    end
-    function FiniteElementDiscretization(ips::Dict{Symbol, <: InterpolationCollection}, dbcs::Vector{Dirichlet})
-        new(ips, dbcs, String[""])
+    function FiniteElementDiscretization(ips::Dict{Symbol, <: InterpolationCollection}, dbcs::Vector{Dirichlet} = Dirichlet[], subdomains::Vector{String} = [""])
+        new(ips, dbcs, subdomains)
     end
 end
 
@@ -52,8 +49,6 @@ end
 function semidiscretize(split::ReactionDiffusionSplit{<:MonodomainModel}, discretization::FiniteElementDiscretization, mesh::AbstractGrid)
     epmodel = split.model
     φsym = epmodel.transmembrane_solution_symbol
-    ets = elementtypes(mesh)
-    @assert length(ets) == 1
 
     heat_model = TransientHeatModel(
         ConductivityToDiffusivityCoefficient(epmodel.κ, epmodel.Cₘ, epmodel.χ),

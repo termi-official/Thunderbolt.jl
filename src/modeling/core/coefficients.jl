@@ -130,22 +130,6 @@ function _evaluate_coefficient(coeff::CoordinateSystemCoefficient{<:BiVCoordinat
 end
 
 """
-    AnalyticalCoefficient(f::Function, cs::CoordinateSystemCoefficient)
-
-A coefficient given as the analytical function f(x,t) in the specified coordiante system.
-"""
-struct AnalyticalCoefficient{F<:Function, CSYS<:CoordinateSystemCoefficient}
-    f::F
-    coordinate_system_coefficient::CSYS
-end
-
-function evaluate_coefficient(coeff::F, cell_cache, qp::QuadraturePoint{<:Any,T}, t) where {F <: AnalyticalCoefficient, T}
-    x = evaluate_coefficient(coeff.coordinate_system_coefficient, cell_cache, qp, t)
-    return coeff.f(x, t)
-end
-
-
-"""
     SpectralTensorCoefficient(eigenvector_coefficient, eigenvalue_coefficient)
 
 Represent a tensor A via spectral decomposition ∑ᵢ λᵢ vᵢ ⊗ vᵢ.

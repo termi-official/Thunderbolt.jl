@@ -3,13 +3,10 @@ include("collections.jl")
 include("quadrature_iterator.jl")
 
 function celldofsview(dh::DofHandler, i::Int)
-    if i == length(dh.cell_dofs_offset)
-        return @views dh.cell_dofs[dh.cell_dofs_offset[i]:end]
-    else
-        return @views dh.cell_dofs[dh.cell_dofs_offset[i]:(dh.cell_dofs_offset[i+1]-1)]
-    end
+    ndofs = ndofs_per_cell(dh, i)
+    offset = dh.cell_dofs_offset[i]
+    return @views dh.cell_dofs[offset:(offset+ndofs-1)]
 end
-
 
 function calculate_element_volume(cell, cellvalues_u, uₑ)
     reinit!(cellvalues_u, cell)
@@ -258,10 +255,17 @@ function EAVector(dh::DofHandler)
     @assert length(dh.field_names) == 1
     map  = create_dof_to_element_map(dh)
     grid = get_grid(dh)
-    # TODO subdomains
-    num_entries = ndofs_per_cell(dh,1)*getncells(grid)
-    eadata    = zeros(num_entries)
-    eaoffsets = collect(1:ndofs_per_cell(dh,1):(num_entries+1))
+
+    num_entries = length(dh.cell_dofs)
+    eadata      = zeros(num_entries)
+    eaoffsets   = Int64[]
+    next_offset = 1
+    push!(eaoffsets, next_offset)
+    for i in 1:getncells(grid)
+        next_offset += ndofs_per_cell(dh, i)
+        push!(eaoffsets, next_offset)
+    end
+
     return EAVector(
         DenseDataRange(eadata, eaoffsets),
         map,
@@ -294,11 +298,13 @@ function create_dof_to_element_map(::Type{IndexType}, dh::DofHandler) where Inde
     # Preallocate storage
     dof_to_element_vs = [Set{ElementDofPair{IndexType}}() for _ in 1:ndofs(dh)]
     # Fill set
-    for cc in CellIterator(dh)
-        eid = Ferrite.cellid(cc)
-        for (ldi,dof) in enumerate(celldofs(cc))
-            s = dof_to_element_vs[dof]
-            push!(s, ElementDofPair(eid, ldi))
+    for sdh in dh.subdofhandlers
+        for cc in CellIterator(sdh)
+            eid = Ferrite.cellid(cc)
+            for (ldi,dof) in enumerate(celldofs(cc))
+                s = dof_to_element_vs[dof]
+                push!(s, ElementDofPair(eid, ldi))
+            end
         end
     end
     #
@@ -318,3 +324,7 @@ function create_dof_to_element_map(::Type{IndexType}, dh::DofHandler) where Inde
         offsets,
     )
 end
+
+# To handle embedded elements in the same code
+_inner_product_helper(a::Vec, B::Union{Tensor, SymmetricTensor}, c::Vec) = a ⋅ B ⋅ c
+_inner_product_helper(a::SVector, B::Union{Tensor, SymmetricTensor}, c::SVector) = Vec(a.data) ⋅ B ⋅ Vec(c.data)
