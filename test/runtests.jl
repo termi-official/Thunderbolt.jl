@@ -43,7 +43,15 @@ function generate_mixed_dimensional_grid_3D()
         "Ventricle" => OrderedSet([1]),
         "Purkinje" => OrderedSet([2])
     ))
-    return Grid(elements, nodes; cellsets)
+    facetsets = Dict((
+        "left" => OrderedSet([FacetIndex(1,1)]),
+        "right" => OrderedSet([FacetIndex(1,2)]),
+        "top" => OrderedSet([FacetIndex(1,3)]),
+        "bottom" => OrderedSet([FacetIndex(1,4)]),
+        "front" => OrderedSet([FacetIndex(1,5)]),
+        "back" => OrderedSet([FacetIndex(1,6)]),
+    ))
+    return Grid(elements, nodes; cellsets, facetsets)
 end
 
 include("test_operators.jl")

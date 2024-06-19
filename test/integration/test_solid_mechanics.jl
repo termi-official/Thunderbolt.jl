@@ -3,10 +3,9 @@ using Thunderbolt
 struct TestCalciumHatField end
 Thunderbolt.evaluate_coefficient(coeff::TestCalciumHatField, cell_cache, qp, t) = t/1000.0 < 0.5 ? 2.0*t/1000.0 : 2.0-2.0*t/1000.0
 
-function test_solve_contractile_cuboid(constitutive_model)
+function test_solve_contractile_cuboid(mesh, constitutive_model, subdomains = [""])
     tspan = (0.0,300.0)
     Δt = 100.0
-    mesh = generate_mesh(Hexahedron, (10, 10, 2), Ferrite.Vec{3}((0.0,0.0,0.0)), Ferrite.Vec{3}((1.0, 1.0, 0.2)))
 
     # Clamp three sides
     dbcs = [
@@ -25,6 +24,7 @@ function test_solve_contractile_cuboid(constitutive_model)
         FiniteElementDiscretization(
             Dict(:d => LagrangeCollection{1}()^3),
             dbcs,
+            subdomains,
         ),
         mesh
     )
@@ -82,13 +82,15 @@ end
 
 # Smoke tests that things do not crash and that things do at least something
 @testset "Contracting cuboid" begin
+    mesh = generate_mesh(Hexahedron, (10, 10, 2), Ferrite.Vec{3}((0.0,0.0,0.0)), Ferrite.Vec{3}((1.0, 1.0, 0.2)))
+
     microstructure_model = ConstantCoefficient(OrthotropicMicrostructure(
         Vec((1.0, 0.0, 0.0)),
         Vec((0.0, 1.0, 0.0)),
         Vec((0.0, 0.0, 1.0)),
     ))
 
-    test_solve_contractile_cuboid(ExtendedHillModel(
+    test_solve_contractile_cuboid(mesh, ExtendedHillModel(
         HolzapfelOgden2009Model(),
         ActiveMaterialAdapter(LinearSpringModel()),
         GMKActiveDeformationGradientModel(),
@@ -96,7 +98,7 @@ end
         microstructure_model
     ))
 
-    test_solve_contractile_cuboid(GeneralizedHillModel(
+    test_solve_contractile_cuboid(mesh, GeneralizedHillModel(
         LinYinPassiveModel(),
         ActiveMaterialAdapter(LinYinActiveModel()),
         GMKIncompressibleActiveDeformationGradientModel(),
@@ -104,12 +106,21 @@ end
         microstructure_model
     ))
 
-    test_solve_contractile_cuboid(ActiveStressModel(
+    test_solve_contractile_cuboid(mesh, ActiveStressModel(
         HumphreyStrumpfYinModel(),
         SimpleActiveStress(),
         PelceSunLangeveld1995Model(;calcium_field=TestCalciumHatField()),
         microstructure_model
     ))
+
+    mesh = to_mesh(generate_mixed_dimensional_grid_3D())
+
+    test_solve_contractile_cuboid(mesh, ActiveStressModel(
+        HumphreyStrumpfYinModel(),
+        SimpleActiveStress(),
+        PelceSunLangeveld1995Model(;calcium_field=TestCalciumHatField()),
+        microstructure_model
+    ), ["Ventricle"])
 end
 
 @testset "Idealized LV" begin
