@@ -3,7 +3,7 @@
 
 A constant in time data field, interpolated per element with a given interpolation.
 """
-struct FieldCoefficient{T,T2,TA<:Array{T,2},IPC<:InterpolationCollection}
+struct FieldCoefficient{T,T2,TA<:AbstractArray{T,2},IPC<:InterpolationCollection}
     # TODO data structure for this
     elementwise_data::TA #2d ragged array (element_idx, base_fun_idx)
     ip_collection::IPC
@@ -11,8 +11,8 @@ struct FieldCoefficient{T,T2,TA<:Array{T,2},IPC<:InterpolationCollection}
     qbuf::Vector{T2}
 end
 
-FieldCoefficient(data::Array{T,2}, ipc::ScalarInterpolationCollection) where T = FieldCoefficient(data, ipc, T[])
-FieldCoefficient(data::Array{T,2}, ipc::VectorizedInterpolationCollection) where T = FieldCoefficient(data, ipc, eltype(T)[])
+FieldCoefficient(data::AbstractArray{T,2}, ipc::ScalarInterpolationCollection) where T = FieldCoefficient(data, ipc, T[])
+FieldCoefficient(data::AbstractArray{T,2}, ipc::VectorizedInterpolationCollection) where T = FieldCoefficient(data, ipc, eltype(T)[])
 
 function evaluate_coefficient(coeff::FieldCoefficient{<:Any,<:Any,<:Any,<:ScalarInterpolationCollection}, cell_cache, qp::QuadraturePoint{<:Any, T}, t) where T
     @unpack elementwise_data, ip_collection = coeff
@@ -128,22 +128,6 @@ function _evaluate_coefficient(coeff::CoordinateSystemCoefficient{<:BiVCoordinat
     end
     return BiVCoordinate(x[1], x[2], x[3], x[4])
 end
-
-"""
-    AnalyticalCoefficient(f::Function, cs::CoordinateSystemCoefficient)
-
-A coefficient given as the analytical function f(x,t) in the specified coordiante system.
-"""
-struct AnalyticalCoefficient{F<:Function, CSYS<:CoordinateSystemCoefficient}
-    f::F
-    coordinate_system_coefficient::CSYS
-end
-
-function evaluate_coefficient(coeff::F, cell_cache, qp::QuadraturePoint{<:Any,T}, t) where {F <: AnalyticalCoefficient, T}
-    x = evaluate_coefficient(coeff.coordinate_system_coefficient, cell_cache, qp, t)
-    return coeff.f(x, t)
-end
-
 
 """
     SpectralTensorCoefficient(eigenvector_coefficient, eigenvalue_coefficient)

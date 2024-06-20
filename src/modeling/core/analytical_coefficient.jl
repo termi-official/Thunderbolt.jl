@@ -1,3 +1,20 @@
+
+"""
+    AnalyticalCoefficient(f::Function, cs::CoordinateSystemCoefficient)
+
+A coefficient given as the analytical function f(x,t) in the specified coordiante system.
+"""
+struct AnalyticalCoefficient{F<:Function, CSYS<:CoordinateSystemCoefficient}
+    f::F
+    coordinate_system_coefficient::CSYS
+end
+
+function evaluate_coefficient(coeff::F, cell_cache, qp::QuadraturePoint{<:Any,T}, t) where {F <: AnalyticalCoefficient, T}
+    x = evaluate_coefficient(coeff.coordinate_system_coefficient, cell_cache, qp, t)
+    return coeff.f(x, t)
+end
+
+
 """
     AnalyticalCoefficientElementCache(f(x,t)->..., nonzero_in_time_intervals, cellvalues)
 

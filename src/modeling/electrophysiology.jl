@@ -146,6 +146,8 @@ struct AnalyticalTransmembraneStimulationProtocol{F <: AnalyticalCoefficient, T}
     nonzero_intervals::Vector{SVector{2,T}} # helper to speed up rhs
 end
 
+setup_element_cache(protocol::AnalyticalTransmembraneStimulationProtocol, qr, ip, ip_geo) = AnalyticalCoefficientElementCache(protocol.f, protocol.nonzero_intervals, CellValues(qr, ip, ip_geo))
+
 """
 The original model formulation (TODO citation) with the structure
 
@@ -205,9 +207,12 @@ struct MonodomainModel{F1,F2,F3,STIM<:TransmembraneStimulationProtocol,ION<:Abst
     κ::F3
     stim::STIM
     ion::ION
+    # TODO the variables below should be queried from the ionic model
     transmembrane_solution_symbol::Symbol
     internal_state_symbol::Symbol
 end
+
+get_field_variable_names(model::MonodomainModel) = (model.transmembrane_solution_symbol, )
 
 """
 Annotation for the classical reaction-diffusion split of a given model.

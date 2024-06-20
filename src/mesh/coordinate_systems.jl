@@ -6,7 +6,7 @@ Standard cartesian coordinate system.
 struct CartesianCoordinateSystem{sdim}
 end
 
-CartesianCoordinateSystem(grid::AbstractGrid{sdim}) where sdim = CartesianCoordinateSystem{sdim}()
+CartesianCoordinateSystem(mesh::AbstractGrid{sdim}) where sdim = CartesianCoordinateSystem{sdim}()
 
 """
     getcoordinateinterpolation(cs::CartesianCoordinateSystem, cell::AbstractCell)
@@ -20,7 +20,7 @@ getcoordinateinterpolation(cs::CartesianCoordinateSystem{sdim}, cell::CellType) 
     LVCoordinateSystem(dh, u_transmural, u_apicobasal)
 
 Simplified universal ventricular coordinate on LV only, containing the transmural, apicobasal and
-circumferential coordinates. See [`compute_LV_coordinate_system`](@ref) to construct it.
+circumferential coordinates. See [`compute_lv_coordinate_system`](@ref) to construct it.
 """
 struct LVCoordinateSystem{DH <: AbstractDofHandler, IPC}
     dh::DH
@@ -28,10 +28,6 @@ struct LVCoordinateSystem{DH <: AbstractDofHandler, IPC}
     u_transmural::Vector{Float64}
     u_apicobasal::Vector{Float64}
     u_circumferential::Vector{Float64}
-    function LVCoordinateSystem(dh::AbstractDofHandler, ipc::ScalarInterpolationCollection, u_transmural::Vector{Float64}, u_apicobasal::Vector{Float64}, u_circumferential::Vector{Float64})
-        check_subdomains(dh)
-        return new{typeof(dh), typeof(ipc)}(dh, ipc, u_transmural, u_apicobasal, u_circumferential)
-    end
 end
 
 
@@ -59,9 +55,9 @@ getcoordinateinterpolation(cs::LVCoordinateSystem, cell::AbstractCell) = getinte
 
 
 """
-    compute_LV_coordinate_system(grid::AbstractGrid)
+    compute_lv_coordinate_system(mesh::SimpleMesh)
 
-Requires a grid with facetsets
+Requires a mesh with facetsets
     * Base
     * Epicardium
     * Endocardium
@@ -71,51 +67,53 @@ and a nodeset
 !!! warning
     The circumferential coordinate is not yet implemented and is guaranteed to evaluate to NaN.
 """
-function compute_LV_coordinate_system(grid::AbstractGrid{3})
-    check_subdomains(grid)
-
-    ref_shape = getrefshape(getcells(grid, 1))
+function compute_lv_coordinate_system(mesh::SimpleMesh{3}, subdomains::Vector{String} = [""])
     ip_collection = LagrangeCollection{1}()
-    ip = getinterpolation(ip_collection, ref_shape)
     qr_collection = QuadratureRuleCollection(2)
     cv_collection = CellValueCollection(qr_collection, ip_collection)
-    cellvalues = getcellvalues(cv_collection, getcells(grid, 1))
+    cellvalues = getcellvalues(cv_collection, getcells(mesh, 1))
 
-    dh = DofHandler(grid)
-    Ferrite.add!(dh, :coordinates, ip)
+    dh = DofHandler(mesh)
+    for name in subdomains
+        add_subdomain!(dh, name, [ApproximationDescriptor(:coordinates, ip_collection)])
+    end
     Ferrite.close!(dh)
 
     # Assemble Laplacian
+    # TODO use bilinear operator for performance
     K = create_sparsity_pattern(dh)
 
-    n_basefuncs = getnbasefunctions(cellvalues)
-    Ke = zeros(n_basefuncs, n_basefuncs)
-
     assembler = start_assemble(K)
-    @inbounds for cell in CellIterator(dh)
-        fill!(Ke, 0)
-        reinit!(cellvalues, cell)
+    for sdh in dh.subdofhandlers
+        cellvalues = getcellvalues(cv_collection, getcells(mesh, first(sdh.cellset)))
+        n_basefuncs = getnbasefunctions(cellvalues)
+        Ke = zeros(n_basefuncs, n_basefuncs)
+        @inbounds for cell in CellIterator(sdh)
+            fill!(Ke, 0)
 
-        for qp in QuadratureIterator(cellvalues)
-            dΩ = getdetJdV(cellvalues, qp)
+            reinit!(cellvalues, cell)
 
-            for i in 1:n_basefuncs
-                ∇v = shape_gradient(cellvalues, qp, i)
-                for j in 1:n_basefuncs
-                    ∇u = shape_gradient(cellvalues, qp, j)
-                    Ke[i, j] += (∇v ⋅ ∇u) * dΩ
+            for qp in QuadratureIterator(cellvalues)
+                dΩ = getdetJdV(cellvalues, qp)
+
+                for i in 1:n_basefuncs
+                    ∇v = shape_gradient(cellvalues, qp, i)
+                    for j in 1:n_basefuncs
+                        ∇u = shape_gradient(cellvalues, qp, j)
+                        Ke[i, j] += (∇v ⋅ ∇u) * dΩ
+                    end
                 end
             end
-        end
 
-        assemble!(assembler, celldofs(cell), Ke)
+            assemble!(assembler, celldofs(cell), Ke)
+        end
     end
 
     # Transmural coordinate
     ch = ConstraintHandler(dh);
-    dbc = Dirichlet(:coordinates, getfacetset(grid, "Endocardium"), (x, t) -> 0)
+    dbc = Dirichlet(:coordinates, getfacetset(mesh, "Endocardium"), (x, t) -> 0)
     Ferrite.add!(ch, dbc);
-    dbc = Dirichlet(:coordinates, getfacetset(grid, "Epicardium"), (x, t) -> 1)
+    dbc = Dirichlet(:coordinates, getfacetset(mesh, "Epicardium"), (x, t) -> 1)
     Ferrite.add!(ch, dbc);
     close!(ch)
     update!(ch, 0.0);
@@ -128,21 +126,21 @@ function compute_LV_coordinate_system(grid::AbstractGrid{3})
 
     # Apicobasal coordinate
     #TODO refactor check for node set existence
-    if !haskey(grid.nodesets, "Apex") #TODO this is just a hotfix, assuming that z points towards the apex
+    if !haskey(mesh.grid.nodesets, "Apex") #TODO this is just a hotfix, assuming that z points towards the apex
         apex_node_index = 1
-        nodes = getnodes(grid)
+        nodes = getnodes(mesh)
         for (i,node) ∈ enumerate(nodes)
             if nodes[i].x[3] > nodes[apex_node_index].x[3]
                 apex_node_index = i
             end
         end
-        addnodeset!(grid, "Apex", OrderedSet{Int}((apex_node_index)))
+        addnodeset!(mesh, "Apex", OrderedSet{Int}((apex_node_index)))
     end
 
     ch = ConstraintHandler(dh);
-    dbc = Dirichlet(:coordinates, getfacetset(grid, "Base"), (x, t) -> 0)
+    dbc = Dirichlet(:coordinates, getfacetset(mesh, "Base"), (x, t) -> 0)
     Ferrite.add!(ch, dbc);
-    dbc = Dirichlet(:coordinates, getnodeset(grid, "Apex"), (x, t) -> 1)
+    dbc = Dirichlet(:coordinates, getnodeset(mesh, "Apex"), (x, t) -> 1)
     Ferrite.add!(ch, dbc);
     close!(ch)
     update!(ch, 0.0);
@@ -160,60 +158,60 @@ function compute_LV_coordinate_system(grid::AbstractGrid{3})
 end
 
 """
-    compute_midmyocardial_section_coordinate_system(grid::AbstractGrid)
+    compute_midmyocardial_section_coordinate_system(mesh::SimpleMesh)
 
-Requires a grid with facetsets
+Requires a mesh with facetsets
     * Base
     * Epicardium
     * Endocardium
     * Myocardium
 """
-function compute_midmyocardial_section_coordinate_system(grid::AbstractGrid{dim}) where {dim}
-    @assert dim == 3
-    @assert length(elementtypes(grid)) == 1
-    ref_shape = getrefshape(getcells(grid,1))
+function compute_midmyocardial_section_coordinate_system(mesh::SimpleMesh{3}, subdomains::Vector{String} = [""])
     ip_collection = LagrangeCollection{1}()
-    ip = getinterpolation(ip_collection, ref_shape)
     qr_collection = QuadratureRuleCollection(2)
     cv_collection = CellValueCollection(qr_collection, ip_collection)
-    cellvalues = getcellvalues(cv_collection, getcells(grid,1))
 
-    dh = DofHandler(grid)
-    Ferrite.add!(dh, :coordinates, ip)
-    Ferrite.close!(dh);
+    dh = DofHandler(mesh)
+    for name in subdomains
+        add_subdomain!(dh, name, [ApproximationDescriptor(:coordinates, ip_collection)])
+    end
+    Ferrite.close!(dh)
 
     # Assemble Laplacian
+    # TODO use bilinear operator
     K = create_sparsity_pattern(dh)
 
-    n_basefuncs = getnbasefunctions(cellvalues)
-    Ke = zeros(n_basefuncs, n_basefuncs)
-
     assembler = start_assemble(K)
-    @inbounds for cell in CellIterator(dh)
-        fill!(Ke, 0)
+    for sdh in dh.subdofhandlers
+        cellvalues = getcellvalues(cv_collection, getcells(mesh, first(sdh.cellset)))
+        n_basefuncs = getnbasefunctions(cellvalues)
+        Ke = zeros(n_basefuncs, n_basefuncs)
+        @inbounds for cell in CellIterator(sdh)
+            fill!(Ke, 0)
 
-        reinit!(cellvalues, cell)
+            reinit!(cellvalues, cell)
 
-        for qp in QuadratureIterator(cellvalues)
-            dΩ = getdetJdV(cellvalues, qp)
+            for qp in QuadratureIterator(cellvalues)
+                dΩ = getdetJdV(cellvalues, qp)
 
-            for i in 1:n_basefuncs
-                ∇v = shape_gradient(cellvalues, qp, i)
-                for j in 1:n_basefuncs
-                    ∇u = shape_gradient(cellvalues, qp, j)
-                    Ke[i, j] += (∇v ⋅ ∇u) * dΩ
+                for i in 1:n_basefuncs
+                    ∇v = shape_gradient(cellvalues, qp, i)
+                    for j in 1:n_basefuncs
+                        ∇u = shape_gradient(cellvalues, qp, j)
+                        Ke[i, j] += (∇v ⋅ ∇u) * dΩ
+                    end
                 end
             end
-        end
 
-        assemble!(assembler, celldofs(cell), Ke)
+            assemble!(assembler, celldofs(cell), Ke)
+        end
     end
 
     # Transmural coordinate
     ch = ConstraintHandler(dh);
-    dbc = Dirichlet(:coordinates, getfacetset(grid, "Endocardium"), (x, t) -> 0)
+    dbc = Dirichlet(:coordinates, getfacetset(mesh, "Endocardium"), (x, t) -> 0)
     Ferrite.add!(ch, dbc);
-    dbc = Dirichlet(:coordinates, getfacetset(grid, "Epicardium"), (x, t) -> 1)
+    dbc = Dirichlet(:coordinates, getfacetset(mesh, "Epicardium"), (x, t) -> 1)
     Ferrite.add!(ch, dbc);
     close!(ch)
     update!(ch, 0.0);
@@ -225,9 +223,9 @@ function compute_midmyocardial_section_coordinate_system(grid::AbstractGrid{dim}
     transmural = K_transmural \ f;
 
     ch = ConstraintHandler(dh);
-    dbc = Dirichlet(:coordinates, getfacetset(grid, "Base"), (x, t) -> 0)
+    dbc = Dirichlet(:coordinates, getfacetset(mesh, "Base"), (x, t) -> 0)
     Ferrite.add!(ch, dbc);
-    dbc = Dirichlet(:coordinates, getfacetset(grid, "Myocardium"), (x, t) -> 0.15)
+    dbc = Dirichlet(:coordinates, getfacetset(mesh, "Myocardium"), (x, t) -> 0.15)
     Ferrite.add!(ch, dbc);
     close!(ch)
     update!(ch, 0.0);

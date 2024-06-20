@@ -11,7 +11,6 @@ end
 
 function setup_operator(f::AbstractQuasiStaticFunction, solver::AbstractNonlinearSolver)
     @unpack dh, constitutive_model, face_models = f
-    @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the nonlinear solver."
     @assert length(dh.field_names) == 1 "Multiple fields not yet supported in the nonlinear solver."
 
     displacement_symbol = first(dh.field_names)
@@ -30,37 +29,21 @@ function setup_operator(::NoStimulationProtocol, solver::AbstractSolver, dh::Abs
     LinearNullOperator{Float64, ndofs(dh)}()
 end
 
-function setup_operator(protocol::AnalyticalTransmembraneStimulationProtocol, solver::AbstractSolver, dh::AbstractDofHandler, field_name::Symbol, qr)
-    check_subdomains(dh)
-    ip_g = Ferrite.geometric_interpolation(typeof(getcells(grid, 1)))
-    qr = QuadratureRule{Ferrite.getrefshape(ip_g)}(Ferrite.getorder(ip_g)+1)
-    cv = CellValues(qr, ip, ip_g) # TODO replace with something more lightweight
+function setup_operator(protocol::AnalyticalTransmembraneStimulationProtocol, solver::AbstractSolver, dh::AbstractDofHandler, field_name::Symbol, qrc)
     return PEALinearOperator(
         zeros(ndofs(dh)),
-        AnalyticalCoefficientElementCache(
-            protocol.f,
-            protocol.nonzero_intervals,
-            cv
-        ),
+        qrc,
+        protocol,
         dh,
     )
 end
 
-function setup_assembled_operator(integrator::AbstractBilinearIntegrator, system_matrix_type::Type, dh::AbstractDofHandler, field_name::Symbol, qrc)
-    @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the bilinear opeartor."
-
-    firstcell = getcells(Ferrite.get_grid(dh), first(dh.subdofhandlers[1].cellset))
-    ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], field_name)
-    ip_geo = Ferrite.geometric_interpolation(typeof(firstcell))
-    element_qr = getquadraturerule(qrc, firstcell)
-
-    element_cache = setup_element_cache(integrator, element_qr, ip, ip_geo)
-
+function setup_assembled_operator(integrator::AbstractBilinearIntegrator, system_matrix_type::Type, dh::AbstractDofHandler, field_name::Symbol, qrc::QuadratureRuleCollection)
     A  = create_system_matrix(system_matrix_type, dh)
     A_ = create_sparsity_pattern(dh) #  TODO how to query this?
     return AssembledBilinearOperator(
         A, A_,
-        element_cache,
+        integrator, qrc,
         dh,
     )
 end

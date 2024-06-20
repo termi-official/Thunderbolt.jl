@@ -1,4 +1,5 @@
 """
+Descriptor for a finite element discretization of a part of a PDE over some subdomain.
 """
 struct FiniteElementDiscretization
     """
@@ -9,28 +10,35 @@ struct FiniteElementDiscretization
     dbcs::Vector{Dirichlet}
     """
     """
-    function FiniteElementDiscretization(ips::Dict{Symbol, <: InterpolationCollection})
-        new(ips, Dirichlet[])
-    end
-    
-    function FiniteElementDiscretization(ips::Dict{Symbol, <: InterpolationCollection}, dbcs::Vector{Dirichlet})
-        new(ips, dbcs)
+    subdomains::Vector{String}
+    """
+    """
+    function FiniteElementDiscretization(ips::Dict{Symbol, <: InterpolationCollection}, dbcs::Vector{Dirichlet} = Dirichlet[], subdomains::Vector{String} = [""])
+        new(ips, dbcs, subdomains)
     end
 end
 
-semidiscretize(::CoupledModel, discretization, grid) = @error "No implementation for the generic discretization of coupled problems available yet."
+# Internal utility with proper error message
+function _get_interpolation_from_discretization(disc::FiniteElementDiscretization, sym::Symbol)
+    if !haskey(disc.interpolations, sym)
+        error("Finite element discretization does not have an interpolation for $sym. Available symbols: $(collect(keys(disc.interpolations))).")
+    end
+    return disc.interpolations[sym]
+end
 
-function semidiscretize(model::TransientHeatModel, discretization::FiniteElementDiscretization, grid::AbstractGrid)
-    ets = elementtypes(grid)
-    @assert length(ets) == 1
+semidiscretize(::CoupledModel, discretization, mesh::AbstractGrid) = @error "No implementation for the generic discretization of coupled problems available yet."
+
+function semidiscretize(model::TransientHeatModel, discretization::FiniteElementDiscretization, mesh::AbstractGrid)
+    @assert length(discretization.dbcs) == 0 "Dirichlet conditions not supported yet for TransientHeatProblem"
 
     sym = model.solution_variable_symbol
+    ipc = _get_interpolation_from_discretization(discretization, sym)
+    dh = DofHandler(mesh)
+    for name in discretization.subdomains
+        add_subdomain!(dh, name, [ApproximationDescriptor(sym, ipc)])
+    end
+    close!(dh)
 
-    # TODO factor this out to make a isolated transient heat problem and call semidiscretize here. This should simplify testing.
-    ip = getinterpolation(discretization.interpolations[sym], getcells(grid, 1))
-    dh = DofHandler(grid)
-    Ferrite.add!(dh, sym, ip)
-    close!(dh);
     return TransientHeatFunction(
         model.κ,
         model.source,
@@ -38,11 +46,9 @@ function semidiscretize(model::TransientHeatModel, discretization::FiniteElement
     )
 end
 
-function semidiscretize(split::ReactionDiffusionSplit{<:MonodomainModel}, discretization::FiniteElementDiscretization, grid::AbstractGrid)
+function semidiscretize(split::ReactionDiffusionSplit{<:MonodomainModel}, discretization::FiniteElementDiscretization, mesh::AbstractGrid)
     epmodel = split.model
     φsym = epmodel.transmembrane_solution_symbol
-    ets = elementtypes(grid)
-    @assert length(ets) == 1
 
     heat_model = TransientHeatModel(
         ConductivityToDiffusivityCoefficient(epmodel.κ, epmodel.Cₘ, epmodel.χ),
@@ -53,7 +59,7 @@ function semidiscretize(split::ReactionDiffusionSplit{<:MonodomainModel}, discre
     heatfun = semidiscretize(
         heat_model,
         discretization,
-        grid,
+        mesh,
     )
 
     dh = heatfun.dh
@@ -65,11 +71,10 @@ function semidiscretize(split::ReactionDiffusionSplit{<:MonodomainModel}, discre
         ndofsφ,
         epmodel.ion
     )
-    # TODO This is a faulty assumption. We can have varying ndofs per cell.
-    nstates_per_cell = num_states(odefun.ode)
+    nstates_per_point = num_states(odefun.ode)
     # TODO this assumes that the transmembrane potential is the first field. Relax this.
     heat_dofrange = 1:ndofsφ
-    ode_dofrange = 1:nstates_per_cell*ndofsφ
+    ode_dofrange = 1:nstates_per_point*ndofsφ
     #
     semidiscrete_ode = GenericSplitFunction(
         (heatfun, odefun),
@@ -80,15 +85,14 @@ function semidiscretize(split::ReactionDiffusionSplit{<:MonodomainModel}, discre
     return semidiscrete_ode
 end
 
-function semidiscretize(model::StructuralModel{<:QuasiStaticModel}, discretization::FiniteElementDiscretization, grid::AbstractGrid)
-    ets = elementtypes(grid)
-    @assert length(ets) == 1 "Multiple elements not supported yet."
-
-    ip = getinterpolation(discretization.interpolations[model.displacement_symbol], getcells(grid, 1))
-    ip_geo = Ferrite.default_geometric_interpolation(ip) # TODO get interpolation from cell
-    dh = DofHandler(grid)
-    Ferrite.add!(dh, model.displacement_symbol, ip)
-    close!(dh);
+function semidiscretize(model::StructuralModel{<:QuasiStaticModel}, discretization::FiniteElementDiscretization, mesh::AbstractGrid)
+    sym = model.displacement_symbol
+    ipc = _get_interpolation_from_discretization(discretization, sym)
+    dh = DofHandler(mesh)
+    for name in discretization.subdomains
+        add_subdomain!(dh, name, [ApproximationDescriptor(sym, ipc)])
+    end
+    close!(dh)
 
     ch = ConstraintHandler(dh)
     for dbc ∈ discretization.dbcs

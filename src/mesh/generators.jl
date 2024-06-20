@@ -56,7 +56,7 @@ function generate_ring_mesh(num_elements_circumferential::Int, num_elements_radi
     nodesets["MyocardialAnchor3"] = OrderedSet{Int}([node_array[ceil(Int,1+n_nodes_c/4),1,1]])
     nodesets["MyocardialAnchor4"] = OrderedSet{Int}([node_array[ceil(Int,1+3*n_nodes_c/4),1,1]])
 
-    return Grid(cells, nodes, facetsets=facetsets, nodesets=nodesets)
+    return to_mesh(Grid(cells, nodes, facetsets=facetsets, nodesets=nodesets))
 end
 
 
@@ -121,7 +121,7 @@ function generate_open_ring_mesh(num_elements_circumferential::Int, num_elements
     nodesets["MyocardialAnchor3"] = OrderedSet{Int}([node_array[ceil(Int,1+n_nodes_c/4),1,1]])
     nodesets["MyocardialAnchor4"] = OrderedSet{Int}([node_array[ceil(Int,1+3*n_nodes_c/4),1,1]])
 
-    return Grid(cells, nodes, facetsets=facetsets, nodesets=nodesets)
+    return to_mesh(Grid(cells, nodes, facetsets=facetsets, nodesets=nodesets))
 end
 
 
@@ -197,7 +197,7 @@ function generate_quadratic_ring_mesh(num_elements_circumferential::Int, num_ele
     nodesets["MyocardialAnchor3"] = OrderedSet{Int}([node_array[ceil(Int,1+n_nodes_c/4),1,1]])
     nodesets["MyocardialAnchor4"] = OrderedSet{Int}([node_array[ceil(Int,1+3*n_nodes_c/4),1,1]])
 
-    return Grid(cells, nodes, facetsets=facetsets, nodesets=nodesets)
+    return to_mesh(Grid(cells, nodes, facetsets=facetsets, nodesets=nodesets))
 end
 
 
@@ -269,7 +269,7 @@ function generate_quadratic_open_ring_mesh(num_elements_circumferential::Int, nu
     nodesets["MyocardialAnchor3"] = OrderedSet{Int}([node_array[ceil(Int,1+n_nodes_c/4),1,1]])
     nodesets["MyocardialAnchor4"] = OrderedSet{Int}([node_array[ceil(Int,1+3*n_nodes_c/4),1,1]])
 
-    return Grid(cells, nodes, facetsets=facetsets, nodesets=nodesets)
+    return to_mesh(Grid(cells, nodes, facetsets=facetsets, nodesets=nodesets))
 end
 
 
@@ -359,13 +359,12 @@ function generate_ideal_lv_mesh(num_elements_circumferential::Int, num_elements_
         j == num_elements_radial && push!(nodesets["Apex"], singular_index+1)
     end
 
-    return Grid(cells, nodes, nodesets=nodesets, facetsets=facetsets)
+    return to_mesh(Grid(cells, nodes, nodesets=nodesets, facetsets=facetsets))
 end
 
-# TODO think about making Mesh = Grid+Topology+CoordinateSystem
 generate_mesh(args...) = to_mesh(generate_grid(args...))
 
-function generate_simple_disc_mesh(::Type{Quadrilateral}, n; radius= 1.0)
+function generate_simple_disc_grid(::Type{Quadrilateral}, n; radius= 1.0)
     nnodes = 2n + 1
     θ = deg2rad(360/2n)
 
@@ -379,5 +378,7 @@ function generate_simple_disc_mesh(::Type{Quadrilateral}, n; radius= 1.0)
         "boundary" => OrderedSet([FacetIndex(i,1) for i ∈ 1:n]) ∪ OrderedSet([FacetIndex(i,2) for i ∈ 1:n]),
     )
 
-    return to_mesh(Grid(elements, Node.(nodes); facetsets=facetsets))
+    return Grid(elements, Node.(nodes); facetsets=facetsets)
 end
+
+generate_simple_disc_mesh(::Type{Quadrilateral}, n; radius= 1.0) = to_mesh(generate_simple_disc_grid(Quadrilateral, n; radius))

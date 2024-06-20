@@ -110,48 +110,52 @@ Create a rotating fiber field by deducing the circumferential direction from api
 function create_simple_microstructure_model(coordinate_system, ip_collection::VectorizedInterpolationCollection{3}; endo_helix_angle = deg2rad(80.0), epi_helix_angle = deg2rad(-65.0), endo_transversal_angle = 0.0, epi_transversal_angle = 0.0, sheetlet_pseudo_angle = 0.0, make_orthogonal=true)
     @unpack dh = coordinate_system
 
-    check_subdomains(dh)
+    # TODO this storage is redundant, can we reduce the memory footprint?
+    offsets = copy(dh.cell_dofs_offset)
+    push!(offsets, length(dh.cell_dofs)+1)
 
-    first_cell = getcells(Ferrite.get_grid(dh), 1)
-    ip = getinterpolation(ip_collection, first_cell)
-    n_basefuns = getnbasefunctions(ip.ip)
+    # The vectors follow the spatial dimension and precision of the grid
+    Tv = get_coordinate_type(get_grid(dh))
+    f_buf = ElementwiseData(zeros(Tv, length(dh.cell_dofs)), offsets)
+    s_buf = ElementwiseData(zeros(Tv, length(dh.cell_dofs)), offsets)
+    n_buf = ElementwiseData(zeros(Tv, length(dh.cell_dofs)), offsets)
 
-    elementwise_data_f = zero(Array{Vec{3,Float64}, 2}(undef, n_basefuns, getncells(dh.grid)))
-    elementwise_data_s = zero(Array{Vec{3,Float64}, 2}(undef, n_basefuns, getncells(dh.grid)))
-    elementwise_data_n = zero(Array{Vec{3,Float64}, 2}(undef, n_basefuns, getncells(dh.grid)))
+    qrs = NodalQuadratureRuleCollection(ip_collection.base)
+    cvs = CellValueCollection(qrs, ip_collection.base)
+    for sdh in dh.subdofhandlers
+        first_cell = getcells(Ferrite.get_grid(dh), first(sdh.cellset))
+        cv = getcellvalues(cvs, first_cell)
+        for cell in CellIterator(sdh)
+            cellindex = cellid(cell)
+            reinit!(cv, cell)
+            dof_indices = celldofs(cell)
 
-    cv_collection = CellValueCollection(NodalQuadratureRuleCollection(ip_collection.base), ip_collection.base)
-    cv = getcellvalues(cv_collection, first_cell)
+            for qp in QuadratureIterator(cv)
+                # TODO grab these via some interface!
+                apicobasal_direction = function_gradient(cv, qp, coordinate_system.u_apicobasal[dof_indices])
+                apicobasal_direction /= norm(apicobasal_direction)
+                transmural_direction = function_gradient(cv, qp, coordinate_system.u_transmural[dof_indices])
+                transmural_direction /= norm(transmural_direction)
+                circumferential_direction = apicobasal_direction × transmural_direction
+                circumferential_direction /= norm(circumferential_direction)
 
-    for (cellindex,cell) in enumerate(CellIterator(dh))
-        reinit!(cv, cell)
-        dof_indices = celldofs(cell)
+                transmural  = function_value(cv, qp, coordinate_system.u_transmural[dof_indices])
 
-        for qp in QuadratureIterator(cv)
-            # TODO grab these via some interface!
-            apicobasal_direction = function_gradient(cv, qp, coordinate_system.u_apicobasal[dof_indices])
-            apicobasal_direction /= norm(apicobasal_direction)
-            transmural_direction = function_gradient(cv, qp, coordinate_system.u_transmural[dof_indices])
-            transmural_direction /= norm(transmural_direction)
-            circumferential_direction = apicobasal_direction × transmural_direction
-            circumferential_direction /= norm(circumferential_direction)
+                # linear interpolation of rotation angle
+                helix_angle       = (1-transmural) * endo_helix_angle + (transmural) * epi_helix_angle
+                transversal_angle = (1-transmural) * endo_transversal_angle + (transmural) * epi_transversal_angle
 
-            transmural  = function_value(cv, qp, coordinate_system.u_transmural[dof_indices])
-
-            # linear interpolation of rotation angle
-            helix_angle       = (1-transmural) * endo_helix_angle + (transmural) * epi_helix_angle
-            transversal_angle = (1-transmural) * endo_transversal_angle + (transmural) * epi_transversal_angle
-
-            coeff = streeter_type_fsn(transmural_direction, circumferential_direction, apicobasal_direction, helix_angle, transversal_angle, sheetlet_pseudo_angle, make_orthogonal)
-            elementwise_data_f[qp.i, cellindex] = coeff.f
-            elementwise_data_s[qp.i, cellindex] = coeff.s
-            elementwise_data_n[qp.i, cellindex] = coeff.n
+                coeff = streeter_type_fsn(transmural_direction, circumferential_direction, apicobasal_direction, helix_angle, transversal_angle, sheetlet_pseudo_angle, make_orthogonal)
+                f_buf[qp.i, cellindex] = coeff.f
+                s_buf[qp.i, cellindex] = coeff.s
+                n_buf[qp.i, cellindex] = coeff.n
+            end
         end
     end
 
     OrthotropicMicrostructureModel(
-        FieldCoefficient(elementwise_data_f, ip_collection),
-        FieldCoefficient(elementwise_data_s, ip_collection),
-        FieldCoefficient(elementwise_data_n, ip_collection)
+        FieldCoefficient(f_buf, ip_collection),
+        FieldCoefficient(s_buf, ip_collection),
+        FieldCoefficient(n_buf, ip_collection)
     )
 end

@@ -61,10 +61,6 @@ struct TransientHeatFunction{DTF, ST, DH} <: AbstractSemidiscreteFunction
     diffusion_tensor_field::DTF
     source_term::ST
     dh::DH
-    function TransientHeatFunction(diffusion_tensor_field::DTF, source_term::ST, dh::DH) where {DTF, ST, DH}
-        check_subdomains(dh)
-        return new{DTF, ST, DH}(diffusion_tensor_field, source_term, dh)
-    end
 end
 
 solution_size(f::TransientHeatFunction) = ndofs(f.dh)
@@ -82,10 +78,6 @@ struct QuasiStaticNonlinearFunction{CM <: QuasiStaticModel, DH <: Ferrite.Abstra
     ch::CH
     constitutive_model::CM
     face_models::FACE
-    function QuasiStaticNonlinearFunction(dh::DH, ch::CH, constitutive_model::CM, face_models::FACE) where {CM <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler, FACE, CH}
-        check_subdomains(dh)
-        return new{CM, DH, FACE, CH}(dh, ch, constitutive_model, face_models)
-    end
 end
 
 solution_size(f::QuasiStaticNonlinearFunction) = ndofs(f.dh)

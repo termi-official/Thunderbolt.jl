@@ -227,17 +227,14 @@ function create_chamber_tyings(coupler::LumpedFluidSolidCoupler{CVM}, structural
     return chamber_tyings
 end
 
-function semidiscretize(split::RSAFDQ2022Split, discretization::FiniteElementDiscretization, grid::AbstractGrid)
-    ets = elementtypes(grid)
-    @assert length(ets) == 1 "Multiple element types not supported"
-
+function semidiscretize(split::RSAFDQ2022Split, discretization::FiniteElementDiscretization, mesh::AbstractGrid)
     @unpack model = split
     @unpack structural_model, circuit_model, coupler = model
     @assert length(coupler.chamber_couplings) ≥ 1 "Provide at least one coupling for the semi-discretization of an RSAFDQ2022 model"
     @assert coupler.displacement_symbol == structural_model.displacement_symbol "Coupler is not compatible with structural model"
 
     # Discretize individual problems
-    structural_problem = semidiscretize(model.structural_model, discretization, grid)
+    structural_problem = semidiscretize(model.structural_model, discretization, mesh)
     num_chambers_lumped = num_unknown_pressures(model.circuit_model)
 
     # ODE problem for blood circuit

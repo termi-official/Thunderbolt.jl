@@ -80,13 +80,13 @@
         dirname = @__DIR__
 
         @testset "voom2 legacy" begin
-            voom2_mesh = load_voom2_mesh(dirname * "/data/voom2/ex1")
+            voom2_grid = load_voom2_grid(dirname * "/data/voom2/ex1")
 
-            @test length(voom2_mesh.nodes) == 9
-            @test typeof(voom2_mesh.cells[1]) == Line
-            @test typeof(voom2_mesh.cells[2]) == Hexahedron
-            @test length(voom2_mesh.cells) == 2
-            test_detJ(voom2_mesh)
+            @test length(voom2_grid.nodes) == 9
+            @test typeof(voom2_grid.cells[1]) == Line
+            @test typeof(voom2_grid.cells[2]) == Hexahedron
+            @test length(voom2_grid.cells) == 2
+            test_detJ(voom2_grid)
         end
 
         @testset "mfem v1.0 $filename" for (filename, element_type) in [
@@ -98,10 +98,10 @@
             ("ref-prism.mesh", Wedge),
             ("ref-pyramid.mesh", Pyramid),
         ]
-            mfem_mesh = load_mfem_mesh(dirname * "/data/mfem/" * filename)
+            mfem_grid = load_mfem_grid(dirname * "/data/mfem/" * filename)
 
-            @test all(typeof.(mfem_mesh.cells) .== element_type)
-            test_detJ(mfem_mesh)
+            @test all(typeof.(mfem_grid.cells) .== element_type)
+            test_detJ(mfem_grid)
         end
 
         @testset "openCARP $filename" for (filename, element_type) in [
@@ -113,10 +113,10 @@
             ("ref-prism", Wedge),
             # ("ref-pyramid", Pyramid),
         ]
-            carp_mesh = load_carp_mesh(dirname * "/data/openCARP/" * filename)
+            carp_grid = load_carp_grid(dirname * "/data/openCARP/" * filename)
 
-            @test all(typeof.(carp_mesh.cells) .== element_type)
-            test_detJ(carp_mesh)
+            @test all(typeof.(carp_grid.cells) .== element_type)
+            test_detJ(carp_grid)
         end
     end
 end

@@ -24,6 +24,7 @@ solution_size(f::GenericSplitFunction) = OS.function_size(f)
 @reexport using Ferrite
 import Ferrite: AbstractDofHandler, AbstractGrid, AbstractRefShape, AbstractCell, get_grid
 import Ferrite: vertices, edges, faces, sortedge, sortface
+import Ferrite: get_coordinate_type, getspatialdim
 
 import DiffEqBase#: AbstractDiffEqFunction, AbstractDEProblem
 @reexport import LinearSolve
@@ -181,7 +182,7 @@ export
     # Coordinate system
     LVCoordinateSystem,
     CartesianCoordinateSystem,
-    compute_LV_coordinate_system,
+    compute_lv_coordinate_system,
     compute_midmyocardial_section_coordinate_system,
     getcoordinateinterpolation,
     vtk_coordinate_system,
@@ -207,9 +208,9 @@ export
     elementtypes,
     QuadraturePoint,
     QuadratureIterator,
-    load_carp_mesh,
-    load_voom2_mesh,
-    load_mfem_mesh,
+    load_carp_grid,
+    load_voom2_grid,
+    load_mfem_grid,
     solution_size,
     # IO
     ParaViewWriter,
