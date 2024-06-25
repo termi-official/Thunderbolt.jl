@@ -24,7 +24,7 @@ struct PrestressedMechanicalModelCoefficientCache{T1, T2}
     prestress_cache::T2
 end
 
-function setup_coefficient_cache(m::PrestressedMechanicalModel, qr, sdh)
+function setup_coefficient_cache(m::PrestressedMechanicalModel, qr::QuadratureRule, sdh::SubDofHandler)
     PrestressedMechanicalModelCoefficientCache(
         setup_coefficient_cache(m.inner_model, qr, sdh),
         setup_coefficient_cache(m.prestress_field, qr, sdh),
@@ -32,7 +32,7 @@ function setup_coefficient_cache(m::PrestressedMechanicalModel, qr, sdh)
 end
 
 function material_routine(constitutive_model::PrestressedMechanicalModel, coefficient_cache::PrestressedMechanicalModelCoefficientCache, F, internal_state, geometry_cache::Ferrite.CellCache, qp::QuadraturePoint, time)
-    F₀ = evaluate_coefficient(constitutive_model.prestress_field, coefficient_cache.prestress_cache, geometry_cache, qp, time)
+    F₀ = evaluate_coefficient(coefficient_cache.prestress_cache, geometry_cache, qp, time)
     return material_routine(constitutive_model.inner_model, coefficient_cache.inner_cache, F ⋅ F₀, internal_state, geometry_cache, qp, time)
 end
 

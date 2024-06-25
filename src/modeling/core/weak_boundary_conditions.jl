@@ -69,7 +69,7 @@ end
 struct EmptyFacetCache <: AbstractSurfaceElementCache
 end
 
-setup_boundary_cache(::Nothing, ::Nothing, qr, ip, ip_geo) = EmptyFacetCache()
+setup_boundary_cache(::Nothing, ::Nothing, qr::FacetQuadratureRule, ip::Interpolation, sdh::SubDofHandler) = EmptyFacetCache()
 
 @inline assemble_face!(Kₑ::AbstractMatrix, uₑ::AbstractVector, cell, local_face_index, cache::EmptyFacetCache, time) = nothing
 @inline assemble_face!(Kₑ::AbstractMatrix, rₑ::AbstractVector, uₑ::AbstractVector, cell, local_face_index, cache::EmptyFacetCache, time) = nothing
@@ -85,7 +85,8 @@ end
 @inline is_facet_in_cache(facet::FacetIndex, cell::CellCache, face_cache::SimpleFacetCache) = facet ∈ getfacetset(cell.grid, getboundaryname(face_cache))
 @inline getboundaryname(face_cache::SimpleFacetCache) = face_cache.mp.boundary_name
 
-function setup_boundary_cache(face_model::AbstractWeakBoundaryCondition, qr::FacetQuadratureRule, ip, ip_geo)
+function setup_boundary_cache(face_model::AbstractWeakBoundaryCondition, qr::FacetQuadratureRule, ip::Interpolation, sdh::SubDofHandler)
+    ip_geo = geometric_subdomain_interpolation(sdh)
     return SimpleFacetCache(face_model, FacetValues(qr, ip, ip_geo))
 end
 

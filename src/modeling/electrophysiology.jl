@@ -149,7 +149,7 @@ end
 function setup_element_cache(protocol::AnalyticalTransmembraneStimulationProtocol, qr, ip, sdh::SubDofHandler)
     ip_geo = geometric_subdomain_interpolation(sdh)
     AnalyticalCoefficientElementCache(
-        setup_coefficient_cache(protocol.f),
+        setup_coefficient_cache(protocol.f, qr, sdh),
         protocol.nonzero_intervals,
         CellValues(qr, ip, ip_geo), # TODO something more lightweight
     )

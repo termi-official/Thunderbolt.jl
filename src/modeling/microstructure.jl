@@ -65,7 +65,7 @@ end
 # Compat with spectral coefficient
 @inline function _eval_st_coefficient(M::TransverselyIsotropicMicrostructure, λ::SVector{2})
     Mf = M.f ⊗ M.f
-    return λ[1] * Mf +  λ[2] * (one(MF) - MF)
+    return λ[1] * Mf +  λ[2] * (one(Mf) - Mf)
 end
 
 struct TransverselyIsotropicMicrostructureModel{FiberCoefficientType}

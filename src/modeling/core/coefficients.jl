@@ -14,6 +14,8 @@ struct FieldCoefficientCache{T, TA <: AbstractArray{T, 2}, CV}
     cv::CV
 end
 
+duplicate_for_parallel(cache::FieldCoefficientCache) = cache
+
 @inline function setup_coefficient_cache(coefficient::FieldCoefficient, qr::QuadratureRule, sdh::SubDofHandler)
     return _create_field_coefficient_cache(coefficient, coefficient.ip_collection, qr, sdh)
 end
@@ -54,6 +56,8 @@ struct ConstantCoefficient{T}
     val::T
 end
 
+duplicate_for_parallel(cache::ConstantCoefficient) = cache
+
 function setup_coefficient_cache(coefficient::ConstantCoefficient, qr::QuadratureRule, sdh::SubDofHandler)
     return coefficient
 end
@@ -93,6 +97,13 @@ function evaluate_coefficient(coeff::ConductivityToDiffusivityCoefficientCache, 
     return κ/(Cₘ*χ)
 end
 
+function duplicate_for_parallel(cache::ConductivityToDiffusivityCoefficientCache)
+    ConductivityToDiffusivityCoefficientCache(
+        duplicate_for_parallel(cache.conductivity_tensor_cache),
+        duplicate_for_parallel(cache.capacitance_cache),
+        duplicate_for_parallel(cache.χ_cache),
+    )
+end
 
 """
     CoordinateSystemCoefficient(coordinate_system)
@@ -103,15 +114,19 @@ struct CoordinateSystemCoefficient{CS}
     cs::CS
 end
 
-struct CartesianCoordinateSystemCache{CV}
+struct CartesianCoordinateSystemCache{CS, CV}
+    cs::CS
     cv::CV
 end
 
-function setup_coefficient_cache(coefficient::CoordinateSystemCoefficient{<:CartesianCoordinateSystem}, qr::QuadratureRule, sdh::SubDofHandler)
+duplicate_for_parallel(cache::CartesianCoordinateSystemCache) = cache
+
+function setup_coefficient_cache(coefficient::CoordinateSystemCoefficient{<:CartesianCoordinateSystem}, qr::QuadratureRule{<:Any,T}, sdh::SubDofHandler) where T
     cell = get_first_cell(sdh)
     ip = getcoordinateinterpolation(coefficient.cs, cell)
-    fv = Ferrite.FunctionValues{0}(T, qr, ip, ip)
-    return CartesianCoordinateSystemCache(FerriteUtils.StaticInterpolationValues(fv.ip, fv.Nξ, nothing))
+    fv = Ferrite.FunctionValues{0}(T, ip.ip, qr, ip) # We scalarize the interpolation again as an optimization step
+    Nξs    = size(fv.Nξ)
+    return CartesianCoordinateSystemCache(coefficient.cs, FerriteUtils.StaticInterpolationValues(fv.ip, SMatrix{Nξs[1], Nξs[2]}(fv.Nξ), nothing))
 end
 
 function evaluate_coefficient(coeff::CartesianCoordinateSystemCache{<:CartesianCoordinateSystem{sdim}}, geometry_cache::CellCache, qp::QuadraturePoint{<:Any,T}, t) where {sdim, T}
@@ -128,6 +143,8 @@ struct LVCoordinateSystemCache{CS <: LVCoordinateSystem, CV}
     cs::CS
     cv::CV
 end
+
+duplicate_for_parallel(cache::LVCoordinateSystemCache) = cache
 
 function setup_coefficient_cache(coefficient::CoordinateSystemCoefficient{<:LVCoordinateSystem}, qr::QuadratureRule{<:Any, T}, sdh::SubDofHandler) where T
     cell = get_first_cell(sdh)
@@ -158,6 +175,8 @@ struct BiVCoordinateSystemCache{CS <: BiVCoordinateSystem, CV}
     cs::CS
     cv::CV
 end
+
+duplicate_for_parallel(cache::BiVCoordinateSystemCache) = cache
 
 function setup_coefficient_cache(coefficient::CoordinateSystemCoefficient{<:BiVCoordinateSystem}, qr::QuadratureRule{<:Any,T}, sdh::SubDofHandler) where T
     cell = get_first_cell(sdh)
@@ -201,7 +220,14 @@ struct SpectralTensorCoefficientCache{C1, C2}
     eigenvalue_cache::C2
 end
 
-function setup_coefficient_cache(coefficient::SpectralTensorCoefficientCache, qr::QuadratureRule, sdh::SubDofHandler)
+function duplicate_for_parallel(cache::SpectralTensorCoefficientCache)
+    SpectralTensorCoefficientCache(
+        duplicate_for_parallel(cache.eigenvectors),
+        duplicate_for_parallel(cache.eigenvalues),
+    )
+end
+
+function setup_coefficient_cache(coefficient::SpectralTensorCoefficient, qr::QuadratureRule, sdh::SubDofHandler)
     return SpectralTensorCoefficientCache(
         setup_coefficient_cache(coefficient.eigenvectors, qr, sdh),
         setup_coefficient_cache(coefficient.eigenvalues, qr, sdh),
@@ -227,6 +253,8 @@ struct SpatiallyHomogeneousDataField{T, TD <: AbstractVector{T}, TV <: AbstractV
     timings::TV
     data::TD
 end
+
+duplicate_for_parallel(cache::SpatiallyHomogeneousDataField) = cache
 
 function setup_coefficient_cache(coefficient::SpatiallyHomogeneousDataField, qr::QuadratureRule, sdh::SubDofHandler)
     return coefficient

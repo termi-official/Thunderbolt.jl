@@ -219,11 +219,11 @@ end
     return Nx, dNdx
 end
 
-struct StaticCellValues{FV, GM, Tx, Nqp, T}
+struct StaticCellValues{FV, GM, Tx, Nqp, WT <: NTuple}
     fv::FV # StaticInterpolationValues
     gm::GM # StaticInterpolationValues
     x::Tx  # AbstractVector{<:Vec} or Nothing
-    weights::NTuple{Nqp, T}
+    weights::WT
 end
 function StaticCellValues(cv::CellValues, ::Val{SaveCoords}=Val(true)) where SaveCoords
     fv = StaticInterpolationValues(cv.fun_values)
