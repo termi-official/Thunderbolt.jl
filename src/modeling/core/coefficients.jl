@@ -156,17 +156,17 @@ function setup_coefficient_cache(coefficient::CoordinateSystemCoefficient{<:LVCo
 end
 
 function evaluate_coefficient(coeff::LVCoordinateSystemCache, geometry_cache::CellCache, qp::QuadraturePoint{ref_shape,T}, t) where {ref_shape,T}
-    @unpack cv = coeff
-    @unpack dh = coeff.cs
+    @unpack cv, cs = coeff
+    @unpack dh     = cs
     x1 = zero(T)
     x2 = zero(T)
     x3 = zero(T)
     dofs = celldofsview(dh, cellid(geometry_cache))
     @inbounds for i in 1:getnbasefunctions(cv)
         val = shape_value(cv, qp, i)::T
-        x1 += val * coeff.cs.u_transmural[dofs[i]]
-        x2 += val * coeff.cs.u_apicobasal[dofs[i]]
-        x3 += val * coeff.cs.u_circumferential[dofs[i]]
+        x1 += val * cs.u_transmural[dofs[i]]
+        x2 += val * cs.u_apicobasal[dofs[i]]
+        x3 += val * cs.u_circumferential[dofs[i]]
     end
     return LVCoordinate(x1, x2, x3)
 end
@@ -180,16 +180,16 @@ duplicate_for_parallel(cache::BiVCoordinateSystemCache) = cache
 
 function setup_coefficient_cache(coefficient::CoordinateSystemCoefficient{<:BiVCoordinateSystem}, qr::QuadratureRule{<:Any,T}, sdh::SubDofHandler) where T
     cell = get_first_cell(sdh)
-    ip = getcoordinateinterpolation(coeff.cs, cell)
+    ip = getcoordinateinterpolation(coefficient.cs, cell)
     ip_geo = ip^3
     fv     = Ferrite.FunctionValues{0}(T, ip, qr, ip_geo)
     Nξs    = size(fv.Nξ)
     return BiVCoordinateSystemCache(coefficient.cs, FerriteUtils.StaticInterpolationValues(fv.ip, SMatrix{Nξs[1], Nξs[2]}(fv.Nξ), nothing))
 end
 
-function evaluate_coefficient(cc::BiVCoordinateSystemCache, cell_cache, qp::QuadraturePoint{:AbstractRefShape,T}, t) where {T}
-    @unpack cv = cc
-    @unpack dh = cc.cs
+function evaluate_coefficient(cc::BiVCoordinateSystemCache, cell_cache, qp::QuadraturePoint{<:Any,T}, t) where {T}
+    @unpack cv, cs = cc
+    @unpack dh     = cs
     dofs = celldofsview(dh, cellid(cell_cache))
     x1 = zero(T)
     x2 = zero(T)
@@ -197,10 +197,10 @@ function evaluate_coefficient(cc::BiVCoordinateSystemCache, cell_cache, qp::Quad
     x4 = zero(T)
     @inbounds for i in 1:getnbasefunctions(cv)
         val = shape_value(cv, qp, i)::T
-        x1 += val * coeff.cs.u_transmural[dofs[i]]
-        x2 += val * coeff.cs.u_apicobasal[dofs[i]]
-        x3 += val * coeff.cs.u_rotational[dofs[i]]
-        x4 += val * coeff.cs.u_transventricular[dofs[i]]
+        x1 += val * cs.u_transmural[dofs[i]]
+        x2 += val * cs.u_apicobasal[dofs[i]]
+        x3 += val * cs.u_rotational[dofs[i]]
+        x4 += val * cs.u_transventricular[dofs[i]]
     end
     return BiVCoordinate(x1, x2, x3, x4)
 end
