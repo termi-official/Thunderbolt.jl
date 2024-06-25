@@ -12,12 +12,13 @@ function AssembledRSAFDQ2022Operator(dh::AbstractDofHandler, field_name::Symbol,
 
     firstcell = getcells(Ferrite.get_grid(dh), first(dh.subdofhandlers[1].cellset))
     ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], field_name)
-    ip_geo = Ferrite.geometric_interpolation(typeof(firstcell))
     element_qr = getquadraturerule(element_qrc, firstcell)
     boundary_qr = getquadraturerule(boundary_qrc, firstcell)
 
-    element_cache  = setup_element_cache(element_model, element_qr, ip, ip_geo)
-    boundary_cache = setup_boundary_cache(boundary_model, boundary_qr, ip, ip_geo)
+    sdh = first(dh.subdofhandlers)
+    element_cache  = setup_element_cache(element_model, element_qr, ip, sdh)
+    boundary_cache = setup_boundary_cache(boundary_model, boundary_qr, ip, sdh)
+    tying_cache    = setup_tying_cache(tying, boundary_qr, ip, sdh)
 
     Jmech = create_sparsity_pattern(dh)
 
@@ -32,7 +33,7 @@ function AssembledRSAFDQ2022Operator(dh::AbstractDofHandler, field_name::Symbol,
         Jblock,
         element_cache,
         boundary_cache,
-        setup_tying_cache(tying, boundary_qr, ip, ip_geo),
+        tying_cache,
         dh,
     )
 end

@@ -22,15 +22,17 @@ end
 """
 """
 struct PelceSunLangeveld1995Cache{CF}
-    calcium_field::CF
+    calcium_cache::CF
 end
 
 function state(model_cache::PelceSunLangeveld1995Cache, geometry_cache, qp::QuadraturePoint, time)
-    return evaluate_coefficient(model_cache.calcium_field, geometry_cache, qp, time)
+    return evaluate_coefficient(model_cache.calcium_cache, geometry_cache, qp, time)
 end
 
-function setup_contraction_model_cache(_, contraction_model::PelceSunLangeveld1995Model)
-    return PelceSunLangeveld1995Cache(contraction_model.calcium_field)
+function setup_contraction_model_cache(contraction_model::PelceSunLangeveld1995Model, qr::QuadratureRule, sdh::SubDofHandler)
+    return PelceSunLangeveld1995Cache(
+        setup_coefficient_cache(contraction_model.calcium_field, qr, sdh)
+    )
 end
 
 update_contraction_model_cache!(cache::PelceSunLangeveld1995Cache, time, cell, cv) = nothing
@@ -47,15 +49,17 @@ end
 compute_λᵃ(Ca, mp::ConstantStretchModel) = mp.λ
 
 struct ConstantStretchCache{CF}
-    calcium_field::CF
+    calcium_cache::CF
 end
 
 function state(model_cache::ConstantStretchCache, geometry_cache, qp::QuadraturePoint, time)
-    return evaluate_coefficient(model_cache.calcium_field, geometry_cache, qp, time)
+    return evaluate_coefficient(model_cache.calcium_cache, geometry_cache, qp, time)
 end
 
-function setup_contraction_model_cache(_, contraction_model::ConstantStretchModel)
-    return ConstantStretchCache(contraction_model.calcium_field)
+function setup_contraction_model_cache(contraction_model::ConstantStretchModel, qr::QuadratureRule, sdh::SubDofHandler)
+    return ConstantStretchCache(
+        setup_coefficient_cache(contraction_model.calcium_field, qr, sdh)
+    )
 end
 
 update_contraction_model_cache!(cache::ConstantStretchCache, time, cell, cv) = nothing

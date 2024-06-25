@@ -3,8 +3,9 @@
 
 A generic cache to assemble elements coming from a [StructuralModel](@ref).
 """
-struct StructuralElementCache{M, CMCache, CV} <: AbstractVolumetricElementCache
+struct StructuralElementCache{M, CCache, CMCache, CV} <: AbstractVolumetricElementCache
     constitutive_model::M
+    coefficient_cache::CCache
     internal_model_cache::CMCache
     cv::CV
 end
@@ -12,7 +13,7 @@ end
 # TODO how to control dispatch on required input for the material routin?
 # TODO finer granularity on the dispatch here. depending on the evolution law of the internal variable this routine looks slightly different.
 function assemble_element!(Kₑ::AbstractMatrix, residualₑ::AbstractVector, uₑ::AbstractVector, geometry_cache::CellCache, element_cache::StructuralElementCache, time)
-    @unpack constitutive_model, internal_model_cache, cv = element_cache
+    @unpack constitutive_model, internal_model_cache, cv, coefficient_cache = element_cache
     ndofs = getnbasefunctions(cv)
 
     reinit!(cv, geometry_cache)
@@ -26,7 +27,7 @@ function assemble_element!(Kₑ::AbstractMatrix, residualₑ::AbstractVector, u�
 
         # Compute stress and tangent
         internal_state = state(internal_model_cache, geometry_cache, qp, time)
-        P, ∂P∂F = material_routine(constitutive_model, F, internal_state, geometry_cache, qp, time)
+        P, ∂P∂F = material_routine(constitutive_model, coefficient_cache, F, internal_state, geometry_cache, qp, time)
 
         # Loop over test functions
         for i in 1:ndofs
@@ -54,11 +55,13 @@ function assemble_element!(Kₑ::AbstractMatrix, residualₑ::AbstractVector, u�
     end
 end
 
-function setup_element_cache(model::QuasiStaticModel, qr::QuadratureRule, ip, ip_geo)
+function setup_element_cache(model::QuasiStaticModel, qr::QuadratureRule, ip, sdh)
+    ip_geo = geometric_subdomain_interpolation(sdh)
     cv = CellValues(qr, ip, ip_geo)
     return StructuralElementCache(
         model,
-        setup_internal_model_cache(cv, model),
+        setup_coefficient_cache(model, qr, sdh),
+        setup_internal_model_cache(model, qr, sdh),
         cv
     )
 end

@@ -22,7 +22,8 @@ end
 
 solution_size(problem::RSAFDQ2022TyingInfo) = length(problem.chambers)
 
-function setup_tying_cache(tying_info::RSAFDQ2022TyingInfo, qr, ip, ip_geo)
+function setup_tying_cache(tying_info::RSAFDQ2022TyingInfo, qr, ip, sdh)
+    ip_geo = geometric_subdomain_interpolation(sdh)
     RSAFDQ2022TyingCache(FacetValues(qr, ip, ip_geo), tying_info.chambers)
 end
 

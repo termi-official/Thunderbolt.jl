@@ -3,47 +3,47 @@
 
 A constant in time data field, interpolated per element with a given interpolation.
 """
-struct FieldCoefficient{T,T2,TA<:AbstractArray{T,2},IPC<:InterpolationCollection}
-    # TODO data structure for this
+struct FieldCoefficient{T,TA<:AbstractArray{T,2},IPC<:InterpolationCollection}
+    # TODO use DenseDataRange
     elementwise_data::TA #2d ragged array (element_idx, base_fun_idx)
     ip_collection::IPC
-    # TODO investigate usage of CellValueCollection
-    qbuf::Vector{T2}
 end
 
-FieldCoefficient(data::AbstractArray{T,2}, ipc::ScalarInterpolationCollection) where T = FieldCoefficient(data, ipc, T[])
-FieldCoefficient(data::AbstractArray{T,2}, ipc::VectorizedInterpolationCollection) where T = FieldCoefficient(data, ipc, eltype(T)[])
+struct FieldCoefficientCache{T, TA <: AbstractArray{T, 2}, CV}
+    elementwise_data::TA
+    cv::CV
+end
 
-function evaluate_coefficient(coeff::FieldCoefficient{<:Any,<:Any,<:Any,<:ScalarInterpolationCollection}, cell_cache, qp::QuadraturePoint{<:Any, T}, t) where T
-    @unpack elementwise_data, ip_collection = coeff
-    ip = getinterpolation(ip_collection, getcells(cell_cache.grid, cellid(cell_cache)))
-    n_base_funcs = Ferrite.getnbasefunctions(ip)
+@inline function setup_coefficient_cache(coefficient::FieldCoefficient, qr::QuadratureRule, sdh::SubDofHandler)
+    return _create_field_coefficient_cache(coefficient, coefficient.ip_collection, qr, sdh)
+end
+
+function _create_field_coefficient_cache(coefficient::FieldCoefficient, ipc::ScalarInterpolationCollection, qr::QuadratureRule{<:Any, T}, sdh::SubDofHandler) where T
+    cell = get_first_cell(sdh)
+    ip     = getinterpolation(coefficient.ip_collection, cell)
+    fv     = Ferrite.FunctionValues{0}(T, ip, qr, ip^3)
+    Nξs    = size(fv.Nξ)
+    return FieldCoefficientCache(coefficient.elementwise_data, FerriteUtils.StaticInterpolationValues(fv.ip, SMatrix{Nξs[1], Nξs[2]}(fv.Nξ), nothing))
+end
+
+function _create_field_coefficient_cache(coefficient::FieldCoefficient, ipc::VectorizedInterpolationCollection, qr::QuadratureRule{<:Any, T}, sdh::SubDofHandler) where T
+    cell = get_first_cell(sdh)
+    ip     = getinterpolation(coefficient.ip_collection, cell)
+    fv     = Ferrite.FunctionValues{0}(T, ip.ip, qr, ip)
+    Nξs    = size(fv.Nξ)
+    return FieldCoefficientCache(coefficient.elementwise_data, FerriteUtils.StaticInterpolationValues(fv.ip, SMatrix{Nξs[1], Nξs[2]}(fv.Nξ), nothing))
+end
+
+function evaluate_coefficient(cache::FieldCoefficientCache{T}, geometry_cache, qp::QuadraturePoint, t) where T
+    @unpack elementwise_data, cv = cache
     val = zero(T)
+    cellidx = cellid(geometry_cache)
 
-    resize!(coeff.qbuf, n_base_funcs)
-    Ferrite.shape_values!(coeff.qbuf, ip, qp.ξ)
-
-    @inbounds for i in 1:n_base_funcs
-        val += coeff.qbuf[i] * elementwise_data[i, cellid(cell_cache)]
+    @inbounds for i in 1:getnbasefunctions(cv)
+        val += shape_value(cv, qp, i) * elementwise_data[i, cellidx]
     end
     return val
 end
-
-function evaluate_coefficient(coeff::F, cell_cache, qp::QuadraturePoint{<:Any, T}, t) where {vdim, T, F <: FieldCoefficient{<:Any,<:Any,<:Any,<:VectorizedInterpolationCollection{vdim}}}
-    @unpack elementwise_data, ip_collection = coeff
-    ip = getinterpolation(ip_collection, getcells(cell_cache.grid, cellid(cell_cache)))
-    n_base_funcs = Ferrite.getnbasefunctions(ip.ip)
-    val = zero(Vec{vdim, T})
-
-    resize!(coeff.qbuf, n_base_funcs)
-    Ferrite.shape_values!(coeff.qbuf, ip.ip, qp.ξ)
-
-    @inbounds for i in 1:n_base_funcs
-        val += coeff.qbuf[i] * elementwise_data[i, cellid(cell_cache)]
-    end
-    return val
-end
-
 
 """
     ConstantCoefficient(value)
@@ -52,6 +52,10 @@ Evaluates to the same value in space and time everywhere.
 """
 struct ConstantCoefficient{T}
     val::T
+end
+
+function setup_coefficient_cache(coefficient::ConstantCoefficient, qr::QuadratureRule, sdh::SubDofHandler)
+    return coefficient
 end
 
 evaluate_coefficient(coeff::ConstantCoefficient, cell_cache, qp, t) = coeff.val
@@ -68,10 +72,24 @@ struct ConductivityToDiffusivityCoefficient{DTC, CC, STVC}
     χ_coefficient::STVC
 end
 
-function evaluate_coefficient(coeff::ConductivityToDiffusivityCoefficient, cell_cache, qp, t)
-    κ  = evaluate_coefficient(coeff.conductivity_tensor_coefficient, cell_cache, qp, t)
-    Cₘ = evaluate_coefficient(coeff.capacitance_coefficient, cell_cache, qp, t)
-    χ  = evaluate_coefficient(coeff.χ_coefficient, cell_cache, qp, t)
+struct ConductivityToDiffusivityCoefficientCache{DTC, CC, STVC}
+    conductivity_tensor_cache::DTC
+    capacitance_cache::CC
+    χ_cache::STVC
+end
+
+function setup_coefficient_cache(coefficient::ConductivityToDiffusivityCoefficient, qr::QuadratureRule, sdh::SubDofHandler)
+    return ConductivityToDiffusivityCoefficientCache(
+        setup_coefficient_cache(coefficient.conductivity_tensor_coefficient, qr, sdh),
+        setup_coefficient_cache(coefficient.capacitance_coefficient, qr, sdh),
+        setup_coefficient_cache(coefficient.χ_coefficient, qr, sdh),
+    )
+end
+
+function evaluate_coefficient(coeff::ConductivityToDiffusivityCoefficientCache, cell_cache, qp::QuadraturePoint, t)
+    κ  = evaluate_coefficient(coeff.conductivity_tensor_cache, cell_cache, qp, t)
+    Cₘ = evaluate_coefficient(coeff.capacitance_cache, cell_cache, qp, t)
+    χ  = evaluate_coefficient(coeff.χ_cache, cell_cache, qp, t)
     return κ/(Cₘ*χ)
 end
 
@@ -85,48 +103,87 @@ struct CoordinateSystemCoefficient{CS}
     cs::CS
 end
 
-function evaluate_coefficient(coeff::CoordinateSystemCoefficient{<:CartesianCoordinateSystem{sdim}}, cell_cache, qp::QuadraturePoint{<:Any,T}, t) where {sdim, T}
-    x = zero(Vec{sdim, T})
-    ip = getcoordinateinterpolation(coeff.cs, getcells(cell_cache.grid, cellid(cell_cache)))
-    for i in 1:getnbasefunctions(ip.ip)
-        x += Ferrite.shape_value(ip.ip, qp.ξ, i) * cell_cache.coords[i]
+struct CartesianCoordinateSystemCache{CV}
+    cv::CV
+end
+
+function setup_coefficient_cache(coefficient::CoordinateSystemCoefficient{<:CartesianCoordinateSystem}, qr::QuadratureRule, sdh::SubDofHandler)
+    cell = get_first_cell(sdh)
+    ip = getcoordinateinterpolation(coefficient.cs, cell)
+    fv = Ferrite.FunctionValues{0}(T, qr, ip, ip)
+    return CartesianCoordinateSystemCache(FerriteUtils.StaticInterpolationValues(fv.ip, fv.Nξ, nothing))
+end
+
+function evaluate_coefficient(coeff::CartesianCoordinateSystemCache{<:CartesianCoordinateSystem{sdim}}, geometry_cache::CellCache, qp::QuadraturePoint{<:Any,T}, t) where {sdim, T}
+    @unpack cv = coeff
+    x          = zero(Vec{sdim, T})
+    coords     = getcoordinates(geometry_cache) 
+    for i in 1:getnbasefunctions(cv)
+        x += shape_value(cv, qp, i) * coords[i]
     end
     return x
 end
 
-function evaluate_coefficient(coeff::CoordinateSystemCoefficient{<:LVCoordinateSystem}, cell_cache, qp::QuadraturePoint{ref_shape,T}, t) where {ref_shape,T}
-    ip = getcoordinateinterpolation(coeff.cs, getcells(cell_cache.grid, cellid(cell_cache)))
-    dofs = celldofsview(coeff.cs.dh, cellid(cell_cache))
-    return _evaluate_coefficient(coeff, ip, dofs, qp, t)
+struct LVCoordinateSystemCache{CS <: LVCoordinateSystem, CV}
+    cs::CS
+    cv::CV
 end
 
-function _evaluate_coefficient(coeff::CoordinateSystemCoefficient{<:LVCoordinateSystem}, ip::ScalarInterpolation, dofs, qp::QuadraturePoint{ref_shape,T}, t) where {ref_shape,T}
-    x = @MVector zeros(T, 3)
-    @inbounds for i in 1:getnbasefunctions(ip)
-        val = Ferrite.shape_value(ip, qp.ξ, i)::Float64
-        x[1] += val * coeff.cs.u_transmural[dofs[i]]
-        x[2] += val * coeff.cs.u_apicobasal[dofs[i]]
-        x[3] += val * coeff.cs.u_circumferential[dofs[i]]
+function setup_coefficient_cache(coefficient::CoordinateSystemCoefficient{<:LVCoordinateSystem}, qr::QuadratureRule{<:Any, T}, sdh::SubDofHandler) where T
+    cell = get_first_cell(sdh)
+    ip = getcoordinateinterpolation(coefficient.cs, cell)
+    ip_geo = ip^3
+    fv     = Ferrite.FunctionValues{0}(T, ip, qr, ip_geo)
+    Nξs    = size(fv.Nξ)
+    return LVCoordinateSystemCache(coefficient.cs, FerriteUtils.StaticInterpolationValues(fv.ip, SMatrix{Nξs[1], Nξs[2]}(fv.Nξ), nothing))
+end
+
+function evaluate_coefficient(coeff::LVCoordinateSystemCache, geometry_cache::CellCache, qp::QuadraturePoint{ref_shape,T}, t) where {ref_shape,T}
+    @unpack cv = coeff
+    @unpack dh = coeff.cs
+    x1 = zero(T)
+    x2 = zero(T)
+    x3 = zero(T)
+    dofs = celldofsview(dh, cellid(geometry_cache))
+    @inbounds for i in 1:getnbasefunctions(cv)
+        val = shape_value(cv, qp, i)::T
+        x1 += val * coeff.cs.u_transmural[dofs[i]]
+        x2 += val * coeff.cs.u_apicobasal[dofs[i]]
+        x3 += val * coeff.cs.u_circumferential[dofs[i]]
     end
-    return LVCoordinate(x[1], x[2], x[3])
+    return LVCoordinate(x1, x2, x3)
 end
 
-function evaluate_coefficient(coeff::CoordinateSystemCoefficient{<:BiVCoordinateSystem}, cell_cache, qp::QuadraturePoint{ref_shape,T}, t) where {ref_shape,T}
-    ip = getcoordinateinterpolation(coeff.cs, getcells(cell_cache.grid, cellid(cell_cache)))
-    dofs = celldofsview(coeff.cs.dh, cellid(cell_cache))
-    return _evaluate_coefficient(coeff, ip, dofs, qp, t)
+struct BiVCoordinateSystemCache{CS <: BiVCoordinateSystem, CV}
+    cs::CS
+    cv::CV
 end
 
-function _evaluate_coefficient(coeff::CoordinateSystemCoefficient{<:BiVCoordinateSystem}, ip::ScalarInterpolation, dofs, qp::QuadraturePoint{ref_shape,T}, t) where {ref_shape,T}
-    x = @MVector zeros(T, 4)
-    @inbounds for i in 1:getnbasefunctions(ip)
-        val = Ferrite.shape_value(ip, qp.ξ, i)
-        x[1] += val * coeff.cs.u_transmural[dofs[i]]
-        x[2] += val * coeff.cs.u_apicobasal[dofs[i]]
-        x[3] += val * coeff.cs.u_rotational[dofs[i]]
-        x[4] += val * coeff.cs.u_transventricular[dofs[i]]
+function setup_coefficient_cache(coefficient::CoordinateSystemCoefficient{<:BiVCoordinateSystem}, qr::QuadratureRule{<:Any,T}, sdh::SubDofHandler) where T
+    cell = get_first_cell(sdh)
+    ip = getcoordinateinterpolation(coeff.cs, cell)
+    ip_geo = ip^3
+    fv     = Ferrite.FunctionValues{0}(T, ip, qr, ip_geo)
+    Nξs    = size(fv.Nξ)
+    return BiVCoordinateSystemCache(coefficient.cs, FerriteUtils.StaticInterpolationValues(fv.ip, SMatrix{Nξs[1], Nξs[2]}(fv.Nξ), nothing))
+end
+
+function evaluate_coefficient(cc::BiVCoordinateSystemCache, cell_cache, qp::QuadraturePoint{:AbstractRefShape,T}, t) where {T}
+    @unpack cv = cc
+    @unpack dh = cc.cs
+    dofs = celldofsview(dh, cellid(cell_cache))
+    x1 = zero(T)
+    x2 = zero(T)
+    x3 = zero(T)
+    x4 = zero(T)
+    @inbounds for i in 1:getnbasefunctions(cv)
+        val = shape_value(cv, qp, i)::T
+        x1 += val * coeff.cs.u_transmural[dofs[i]]
+        x2 += val * coeff.cs.u_apicobasal[dofs[i]]
+        x3 += val * coeff.cs.u_rotational[dofs[i]]
+        x4 += val * coeff.cs.u_transventricular[dofs[i]]
     end
-    return BiVCoordinate(x[1], x[2], x[3], x[4])
+    return BiVCoordinate(x1, x2, x3, x4)
 end
 
 """
@@ -139,15 +196,25 @@ struct SpectralTensorCoefficient{MSC, TC}
     eigenvalues::TC
 end
 
-@inline _eval_sdt_coefficient(M::SVector{MS}, λ::SVector{λS}) where {MS, λS} = error("Incompatible dimensions! dim(M)=$MS dim(λ)=$λS")
-@inline _eval_sdt_coefficient(M::SVector{rdim,<:Vec{sdim}}, λ::SVector{rdim}) where {rdim,sdim} = sum(i->λ[i] * M[i] ⊗ M[i], 1:rdim; init=zero(Tensor{2,sdim}))
-
-function evaluate_coefficient(coeff::SpectralTensorCoefficient, cell_cache, qp::QuadraturePoint, t)
-    M = evaluate_coefficient(coeff.eigenvectors, cell_cache, qp, t)
-    λ = evaluate_coefficient(coeff.eigenvalues, cell_cache, qp, t)
-    return _eval_sdt_coefficient(M, λ)
+struct SpectralTensorCoefficientCache{C1, C2}
+    eigenvector_cache::C1
+    eigenvalue_cache::C2
 end
 
+function setup_coefficient_cache(coefficient::SpectralTensorCoefficientCache, qr::QuadratureRule, sdh::SubDofHandler)
+    return SpectralTensorCoefficientCache(
+        setup_coefficient_cache(coefficient.eigenvectors, qr, sdh),
+        setup_coefficient_cache(coefficient.eigenvalues, qr, sdh),
+    )
+end
+
+function evaluate_coefficient(coeff::SpectralTensorCoefficientCache, cell_cache, qp::QuadraturePoint, t)
+    M = evaluate_coefficient(coeff.eigenvector_cache, cell_cache, qp, t)
+    λ = evaluate_coefficient(coeff.eigenvalue_cache, cell_cache, qp, t)
+    return _eval_st_coefficient(M, λ) # Dispatches can be found e.g. in modeling/microstructure.jl
+end
+
+@inline _eval_st_coefficient(M, λ) = error("Spectral tensor evaluation not implemented for M=$(typeof(M)) and λ=$(typeof(λ)). Please provide a dispatch for _eval_st_coefficient(M, λ).")
 
 """
     SpatiallyHomogeneousDataField(timings::Vector, data::Vector)
@@ -156,12 +223,16 @@ A data field which is constant in space and piecewise constant in time.
 
 The value during the time interval [tᵢ,tᵢ₊₁] is dataᵢ, where t₀ is negative infinity and the last time point+1 is positive infinity.
 """
-struct SpatiallyHomogeneousDataField{T}
-    timings::Vector{Float64}
-    data::Vector{T}
+struct SpatiallyHomogeneousDataField{T, TD <: AbstractVector{T}, TV <: AbstractVector}
+    timings::TV
+    data::TD
 end
 
-function Thunderbolt.evaluate_coefficient(coeff::SpatiallyHomogeneousDataField, cell_cache, qp::QuadraturePoint, t)
+function setup_coefficient_cache(coefficient::SpatiallyHomogeneousDataField, qr::QuadratureRule, sdh::SubDofHandler)
+    return coefficient
+end
+
+function Thunderbolt.evaluate_coefficient(coeff::SpatiallyHomogeneousDataField, ::CellCache, qp::QuadraturePoint, t)
     @unpack timings, data = coeff
     i = 1
     tᵢ = timings[1]

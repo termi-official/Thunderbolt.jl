@@ -141,12 +141,19 @@ struct NoStimulationProtocol <: TransmembraneStimulationProtocol end
 """
 Describe the transmembrane stimulation by some analytical function on a given set of time intervals.
 """
-struct AnalyticalTransmembraneStimulationProtocol{F <: AnalyticalCoefficient, T} <: TransmembraneStimulationProtocol
+struct AnalyticalTransmembraneStimulationProtocol{F <: AnalyticalCoefficient, T, VectorType <: AbstractVector{SVector{2,T}}} <: TransmembraneStimulationProtocol
     f::F
-    nonzero_intervals::Vector{SVector{2,T}} # helper to speed up rhs
+    nonzero_intervals::VectorType # Helper for sparsity in time
 end
 
-setup_element_cache(protocol::AnalyticalTransmembraneStimulationProtocol, qr, ip, ip_geo) = AnalyticalCoefficientElementCache(protocol.f, protocol.nonzero_intervals, CellValues(qr, ip, ip_geo))
+function setup_element_cache(protocol::AnalyticalTransmembraneStimulationProtocol, qr, ip, sdh::SubDofHandler)
+    ip_geo = geometric_subdomain_interpolation(sdh)
+    AnalyticalCoefficientElementCache(
+        setup_coefficient_cache(protocol.f),
+        protocol.nonzero_intervals,
+        CellValues(qr, ip, ip_geo), # TODO something more lightweight
+    )
+end
 
 """
 The original model formulation (TODO citation) with the structure
