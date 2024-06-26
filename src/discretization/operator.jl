@@ -425,7 +425,6 @@ Base.eltype(op::LinearNullOperator{T,S}) where {T,S} = T
 Base.size(op::LinearNullOperator{T,S}) where {T,S} = S
 
 update_operator!(op::LinearNullOperator, time) = nothing
-Ferrite.add!(b::Vector, op::LinearNullOperator) = nothing
 needs_update(op::LinearNullOperator, t) = false
 
 struct LinearOperator{VectorType, IntegrandType, DHType <: AbstractDofHandler} <: AbstractLinearOperator
@@ -535,7 +534,8 @@ function _update_pealinear_operator_on_subdomain!(beas::EAVector, sdh, element_c
     end
 end
 
-Ferrite.add!(b::AbstractVector, op::AbstractLinearOperator) = b .+= op.b
+Ferrite.add!(b::AbstractVector, op::AbstractLinearOperator) = __add_to_vector!(b, op.b)
+__add_to_vector!(b::AbstractVector, a::AbstractVector) = b .+= a
 Base.eltype(op::AbstractLinearOperator) = eltype(op.b)
 Base.size(op::AbstractLinearOperator) = sisze(op.b)
 
