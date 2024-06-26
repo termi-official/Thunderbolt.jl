@@ -243,9 +243,9 @@ end
 
 function read_vtk_cobivec(filename::String, transmural_id::String, apicobasal_id::String, radial_id::String, transventricular_id::String)
     vtk = ReadVTK.VTKFile(filename)
-    points_vtk = get_points(vtk)
+    points_vtk = ReadVTK.get_points(vtk)
     points_ferrite = [Vec{3}(point) for point in eachcol(points_vtk)]
-    cells_vtk = to_meshcells(get_cells(vtk))
+    cells_vtk = ReadVTK.to_meshcells(ReadVTK.get_cells(vtk))
     cells_ferrite = to_ferrite_elements(cells_vtk)
 
     grid = Grid(cells_ferrite, Node.(points_ferrite))
@@ -257,11 +257,11 @@ function read_vtk_cobivec(filename::String, transmural_id::String, apicobasal_id
     close!(dh)
     reorder_nodal!(dh)
 
-    all_data = get_point_data(vtk)
-    u_transmural = get_data(all_data[transmural_id])
-    u_apicobasal = get_data(all_data[apicobasal_id])
-    u_radial = get_data(all_data[radial_id])
-    u_transventricular = get_data(all_data[transventricular_id])
+    all_data = ReadVTK.get_point_data(vtk)
+    u_transmural = ReadVTK.get_data(all_data[transmural_id])
+    u_apicobasal = ReadVTK.get_data(all_data[apicobasal_id])
+    u_radial = ReadVTK.get_data(all_data[radial_id])
+    u_transventricular = ReadVTK.get_data(all_data[transventricular_id])
 
     epicardium = OrderedSet{FacetIndex}()
     endocardium = OrderedSet{FacetIndex}()
