@@ -2,7 +2,7 @@
 """
     AnalyticalCoefficient(f::Function, cs::CoordinateSystemCoefficient)
 
-A coefficient given as the analytical function f(x,t) in thRe specified coordiante system.
+A coefficient given as the analytical function f(x,t) in the specified coordiante system.
 """
 struct AnalyticalCoefficient{F<:Function, CSYS<:CoordinateSystemCoefficient}
     f::F

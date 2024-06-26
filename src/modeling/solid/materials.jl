@@ -2,9 +2,6 @@
 
 abstract type QuasiStaticModel end
 
-function setup_coefficient_cache(::QuasiStaticModel, ::QuadratureRule, ::SubDofHandler)
-    EmptyCoefficientCache()
-end
 
 function material_routine(constitutive_model::QuasiStaticModel, cc, F, internal_state, geometry_cache::Ferrite.CellCache, qp::QuadraturePoint, time)
     coefficients = evaluate_coefficient(cc, geometry_cache, qp, time)
