@@ -21,7 +21,7 @@
     @testset "Cubioidal $element_type" for element_type ∈ [
         Hexahedron,
         Wedge,
-        # Tetrahedron,
+        Tetrahedron,
         # Quadrilateral,
         # Triangle
     ]
