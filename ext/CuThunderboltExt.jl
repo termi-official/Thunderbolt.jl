@@ -110,4 +110,7 @@ function Thunderbolt.create_system_matrix(SpMatType::Type{<:Union{CUSPARSE.CuSpa
     return SpMatType(colptrgpu, rowvalgpu, nzvalgpu, (Acpu.m, Acpu.n))
 end
 
+Thunderbolt.__add_to_vector!(b::Vector, a::CuVector) = b .+= Vector(a)
+Thunderbolt.__add_to_vector!(b::CuVector, a::Vector) = b .+= CuVector(a)
+
 end
