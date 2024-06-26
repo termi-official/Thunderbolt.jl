@@ -39,15 +39,16 @@ function store_timestep!(f::Function, io::ParaViewWriter, t, grid::AbstractGrid)
     finalize_timestep!(io, t)
 end
 
-function store_timestep_field!(io::ParaViewWriter, t, dh::AbstractDofHandler, u::AbstractVector, sym::Symbol)
+function store_timestep_field!(io::ParaViewWriter, t, dh::AbstractDofHandler, u::AbstractVector, sym::Symbol, name::String=String(sym))
     @assert io.current_file !== nothing
     fieldnames = Ferrite.getfieldnames(dh)
     idx = findfirst(f->f == sym, fieldnames)
     if idx === nothing
         @warn "Cannot write data for PVD '$(io.name)'. Field $sym not found in $fieldnames of DofHandler. Skipping."
+        return nothing
     end
     data = Ferrite._evaluate_at_grid_nodes(dh, u, sym, #=vtk=# Val(true))
-    WriteVTK.vtk_point_data(io.current_file, data, String(sym))
+    WriteVTK.vtk_point_data(io.current_file, data, name)
 end
 
 function store_timestep_celldata!(io::ParaViewWriter, t, u, coeff_name::String)
@@ -191,14 +192,10 @@ function store_nodal_data!(io::JLD2Writer, t, grid::AbstractGrid, name::String)
     io.fd["timesteps/$t/nodal/$name"] = u
 end
 
-function store_timestep_field!(io::JLD2Writer, t, dh::AbstractDofHandler, u::AbstractVector, name::String)
+function store_timestep_field!(io::JLD2Writer, t, dh::AbstractDofHandler, u::AbstractVector, sym::Symbol, name::String=String(sym))
     @assert get_grid(dh) === io.grid
     length(dh.fieldnames) > 1 && @warn "JLD2Writer cannot handle dof handler with multiple fields yet. Dumping full vector."
     io.fd["timesteps/$t/field/$name"] = u
-end
-
-function store_timestep_field!(io::JLD2Writer, t, dh::AbstractDofHandler, u::AbstractVector, sym::Symbol)
-    store_timestep_field!(io, t, dh, u, String(sym))
 end
 
 function store_timestep_celldata!(io::JLD2Writer, t, u, name::String)
