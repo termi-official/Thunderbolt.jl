@@ -216,6 +216,66 @@ function hexahedralize_local_face_transfer(cell::Wedge, offset::Int, faceid::Int
     end
 end
 
+
+function hexahedralize_local_face_transfer(cell::Tetrahedron, offset::Int, faceid::Int)
+    if faceid == 1
+        return OrderedSet([
+            FacetIndex(offset+1,1),
+            FacetIndex(offset+2,1),
+            FacetIndex(offset+3,1),
+        ])
+    elseif faceid == 2
+        return OrderedSet([
+            FacetIndex(offset+1,2),
+            FacetIndex(offset+2,2),
+            FacetIndex(offset+4,6),
+        ])
+    elseif faceid == 3
+        return OrderedSet([
+            FacetIndex(offset+2,3),
+            FacetIndex(offset+3,3),
+            FacetIndex(offset+4,3),
+        ])
+    elseif faceid == 4
+        return OrderedSet([
+            FacetIndex(offset+1,5),
+            FacetIndex(offset+3,4),
+            FacetIndex(offset+4,4),
+        ])
+    else
+        error("Invalid face $faceid for Tetrahedron")
+    end
+end
+
+function hexahedralize_cell(mgrid::SimpleMesh, cell::Tetrahedron, cell_idx::Int, global_edge_indices, global_face_indices)
+    # Compute offsets
+    new_edge_offset = num_nodes(mgrid)
+    new_face_offset = new_edge_offset+num_edges(mgrid)
+    # Compute indices
+    vnids = vertices(cell)
+    enids = new_edge_offset .+ global_edge_indices
+    fnids = new_face_offset .+ global_face_indices
+    cnid  = new_face_offset  + num_faces(mgrid) + cell_idx
+    return [
+        Hexahedron((
+            vnids[1], enids[1], fnids[1], enids[3],
+            enids[4], fnids[2], cnid    , fnids[4],
+        )),
+        Hexahedron((
+            enids[1], vnids[2], enids[2], fnids[1],
+            fnids[2], enids[5], fnids[3], cnid,
+        )),
+        Hexahedron((
+            fnids[1], enids[2], vnids[3], enids[3],
+            cnid    , fnids[3], enids[6], fnids[4],
+        )),
+        Hexahedron((
+            cnid    , fnids[3], enids[6], fnids[4],
+            fnids[2], enids[5], vnids[4], enids[4],
+        ))
+    ]
+end
+
 function uniform_refinement(grid::Grid{3})
     return _uniform_refinement(to_mesh(grid))
 end
