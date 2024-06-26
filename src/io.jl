@@ -175,7 +175,7 @@ mutable struct JLD2Writer{FD}
     grid::Union{Nothing,AbstractGrid}
 end
 
-JLD2Writer(filename::String, overwrite::Bool=true) = JLD2Writer(filename, jldopen("$filename.jld2", overwrite ? "w" : "a+"; compress = true), nothing)
+JLD2Writer(filename::String; overwrite::Bool=true, compress::Bool=true) = JLD2Writer(filename, jldopen("$filename.jld2", overwrite ? "w" : "a+"; compress), nothing)
 
 function store_timestep!(io::JLD2Writer, t, grid::AbstractGrid)
     _jld2_maybe_store(io, t, grid)
