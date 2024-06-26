@@ -177,6 +177,16 @@ end
 
 JLD2Writer(filename::String, overwrite::Bool=true) = JLD2Writer(filename, jldopen("$filename.jld2", overwrite ? "a+" : "w"; compress = true), nothing)
 
+function store_timestep!(io::JLD2Writer, t, grid::AbstractGrid)
+    _jld2_maybe_store(io, t, grid)
+end
+
+function store_timestep!(f::Function, io::JLD2Writer, t, grid::AbstractGrid)
+    store_timestep!(io, t, grid)
+    f(io)
+    finalize_timestep!(io, t)
+end
+
 function _jld2_maybe_store(io::JLD2Writer, t, grid::AbstractGrid)
     if io.grid === nothing
         io.fd["grid"] = grid
@@ -194,7 +204,7 @@ end
 
 function store_timestep_field!(io::JLD2Writer, t, dh::AbstractDofHandler, u::AbstractVector, sym::Symbol, name::String=String(sym))
     @assert get_grid(dh) === io.grid
-    length(dh.fieldnames) > 1 && @warn "JLD2Writer cannot handle dof handler with multiple fields yet. Dumping full vector."
+    length(dh.field_names) > 1 && @warn "JLD2Writer cannot handle dof handler with multiple fields yet. Dumping full vector."
     io.fd["timesteps/$t/field/$name"] = u
 end
 
