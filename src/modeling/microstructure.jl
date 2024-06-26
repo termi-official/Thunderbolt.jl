@@ -1,10 +1,13 @@
 abstract type AbstractIsotropicMicrostructure end
 
+# These are for nice error messages
 struct NoMicrostructure <: AbstractIsotropicMicrostructure
 end
 
 struct NoMicrostructureModel
 end
+
+setup_coefficient_cache(coefficient::NoMicrostructureModel, qr::QuadratureRule, sdh::SubDofHandler) = coefficient
 
 function evaluate_coefficient(fsn::NoMicrostructureModel, cell_cache, qp::QuadraturePoint, t)
     return NoMicrostructure()
@@ -25,14 +28,31 @@ struct AnisotropicPlanarMicrostructure{T} <: AbstractOrthotropicMicrostructure
     s::Vec{2,T}
 end
 
+# Compat with spectral coefficient
+@inline function _eval_st_coefficient(M::AnisotropicPlanarMicrostructure, λ::SVector{2})
+    return λ[1] * M.f ⊗ M.f +  λ[2] * M.s ⊗ M.s
+end
+
 struct AnisotropicPlanarMicrostructureModel{FiberCoefficientType, SheetletCoefficientType}
     fiber_coefficient::FiberCoefficientType
     sheetlet_coefficient::SheetletCoefficientType
 end
 
-function evaluate_coefficient(fsn::AnisotropicPlanarMicrostructureModel, cell_cache, qp::QuadraturePoint{2}, t)
-    f = evaluate_coefficient(fsn.fiber_coefficient, cell_cache, qp, t)
-    s = evaluate_coefficient(fsn.sheetlet_coefficient, cell_cache, qp, t)
+struct AnisotropicPlanarMicrostructureCache{FC, SC}
+    fiber_cache::FC
+    sheetlet_cache::SC
+end
+
+function setup_coefficient_cache(coefficient::AnisotropicPlanarMicrostructureModel, qr::QuadratureRule, sdh::SubDofHandler)
+    return AnisotropicPlanarMicrostructureCache(
+        setup_coefficient_cache(coefficient.fiber_coefficient, qr, sdh),
+        setup_coefficient_cache(coefficient.sheetlet_coefficient, qr, sdh),
+    )
+end
+
+function evaluate_coefficient(fsn::AnisotropicPlanarMicrostructureCache, cell_cache, qp::QuadraturePoint{2}, t)
+    f = evaluate_coefficient(fsn.fiber_cache, cell_cache, qp, t)
+    s = evaluate_coefficient(fsn.sheetlet_cache, cell_cache, qp, t)
 
     return AnisotropicPlanarMicrostructure(orthogonalize_system(f,s)...)
 end
@@ -42,10 +62,41 @@ struct TransverselyIsotropicMicrostructure{dim, T} <: AbstractTransverselyIsotro
     f::Vec{dim,T}
 end
 
+# Compat with spectral coefficient
+@inline function _eval_st_coefficient(M::TransverselyIsotropicMicrostructure, λ::SVector{2})
+    Mf = M.f ⊗ M.f
+    return λ[1] * Mf +  λ[2] * (one(Mf) - Mf)
+end
+
+struct TransverselyIsotropicMicrostructureModel{FiberCoefficientType}
+    fiber_coefficient::FiberCoefficientType
+end
+
+struct TransverselyIsotropicMicrostructureCache{FC}
+    fiber_cache::FC
+end
+
+function setup_coefficient_cache(coefficient::TransverselyIsotropicMicrostructureModel, qr::QuadratureRule, sdh::SubDofHandler)
+    return AnisotropicPlanarMicrostructureCache(
+        setup_coefficient_cache(coefficient.fiber_coefficient, qr, sdh),
+    )
+end
+
+function evaluate_coefficient(fsn::TransverselyIsotropicMicrostructureCache, cell_cache, qp::QuadraturePoint{3}, t)
+    f = evaluate_coefficient(fsn.fiber_cache, cell_cache, qp, t)
+    return TransverselyIsotropicMicrostructure(f)
+end
+
+
 struct OrthotropicMicrostructure{T} <: AbstractOrthotropicMicrostructure
     f::Vec{3,T}
     s::Vec{3,T}
     n::Vec{3,T}
+end
+
+# Compat with spectral coefficient
+@inline function _eval_st_coefficient(M::OrthotropicMicrostructure, λ::SVector{3})
+    return λ[1] * M.f ⊗ M.f +  λ[2] * M.s ⊗ M.s +  λ[3] * M.n ⊗ M.n
 end
 
 struct OrthotropicMicrostructureModel{FiberCoefficientType, SheetletCoefficientType, NormalCoefficientType}
@@ -54,13 +105,28 @@ struct OrthotropicMicrostructureModel{FiberCoefficientType, SheetletCoefficientT
     normal_coefficient::NormalCoefficientType
 end
 
-function evaluate_coefficient(fsn::OrthotropicMicrostructureModel, cell_cache, qp::QuadraturePoint{3}, t)
-    f = evaluate_coefficient(fsn.fiber_coefficient, cell_cache, qp, t)
-    s = evaluate_coefficient(fsn.sheetlet_coefficient, cell_cache, qp, t)
-    n = evaluate_coefficient(fsn.normal_coefficient, cell_cache, qp, t)
+struct OrthotropicMicrostructureCache{FC, SC, NC}
+    fiber_cache::FC
+    sheetlet_cache::SC
+    normal_cache::NC
+end
+
+function setup_coefficient_cache(coefficient::OrthotropicMicrostructureModel, qr::QuadratureRule, sdh::SubDofHandler)
+    return OrthotropicMicrostructureCache(
+        setup_coefficient_cache(coefficient.fiber_coefficient, qr, sdh),
+        setup_coefficient_cache(coefficient.sheetlet_coefficient, qr, sdh),
+        setup_coefficient_cache(coefficient.normal_coefficient, qr, sdh),
+    )
+end
+
+function evaluate_coefficient(fsn::OrthotropicMicrostructureCache, cell_cache, qp::QuadraturePoint{3}, t)
+    f = evaluate_coefficient(fsn.fiber_cache, cell_cache, qp, t)
+    s = evaluate_coefficient(fsn.sheetlet_cache, cell_cache, qp, t)
+    n = evaluate_coefficient(fsn.normal_cache, cell_cache, qp, t)
 
     return OrthotropicMicrostructure(orthogonalize_system(f, s, n)...)
 end
+
 
 """
     streeter_type_fsn(transmural_direction::Vec{3}, circumferential_direction::Vec{3}, apicobasal_direction::Vec{3}, helix_angle, transversal_angle, sheetlet_pseudo_angle, make_orthogonal=true)

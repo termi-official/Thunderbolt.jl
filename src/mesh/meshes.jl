@@ -20,7 +20,6 @@ elementtypes(grid::Grid{3,Tetrahedron}) = @SVector [Tetrahedron]
 elementtypes(grid::Grid{3,QuadraticTetrahedron}) = @SVector [QuadraticTetrahedron]
 
 include("simple_meshes.jl")
-include("coordinate_systems.jl")
 include("tools.jl")
 include("generators.jl")
 

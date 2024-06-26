@@ -197,23 +197,20 @@ function update_linearization!(op::AssembledNonlinearOperator, u::AbstractVector
     field_name = first(dh.field_names)
 
     grid = get_grid(dh)
-    sdim = getspatialdim(grid)
 
     assembler = start_assemble(J)
 
     for sdh in dh.subdofhandlers
         # Prepare evaluation caches
         ip          = Ferrite.getfieldinterpolation(sdh, field_name)
-        firstcell   = getcells(grid, first(sdh.cellset))
-        ip_geo      = Ferrite.geometric_interpolation(typeof(firstcell))^sdim
-        element_qr  = getquadraturerule(element_qrc, firstcell)
-        face_qr     = face_model === nothing ? nothing : getquadraturerule(face_qrc, firstcell)
-        tying_qr    = tying_model === nothing ? nothing : getquadraturerule(tying_qrc, firstcell)
+        element_qr  = getquadraturerule(element_qrc, sdh)
+        face_qr     = face_model === nothing ? nothing : getquadraturerule(face_qrc, sdh)
+        tying_qr    = tying_model === nothing ? nothing : getquadraturerule(tying_qrc, sdh)
 
         # Build evaluation caches
-        element_cache  = setup_element_cache(element_model, element_qr, ip, ip_geo)
-        face_cache     = setup_boundary_cache(face_model, face_qr, ip, ip_geo)
-        tying_cache    = setup_tying_cache(tying_model, tying_qr, ip, ip_geo)
+        element_cache  = setup_element_cache(element_model, element_qr, ip, sdh)
+        face_cache     = setup_boundary_cache(face_model, face_qr, ip, sdh)
+        tying_cache    = setup_tying_cache(tying_model, tying_qr, ip, sdh)
 
         # Function barrier
         _update_linearization_on_subdomain_J!(assembler, sdh, element_cache, face_cache, tying_cache, u, time)
@@ -253,24 +250,21 @@ function update_linearization!(op::AssembledNonlinearOperator, residual::Abstrac
     field_name = first(dh.field_names)
 
     grid = get_grid(dh)
-    sdim = getspatialdim(grid)
 
     assembler = start_assemble(J, residual)
 
     for sdh in dh.subdofhandlers
         # Prepare evaluation caches
         ip          = Ferrite.getfieldinterpolation(sdh, field_name)
-        firstcell   = getcells(grid, first(sdh.cellset))
-        ip_geo      = Ferrite.geometric_interpolation(typeof(firstcell))^sdim
 
-        element_qr  = getquadraturerule(element_qrc, firstcell)
-        face_qr     = face_model === nothing ? nothing : getquadraturerule(face_qrc, firstcell)
-        tying_qr    = tying_model === nothing ? nothing : getquadraturerule(tying_qrc, firstcell)
+        element_qr  = getquadraturerule(element_qrc, sdh)
+        face_qr     = face_model === nothing ? nothing : getquadraturerule(face_qrc, sdh)
+        tying_qr    = tying_model === nothing ? nothing : getquadraturerule(tying_qrc, sdh)
 
         # Build evaluation caches
-        element_cache  = setup_element_cache(element_model, element_qr, ip, ip_geo)
-        face_cache     = setup_boundary_cache(face_model, face_qr, ip, ip_geo)
-        tying_cache    = setup_tying_cache(tying_model, tying_qr, ip, ip_geo)
+        element_cache  = setup_element_cache(element_model, element_qr, ip, sdh)
+        face_cache     = setup_boundary_cache(face_model, face_qr, ip, sdh)
+        tying_cache    = setup_tying_cache(tying_model, tying_qr, ip, sdh)
 
         # Function barrier
         _update_linearization_on_subdomain_Jr!(assembler, sdh, element_cache, face_cache, tying_cache, u, time)
@@ -334,19 +328,17 @@ function update_operator!(op::AssembledBilinearOperator, time)
     field_name = first(dh.field_names)
 
     grid = get_grid(dh)
-    sdim = getspatialdim(grid)
 
     assembler = start_assemble(A_)
 
     for sdh in dh.subdofhandlers
         # Prepare evaluation caches
         ip          = Ferrite.getfieldinterpolation(sdh, field_name)
-        firstcell   = getcells(grid, first(sdh.cellset))
-        ip_geo      = Ferrite.geometric_interpolation(typeof(firstcell))^sdim
-        element_qr  = getquadraturerule(element_qrc, firstcell)
+
+        element_qr  = getquadraturerule(element_qrc, sdh)
 
         # Build evaluation caches
-        element_cache  = setup_element_cache(integrator, element_qr, ip, ip_geo)
+        element_cache  = setup_element_cache(integrator, element_qr, ip, sdh)
 
         # Function barrier
         _update_bilinear_operator_on_subdomain!(assembler, sdh, element_cache, time)
@@ -451,18 +443,15 @@ function update_operator!(op::LinearOperator, time)
     field_name = first(dh.field_names)
 
     grid = get_grid(dh)
-    sdim = getspatialdim(grid)
 
     fill!(b, 0.0)
     for sdh in dh.subdofhandlers
         # Prepare evaluation caches
         ip          = Ferrite.getfieldinterpolation(sdh, field_name)
-        firstcell   = getcells(grid, first(sdh.cellset))
-        ip_geo      = Ferrite.geometric_interpolation(typeof(firstcell))^sdim
-        element_qr  = getquadraturerule(qrc, firstcell)
+        element_qr  = getquadraturerule(qrc, sdh)
 
         # Build evaluation caches
-        element_cache = setup_element_cache(integrand, element_qr, ip, ip_geo)
+        element_cache = setup_element_cache(integrand, element_qr, ip, sdh)
 
         # Function barrier
         _update_linear_operator_on_subdomain!(b, sdh, element_cache, time)
@@ -511,17 +500,14 @@ function _update_operator!(op::PEALinearOperator, b::Vector, time)
     field_name = first(dh.field_names)
 
     grid = get_grid(dh)
-    sdim = getspatialdim(grid)
 
     @timeit_debug "assemble elements" for sdh in dh.subdofhandlers
         # Prepare evaluation caches
         ip          = Ferrite.getfieldinterpolation(sdh, field_name)
-        firstcell   = getcells(grid, first(sdh.cellset))
-        ip_geo      = Ferrite.geometric_interpolation(typeof(firstcell))^sdim
-        element_qr  = getquadraturerule(qrc, firstcell)
+        element_qr  = getquadraturerule(qrc, sdh)
 
         # Build evaluation caches
-        element_cache = setup_element_cache(protocol, element_qr, ip, ip_geo)
+        element_cache = setup_element_cache(protocol, element_qr, ip, sdh)
 
         # Function barrier
         _update_pealinear_operator_on_subdomain!(op.beas, sdh, element_cache, time, chunksize)

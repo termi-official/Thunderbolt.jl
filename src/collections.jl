@@ -19,6 +19,7 @@ A collection of compatible vector-valued interpolations over some (possilby diff
 """
 abstract type VectorInterpolationCollection <: InterpolationCollection end
 
+getinterpolation(qrc::InterpolationCollection, sdh::SubDofHandler) = getfacevalues(qrc, get_first_cell(sdh))
 
 """
     LagrangeCollection{order} <: InterpolationCollection
@@ -72,6 +73,7 @@ end
 QuadratureRuleCollection(order::Int) = QuadratureRuleCollection{order}()
 
 getquadraturerule(qrc::QuadratureRuleCollection{order}, cell::AbstractCell{ref_shape}) where {order,ref_shape} = QuadratureRule{ref_shape}(order)
+getquadraturerule(qrc::QuadratureRuleCollection, sdh::SubDofHandler) = getquadraturerule(qrc, get_first_cell(sdh))
 
 
 """
@@ -91,6 +93,7 @@ function getquadraturerule(nqr::NodalQuadratureRuleCollection, cell::AbstractCel
     positions = Ferrite.reference_coordinates(ip)
     return QuadratureRule{ref_shape, eltype(first(positions))}([NaN for _ in 1:length(positions)], positions)
 end
+getquadraturerule(qrc::NodalQuadratureRuleCollection, sdh::SubDofHandler) = getquadraturerule(qrc, get_first_cell(sdh))
 
 
 """
@@ -104,6 +107,7 @@ end
 FacetQuadratureRuleCollection(order::Int) = FacetQuadratureRuleCollection{order}()
 
 getquadraturerule(qrc::FacetQuadratureRuleCollection{order}, cell::AbstractCell{ref_shape}) where {order,ref_shape} = FacetQuadratureRule{ref_shape}(order)
+getquadraturerule(qrc::FacetQuadratureRuleCollection, sdh::SubDofHandler) = getquadraturerule(qrc, get_first_cell(sdh))
 
 
 """
@@ -121,6 +125,7 @@ getcellvalues(cv::CellValueCollection, cell::CellType) where {CellType <: Abstra
     getinterpolation(cv.ipc, cell),
     Ferrite.geometric_interpolation(CellType)
 )
+getcellvalues(qrc::CellValueCollection, sdh::SubDofHandler) = getcellvalues(qrc, get_first_cell(sdh))
 
 
 """
@@ -138,6 +143,7 @@ getfacevalues(fv::FacetValueCollection, cell::CellType) where {CellType <: Abstr
     getinterpolation(fv.ipc, cell),
     Ferrite.geometric_interpolation(CellType)
 )
+getfacevalues(qrc::FacetValueCollection, sdh::SubDofHandler) = getfacevalues(qrc, get_first_cell(sdh))
 
 
 """

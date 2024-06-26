@@ -175,8 +175,10 @@ export
     PressureTransfer3D0D,
     # Microstructure
     AnisotropicPlanarMicrostructureModel,
+    AnisotropicPlanarMicrostructure,
     OrthotropicMicrostructureModel,
     OrthotropicMicrostructure,
+    TransverselyIsotropicMicrostructureModel,
     TransverselyIsotropicMicrostructure,
     create_simple_microstructure_model,
     # Coordinate system

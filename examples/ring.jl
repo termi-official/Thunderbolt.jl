@@ -102,10 +102,11 @@ for (u, t) in OS.TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
     # Compute some elementwise measures
     for sdh ∈ dh.subdofhandlers
         field_idx = find_field(sdh, :displacement)
-        field_idx === nothing && continue 
+        field_idx === nothing && continue
+        qr = getquadraturerule(qr_collection, sdh)
+        # fsncache = Thunderbolt.setup_coefficient_cache(problem.f.constitutive_model.microstructure_model, qr, sdh)
+        cv = Thunderbolt.getcellvalues(cvc, sdh)
         for cell ∈ CellIterator(sdh)
-            cv = Thunderbolt.getcellvalues(cvc, getcells(grid, cellid(cell)))
-
             Thunderbolt.reinit!(cv, cell)
             global_dofs = celldofs(cell)
             field_dofs  = dof_range(sdh, field_idx)
@@ -135,43 +136,43 @@ for (u, t) in OS.TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
 
                 C = tdot(F)
                 E = (C-one(C))/2.0
-                coeff = evaluate_coefficient(problem.f.constitutive_model.microstructure_model, cell, qp, time)
-                f₀,s₀,n₀ = coeff.f, coeff.s, coeff.n
-                E_ff_cell += f₀ ⋅ E ⋅ f₀
+                # coeff = evaluate_coefficient(fsncache, cell, qp, time)
+                # f₀,s₀,n₀ = coeff.f, coeff.s, coeff.n
+                # E_ff_cell += f₀ ⋅ E ⋅ f₀
 
-                f₀_current = F⋅f₀
-                f₀_current /= norm(f₀_current)
+                # f₀_current = F⋅f₀
+                # f₀_current /= norm(f₀_current)
 
-                s₀_current = F⋅s₀
-                s₀_current /= norm(s₀_current)
+                # s₀_current = F⋅s₀
+                # s₀_current /= norm(s₀_current)
 
-                coords = getcoordinates(cell)
-                x_global = spatial_coordinate(cv, qp, coords)
+                # coords = getcoordinates(cell)
+                # x_global = spatial_coordinate(cv, qp, coords)
 
-                # v_longitudinal = function_gradient(cv_cs, qp, coordinate_system.u_apicobasal[celldofs(cell)])
-                # v_radial = function_gradient(cv_cs, qp, coordinate_system.u_transmural[celldofs(cell)])
-                # v_circimferential = v_longitudinal × v_radial
-                # @TODO compute properly via coordinate system
-                v_longitudinal = Ferrite.Vec{3}((0.0, 0.0, 1.0))
-                v_radial = Ferrite.Vec{3}((x_global[1],x_global[2],0.0))
-                v_radial /= norm(v_radial)
-                v_circimferential = v_longitudinal × v_radial # Ferrite.Vec{3}((x_global[2],x_global[1],0.0))
-                v_circimferential /= norm(v_circimferential)
-                #
-                E_ll_cell += v_longitudinal ⋅ E ⋅ v_longitudinal
-                E_rr_cell += v_radial ⋅ E ⋅ v_radial
-                E_cc_cell += v_circimferential ⋅ E ⋅ v_circimferential
+                # # v_longitudinal = function_gradient(cv_cs, qp, coordinate_system.u_apicobasal[celldofs(cell)])
+                # # v_radial = function_gradient(cv_cs, qp, coordinate_system.u_transmural[celldofs(cell)])
+                # # v_circimferential = v_longitudinal × v_radial
+                # # @TODO compute properly via coordinate system
+                # v_longitudinal = Ferrite.Vec{3}((0.0, 0.0, 1.0))
+                # v_radial = Ferrite.Vec{3}((x_global[1],x_global[2],0.0))
+                # v_radial /= norm(v_radial)
+                # v_circimferential = v_longitudinal × v_radial # Ferrite.Vec{3}((x_global[2],x_global[1],0.0))
+                # v_circimferential /= norm(v_circimferential)
+                # #
+                # E_ll_cell += v_longitudinal ⋅ E ⋅ v_longitudinal
+                # E_rr_cell += v_radial ⋅ E ⋅ v_radial
+                # E_cc_cell += v_circimferential ⋅ E ⋅ v_circimferential
 
-                Jdata_cell += det(F)
+                # Jdata_cell += det(F)
 
-                frefdata_cell += f₀
-                srefdata_cell += s₀
+                # frefdata_cell += f₀
+                # srefdata_cell += s₀
 
-                fdata_cell += f₀_current
-                sdata_cell += s₀_current
+                # fdata_cell += f₀_current
+                # sdata_cell += s₀_current
 
-                helixangle_cell += acos(clamp(f₀_current ⋅ v_circimferential, -1.0, 1.0)) * sign((v_circimferential × f₀_current) ⋅ v_radial)
-                helixangleref_cell += acos(clamp(f₀ ⋅ v_circimferential, -1.0, 1.0)) * sign((v_circimferential × f₀) ⋅ v_radial)
+                # helixangle_cell += acos(clamp(f₀_current ⋅ v_circimferential, -1.0, 1.0)) * sign((v_circimferential × f₀_current) ⋅ v_radial)
+                # helixangleref_cell += acos(clamp(f₀ ⋅ v_circimferential, -1.0, 1.0)) * sign((v_circimferential × f₀) ⋅ v_radial)
             end
 
             E_ff[Ferrite.cellid(cell)] = E_ff_cell / nqp

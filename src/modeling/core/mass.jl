@@ -10,17 +10,17 @@ end
 """
 The cache associated with [`BilinearMassIntegrator`](@ref) to assemble element mass matrices.
 """
-struct BilinearMassElementCache{IT <: BilinearMassIntegrator, CV} <: AbstractVolumetricElementCache
-    integrator::IT
+struct BilinearMassElementCache{IT, CV} <: AbstractVolumetricElementCache
+    ρcache::IT
     cellvalues::CV
 end
 
 function assemble_element!(Mₑ, cell, element_cache::BilinearMassElementCache, time)
-    @unpack cellvalues = element_cache
+    @unpack ρcache, cellvalues = element_cache
     reinit!(element_cache.cellvalues, cell)
     n_basefuncs = getnbasefunctions(cellvalues)
     for qp in QuadratureIterator(cellvalues)
-        ρ = evaluate_coefficient(element_cache.integrator.ρ, cell, qp, time)
+        ρ = evaluate_coefficient(ρcache, cell, qp, time)
         dΩ = getdetJdV(cellvalues, qp)
         for i in 1:n_basefuncs
             Nᵢ = shape_value(cellvalues, qp, i)
@@ -32,4 +32,7 @@ function assemble_element!(Mₑ, cell, element_cache::BilinearMassElementCache, 
     end
 end
 
-setup_element_cache(element_model::BilinearMassIntegrator, qr, ip, ip_geo) = BilinearMassElementCache(element_model, CellValues(qr, ip, ip_geo))
+function setup_element_cache(element_model::BilinearMassIntegrator, qr, ip, sdh)
+    ip_geo = geometric_subdomain_interpolation(sdh)
+    return BilinearMassElementCache(setup_coefficient_cache(element_model.ρ, qr, sdh), CellValues(qr, ip, ip_geo))
+end
