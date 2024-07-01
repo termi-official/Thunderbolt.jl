@@ -7,10 +7,13 @@ const RUN_JET_TESTS = VERSION >= v"1.9" && isempty(VERSION.prerelease)
 if RUN_JET_TESTS
     using Pkg: Pkg
     Pkg.add("JET")
-    using JET: @test_call
+    using JET: @test_call, @test_opt
 else
-    # Just eat the macro on incompatible versions
+    # Just eat the macros on incompatible versions
     macro test_call(args...)
+        nothing
+    end
+    macro test_opt(args...)
         nothing
     end
 end
