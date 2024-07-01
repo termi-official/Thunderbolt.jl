@@ -33,7 +33,9 @@ function _compute_dof_nodes_barrier!(nodes, sdh, dofrange, gip, dof_to_node_map,
 end
 
 """
+    NodalIntergridInterpolation(dh_from::DofHandler{sdim}, dh_to::DofHandler{sdim}, field_name_from::Symbol, field_name_to::Symbol)
     NodalIntergridInterpolation(dh_from::DofHandler{sdim}, dh_to::DofHandler{sdim}, field_name::Symbol)
+    NodalIntergridInterpolation(dh_from::DofHandler{sdim}, dh_to::DofHandler{sdim})
 
 Construct a transfer operator to move a field `field_name` from dof handler `dh_from` to another
 dof handler `dh_to`, assuming that all spatial coordinates of the dofs for `dh_to` are in the
@@ -49,20 +51,21 @@ struct NodalIntergridInterpolation{PH <: PointEvalHandler, DH1 <: AbstractDofHan
     dh_to::DH2
     node_to_dof_map::Vector{Int}
     dof_to_node_map::Dict{Int,Int}
-    field_name::Symbol
+    field_name_from::Symbol
+    field_name_to::Symbol
 
-    function NodalIntergridInterpolation(dh_from::DofHandler{sdim}, dh_to::DofHandler{sdim}, field_name::Symbol) where sdim
-        @assert field_name ∈ dh_to.field_names
-        @assert field_name ∈ dh_from.field_names
+    function NodalIntergridInterpolation(dh_from::DofHandler{sdim}, dh_to::DofHandler{sdim}, field_name_from::Symbol, field_name_to::Symbol) where sdim
+        @assert field_name_from ∈ dh_from.field_names
+        @assert field_name_to ∈ dh_to.field_names
 
         dofset = Set{Int}()
         for sdh in dh_to.subdofhandlers
             # Skip subdofhandler if field is not present
-            field_name ∈ sdh.field_names || continue
+            field_name_to ∈ sdh.field_names || continue
             # Just gather the dofs of the given field in the set
             for cellidx ∈ sdh.cellset
                 dofs = celldofs(dh_to, cellidx)
-                for dof in dofs[dof_range(sdh, field_name)]
+                for dof in dofs[dof_range(sdh, field_name_to)]
                     push!(dofset, dof)
                 end
             end
@@ -82,22 +85,22 @@ struct NodalIntergridInterpolation{PH <: PointEvalHandler, DH1 <: AbstractDofHan
         nodes = Vector{Ferrite.get_coordinate_type(grid_to)}(undef, length(dofset))
         for sdh in dh_to.subdofhandlers
             # Skip subdofhandler if field is not present
-            field_name ∈ sdh.field_names || continue
+            field_name_to ∈ sdh.field_names || continue
             # Grab the reference coordinates of the field to interpolate
-            ip = Ferrite.getfieldinterpolation(sdh, field_name)
+            ip = Ferrite.getfieldinterpolation(sdh, field_name_to)
             ref_coords = Ferrite.reference_coordinates(ip)
             # Grab the geometric interpolation
             first_cell = getcells(grid_to, first(sdh.cellset))
             cell_type  = typeof(first_cell)
             gip = Ferrite.geometric_interpolation(cell_type)
 
-            _compute_dof_nodes_barrier!(nodes, sdh, Ferrite.dof_range(sdh, field_name), gip, dof_to_node_map, ref_coords)
+            _compute_dof_nodes_barrier!(nodes, sdh, Ferrite.dof_range(sdh, field_name_to), gip, dof_to_node_map, ref_coords)
         end
 
         ph = PointEvalHandler(Ferrite.get_grid(dh_from), nodes)
 
         n_missing = sum(x -> x === nothing, ph.cells)
-        n_missing == 0 || @warn "Constructing the interpolation for $field_name failed. $n_missing points not found."
+        n_missing == 0 || @warn "Constructing the interpolation for $field_name_from to $field_name_to failed. $n_missing points not found."
 
         new{typeof(ph), typeof(dh_from), typeof(dh_to)}(
             ph,
@@ -105,9 +108,19 @@ struct NodalIntergridInterpolation{PH <: PointEvalHandler, DH1 <: AbstractDofHan
             dh_to,
             node_to_dof_map,
             dof_to_node_map,
-            field_name
+            field_name_from,
+            field_name_to
         )
     end
+end
+
+function NodalIntergridInterpolation(dh_from::DofHandler{sdim}, dh_to::DofHandler{sdim}) where sdim
+    @assert length(Ferrite.getfieldnames(dh_from)) == 1 "Multiple fields found in source dof handler. Please specify which field you want to transfer."
+    return NodalIntergridInterpolation(dh_from, dh_to, first(dh_from.field_names))
+end
+
+function NodalIntergridInterpolation(dh_from::DofHandler{sdim}, dh_to::DofHandler{sdim}, field_name::Symbol) where sdim
+    return NodalIntergridInterpolation(dh_from, dh_to, field_name, field_name)
 end
 
 """
@@ -115,7 +128,7 @@ end
 """
 function transfer!(u_to::AbstractArray, operator::NodalIntergridInterpolation, u_from::AbstractArray)
     # TODO non-allocating version
-    u_to[operator.node_to_dof_map] .= Ferrite.evaluate_at_points(operator.ph, operator.dh_from, u_from, operator.field_name)
+    u_to[operator.node_to_dof_map] .= Ferrite.evaluate_at_points(operator.ph, operator.dh_from, u_from, operator.field_name_from)
 end
 
 
