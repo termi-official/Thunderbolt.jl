@@ -195,6 +195,49 @@ SparseArrays.issparse(A::ThreadedSparseMatrixCSR) = issparse(A.A)
 SparseArrays.nnz(A::ThreadedSparseMatrixCSR)      = nnz(A.A)
 SparseArrays.nonzeros(A::ThreadedSparseMatrixCSR) = nonzeros(A.A)
 
+Base.@propagate_inbounds function SparseArrays.getindex(A::ThreadedSparseMatrixCSR{T}, i0::Integer, i1::Integer) where T
+    getindex(A.A,i0,i1)
+end
+SparseArrays.getindex(A::ThreadedSparseMatrixCSR, ::Colon, ::Colon) = copy(A)
+SparseArrays.getindex(A::ThreadedSparseMatrixCSR, i, ::Colon)       = getindex(A.A, i, 1:size(A, 2))
+SparseArrays.getindex(A::ThreadedSparseMatrixCSR, ::Colon, i)       = getindex(A.A, 1:size(A, 1), i)
+
+Ferrite.apply_zero!(A::ThreadedSparseMatrixCSR, u::AbstractVector, ch::ConstraintHandler) = apply_zero!(A.A, u, ch)
+function Ferrite.apply_zero!(K::SparseMatrixCSR, u::AbstractVector, ch::ConstraintHandler)
+    m = Ferrite.meandiag(K)
+
+    Ferrite.zero_out_columns!(K, ch.dofmapping)
+    Ferrite.zero_out_rows!(K, ch.prescribed_dofs)
+
+    @inbounds for i in 1:length(ch.inhomogeneities)
+        d = ch.prescribed_dofs[i]
+        K[d, d] = m
+        # if length(f) != 0
+        #     vz = applyzero ? zero(eltype(f)) : ch.inhomogeneities[i]
+        #     f[d] = vz * m
+        # end
+    end
+end
+
+function Ferrite.zero_out_rows!(K::SparseMatrixCSR, dofs::Vector{Int}) # can be removed in 0.7 with #24711 merged
+    Ferrite.@debug @assert issorted(dofs)
+    for col in dofs
+        r = nzrange(K, col)
+        K.nzval[r] .= 0.0
+    end
+end
+
+function Ferrite.zero_out_columns!(K::SparseMatrixCSR, dofmapping::Dict)
+    colval = K.colval
+    nzval = K.nzval
+    @inbounds for i in eachindex(colval, nzval)
+        if haskey(dofmapping, colval[i])
+            nzval[i] = 0
+        end
+    end
+end
+
+
 # Internal helper to throw uniform error messages on problems with multiple subdomains
 @noinline check_subdomains(dh::Ferrite.AbstractDofHandler) = length(dh.subdofhandlers) == 1 || throw(ArgumentError("Using DofHandler with multiple subdomains is not currently supported"))
 @noinline check_subdomains(grid::Ferrite.AbstractGrid) = length(elementtypes(grid)) == 1 || throw(ArgumentError("Using mixed grid is not currently supported"))

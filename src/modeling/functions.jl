@@ -57,13 +57,22 @@ end
 solution_size(f::PointwiseODEFunction) = f.npoints*num_states(f.ode)
 
 # TODO translate into AffineODEFunction and use ODEFunction
-struct TransientHeatFunction{DTF, ST, DH} <: AbstractSemidiscreteFunction
+struct TransientDiffusionFunction{DTF, ST, DH} <: AbstractSemidiscreteFunction
     diffusion_tensor_field::DTF
     source_term::ST
     dh::DH
 end
 
-solution_size(f::TransientHeatFunction) = ndofs(f.dh)
+solution_size(f::TransientDiffusionFunction) = ndofs(f.dh)
+
+struct SteadyDiffusionFunction{DTF, ST, DH, CH} <: AbstractSemidiscreteFunction
+    diffusion_tensor_field::DTF
+    source_term::ST
+    dh::DH
+    ch::CH
+end
+
+solution_size(f::SteadyDiffusionFunction) = ndofs(f.dh)
 
 abstract type AbstractQuasiStaticFunction <: AbstractSemidiscreteFunction end
 

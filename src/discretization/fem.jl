@@ -28,8 +28,8 @@ end
 
 semidiscretize(::CoupledModel, discretization, mesh::AbstractGrid) = @error "No implementation for the generic discretization of coupled problems available yet."
 
-function semidiscretize(model::TransientHeatModel, discretization::FiniteElementDiscretization, mesh::AbstractGrid)
-    @assert length(discretization.dbcs) == 0 "Dirichlet conditions not supported yet for TransientHeatProblem"
+function semidiscretize(model::TransientDiffusionModel, discretization::FiniteElementDiscretization, mesh::AbstractGrid)
+    @assert length(discretization.dbcs) == 0 "Dirichlet conditions not supported yet for TransientDiffusionProblem"
 
     sym = model.solution_variable_symbol
     ipc = _get_interpolation_from_discretization(discretization, sym)
@@ -39,10 +39,33 @@ function semidiscretize(model::TransientHeatModel, discretization::FiniteElement
     end
     close!(dh)
 
-    return TransientHeatFunction(
+    return TransientDiffusionFunction(
         model.κ,
         model.source,
         dh
+    )
+end
+
+function semidiscretize(model::SteadyDiffusionModel, discretization::FiniteElementDiscretization, mesh::AbstractGrid)
+    sym = model.solution_variable_symbol
+    ipc = _get_interpolation_from_discretization(discretization, sym)
+    dh = DofHandler(mesh)
+    for name in discretization.subdomains
+        add_subdomain!(dh, name, [ApproximationDescriptor(sym, ipc)])
+    end
+    close!(dh)
+
+    ch = ConstraintHandler(dh)
+    for dbc ∈ discretization.dbcs
+        Ferrite.add!(ch, dbc)
+    end
+    close!(ch)
+
+    return SteadyDiffusionFunction(
+        model.κ,
+        model.source,
+        dh,
+        ch
     )
 end
 
@@ -50,7 +73,7 @@ function semidiscretize(split::ReactionDiffusionSplit{<:MonodomainModel}, discre
     epmodel = split.model
     φsym = epmodel.transmembrane_solution_symbol
 
-    heat_model = TransientHeatModel(
+    heat_model = TransientDiffusionModel(
         ConductivityToDiffusivityCoefficient(epmodel.κ, epmodel.Cₘ, epmodel.χ),
         epmodel.stim,
         φsym,

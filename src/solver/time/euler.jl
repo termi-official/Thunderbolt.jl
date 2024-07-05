@@ -48,7 +48,7 @@ function implicit_euler_heat_update_source_term!(cache::BackwardEulerSolverCache
 end
 
 # Performs a backward Euler step
-function perform_step!(f::TransientHeatFunction, cache::BackwardEulerSolverCache, t, Δt)
+function perform_step!(f::TransientDiffusionFunction, cache::BackwardEulerSolverCache, t, Δt)
     @unpack Δt_last, M, uₙ, uₙ₋₁, inner_solver = cache
     # Remember last solution
     @inbounds uₙ₋₁ .= uₙ
@@ -68,7 +68,7 @@ function perform_step!(f::TransientHeatFunction, cache::BackwardEulerSolverCache
     return true
 end
 
-function setup_solver_cache(f::TransientHeatFunction, solver::BackwardEulerSolver, t₀)
+function setup_solver_cache(f::TransientDiffusionFunction, solver::BackwardEulerSolver, t₀)
     @unpack dh = f
     @unpack inner_solver = solver
     @assert length(dh.field_names) == 1 # TODO relax this assumption, maybe.

@@ -40,11 +40,22 @@ function setup_element_cache(element_model::BilinearDiffusionIntegrator, qr, ip,
 end
 
 @doc raw"""
-    TransientHeatModel(conductivity_coefficient, source_term, solution_variable_symbol)
+    TransientDiffusionModel(conductivity_coefficient, source_term, solution_variable_symbol)
 
-Model formulated as ``\partial_t u = \nabla \cdot \kappa(x) \nabla u``
+Model formulated as ``\partial_t u = \nabla \cdot \kappa(x) \nabla u + f``
 """
-struct TransientHeatModel{ConductivityCoefficientType, SourceType <: AbstractSourceTerm}
+struct TransientDiffusionModel{ConductivityCoefficientType, SourceType <: AbstractSourceTerm}
+    κ::ConductivityCoefficientType
+    source::SourceType
+    solution_variable_symbol::Symbol
+end
+
+@doc raw"""
+    SteadyDiffusionModel(conductivity_coefficient, source_term, solution_variable_symbol)
+
+Model formulated as ``\nabla \cdot \kappa(x) \nabla u = f``
+"""
+struct SteadyDiffusionModel{ConductivityCoefficientType, SourceType <: AbstractSourceTerm}
     κ::ConductivityCoefficientType
     source::SourceType
     solution_variable_symbol::Symbol

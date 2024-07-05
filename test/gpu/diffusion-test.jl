@@ -4,7 +4,7 @@ import Thunderbolt: solution_size, ThreadedSparseMatrixCSR
 
 mesh = generate_mesh(Quadrilateral, (2^7, 2^7), Vec{2}((0.0,0.0)), Vec{2}((2.5,2.5)))
 
-model =  TransientHeatModel(
+model =  TransientDiffusionModel(
     ConstantCoefficient(SymmetricTensor{2,2,Float32}((4.5e-5, 0, 2.0e-5))),
     # ConstantCoefficient(SymmetricTensor{2,2,Float32}((1.0, 0, 1.0))),
     NoStimulationProtocol(),

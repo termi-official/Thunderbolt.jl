@@ -10,7 +10,8 @@ Thunderbolt.AbstractSemidiscreteBlockedFunction
 Thunderbolt.AbstractSemidiscreteODEFunction
 Thunderbolt.AbstractSemidiscreteDAEFunction
 Thunderbolt.AbstractQuasiStaticFunction
-TransientHeatFunction
+TransientDiffusionFunction
+SteadyDiffusionFunction
 PointwiseODEFunction
 QuasiStaticNonlinearFunction
 RSAFDQ20223DFunction
