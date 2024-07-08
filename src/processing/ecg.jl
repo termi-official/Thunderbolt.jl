@@ -267,7 +267,7 @@ function Potse2006ECGPoissonReconstructionCache(
     update_operator!(torso_op, 0.) # Trigger assembly
 
     # Setup electrodes
-    ph = PointEvalHandler(torso_grid, electrode_positions)
+    ph = PointEvalHandler(torso_grid, electrode_positions; warn=false)
     if !all(x -> x !== nothing, ph.cells)
         error("Poisson reconstruction setup failed! Some electrodes are not found in the torso mesh ($(ph.cells)).")
     end
