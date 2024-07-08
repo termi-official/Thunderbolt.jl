@@ -164,11 +164,10 @@ end
 
 Sets up a cache for calculating ``\\varphi_\\mathrm{e}`` by solving the Poisson problem
 ```math
-\\nabla \\cdot \\boldsymbol{\\kappa} \\nabla \\varphi_{\\mathrm{e}}=-\\nabla \\cdot\\left(\\boldsymbol{\\kappa}_{\\mathrm{i}} \\nabla \\varphi_\\mathrm{m}\\right)
+\\nabla \\cdot (\\boldsymbol{\\kappa}_{\\mathrm{i}} + \\boldsymbol{\\kappa}_{\\mathrm{e}}) \\nabla \\varphi_{\\mathrm{e}}=-\\nabla \\cdot\\left(\\boldsymbol{\\kappa}_{\\mathrm{i}} \\nabla \\varphi_\\mathrm{m}\\right)
 ```
 as proposed in [PotDubRicVinGul:2006:cmb](@cite) and mentioned in [OgiBalPer:2021:ema](@cite). Where κ is the bulk conductivity tensor, and κᵢ is the intracellular conductivity tensor. The cache includes the assembled 
 stiffness matrix with applied homogeneous Dirichlet boundary condition at the first vertex of the mesh. As the problem is solved for each timestep with only the right hand side changing.
-TODO: Implement [BisPla:2011:bes](@cite) to improve the precision.
 """
 struct Potse2006ECGPoissonReconstructionCache{DiffusionOperatorType1, DiffusionOperatorType2, TransferOperatorType, SolutionVectorType, SolverCacheType, PHType, CHType}
     torso_op::DiffusionOperatorType1  # Operator on the torso mesh for ∇κ∇
