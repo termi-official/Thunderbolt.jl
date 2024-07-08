@@ -55,6 +55,7 @@ Thunderbolt.transfer!
 ### ECG
 
 ```@docs
+Thunderbolt.PoissonECGReconstructionCache
 Thunderbolt.Plonsey1964ECGGaussCache
 Thunderbolt.evaluate_ecg
 ```

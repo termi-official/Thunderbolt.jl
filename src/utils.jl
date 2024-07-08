@@ -195,6 +195,92 @@ SparseArrays.issparse(A::ThreadedSparseMatrixCSR) = issparse(A.A)
 SparseArrays.nnz(A::ThreadedSparseMatrixCSR)      = nnz(A.A)
 SparseArrays.nonzeros(A::ThreadedSparseMatrixCSR) = nonzeros(A.A)
 
+Base.@propagate_inbounds function SparseArrays.getindex(A::ThreadedSparseMatrixCSR{T}, i0::Integer, i1::Integer) where T
+    getindex(A.A,i0,i1)
+end
+SparseArrays.getindex(A::ThreadedSparseMatrixCSR, ::Colon, ::Colon) = copy(A)
+SparseArrays.getindex(A::ThreadedSparseMatrixCSR, i::Int, ::Colon)       = getindex(A.A, i, 1:size(A, 2))
+SparseArrays.getindex(A::ThreadedSparseMatrixCSR, ::Colon, i::Int)       = getindex(A.A, 1:size(A, 1), i)
+
+Ferrite.apply_zero!(A::ThreadedSparseMatrixCSR, f::AbstractVector, ch::ConstraintHandler) = apply_zero!(A.A, f, ch)
+function Ferrite.apply_zero!(K::SparseMatrixCSR, f::AbstractVector, ch::ConstraintHandler)
+    # m = Ferrite.meandiag(K)
+
+    Ferrite.zero_out_columns!(K, ch.dofmapping)
+    Ferrite.zero_out_rows!(K, ch.prescribed_dofs)
+
+    @inbounds for i in 1:length(ch.inhomogeneities)
+        d = ch.prescribed_dofs[i]
+        K[d, d] = #m
+        if length(f) != 0
+            f[d] = 0.0
+        end
+    end
+end
+
+function Ferrite.zero_out_rows!(K::SparseMatrixCSR, dofs::Vector{Int}) # can be removed in 0.7 with #24711 merged
+    Ferrite.@debug @assert issorted(dofs)
+    for col in dofs
+        r = nzrange(K, col)
+        K.nzval[r] .= 0.0
+    end
+end
+
+function Ferrite.zero_out_columns!(K::SparseMatrixCSR, dofmapping::Dict)
+    colval = K.colval
+    nzval = K.nzval
+    @inbounds for i in eachindex(colval, nzval)
+        if haskey(dofmapping, colval[i])
+            nzval[i] = 0
+        end
+    end
+end
+
+# struct RHSDataCSR{T}
+#     m::T
+#     constrained_rows::SparseMatrixCSR{T, Int}
+# end
+
+# function Ferrite.get_rhs_data(ch::ConstraintHandler, A::ThreadedSparseMatrixCSR)
+#     Ferrite.get_rhs_data(ch, A.A)
+# end
+
+# function Ferrite.get_rhs_data(ch::ConstraintHandler, A::SparseMatrixCSR)
+#     m = Ferrite.meandiag(A)
+#     constrained_rows = A[ch.prescribed_dofs, :]
+#     return RHSDataCSR(m, constrained_rows)
+# end
+
+# function apply_rhs!(data::RHSDataCSR, f::AbstractVector{T}, ch::ConstraintHandler, applyzero::Bool=false) where T
+#     K = data.constrained_rows
+#     @assert length(f) == size(K, 1)
+#     @boundscheck checkbounds(f, ch.prescribed_dofs)
+#     m = data.m
+
+#     # TODO: Can the loops be combined or does the order matter?
+#     @inbounds for i in 1:length(ch.inhomogeneities)
+#         v = ch.inhomogeneities[i]
+#         if !applyzero && v != 0
+#             # for j in nzrange(K, i)
+#             #     f[K.rowval[j]] -= v * K.nzval[j]
+#             # end
+#             error("Imhomogeneous bcs not implemented for CSR.")
+#         end
+#     end
+#     @inbounds for (i, pdof) in pairs(ch.prescribed_dofs)
+#         dofcoef = ch.dofcoefficients[i]
+#         b = ch.inhomogeneities[i]
+#         if dofcoef !== nothing # if affine constraint
+#             # for (d, v) in dofcoef
+#             #     f[d] += f[pdof] * v
+#             # end
+#             error("Affine bcs not implemented for CSR.")
+#         end
+#         bz = applyzero ? zero(T) : b
+#         f[pdof] = bz * m
+#     end
+# end
+
 # Internal helper to throw uniform error messages on problems with multiple subdomains
 @noinline check_subdomains(dh::Ferrite.AbstractDofHandler) = length(dh.subdofhandlers) == 1 || throw(ArgumentError("Using DofHandler with multiple subdomains is not currently supported"))
 @noinline check_subdomains(grid::Ferrite.AbstractGrid) = length(elementtypes(grid)) == 1 || throw(ArgumentError("Using mixed grid is not currently supported"))
@@ -232,6 +318,8 @@ struct DenseDataRange{DataVectorType, IndexVectorType}
     data::DataVectorType
     offsets::IndexVectorType
 end
+
+Base.eltype(data::DenseDataRange) = eltype(data.data)
 
 @inline function get_data_for_index(r::DenseDataRange, i::Integer)
     i1 = r.offsets[i]

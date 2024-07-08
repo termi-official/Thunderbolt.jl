@@ -96,7 +96,8 @@ HartmannNeffCompressionPenalty3
 ## Electrophysiology
 
 ```@docs
-Thunderbolt.TransientHeatModel
+Thunderbolt.TransientDiffusionModel
+Thunderbolt.SteadyDiffusionModel
 MonodomainModel
 Thunderbolt.ParabolicParabolicBidomainModel
 Thunderbolt.ParabolicEllipticBidomainModel

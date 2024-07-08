@@ -81,7 +81,8 @@ struct NodalIntergridInterpolation{PH <: PointEvalHandler, DH1 <: AbstractDofHan
         end
 
         # Compute nodes
-        grid_to = Ferrite.get_grid(dh_to)
+        grid_to   = Ferrite.get_grid(dh_to)
+        grid_from = Ferrite.get_grid(dh_from)
         nodes = Vector{Ferrite.get_coordinate_type(grid_to)}(undef, length(dofset))
         for sdh in dh_to.subdofhandlers
             # Skip subdofhandler if field is not present
@@ -97,10 +98,10 @@ struct NodalIntergridInterpolation{PH <: PointEvalHandler, DH1 <: AbstractDofHan
             _compute_dof_nodes_barrier!(nodes, sdh, Ferrite.dof_range(sdh, field_name_to), gip, dof_to_node_map, ref_coords)
         end
 
-        ph = PointEvalHandler(Ferrite.get_grid(dh_from), nodes)
+        ph = PointEvalHandler(Ferrite.get_grid(dh_from), nodes; warn=false)
 
         n_missing = sum(x -> x === nothing, ph.cells)
-        n_missing == 0 || @warn "Constructing the interpolation for $field_name_from to $field_name_to failed. $n_missing points not found."
+        n_missing == 0 || @warn "Constructing the interpolation for $field_name_from to $field_name_to failed. $n_missing (out of $(length(ph.cells))) points not found."
 
         new{typeof(ph), typeof(dh_from), typeof(dh_to)}(
             ph,

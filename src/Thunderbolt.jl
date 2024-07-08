@@ -115,8 +115,8 @@ export
     generate_ideal_lv_mesh,
     # Generic models
     ODEProblem,
-    TransientHeatModel,
-    TransientHeatFunction,
+    TransientDiffusionModel,
+    TransientDiffusionFunction,
     # Local API
     PointwiseODEProblem,
     PointwiseODEFunction,
