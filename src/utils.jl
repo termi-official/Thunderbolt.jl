@@ -199,8 +199,8 @@ Base.@propagate_inbounds function SparseArrays.getindex(A::ThreadedSparseMatrixC
     getindex(A.A,i0,i1)
 end
 SparseArrays.getindex(A::ThreadedSparseMatrixCSR, ::Colon, ::Colon) = copy(A)
-SparseArrays.getindex(A::ThreadedSparseMatrixCSR, i, ::Colon)       = getindex(A.A, i, 1:size(A, 2))
-SparseArrays.getindex(A::ThreadedSparseMatrixCSR, ::Colon, i)       = getindex(A.A, 1:size(A, 1), i)
+SparseArrays.getindex(A::ThreadedSparseMatrixCSR, i::Int, ::Colon)       = getindex(A.A, i, 1:size(A, 2))
+SparseArrays.getindex(A::ThreadedSparseMatrixCSR, ::Colon, i::Int)       = getindex(A.A, 1:size(A, 1), i)
 
 Ferrite.apply_zero!(A::ThreadedSparseMatrixCSR, f::AbstractVector, ch::ConstraintHandler) = apply_zero!(A.A, f, ch)
 function Ferrite.apply_zero!(K::SparseMatrixCSR, f::AbstractVector, ch::ConstraintHandler)
