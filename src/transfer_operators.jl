@@ -101,7 +101,7 @@ struct NodalIntergridInterpolation{PH <: PointEvalHandler, DH1 <: AbstractDofHan
         ph = PointEvalHandler(Ferrite.get_grid(dh_from), nodes; warn=false)
 
         n_missing = sum(x -> x === nothing, ph.cells)
-        n_missing == 0 || @warn "Constructing the interpolation for $field_name_from to $field_name_to failed. $n_missing points not found."
+        n_missing == 0 || @warn "Constructing the interpolation for $field_name_from to $field_name_to failed. $n_missing (out of $(length(ph.cells))) points not found."
 
         new{typeof(ph), typeof(dh_from), typeof(dh_to)}(
             ph,
