@@ -160,7 +160,7 @@ function update_ecg!(cache::Plonsey1964ECGGaussCache, φₘ::AbstractVector{T}) 
 end
 
 """
-    PoissonECGReconstructionCache(mesh, κ, qr_collection, ip_collection, zero_vertex::VertexIndex)
+    PoissonECGReconstructionCache(fₑₚ::GenericSplitFunction, Ωₜ::AbstractMesh, κᵢ, κ, electrodes::AbstractVector{<:Vec}; ground, linear_solver, solution_vector_type, system_matrix_type)
 
 Sets up a cache for calculating ``\\varphi_\\mathrm{e}`` by solving the Poisson problem
 ```math
@@ -168,6 +168,13 @@ Sets up a cache for calculating ``\\varphi_\\mathrm{e}`` by solving the Poisson 
 ```
 as for example proposed in [PotDubRicVinGul:2006:cmb](@cite) and investigated in [OgiBalPer:2021:ema](@cite) (as well as other studies). Here κₑ is the extracellular conductivity tensor and κᵢ is the intracellular conductivity tensor. The cache includes the assembled 
 stiffness matrix with applied homogeneous Dirichlet boundary condition at the first vertex of the mesh. As the problem is solved for each timestep with only the right hand side changing.
+
+## Keyword Arguments
+* `ground               = Set([VertexIndex(1, 1)])`
+* `linear_solver        = LinearSolve.KrylovJL_CG()`
+* `solution_vector_type = Vector{Float64}`
+* `system_matrix_type   = ThreadedSparseMatrixCSR{Float64,Int64}`
+
 """
 struct PoissonECGReconstructionCache{DiffusionOperatorType1, DiffusionOperatorType2, TransferOperatorType, SolutionVectorType, SolverCacheType, PHType, CHType}
     torso_op::DiffusionOperatorType1  # Operator on the torso mesh for ∇κ∇
