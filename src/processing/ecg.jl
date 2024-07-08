@@ -155,6 +155,7 @@ function update_ecg!(cache::Plonsey1964ECGGaussCache, φₘ::AbstractVector{T}) 
     @unpack element_qrc, dh, integrator = op
     grid = get_grid(dh)
     sdim = Ferrite.getspatialdim(grid)
+    fill!(cache.κ∇φₘ.data, zero(eltype(cache.κ∇φₘ)))
     compute_quadrature_fluxes!(cache.κ∇φₘ, element_qrc, dh, φₘ, dh.field_names[1], integrator)
 end
 
@@ -265,9 +266,6 @@ function Potse2006ECGPoissonReconstructionCache(
         qrc
     )
     update_operator!(torso_op, 0.) # Trigger assembly
-    # FIXME
-    udummy = zeros(size(torso_op.A,1))
-    apply_zero!(torso_op.A, udummy, torso_ch) # Eliminate zero mode
 
     # Setup electrodes
     ph = PointEvalHandler(torso_grid, electrode_positions)
@@ -304,6 +302,7 @@ function Potse2006ECGPoissonReconstructionCache(
 
     κ∇φₘh = create_system_vector(solution_vector_type, heart_fun) # RHS buffer before transfer
     κ∇φₘt = create_system_vector(solution_vector_type, torso_fun) # RHS buffer after transfer
+    κ∇φₘt .= 0.0
     ϕₑ    = create_system_vector(solution_vector_type, torso_fun) # Solution vector
 
     linprob  = LinearSolve.LinearProblem(
@@ -319,11 +318,13 @@ function update_ecg!(cache::Potse2006ECGPoissonReconstructionCache, φₘ::Abstr
     mul!(cache.κ∇φₘ_h, cache.heart_op, φₘ)
     # Transfer κᵢ∇φₘ to the torso
     transfer!(cache.κ∇φₘ_t, cache.transfer_op, cache.κ∇φₘ_h)
+    cache.κ∇φₘ_t[isnan.(cache.κ∇φₘ_t)] .= 0.0 # FIXME
     # "Move to right hand side
     cache.κ∇φₘ_t .*= -1.0
+    # Apply BC to linear system
+    apply_zero!(cache.inner_solver.A, cache.inner_solver.b, cache.ch)
     # Solve κ∇φₑ = -κᵢ∇φₘ for φₑ
     LinearSolve.solve!(cache.inner_solver)
-    apply_zero!(cache.ϕₑ, cache.ch)
     return nothing
 end
 
