@@ -49,7 +49,7 @@
 
         u = zeros(Thunderbolt.solution_size(heart_fun))
         plonsey_ecg = Thunderbolt.Plonsey1964ECGGaussCache(op, u)
-        poisson_ecg = Thunderbolt.Potse2006ECGPoissonReconstructionCache(heart_fun, torso_grid, ConstantCoefficient(κᵢ), ConstantCoefficient(κ), electrodes)
+        poisson_ecg = Thunderbolt.PoissonECGReconstructionCache(heart_fun, torso_grid, ConstantCoefficient(κᵢ), ConstantCoefficient(κ), electrodes)
 
         @testset "Equilibrium" begin
             u .= 0.0

@@ -160,16 +160,16 @@ function update_ecg!(cache::Plonsey1964ECGGaussCache, φₘ::AbstractVector{T}) 
 end
 
 """
-    Potse2006ECGPoissonReconstructionCache(mesh, κ, qr_collection, ip_collection, zero_vertex::VertexIndex)
+    PoissonECGReconstructionCache(mesh, κ, qr_collection, ip_collection, zero_vertex::VertexIndex)
 
 Sets up a cache for calculating ``\\varphi_\\mathrm{e}`` by solving the Poisson problem
 ```math
 \\nabla \\cdot (\\boldsymbol{\\kappa}_{\\mathrm{i}} + \\boldsymbol{\\kappa}_{\\mathrm{e}}) \\nabla \\varphi_{\\mathrm{e}}=-\\nabla \\cdot\\left(\\boldsymbol{\\kappa}_{\\mathrm{i}} \\nabla \\varphi_\\mathrm{m}\\right)
 ```
-as proposed in [PotDubRicVinGul:2006:cmb](@cite) and mentioned in [OgiBalPer:2021:ema](@cite). Where κ is the bulk conductivity tensor, and κᵢ is the intracellular conductivity tensor. The cache includes the assembled 
+as for example proposed in [PotDubRicVinGul:2006:cmb](@cite) and investigated in [OgiBalPer:2021:ema](@cite) (as well as other studies). Here κₑ is the extracellular conductivity tensor and κᵢ is the intracellular conductivity tensor. The cache includes the assembled 
 stiffness matrix with applied homogeneous Dirichlet boundary condition at the first vertex of the mesh. As the problem is solved for each timestep with only the right hand side changing.
 """
-struct Potse2006ECGPoissonReconstructionCache{DiffusionOperatorType1, DiffusionOperatorType2, TransferOperatorType, SolutionVectorType, SolverCacheType, PHType, CHType}
+struct PoissonECGReconstructionCache{DiffusionOperatorType1, DiffusionOperatorType2, TransferOperatorType, SolutionVectorType, SolverCacheType, PHType, CHType}
     torso_op::DiffusionOperatorType1  # Operator on the torso mesh for ∇κ∇
     heart_op::DiffusionOperatorType2  # Operator on the torso mesh for ∇κᵢ∇
     transfer_op::TransferOperatorType # Transfer from heart to torso mesh
@@ -182,7 +182,7 @@ struct Potse2006ECGPoissonReconstructionCache{DiffusionOperatorType1, DiffusionO
 end
 
 # Convenience ctor to unpack default setup
-function Potse2006ECGPoissonReconstructionCache(
+function PoissonECGReconstructionCache(
     epfun::GenericSplitFunction,
     torso_grid::AbstractGrid,
     heart_diffusion_tensor_field, # κᵢ
@@ -193,7 +193,7 @@ function Potse2006ECGPoissonReconstructionCache(
     solution_vector_type = Vector{Float64},
     system_matrix_type   = ThreadedSparseMatrixCSR{Float64,Int64},
 )
-    Potse2006ECGPoissonReconstructionCache(
+    PoissonECGReconstructionCache(
         epfun.functions[1],
         torso_grid,
         heart_diffusion_tensor_field,
@@ -205,7 +205,7 @@ function Potse2006ECGPoissonReconstructionCache(
     )
 end
 
-function Potse2006ECGPoissonReconstructionCache(
+function PoissonECGReconstructionCache(
     heart_fun::TransientDiffusionFunction,
     torso_grid::AbstractGrid,
     heart_diffusion_tensor_field, # κᵢ
@@ -272,7 +272,7 @@ function Potse2006ECGPoissonReconstructionCache(
         error("Poisson reconstruction setup failed! Some electrodes are not found in the torso mesh ($(ph.cells)).")
     end
 
-    Potse2006ECGPoissonReconstructionCache(
+    PoissonECGReconstructionCache(
         heart_fun,
         torso_fun,
         heart_op,
@@ -284,7 +284,7 @@ function Potse2006ECGPoissonReconstructionCache(
     )
 end
 
-function Potse2006ECGPoissonReconstructionCache(
+function PoissonECGReconstructionCache(
     heart_fun::TransientDiffusionFunction,
     torso_fun::SteadyDiffusionFunction,
     heart_op::AssembledBilinearOperator,
@@ -309,10 +309,10 @@ function Potse2006ECGPoissonReconstructionCache(
     )
     lincache = init(linprob, linear_solver)
 
-    return Potse2006ECGPoissonReconstructionCache(torso_op, heart_op, transfer_op, ϕₑ, κ∇φₘh, κ∇φₘt, lincache, ph, torso_ch)
+    return PoissonECGReconstructionCache(torso_op, heart_op, transfer_op, ϕₑ, κ∇φₘh, κ∇φₘt, lincache, ph, torso_ch)
 end
 
-function update_ecg!(cache::Potse2006ECGPoissonReconstructionCache, φₘ::AbstractVector)
+function update_ecg!(cache::PoissonECGReconstructionCache, φₘ::AbstractVector)
     # Compute κᵢ∇φₘ on the heart
     mul!(cache.κ∇φₘ_h, cache.heart_op, φₘ)
     # Transfer κᵢ∇φₘ to the torso
@@ -328,7 +328,7 @@ function update_ecg!(cache::Potse2006ECGPoissonReconstructionCache, φₘ::Abstr
 end
 
 # Batch evaluate all electrodes
-function evaluate_ecg(cache::Potse2006ECGPoissonReconstructionCache)
+function evaluate_ecg(cache::PoissonECGReconstructionCache)
     dh = cache.torso_op.dh
     return evaluate_at_points(cache.ph, dh, cache.ϕₑ, first(dh.field_names))
 end
