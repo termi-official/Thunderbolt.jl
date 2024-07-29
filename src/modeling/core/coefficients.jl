@@ -114,6 +114,28 @@ struct CoordinateSystemCoefficient{CS}
     cs::CS
 end
 
+function compute_nodal_values(csc::CoordinateSystemCoefficient, dh::DofHandler, field_name::Symbol)
+    nodal_values = Vector{value_type(csc.cs)}(UndefInitializer(), ndofs(dh))
+    for sdh in dh.subdofhandlers
+        field_name ∈ sdh.field_names || continue
+        ip = Ferrite.getfieldinterpolation(sdh, field_name)
+        positions = Ferrite.reference_coordinates(ip)
+        # This little trick uses the delta property of interpolations
+        qr = QuadratureRule{Ferrite.getrefshape(ip), eltype(first(positions))}([1.0 for _ in 1:length(positions)], positions)
+        cc = setup_coefficient_cache(csc, qr, sdh)
+        _compute_nodal_values!(nodal_values, qr, cc, sdh)
+    end
+end
+
+function _compute_nodal_values!(nodal_values, qr, cc, sdh)
+    for cell in CellIterator(sdh)
+        dofs = celldofs(cell)
+        for qp in QuadratureIterator(qr)
+            nodal_values[dofs[qp.i]] = evaluate_coefficient(cc, cell, qp, NaN)
+        end
+    end
+end
+
 struct CartesianCoordinateSystemCache{CS, CV}
     cs::CS
     cv::CV

@@ -93,7 +93,7 @@ function semidiscretize(split::ReactionDiffusionSplit{<:MonodomainModel}, discre
         # TODO epmodel.Cₘ(x)
         ndofsφ,
         epmodel.ion,
-        nothing
+        split.cs === nothing ? nothing : compute_nodal_values(split.cs, dh, φsym)
     )
     nstates_per_point = num_states(odefun.ode)
     # TODO this assumes that the transmembrane potential is the first field. Relax this.
