@@ -82,7 +82,7 @@ end
 # end
 
 # Pointwise cuda solver wrapper
-function _gpu_pointwise_step_inner_kernel_wrapper!(f::AbstractPointwiseFunction, t, Δt, cache::AbstractPointwiseSolverCache)
+function _gpu_pointwise_step_inner_kernel_wrapper!(f, t, Δt, cache::AbstractPointwiseSolverCache)
     i = (blockIdx().x - Int32(1)) * blockDim().x + threadIdx().x
     i > size(cache.dumat, 1) && return nothing
     Thunderbolt._pointwise_step_inner_kernel!(f, i, t, Δt, cache)
@@ -91,11 +91,11 @@ end
 
 # This controls the outer loop over the ODEs
 function Thunderbolt._pointwise_step_outer_kernel!(f::AbstractPointwiseFunction, t::Real, Δt::Real, cache::AbstractPointwiseSolverCache, ::CuVector)
-    kernel = @cuda launch=false _gpu_pointwise_step_inner_kernel_wrapper!(f, t, Δt, cache) # || return false
+    kernel = @cuda launch=false _gpu_pointwise_step_inner_kernel_wrapper!(f.ode, t, Δt, cache) # || return false
     config = launch_configuration(kernel.fun)
     threads = min(f.npoints, config.threads)
     blocks =  cld(f.npoints, threads)
-    kernel(f, t, Δt, cache;  threads, blocks)
+    kernel(f.ode, t, Δt, cache;  threads, blocks)
     # @cuda threads=cache.batch_size_hint blocks _gpu_pointwise_step_inner_kernel_wrapper!(f, t, Δt, cache) # || return false
     return true
 end

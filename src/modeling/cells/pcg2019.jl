@@ -118,17 +118,15 @@ function cell_rhs_slow!(du,φ,state,x,t,p::ParametrizedPCG2019Model)
     du[7] = (xr∞-xr)/τ_xr
 end
 
-function cell_rhs!(du::TD,φₘ::TV,s::TS,x::TX,t::TT,cell_parameters::TP) where {TD,TV,TS,TX,TT,TP <: ParametrizedPCG2019Model}
+function cell_rhs!(du::TD,u::TU,x::TX,t::TT,cell_parameters::TP) where {TD,TU,TX,TT,TP <: ParametrizedPCG2019Model}
+    φₘ = u[1]
+    s  = @view u[2:end]
     cell_rhs_fast!(du,φₘ,s,x,t,cell_parameters)
     cell_rhs_slow!(du,φₘ,s,x,t,cell_parameters)
     return nothing
 end
 
-function pcg2019_rhs!(du,u,p,t)
-    pcg2019_rhs_fast!(du,u,p,t)
-    pcg2019_rhs_slow!(du,u,p,t)
-end
-
+transmembranepotential_index(cell_model::ParametrizedPCG2019Model) = 1
 num_states(::ParametrizedPCG2019Model) = 7
 function default_initial_state(p::ParametrizedPCG2019Model{T}) where {T}
     sigmoid(φ, E_Y, k_Y, sign) = 1.0 / (1.0 + exp(sign * (φ - E_Y) / k_Y))
