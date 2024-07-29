@@ -222,11 +222,18 @@ end
 get_field_variable_names(model::MonodomainModel) = (model.transmembrane_solution_symbol, )
 
 """
-Annotation for the classical reaction-diffusion split of a given model.
+    ReactionDiffusionSplit(model)
+    ReactionDiffusionSplit(model, coeff)
+Annotation for the classical reaction-diffusion split of a given model. The
+second argument is a coefficient describing the input `x` for the reaction model rhs,
+which is usually some generalized coordinate.
 """
-struct ReactionDiffusionSplit{MODEL}
-    model::MODEL
+struct ReactionDiffusionSplit{mType, csType}
+    model::mType
+    cs::csType
 end
+
+ReactionDiffusionSplit(model) = ReactionDiffusionSplit(model, nothing)
 
 include("cells/fhn.jl")
 include("cells/pcg2019.jl")

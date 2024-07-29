@@ -90,9 +90,10 @@ function semidiscretize(split::ReactionDiffusionSplit{<:MonodomainModel}, discre
     # TODO we need some information about the discretization of this one, e.g. dofs a nodes vs dofs at quadrature points
     # TODO we should call semidiscretize here too - This is a placeholder for the nodal discretization
     odefun = PointwiseODEFunction(
-        # TODO epmodel.Cₘ(x) and coordinates
+        # TODO epmodel.Cₘ(x)
         ndofsφ,
-        epmodel.ion
+        epmodel.ion,
+        split.cs === nothing ? nothing : compute_nodal_values(split.cs, dh, φsym)
     )
     nstates_per_point = num_states(odefun.ode)
     # TODO this assumes that the transmembrane potential is the first field. Relax this.
