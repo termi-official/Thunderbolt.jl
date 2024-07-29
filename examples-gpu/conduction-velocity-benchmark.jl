@@ -1,4 +1,4 @@
-using Thunderbolt
+using Thunderbolt, CUDA
 using Thunderbolt.TimerOutputs
 
 using Thunderbolt.StaticArrays
@@ -66,17 +66,18 @@ steady_state_initializer!(u₀, odeform)
 
 timestepper = OS.LieTrotterGodunov((
     BackwardEulerSolver(
-        solution_vector_type=Vector{Float32},
-        system_matrix_type=Thunderbolt.ThreadedSparseMatrixCSR{Float32, Int32},
+        solution_vector_type=CuVector{Float32},
+        system_matrix_type=CUDA.CUSPARSE.CuSparseMatrixCSR{Float32, Int32},
         inner_solver=LinearSolve.KrylovJL_CG(atol=1.0f-6, rtol=1.0f-5),
     ),
     AdaptiveForwardEulerSubstepper(
-        solution_vector_type=Vector{Float32},
+        solution_vector_type=CuVector{Float32},
         reaction_threshold=0.1f0,
     ),
 ))
 
-problem = OS.OperatorSplittingProblem(odeform, u₀, tspan)
+u₀gpu = CuVector(u₀)
+problem = OS.OperatorSplittingProblem(odeform, u₀gpu, tspan)
 
 integrator = OS.init(problem, timestepper, dt=dt₀, verbose=true)
 

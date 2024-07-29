@@ -4,7 +4,8 @@ using Thunderbolt
 
 import CUDA:
     CUDA, CuArray, CuVector, CUSPARSE,
-    threadIdx, blockIdx, blockDim, @cuda
+    threadIdx, blockIdx, blockDim, @cuda,
+    CUDABackend, launch_configuration
 
 import Thunderbolt:
     UnPack.@unpack,
@@ -33,7 +34,7 @@ function _convert_subdofhandler_to_gpu(cell_dofs, cell_dof_soffset, sdh::SubDofH
     )
 end
 
-function Adapt.adapt_structure(to::Type{<:CuArray}, dh::DofHandler{sdim}) where sdim
+function Adapt.adapt_structure(to::Type{CUDABackend}, dh::DofHandler{sdim}) where sdim
     grid             = adapt_structure(to, dh.grid)
     # field_names      = Tuple(sym for sym in dh.field_names)
     IndexType        = eltype(dh.cell_dofs)
@@ -56,10 +57,10 @@ end
 
 
 
-function Adapt.adapt_structure(to::Type{<:CuArray}, grid::Grid{sdim, cell_type, T}) where {sdim, cell_type, T}
+function Adapt.adapt_structure(to::Type{CUDABackend}, grid::Grid{sdim, cell_type, T}) where {sdim, cell_type, T}
     node_type = typeof(first(grid.nodes))
-    cells = Adapt.adapt_structure(CuVector{cell_type}, grid.cells)
-    nodes = Adapt.adapt_structure(CuVector{node_type}, grid.nodes)
+    cells = Adapt.adapt_structure(to, grid.cells)
+    nodes = Adapt.adapt_structure(to, grid.nodes)
     #TODO subdomain info
     return GPUGrid{sdim, cell_type, T, typeof(cells), typeof(nodes)}(cells, nodes)
 end
@@ -90,8 +91,12 @@ end
 
 # This controls the outer loop over the ODEs
 function Thunderbolt._pointwise_step_outer_kernel!(f::AbstractPointwiseFunction, t::Real, Δt::Real, cache::AbstractPointwiseSolverCache, ::CuVector)
-    blocks = ceil(Int, f.npoints / cache.batch_size_hint)
-    @cuda threads=cache.batch_size_hint blocks _gpu_pointwise_step_inner_kernel_wrapper!(f, t, Δt, cache) # || return false
+    kernel = @cuda launch=false _gpu_pointwise_step_inner_kernel_wrapper!(f, t, Δt, cache) # || return false
+    config = launch_configuration(kernel.fun)
+    threads = min(f.npoints, config.threads)
+    blocks =  cld(f.npoints, threads)
+    kernel(f, t, Δt, cache;  threads, blocks)
+    # @cuda threads=cache.batch_size_hint blocks _gpu_pointwise_step_inner_kernel_wrapper!(f, t, Δt, cache) # || return false
     return true
 end
 
