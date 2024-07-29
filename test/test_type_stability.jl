@@ -71,8 +71,6 @@
     ]
         du = Thunderbolt.default_initial_state(model)
         u = copy(du)
-        φₘ = u[1]
-        s  = @view u[2:end]
-        @test_opt Thunderbolt.cell_rhs!(du, φₘ, s, nothing, 0.0, model)
+        @test_opt Thunderbolt.cell_rhs!(du, u, nothing, 0.0, model)
     end
 end
