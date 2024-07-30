@@ -96,7 +96,6 @@ function Thunderbolt._pointwise_step_outer_kernel!(f::AbstractPointwiseFunction,
     threads = min(f.npoints, config.threads)
     blocks =  cld(f.npoints, threads)
     kernel(f.ode, t, Δt, cache;  threads, blocks)
-    # @cuda threads=cache.batch_size_hint blocks _gpu_pointwise_step_inner_kernel_wrapper!(f, t, Δt, cache) # || return false
     return true
 end
 
