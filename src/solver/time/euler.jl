@@ -63,8 +63,8 @@ function perform_step!(f::TransientDiffusionFunction, cache::BackwardEulerSolver
         add!(inner_solver.b, cache.source_term)
     end
     # Solve linear problem
-    @timeit_debug "inner solve" LinearSolve.solve!(inner_solver)
-    if !(SciMLBase.successful_retcode(sol.retcode) || sol.retcode == ReturnCode.Default) # The latter seems off...
+    @timeit_debug "inner solve" sol = LinearSolve.solve!(inner_solver)
+    if !(DiffEqBase.SciMLBase.successful_retcode(sol.retcode) || sol.retcode == DiffEqBase.ReturnCode.Default) # The latter seems off...
         @info inner_solver.cacheval.stats
         return false
     end
