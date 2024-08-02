@@ -272,19 +272,28 @@ function read_vtk_cobivec(filename::String, transmural_id::String, apicobasal_id
 
     epicardium = OrderedSet{FacetIndex}()
     endocardium = OrderedSet{FacetIndex}()
+    endocardiumlv = OrderedSet{FacetIndex}()
+    endocardiumrv = OrderedSet{FacetIndex}()
     for (cellidx,cell) ∈ enumerate(grid.cells)
         for (faceidx,facenodes) in enumerate(Ferrite.faces(cell))
-            # facenodes = cell.nodes[collect(face)]
-            if all(u_transmural[collect(facenodes)] .> 1.0-1e-6)
+            indices = collect(facenodes)
+            if all(u_transmural[indices] .> 1.0-2e-2)
                 push!(endocardium, FacetIndex(cellidx, faceidx))
+                if all(u_transventricular[indices] .> 0.5) # Right
+                    push!(endocardiumrv, FacetIndex(cellidx, faceidx))
+                else
+                    push!(endocardiumlv, FacetIndex(cellidx, faceidx))
+                end
             end
-            if all(u_transmural[collect(facenodes)] .< 1e-6)
+            if all(u_transmural[indices] .< 1e-6)
                 push!(epicardium, FacetIndex(cellidx, faceidx))
             end
         end
     end
     Ferrite.addfacetset!(grid, "Epicardium", epicardium)
     Ferrite.addfacetset!(grid, "Endocardium", endocardium)
+    Ferrite.addfacetset!(grid, "EndocardiumLV", endocardiumlv)
+    Ferrite.addfacetset!(grid, "EndocardiumRV", endocardiumrv)
 
     return BiVCoordinateSystem(
         dh,
