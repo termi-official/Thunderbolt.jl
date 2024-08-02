@@ -1,7 +1,6 @@
 function setup_boundary_cache(boundary_models::Tuple, qr::FacetQuadratureRule, ip, ip_geo)
     length(boundary_models) == 0 && return EmptySurfaceCache()
-    # TODO decompose first into cell groups by subdomains, then into composites
-    return CompositeVolumetricElementCache(
+    return CompositeSurfaceElementCache(
         ntuple(i->setup_boundary_cache(boundary_models[i], qr, ip, ip_geo), length(boundary_models))
     )
 end
