@@ -81,7 +81,7 @@ assemble_face!(Kₑ::AbstractMatrix, cell::CellCache, local_facet_index::Int, su
 end
 # Update element matrix in nonlinear operators
 assemble_face!(Kₑ::AbstractMatrix, uₑ::AbstractVector, cell::CellCache, local_facet_index::Int, surface_cache::CompositeSurfaceElementCache, time) = assemble_face!(Kₑ, uₑ, cell, local_facet_index, surface_cache.inner_caches, time)
-@unroll function assemble_face!(Kₑ::AbstractMatrix, uₑ::AbstractVector, local_facet_index::Int, cell::CellCache, inner_caches::CacheTupleType, time) where CacheTupleType <: Tuple
+@unroll function assemble_face!(Kₑ::AbstractMatrix, uₑ::AbstractVector, cell::CellCache, local_facet_index::Int, inner_caches::CacheTupleType, time) where CacheTupleType <: Tuple
     @unroll for inner_cache ∈ inner_caches
         assemble_face!(Kₑ, uₑ, cell, local_facet_index, inner_cache, time)
     end
