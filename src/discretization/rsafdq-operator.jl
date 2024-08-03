@@ -67,10 +67,6 @@ function update_linearization!(op::AssembledRSAFDQ2022Operator, u_::AbstractVect
     fill!(Jpd, 0.0)
     fill!(Jdp, 0.0)
 
-    ndofs = ndofs_per_cell(dh)
-    Jₑ = zeros(ndofs, ndofs)
-    uₑ = zeros(ndofs)
-
     @assert length(dh.subdofhandlers) == 1
     sdh = first(dh.subdofhandlers)
     #for sdh in dh.subdofhandlers
@@ -83,20 +79,8 @@ function update_linearization!(op::AssembledRSAFDQ2022Operator, u_::AbstractVect
         boundary_cache = setup_boundary_cache(boundary_model, boundary_qr, ip, sdh)
         tying_cache    = setup_tying_cache(tying_model, tying_qr, ip, sdh)
 
-        uₜ = get_tying_dofs(tying_cache, u)
-        @inbounds for cell in CellIterator(dh)
-            dofs = celldofs(cell)
-            fill!(Jₑ, 0)
-            uₑ .= @view u[dofs]
-            @timeit_debug "assemble element" assemble_element!(Jₑ, uₑ, cell, element_cache, time)
-            # TODO maybe it makes sense to merge this into the element routine in a modular fasion?
-            # TODO benchmark against putting this into the FacetIterator
-            @timeit_debug "assemble faces" for local_face_index ∈ 1:nfacets(cell)
-                assemble_face!(Jₑ, uₑ, cell, local_face_index, boundary_cache, time)
-            end
-            @timeit_debug "assemble tying"  assemble_tying!(Jₑ, uₑ, uₜ, cell, tying_cache, time)
-            assemble!(assembler, dofs, Jₑ)
-        end
+        # Function barrier
+        _update_linearization_on_subdomain_J!(assembler, sdh, element_cache, boundary_cache, tying_cache, u, time)
 
         # Assemble forward and backward coupling contributions
         for (chamber_index,chamber) ∈ enumerate(tying_cache.chambers)
@@ -141,16 +125,12 @@ function update_linearization!(op::AssembledRSAFDQ2022Operator, residual_::Abstr
     Jpd = @view J[Block(2,1)]
     Jdp = @view J[Block(1,2)]
     # Reset residual and Jacobian to 0
-    assembler = start_assemble(Jdd)
+    #assembler = start_assemble(Jdd, residuald) # Does not work yet
+    assembler = start_assemble(Jdd, residual_) # FIXME
     fill!(residuald, 0.0)
     fill!(residualp, 0.0)
     fill!(Jpd, 0.0)
     fill!(Jdp, 0.0)
-
-    ndofs = ndofs_per_cell(dh)
-    Jₑ = zeros(ndofs, ndofs)
-    rₑ = zeros(ndofs)
-    uₑ = zeros(ndofs)
 
     @assert length(dh.subdofhandlers) == 1
     sdh = first(dh.subdofhandlers)
@@ -164,20 +144,8 @@ function update_linearization!(op::AssembledRSAFDQ2022Operator, residual_::Abstr
         boundary_cache = setup_boundary_cache(boundary_model, boundary_qr, ip, sdh)
         tying_cache    = setup_tying_cache(tying_model, tying_qr, ip, sdh)
 
-        uₜ = get_tying_dofs(tying_cache, u)
-        @inbounds for cell in CellIterator(sdh)
-            dofs = celldofs(cell)
-            fill!(Jₑ, 0.0)
-            fill!(rₑ, 0.0)
-            uₑ .= @view u[dofs]
-            @timeit_debug "assemble element" assemble_element!(Jₑ, rₑ, uₑ, cell, element_cache, time)
-            @timeit_debug "assemble faces" for local_face_index ∈ 1:nfacets(cell)
-                assemble_face!(Jₑ, rₑ, uₑ, cell, local_face_index, boundary_cache, time)
-            end
-            @timeit_debug "assemble tying"  assemble_tying!(Jₑ, rₑ, uₑ, uₜ, cell, tying_cache, time)
-            assemble!(assembler, dofs, Jₑ)
-            residuald[dofs] .+= rₑ
-        end
+        # Function barrier
+        _update_linearization_on_subdomain_Jr!(assembler, sdh, element_cache, boundary_cache, tying_cache, u, time)
 
         # Assemble forward and backward coupling contributions
         for (chamber_index,chamber) ∈ enumerate(tying_cache.chambers)
