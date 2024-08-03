@@ -100,6 +100,14 @@ assemble_face!(residualₑ::AbstractVector, uₑ::AbstractVector, cell::CellCach
         assemble_face!(residualₑ, uₑ, cell, local_facet_index, inner_cache, time)
     end
 end
+# Main entry point for bilinear operators
+assemble_element!(Kₑ::AbstractMatrix, cell::CellCache, element_cache::CompositeSurfaceElementCache, time) = assemble_element!(Kₑ, cell, element_cache.inner_caches, time)
+# Update element matrix in nonlinear operators
+assemble_element!(Kₑ::AbstractMatrix, uₑ::AbstractVector, cell::CellCache, element_cache::CompositeSurfaceElementCache, time) = assemble_element!(Kₑ, uₑ, cell, element_cache.inner_caches, time)
+# Update element matrix and residual in nonlinear operators
+assemble_element!(Kₑ::AbstractMatrix, residualₑ::AbstractVector, uₑ::AbstractVector, cell::CellCache, element_cache::CompositeSurfaceElementCache, time) = assemble_element!(Kₑ, residualₑ, uₑ, cell, element_cache.inner_caches, time)
+# Update residual in nonlinear operators
+assemble_element!(residualₑ::AbstractVector, uₑ::AbstractVector, cell::CellCache, element_cache::CompositeSurfaceElementCache, time) = assemble_element!(Kₑ, cell, element_cache.inner_caches, time)
 
 """
 This cache allows to combine multiple elements over the same interface.
