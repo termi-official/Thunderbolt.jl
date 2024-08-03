@@ -1,9 +1,12 @@
 # TODO try to reproduce this via the BlockOperator
-struct AssembledRSAFDQ2022Operator{MatrixType <: BlockMatrix, ElementCacheType, FaceCacheType, TyingCacheType, DHType} <: AbstractBlockOperator
+struct AssembledRSAFDQ2022Operator{MatrixType <: BlockMatrix, ElementModelType, FacetModelType, TyingModelType, DHType} <: AbstractBlockOperator
     J::MatrixType
-    element_cache::ElementCacheType
-    face_cache::FaceCacheType
-    tying_cache::TyingCacheType
+    element_model::ElementModelType
+    element_qrc::Union{<:QuadratureRuleCollection, Nothing}
+    boundary_model::FacetModelType
+    boundary_qrc::Union{<:FacetQuadratureRuleCollection, Nothing}
+    tying_model::TyingModelType
+    tying_qrc::Union{<:QuadratureRuleCollection, <: FacetQuadratureRuleCollection, Nothing}
     dh::DHType
 end
 
@@ -14,11 +17,6 @@ function AssembledRSAFDQ2022Operator(dh::AbstractDofHandler, field_name::Symbol,
     ip = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], field_name)
     element_qr = getquadraturerule(element_qrc, firstcell)
     boundary_qr = getquadraturerule(boundary_qrc, firstcell)
-
-    sdh = first(dh.subdofhandlers)
-    element_cache  = setup_element_cache(element_model, element_qr, ip, sdh)
-    boundary_cache = setup_boundary_cache(boundary_model, boundary_qr, ip, sdh)
-    tying_cache    = setup_tying_cache(tying, boundary_qr, ip, sdh)
 
     Jmech = create_sparsity_pattern(dh)
 
@@ -31,9 +29,12 @@ function AssembledRSAFDQ2022Operator(dh::AbstractDofHandler, field_name::Symbol,
 
     AssembledRSAFDQ2022Operator(
         Jblock,
-        element_cache,
-        boundary_cache,
-        tying_cache,
+        element_model,
+        element_qrc,
+        boundary_model,
+        boundary_qrc,
+        tying,
+        boundary_qrc,
         dh,
     )
 end
@@ -42,7 +43,13 @@ getJ(op::AssembledRSAFDQ2022Operator) = op.J
 getJ(op::AssembledRSAFDQ2022Operator, i::Block) = @view op.J[i]
 
 function update_linearization!(op::AssembledRSAFDQ2022Operator, u_::AbstractVector, time)
-    @unpack J, element_cache, face_cache, tying_cache, dh  = op
+    @unpack J, dh  = op
+    @unpack element_model, element_qrc = op
+    @unpack boundary_model, boundary_qrc = op
+    @unpack tying_model, tying_qrc = op
+
+    @assert length(dh.field_names) == 1 "Please use block operators for problems with multiple fields."
+    field_name = first(dh.field_names)
 
     bs = blocksizes(J)
     s1 = bs[1,1][1]
@@ -63,41 +70,61 @@ function update_linearization!(op::AssembledRSAFDQ2022Operator, u_::AbstractVect
     ndofs = ndofs_per_cell(dh)
     Jₑ = zeros(ndofs, ndofs)
     uₑ = zeros(ndofs)
-    uₜ = get_tying_dofs(tying_cache, u)
-    @inbounds for cell in CellIterator(dh)
-        dofs = celldofs(cell)
-        fill!(Jₑ, 0)
-        uₑ .= @view u[dofs]
-        @timeit_debug "assemble element" assemble_element!(Jₑ, uₑ, cell, element_cache, time)
-        # TODO maybe it makes sense to merge this into the element routine in a modular fasion?
-        # TODO benchmark against putting this into the FacetIterator
-        @timeit_debug "assemble faces" for local_face_index ∈ 1:nfacets(cell)
-            assemble_face!(Jₑ, uₑ, cell, local_face_index, face_cache, time)
+
+    @assert length(dh.subdofhandlers) == 1
+    sdh = first(dh.subdofhandlers)
+    #for sdh in dh.subdofhandlers
+        ip          = Ferrite.getfieldinterpolation(sdh, field_name)
+        element_qr  = getquadraturerule(element_qrc, sdh)
+        boundary_qr = getquadraturerule(boundary_qrc, sdh)
+        tying_qr    = getquadraturerule(tying_qrc, sdh)
+        
+        element_cache  = setup_element_cache(element_model, element_qr, ip, sdh)
+        boundary_cache = setup_boundary_cache(boundary_model, boundary_qr, ip, sdh)
+        tying_cache    = setup_tying_cache(tying_model, tying_qr, ip, sdh)
+
+        uₜ = get_tying_dofs(tying_cache, u)
+        @inbounds for cell in CellIterator(dh)
+            dofs = celldofs(cell)
+            fill!(Jₑ, 0)
+            uₑ .= @view u[dofs]
+            @timeit_debug "assemble element" assemble_element!(Jₑ, uₑ, cell, element_cache, time)
+            # TODO maybe it makes sense to merge this into the element routine in a modular fasion?
+            # TODO benchmark against putting this into the FacetIterator
+            @timeit_debug "assemble faces" for local_face_index ∈ 1:nfacets(cell)
+                assemble_face!(Jₑ, uₑ, cell, local_face_index, boundary_cache, time)
+            end
+            @timeit_debug "assemble tying"  assemble_tying!(Jₑ, uₑ, uₜ, cell, tying_cache, time)
+            assemble!(assembler, dofs, Jₑ)
         end
-        @timeit_debug "assemble tying"  assemble_tying!(Jₑ, uₑ, uₜ, cell, tying_cache, time)
-        assemble!(assembler, dofs, Jₑ)
-    end
 
-    # Assemble forward and backward coupling contributions
-    for (chamber_index,chamber) ∈ enumerate(tying_cache.chambers)
-        V⁰ᴰ = chamber.V⁰ᴰval
-        chamber_pressure = u[chamber.pressure_dof_index_local] # We can also make this up[pressure_dof_index] with local index
+        # Assemble forward and backward coupling contributions
+        for (chamber_index,chamber) ∈ enumerate(tying_cache.chambers)
+            V⁰ᴰ = chamber.V⁰ᴰval
+            chamber_pressure = u[chamber.pressure_dof_index_local] # We can also make this up[pressure_dof_index] with local index
 
-        Jpd_current = @view Jpd[chamber_index,:]
-        Jdp_current = @view Jdp[:,chamber_index]
+            Jpd_current = @view Jpd[chamber_index,:]
+            Jdp_current = @view Jdp[:,chamber_index]
 
-        # We cannot update the residual for the displacement block here, because it would be assembled essentially twice.
-        @timeit_debug "assemble forward coupler" assemble_LFSI_coupling_contribution_col!(Jdp_current, dh, ud, chamber_pressure, chamber)
-        @timeit_debug "assemble backward coupler" assemble_LFSI_coupling_contribution_row!(Jpd_current, dh, ud, chamber_pressure, V⁰ᴰ, chamber)
+            # We cannot update the residual for the displacement block here, because it would be assembled essentially twice.
+            @timeit_debug "assemble forward coupler" assemble_LFSI_coupling_contribution_col!(Jdp_current, dh, ud, chamber_pressure, chamber)
+            @timeit_debug "assemble backward coupler" assemble_LFSI_coupling_contribution_row!(Jpd_current, dh, ud, chamber_pressure, V⁰ᴰ, chamber)
 
-        @info chamber_index, chamber_pressure, V⁰ᴰ
-    end
+            @info chamber_index, chamber_pressure, V⁰ᴰ
+        end
+    #end
 
     #finish_assemble(assembler)
 end
 
 function update_linearization!(op::AssembledRSAFDQ2022Operator, residual_::AbstractVector, u_::AbstractVector, time)
-    @unpack J, element_cache, face_cache, tying_cache, dh  = op
+    @unpack J, dh  = op
+    @unpack element_model, element_qrc = op
+    @unpack boundary_model, boundary_qrc = op
+    @unpack tying_model, tying_qrc = op
+
+    @assert length(dh.field_names) == 1 "Please use block operators for problems with multiple fields."
+    field_name = first(dh.field_names)
 
     bs = blocksizes(J)
     s1 = bs[1,1][1]
@@ -124,36 +151,49 @@ function update_linearization!(op::AssembledRSAFDQ2022Operator, residual_::Abstr
     Jₑ = zeros(ndofs, ndofs)
     rₑ = zeros(ndofs)
     uₑ = zeros(ndofs)
-    uₜ = get_tying_dofs(tying_cache, u)
 
-    @timeit_debug "loop" @inbounds for cell in CellIterator(dh)
-        dofs = celldofs(cell)
-        fill!(Jₑ, 0.0)
-        fill!(rₑ, 0.0)
-        uₑ .= @view u[dofs]
-        @timeit_debug "assemble element" assemble_element!(Jₑ, rₑ, uₑ, cell, element_cache, time)
-        @timeit_debug "assemble faces" for local_face_index ∈ 1:nfacets(cell)
-            assemble_face!(Jₑ, rₑ, uₑ, cell, local_face_index, face_cache, time)
+    @assert length(dh.subdofhandlers) == 1
+    sdh = first(dh.subdofhandlers)
+    #for sdh in dh.subdofhandlers
+        ip          = Ferrite.getfieldinterpolation(sdh, field_name)
+        element_qr  = getquadraturerule(element_qrc, sdh)
+        boundary_qr = getquadraturerule(boundary_qrc, sdh)
+        tying_qr    = getquadraturerule(tying_qrc, sdh)
+
+        element_cache  = setup_element_cache(element_model, element_qr, ip, sdh)
+        boundary_cache = setup_boundary_cache(boundary_model, boundary_qr, ip, sdh)
+        tying_cache    = setup_tying_cache(tying_model, tying_qr, ip, sdh)
+
+        uₜ = get_tying_dofs(tying_cache, u)
+        @inbounds for cell in CellIterator(sdh)
+            dofs = celldofs(cell)
+            fill!(Jₑ, 0.0)
+            fill!(rₑ, 0.0)
+            uₑ .= @view u[dofs]
+            @timeit_debug "assemble element" assemble_element!(Jₑ, rₑ, uₑ, cell, element_cache, time)
+            @timeit_debug "assemble faces" for local_face_index ∈ 1:nfacets(cell)
+                assemble_face!(Jₑ, rₑ, uₑ, cell, local_face_index, boundary_cache, time)
+            end
+            @timeit_debug "assemble tying"  assemble_tying!(Jₑ, rₑ, uₑ, uₜ, cell, tying_cache, time)
+            assemble!(assembler, dofs, Jₑ)
+            residuald[dofs] .+= rₑ
         end
-        @timeit_debug "assemble tying"  assemble_tying!(Jₑ, rₑ, uₑ, uₜ, cell, tying_cache, time)
-        assemble!(assembler, dofs, Jₑ)
-        residuald[dofs] .+= rₑ
-    end
 
-    # Assemble forward and backward coupling contributions
-    for (chamber_index,chamber) ∈ enumerate(tying_cache.chambers)
-        V⁰ᴰ = chamber.V⁰ᴰval
-        chamber_pressure = u[chamber.pressure_dof_index_local] # We can also make this up[pressure_dof_index] with local index
+        # Assemble forward and backward coupling contributions
+        for (chamber_index,chamber) ∈ enumerate(tying_cache.chambers)
+            V⁰ᴰ = chamber.V⁰ᴰval
+            chamber_pressure = u[chamber.pressure_dof_index_local] # We can also make this up[pressure_dof_index] with local index
 
-        Jpd_current = @view Jpd[chamber_index,:]
-        Jdp_current = @view Jdp[:,chamber_index]
+            Jpd_current = @view Jpd[chamber_index,:]
+            Jdp_current = @view Jdp[:,chamber_index]
 
-        # We cannot update the residual for the displacement block here, because it would be assembled essentially twice.
-        @timeit_debug "assemble forward coupler" assemble_LFSI_coupling_contribution_col!(Jdp_current, dh, ud, chamber_pressure, chamber)
-        @timeit_debug "assemble backward coupler" assemble_LFSI_coupling_contribution_row!(Jpd_current, residualp, dh, ud, chamber_pressure, V⁰ᴰ, chamber)
+            # We cannot update the residual for the displacement block here, because it would be assembled essentially twice.
+            @timeit_debug "assemble forward coupler" assemble_LFSI_coupling_contribution_col!(Jdp_current, dh, ud, chamber_pressure, chamber)
+            @timeit_debug "assemble backward coupler" assemble_LFSI_coupling_contribution_row!(Jpd_current, residualp, dh, ud, chamber_pressure, V⁰ᴰ, chamber)
 
-        @info "Chamber $chamber_index p=$chamber_pressure, V0=$V⁰ᴰ"
-    end
+            @info "Chamber $chamber_index p=$chamber_pressure, V0=$V⁰ᴰ"
+        end
+    #end
 
     #finish_assemble(assembler)
 end

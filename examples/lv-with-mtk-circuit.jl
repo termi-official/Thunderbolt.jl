@@ -14,8 +14,8 @@ A simple chamber model to couple the 0D and 3D models. It has a parameter `p3D` 
 is the entry point for the pressure computed by the 3D model.
 """
 @component function PressureCouplingChamber(;name)
-    @named in = Pin()
-    @named out = Pin()
+    @named in = CirculatorySystemModels.Pin()
+    @named out = CirculatorySystemModels.Pin()
     sts = @variables begin
         V(t) = 0.0#, [description = "Volume of the lumped 0D chamber"]
         p(t)
