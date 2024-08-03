@@ -155,9 +155,11 @@ function update_linearization!(op::AssembledRSAFDQ2022Operator, residual_::Abstr
             Jpd_current = @view Jpd[chamber_index,:]
             Jdp_current = @view Jdp[:,chamber_index]
 
+            residualp_current = @view residualp[chamber_index]
+
             # We cannot update the residual for the displacement block here, because it would be assembled essentially twice.
             @timeit_debug "assemble forward coupler" assemble_LFSI_coupling_contribution_col!(Jdp_current, dh, ud, chamber_pressure, chamber)
-            @timeit_debug "assemble backward coupler" assemble_LFSI_coupling_contribution_row!(Jpd_current, residualp, dh, ud, chamber_pressure, V⁰ᴰ, chamber)
+            @timeit_debug "assemble backward coupler" assemble_LFSI_coupling_contribution_row!(Jpd_current, residualp_current, dh, ud, chamber_pressure, V⁰ᴰ, chamber)
 
             @info "Chamber $chamber_index p=$chamber_pressure, V0=$V⁰ᴰ"
         end
