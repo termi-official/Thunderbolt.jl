@@ -1,10 +1,3 @@
-function setup_boundary_cache(boundary_models::Tuple, qr::FacetQuadratureRule, ip, ip_geo)
-    length(boundary_models) == 0 && return EmptySurfaceCache()
-    return CompositeSurfaceElementCache(
-        ntuple(i->setup_boundary_cache(boundary_models[i], qr, ip, ip_geo), length(boundary_models))
-    )
-end
-
 """
 This cache allows to combine multiple elements over the same volume.
 If surface caches are passed they are handled properly. This requred dispatching
@@ -24,7 +17,7 @@ end
 assemble_element!(Kₑ::AbstractMatrix, uₑ::AbstractVector, cell::CellCache, element_cache::CompositeVolumetricElementCache, time) = assemble_element!(Kₑ, uₑ, cell, element_cache.inner_caches, time)
 @unroll function assemble_element!(Kₑ::AbstractMatrix, uₑ::AbstractVector, cell::CellCache, inner_caches::CacheTupleType, time) where CacheTupleType <: Tuple
     @unroll for inner_cache ∈ inner_caches
-        assemble_element!(Kₑ, cell, inner_cache, time)
+        assemble_element!(Kₑ, uₑ, cell, inner_cache, time)
     end
 end
 # Update element matrix and residual in nonlinear operators
@@ -35,7 +28,7 @@ assemble_element!(Kₑ::AbstractMatrix, residualₑ::AbstractVector, uₑ::Abstr
     end
 end
 # Update residual in nonlinear operators
-assemble_element!(residualₑ::AbstractVector, uₑ::AbstractVector, cell::CellCache, element_cache::CompositeVolumetricElementCache, time) = assemble_element!(residualₑ, cell, element_cache.inner_caches, time)
+assemble_element!(residualₑ::AbstractVector, uₑ::AbstractVector, cell::CellCache, element_cache::CompositeVolumetricElementCache, time) = assemble_element!(residualₑ, uₑ, cell, element_cache.inner_caches, time)
 @unroll function assemble_element!(residualₑ::AbstractVector, uₑ::AbstractVector, cell::CellCache, inner_caches::CacheTupleType, time) where CacheTupleType <: Tuple
     @unroll for inner_cache ∈ inner_caches
         assemble_element!(residualₑ, uₑ, cell, inner_cache, time)
@@ -66,6 +59,7 @@ function assemble_element!(residualₑ::AbstractVector, uₑ::AbstractVector, ce
 end
 
 
+
 """
 This cache allows to combine multiple elements over the same surface.
 """
@@ -94,12 +88,14 @@ assemble_face!(Kₑ::AbstractMatrix, residualₑ::AbstractVector, uₑ::Abstract
     end
 end
 # Update residual in nonlinear operators
-assemble_face!(residualₑ::AbstractVector, uₑ::AbstractVector, cell::CellCache, local_facet_index::Int, surface_cache::CompositeSurfaceElementCache, time) = assemble_face!(Kₑ, cell, local_facet_index, surface_cache.inner_caches, time)
+assemble_face!(residualₑ::AbstractVector, uₑ::AbstractVector, cell::CellCache, local_facet_index::Int, surface_cache::CompositeSurfaceElementCache, time) = assemble_face!(residualₑ, uₑ, cell, local_facet_index, surface_cache.inner_caches, time)
 @unroll function assemble_face!(residualₑ::AbstractVector, uₑ::AbstractVector, cell::CellCache, local_facet_index::Int, inner_caches::CacheTupleType, time) where CacheTupleType <: Tuple
     @unroll for inner_cache ∈ inner_caches
         assemble_face!(residualₑ, uₑ, cell, local_facet_index, inner_cache, time)
     end
 end
+
+
 
 """
 This cache allows to combine multiple elements over the same interface.
