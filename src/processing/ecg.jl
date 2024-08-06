@@ -339,3 +339,188 @@ function evaluate_ecg(cache::PoissonECGReconstructionCache)
     dh = cache.torso_op.dh
     return evaluate_at_points(cache.ph, dh, cache.ϕₑ, first(dh.field_names))
 end
+
+"""
+    Geselowitz1989ECGLeadCache(problem, κ, κᵢ, electordes, electrode_pairs, [zero_vertex])
+
+Here the lead field, `Z`, is computed using the discretization of `problem`.
+The lead field is computed as the solution of 
+```math
+\\nabla \\cdot(\\mathbf{\\kappa} \\nabla Z)=\\left\\{\\begin{array}{cl}
+-1 & \\text { at the positive electrode } \\\\
+1 & \\text { at the negative electrode } \\\\
+0 & \\text { else where }
+\\end{array}\\right.
+```
+Where ``\\kappa`` is the bulk conductivity tensor.
+
+Returns a cache contain the lead fields that are used to compute the lead potentials as proposed in [Ges:1989:ote](@cite).
+Calling [`reinit!`](@ref) with this method simply evaluates the following integral efficiently:
+
+```math
+V(t)=\\int \\nabla Z(\\boldsymbol{x}) \\cdot \\boldsymbol{\\kappa}_\\mathrm{i} \\nabla \\varphi_\\mathrm{m} \\,\\mathrm{d}\\boldsymbol{x}.
+```
+"""
+struct Geselowitz1989ECGLeadCache{DiffusionOperatorType1, SolutionVectorType, N}
+    op::DiffusionOperatorType1  # Operator on the torso mesh for ∇κ∇
+    ϕₑ::SolutionVectorType                  # Solution vector buffer
+    # ϕₑ::NTuple{N, T}                  # Solution vector buffer
+    Z::NTuple{N, SolutionVectorType}  # Solution vector buffer
+    κ∇φₘ::SolutionVectorType        # Source term buffer on torso
+    # solver::SolverCacheType     # Linear solver
+    electrode_positions::NTuple{N, Pair{VertexIndex, VertexIndex}}
+    # ch::CHType                        # ConstraintHandler on the torso
+end
+
+# Convenience ctor to unpack default setup
+function Geselowitz1989ECGLeadCache(
+    epfun::GenericSplitFunction,
+    heart_diffusion_tensor_field, # κᵢ
+    bulk_diffusion_tensor_field, # κ
+    electrode_positions::NTuple{N, Pair{VertexIndex, VertexIndex}};
+    ground               = Set([VertexIndex(1, 1)]),
+    linear_solver        = LinearSolve.KrylovJL_CG(),
+    solution_vector_type = Vector{Float64},
+    system_matrix_type   = ThreadedSparseMatrixCSR{Float64,Int64},
+) where {N}
+    Geselowitz1989ECGLeadCache(
+        epfun.functions[1],
+        heart_diffusion_tensor_field,
+        bulk_diffusion_tensor_field;
+        electrode_positions,
+        ground,
+        linear_solver,
+        solution_vector_type,
+        system_matrix_type,
+    )
+end
+
+function Geselowitz1989ECGLeadCache(
+    fun::TransientDiffusionFunction,
+    heart_diffusion_tensor_field, # κᵢ
+    bulk_diffusion_tensor_field, # κ
+    electrode_positions::NTuple{N, Pair{VertexIndex, VertexIndex}};
+    ipc                  = LagrangeCollection{1}(),
+    qrc                  = QuadratureRuleCollection(2),
+    ground               = OrderedSet([VertexIndex(1, 1)]),
+    linear_solver        = LinearSolve.KrylovJL_CG(),
+    solution_vector_type = Vector{Float64},
+    system_matrix_type   = ThreadedSparseMatrixCSR{Float64,Int64},
+    extracellular_potential_symbol = :φₑ,
+) where {N}
+    dh      = fun.dh
+    length(dh.field_names) == 1 || @warn "Multiple fields detected. Setup might be broken..."
+
+    lead_field_model = SteadyDiffusionModel(
+        bulk_diffusion_tensor_field,
+        NoStimulationProtocol(), #ConstantCoefficient(NaN), # FIXME Poisoning to detecte if we accidentally touch these
+        :Z
+    )
+
+    lead_field_fun = semidiscretize(
+        lead_field_model,
+        FiniteElementDiscretization(
+            Dict(:Z => ipc),
+            [Dirichlet(:Z, ground, (x,t) -> 0.0)]
+        ),
+        get_grid(dh)
+    )
+
+
+    # lead_op = setup_assembled_operator(
+    #     BilinearDiffusionIntegrator(bulk_diffusion_tensor_field),
+    #     system_matrix_type, 
+    #     dh,
+    #     extracellular_potential_symbol,
+    #     qrc
+    # )
+    # update_operator!(lead_op, 0.) # Trigger assembly
+
+    lead_op = setup_assembled_operator(
+        BilinearDiffusionIntegrator(bulk_diffusion_tensor_field),
+        system_matrix_type, 
+        lead_field_fun.dh,
+        :Z,
+        qrc
+    )
+    update_operator!(lead_op, 0.) # Trigger assembly
+
+    Geselowitz1989ECGLeadCache(
+        lead_field_fun,
+        lead_op,
+        electrode_positions;
+        linear_solver,
+        solution_vector_type,
+    )
+end
+
+function Geselowitz1989ECGLeadCache(
+    lead_fun::SteadyDiffusionFunction,
+    lead_op::AssembledBilinearOperator,
+    electrode_positions::NTuple{N, Pair{VertexIndex, VertexIndex}};
+    linear_solver        = LinearSolve.KrylovJL_CG(),
+    solution_vector_type = Vector,
+) where {N}
+    lead_dh = lead_op.dh
+    length(lead_dh.field_names) == 1 || @warn "Multiple fields detected. Setup might be broken..."
+    nelectrodes = length(electrode_positions)
+    κ∇φₘ    = create_system_vector(solution_vector_type, lead_fun) # Solution vector
+    Z    = ntuple(_ -> create_system_vector(solution_vector_type, lead_fun), nelectrodes) # Solution vector
+    ϕₑ    = zeros(nelectrodes)
+
+    lead_rhs = ntuple(_ -> create_system_vector(solution_vector_type, lead_fun), nelectrodes)
+
+    for (i, electrode_pair) in enumerate(electrode_positions)
+        _add_electrode!(lead_rhs[i], lead_dh, electrode_pair[1], true)
+        _add_electrode!(lead_rhs[i], lead_dh, electrode_pair[2], false)
+        leadprob = LinearSolve.LinearProblem(
+            lead_op.A, lead_rhs[i]; u0=Z[i]
+        )
+        lincache = init(leadprob, linear_solver)
+        LinearSolve.solve!(lincache)
+    end
+    
+    return Geselowitz1989ECGLeadCache(lead_op, ϕₑ, Z, κ∇φₘ, electrode_positions)
+end
+
+function _add_electrode!(f::AbstractVector{T}, dh::DofHandler, electrode::VertexIndex, is_positive::Bool) where {T<:Number}
+    grid = dh.grid
+    # haskey(grid.vertexsets, "$electrode") || addvertexset!(grid, "$electrode", x -> x ≈ electrode)
+    local_dof = Ferrite.vertexdof_indices(Ferrite.getfieldinterpolation(dh.subdofhandlers[1], :Z))[electrode[2]][1]::Int
+    global_dof = celldofs(dh, electrode[1])[local_dof]::Int
+    f[global_dof] = is_positive ? -1 : 1
+    return nothing
+end
+
+function _get_vertex(val::Vec, grid::AbstractGrid)
+    for (cell_idx, cell) in enumerate(getcells(grid))
+        for (vertex_idx, vertex) in enumerate(vertices(cell))
+            for node_idx in vertex # ?
+                val == get_node_coordinate(grid, node_idx) && return VertexIndex(cell_idx, vertex_idx)
+            end
+        end
+    end
+    @error "No vertices found with specified coordinates"
+    return nothing
+end
+
+# function update_ecg!(cache::PoissonECGReconstructionCache, φₘ::AbstractVector)
+#     # Compute κᵢ∇φₘ on the heart
+#     mul!(cache.κ∇φₘ_h, cache.heart_op, φₘ)
+#     # Transfer κᵢ∇φₘ to the torso
+#     transfer!(cache.κ∇φₘ_t, cache.transfer_op, cache.κ∇φₘ_h)
+#     cache.κ∇φₘ_t[isnan.(cache.κ∇φₘ_t)] .= 0.0 # FIXME
+#     # "Move to right hand side
+#     cache.κ∇φₘ_t .*= -1.0
+#     # Apply BC to linear system
+#     apply_zero!(cache.inner_solver.A, cache.inner_solver.b, cache.ch)
+#     # Solve κ∇φₑ = -κᵢ∇φₘ for φₑ
+#     LinearSolve.solve!(cache.inner_solver)
+#     return nothing
+# end
+
+# # Batch evaluate all electrodes
+# function evaluate_ecg(cache::PoissonECGReconstructionCache)
+#     dh = cache.torso_op.dh
+#     return evaluate_at_points(cache.ph, dh, cache.ϕₑ, first(dh.field_names))
+# end
