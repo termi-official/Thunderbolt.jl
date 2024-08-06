@@ -78,17 +78,17 @@ assemble_face!
 """
     Utility to execute noop assembly.
 """
-struct EmptySurfaceCache <: AbstractSurfaceElementCache end
+struct EmptySurfaceElementCache <: AbstractSurfaceElementCache end
 # Update element matrix in nonlinear operators
-assemble_face!(Kₑ::AbstractMatrix, uₑ::AbstractVector, cell::CellCache, local_face_index::Int, face_caches::EmptySurfaceCache, time)    = nothing
-assemble_element!(Kₑ::AbstractMatrix, uₑ::AbstractVector, cell::CellCache, local_face_index::Int, face_caches::EmptySurfaceCache, time) = nothing
+assemble_face!(Kₑ::AbstractMatrix, uₑ::AbstractVector, cell::CellCache, local_face_index::Int, face_caches::EmptySurfaceElementCache, time)    = nothing
+assemble_element!(Kₑ::AbstractMatrix, uₑ::AbstractVector, cell::CellCache, local_face_index::Int, face_caches::EmptySurfaceElementCache, time) = nothing
 # Update element matrix and residual in nonlinear operators
-assemble_face!(Kₑ::AbstractMatrix, residualₑ::AbstractVector, uₑ::AbstractVector, cell, local_face_index::Int, face_caches::EmptySurfaceCache, time)    = nothing
-assemble_element!(Kₑ::AbstractMatrix, residualₑ::AbstractVector, uₑ::AbstractVector, cell, local_face_index::Int, face_caches::EmptySurfaceCache, time) = nothing
+assemble_face!(Kₑ::AbstractMatrix, residualₑ::AbstractVector, uₑ::AbstractVector, cell, local_face_index::Int, face_caches::EmptySurfaceElementCache, time)    = nothing
+assemble_element!(Kₑ::AbstractMatrix, residualₑ::AbstractVector, uₑ::AbstractVector, cell, local_face_index::Int, face_caches::EmptySurfaceElementCache, time) = nothing
 # Update residual in nonlinear operators
-assemble_face!(residualₑ::AbstractVector, uₑ::AbstractVector, cell, local_face_index::Int, face_caches::EmptySurfaceCache, time)    = nothing
-assemble_element!(residualₑ::AbstractVector, uₑ::AbstractVector, cell, local_face_index::Int, face_caches::EmptySurfaceCache, time) = nothing
-@inline is_facet_in_cache(::FacetIndex, cell, ::EmptySurfaceCache) = false
+assemble_face!(residualₑ::AbstractVector, uₑ::AbstractVector, cell, local_face_index::Int, face_caches::EmptySurfaceElementCache, time)    = nothing
+assemble_element!(residualₑ::AbstractVector, uₑ::AbstractVector, cell, local_face_index::Int, face_caches::EmptySurfaceElementCache, time) = nothing
+@inline is_facet_in_cache(::FacetIndex, cell, ::EmptySurfaceElementCache) = false
 
 """
 Supertype for all caches to integrate over interfaces.

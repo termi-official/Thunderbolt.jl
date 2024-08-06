@@ -36,6 +36,7 @@ end
 setup_internal_model_cache(constitutive_model::PrestressedMechanicalModel, qr::QuadratureRule, sdh::SubDofHandler) = setup_internal_model_cache(constitutive_model.inner_model, qr, sdh)
 
 @doc raw"""
+    PK1Model(material, coefficient_field)
     PK1Model(material, internal_model, coefficient_field)
 
 Models the stress formulated in the 1st Piola-Kirchhoff stress tensor. If the material is energy-based,
@@ -47,6 +48,8 @@ struct PK1Model{PMat, IMod, CFType} <: QuasiStaticModel
     internal_model::IMod
     coefficient_field::CFType
 end
+
+PK1Model(material, coefficient_field) = PK1Model(material, EmptyInternalVariableModel(), coefficient_field)
 
 function setup_coefficient_cache(m::PK1Model, qr::QuadratureRule, sdh::SubDofHandler)
     return setup_coefficient_cache(m.coefficient_field, qr, sdh)
