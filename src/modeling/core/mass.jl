@@ -15,7 +15,7 @@ struct BilinearMassElementCache{IT, CV} <: AbstractVolumetricElementCache
     cellvalues::CV
 end
 
-function assemble_element!(Mₑ, cell, element_cache::BilinearMassElementCache, time)
+function assemble_element!(Mₑ::AbstractMatrix, cell, element_cache::BilinearMassElementCache, time)
     @unpack ρcache, cellvalues = element_cache
     reinit!(element_cache.cellvalues, cell)
     n_basefuncs = getnbasefunctions(cellvalues)
