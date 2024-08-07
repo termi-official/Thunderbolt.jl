@@ -40,6 +40,47 @@ function setup_element_cache(element_model::BilinearDiffusionIntegrator, qr, ip,
 end
 
 @doc raw"""
+    LinearQuadratureFluxIntegrator{CoefficientType}
+
+Represents the integrand of the linear form ``a(u,v) = -\int D(x) \nabla u(x) dx`` for a given diffusion tensor ``D(x)`` and ``u``.
+"""
+struct LinearQuadratureFluxIntegrator{CoefficientType} <: AbstractBilinearIntegrator
+    D::CoefficientType
+end
+
+"""
+The cache associated with [`LinearQuadratureFluxIntegrator`](@ref) to assemble the fluxes at quadrature points into a vector.
+"""
+struct LinearQuadratureFluxElementCache{CoefficientCacheType, CV} <: AbstractVolumetricElementCache
+    Dcache::CoefficientCacheType
+    cellvalues::CV
+end
+
+function assemble_element!(Kₑ, cell, element_cache::LinearQuadratureFluxElementCache, time)
+    @unpack cellvalues, Dcache = element_cache
+    n_basefuncs = getnbasefunctions(cellvalues)
+
+    reinit!(cellvalues, cell)
+
+    for qp in QuadratureIterator(cellvalues)
+        D_loc = evaluate_coefficient(Dcache, cell, qp, time)
+        dΩ = getdetJdV(cellvalues, qp)
+        for i in 1:n_basefuncs
+            ∇Nᵢ = shape_gradient(cellvalues, qp, i)
+            for j in 1:n_basefuncs
+                ∇Nⱼ = shape_gradient(cellvalues, qp, j)
+                Kₑ[i,j] -= _inner_product_helper(∇Nⱼ, D_loc, ∇Nᵢ) * dΩ
+            end
+        end
+    end
+end
+
+function setup_element_cache(element_model::BilinearDiffusionIntegrator, qr, ip, sdh::SubDofHandler)
+    ip_geo = geometric_subdomain_interpolation(sdh)
+    BilinearDiffusionElementCache(setup_coefficient_cache(element_model.D, qr, sdh), CellValues(qr, ip, ip_geo))
+end
+
+@doc raw"""
     TransientDiffusionModel(conductivity_coefficient, source_term, solution_variable_symbol)
 
 Model formulated as ``\partial_t u = \nabla \cdot \kappa(x) \nabla u + f``
