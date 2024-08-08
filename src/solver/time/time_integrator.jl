@@ -55,12 +55,11 @@ function DiffEqBase.step!(integrator::ThunderboltTimeIntegrator, dt, stop_at_tdt
     dt <= zero(dt) && error("dt must be positive")
     tnext = integrator.t + dt
     while !OS.reached_tstop(integrator, tnext, stop_at_tdt)
+        # Solve inner problem
+        perform_step!(integrator, integrator.cache) || error("Time integration failed at t=$(integrator.t).") # remove this
         # Update integrator
         integrator.tprev = integrator.t
         integrator.t = integrator.t + integrator.dt
-        # Solve inner problem
-        perform_step!(integrator, integrator.cache)
-        # TODO check for solver failure
     end
 
     while !isempty(tstops) && OS.reached_tstop(integrator, first(tstops))
@@ -115,7 +114,7 @@ function OS.build_subintegrators_recursive(f, synchronizer, p::Any, cache::Abstr
         dt,
         cache,
         synchronizer,
-        nothing, # sol
+        nothing, # FIXME sol
         true, #dtchangeable
         tstops,
         _tstops,
@@ -211,7 +210,10 @@ end
 # Compat with OrdinaryDiffEq
 function perform_step!(integ::ThunderboltTimeIntegrator, cache::AbstractTimeSolverCache)
     if !perform_step!(integ.f, cache, integ.t, integ.dt)
-        integ.sol = DiffEqBase.solution_new_retcode(integ.sol, DiffEqBase.ReturnCode.Failure)
-        error("Time step failed at t=$(integ.t).") # remove this
+        if integ.sol !== nothing # FIXME
+            integ.sol = DiffEqBase.solution_new_retcode(integ.sol, DiffEqBase.ReturnCode.Failure)
+        end
+        return false
     end
+    return true
 end

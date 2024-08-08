@@ -48,8 +48,8 @@ end
 function perform_step!(f::AbstractSemidiscreteFunction, solver_cache::LoadDrivenSolverCache, t, Δt)
     solver_cache.uₙ₋₁ .= solver_cache.uₙ
     @info t
-    update_constraints!(f, solver_cache, t)
-    if !nlsolve!(solver_cache.uₙ, f, solver_cache.inner_solver_cache, t) # TODO remove ,,t'' here. But how?
+    update_constraints!(f, solver_cache, t + Δt)
+    if !nlsolve!(solver_cache.uₙ, f, solver_cache.inner_solver_cache, t + Δt) # TODO remove ,,t'' here. But how?
         @warn "Inner solver failed."
         return false
     end
