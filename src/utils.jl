@@ -377,7 +377,6 @@ end
 # Transfer the element data into a vector
 function ea_collapse!(b::Vector, bes::EAVector)
     ndofs = size(b, 1)
-    @info "ndofs is is is is is " ndofs
     @batch minbatch= max(1, ndofs÷Threads.nthreads()) for dof ∈ 1:ndofs
         _ea_collapse_kernel!(b, dof, bes)
     end
