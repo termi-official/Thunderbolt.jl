@@ -160,7 +160,7 @@ function mul!(y::AbstractVector{<:Number}, A_::ThreadedSparseMatrixCSR, x::Abstr
     A.n == size(x, 1) || throw(DimensionMismatch())
     A.m == size(y, 1) || throw(DimensionMismatch())
 
-    @batch minbatch = size(y, 1) ÷ Threads.nthreads() for row in 1:size(y, 1)
+    @batch minbatch = max(1, size(y, 1) ÷ Threads.nthreads()) for row in 1:size(y, 1)
         @inbounds begin
             v = zero(eltype(y))
             for nz in nzrange(A, row)
@@ -377,7 +377,8 @@ end
 # Transfer the element data into a vector
 function ea_collapse!(b::Vector, bes::EAVector)
     ndofs = size(b, 1)
-    @batch minbatch=ndofs÷Threads.nthreads() for dof ∈ 1:ndofs
+    @info "ndofs is is is is is " ndofs
+    @batch minbatch= max(1, ndofs÷Threads.nthreads()) for dof ∈ 1:ndofs
         _ea_collapse_kernel!(b, dof, bes)
     end
 end
