@@ -111,7 +111,7 @@ Adapt.@adapt_structure AdaptiveForwardEulerSubstepperCache
     # TODO get Cₘ
     cell_rhs!(du_local, u_local, x, t, cell_model)
 
-    if du_local[φₘidx] < cache.reaction_threshold
+    if abs(du_local[φₘidx]) < cache.reaction_threshold
         for j in 1:length(u_local)
             u_local[j] += Δt*du_local[j]
         end
