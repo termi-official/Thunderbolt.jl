@@ -7,6 +7,7 @@ Base.@kwdef struct BackwardEulerSolver{SolverType, SolutionVectorType, SystemMat
     system_matrix_type::Type{SystemMatrixType}     = ThreadedSparseMatrixCSR{Float64, Int64}
     # mass operator info
     # diffusion opeartor info
+    verbose                                        = true # Temporary helper for benchmarks
 end
 
 # TODO decouple from heat problem via special ODEFunction (AffineODEFunction)
@@ -27,6 +28,8 @@ mutable struct BackwardEulerSolverCache{T, SolutionType <: AbstractVector{T}, Ma
     inner_solver::SolverCacheType
     # Last time step length as a check if we have to update K
     Δt_last::T
+    # DO NOT USE THIS (will be replaced by proper logging system)
+    verbose::Bool
 end
 
 # Helper to get A into the right form
@@ -64,11 +67,11 @@ function perform_step!(f::TransientDiffusionFunction, cache::BackwardEulerSolver
     end
     # Solve linear problem
     @timeit_debug "inner solve" sol = LinearSolve.solve!(inner_solver)
-    if !(DiffEqBase.SciMLBase.successful_retcode(sol.retcode) || sol.retcode == DiffEqBase.ReturnCode.Default) # The latter seems off...
+    solve_failed = !(DiffEqBase.SciMLBase.successful_retcode(sol.retcode) || sol.retcode == DiffEqBase.ReturnCode.Default)
+    if cache.verbose || solve_failed # The latter seems off...
         @info inner_solver.cacheval.stats
-        return false
     end
-    return true
+    return !solve_failed
 end
 
 function setup_solver_cache(f::TransientDiffusionFunction, solver::BackwardEulerSolver, t₀)
@@ -123,7 +126,8 @@ function setup_solver_cache(f::TransientDiffusionFunction, solver::BackwardEuler
         diffusion_operator,
         source_operator,
         inner_cache,
-        T(0.0)
+        T(0.0),
+        solver.verbose,
     )
 
     @timeit_debug "initial assembly" begin
