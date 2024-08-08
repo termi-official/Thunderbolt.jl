@@ -15,7 +15,7 @@ function setup_operator(f::AbstractQuasiStaticFunction, solver::AbstractNonlinea
 
     displacement_symbol = first(dh.field_names)
 
-    intorder = quadrature_order(f, displacement_symbol)::Int
+    intorder = default_quadrature_order(f, displacement_symbol)::Int
     qr = QuadratureRuleCollection(intorder)
     qr_face = FacetQuadratureRuleCollection(intorder)
 
@@ -57,7 +57,7 @@ end
 #     @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the Newton solver."
 #     @assert length(dh.field_names) == 1 "Multiple fields not yet supported in the nonlinear solver."
 
-#     intorder = quadrature_order(problem, displacement_symbol)
+#     intorder = default_quadrature_order(problem, displacement_symbol)
 #     qr = QuadratureRuleCollection(intorder)
 #     qr_face = FacetQuadratureRuleCollection(intorder)
 
@@ -121,6 +121,6 @@ function create_system_vector(::Type{<:Vector{T}}, dh::DofHandler) where T
 end
 
 function create_quadrature_rule(f::AbstractSemidiscreteFunction, solver::AbstractSolver, field_name::Symbol)
-    intorder = quadrature_order(f, field_name)
+    intorder = default_quadrature_order(f, field_name)
     return QuadratureRuleCollection(intorder)
 end
