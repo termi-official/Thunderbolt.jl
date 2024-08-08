@@ -18,7 +18,7 @@ function AssembledRSAFDQ2022Operator(dh::AbstractDofHandler, field_name::Symbol,
     element_qr = getquadraturerule(element_qrc, firstcell)
     boundary_qr = getquadraturerule(boundary_qrc, firstcell)
 
-    Jmech = create_sparsity_pattern(dh)
+    Jmech = allocate_matrix(dh)
 
     num_chambers = length(tying.chambers)
     block_sizes = [ndofs(dh), num_chambers]

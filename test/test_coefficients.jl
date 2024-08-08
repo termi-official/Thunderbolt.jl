@@ -3,7 +3,7 @@
     cell_cache = Ferrite.CellCache(grid)
     qp1 = QuadraturePoint(1, Vec((0.0,)))
     qp2 = QuadraturePoint(2, Vec((0.1,)))
-    qr  = QuadratureRule{RefLine,Float64}([1.0, 1.0], [Vec{1}((0.0,)), Vec{1}((0.1,))])
+    qr  = QuadratureRule{RefLine}([1.0, 1.0], [Vec{1}((0.0,)), Vec{1}((0.1,))])
     ip_collection = LagrangeCollection{1}()
     dh = DofHandler(grid)
     add!(dh, :u, getinterpolation(ip_collection, first(grid.cells)))

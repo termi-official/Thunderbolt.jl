@@ -91,7 +91,7 @@ end
 function getquadraturerule(nqr::NodalQuadratureRuleCollection, cell::AbstractCell{ref_shape}) where {ref_shape}
     ip = getinterpolation(nqr.ipc, cell)
     positions = Ferrite.reference_coordinates(ip)
-    return QuadratureRule{ref_shape, eltype(first(positions))}([NaN for _ in 1:length(positions)], positions)
+    return QuadratureRule{ref_shape}([NaN for _ in 1:length(positions)], positions)
 end
 getquadraturerule(qrc::NodalQuadratureRuleCollection, sdh::SubDofHandler) = getquadraturerule(qrc, get_first_cell(sdh))
 

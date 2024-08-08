@@ -156,7 +156,7 @@ end
 
 function AssembledNonlinearOperator(dh::AbstractDofHandler, field_name::Symbol, element_model, element_qrc::QuadratureRuleCollection)
     AssembledNonlinearOperator(
-        create_sparsity_pattern(dh),
+        allocate_matrix(dh),
         element_model, element_qrc,
         nothing, nothing,
         nothing, nothing,
@@ -167,7 +167,7 @@ end
 #Utility constructor to get the nonlinear operator for a single field problem.
 function AssembledNonlinearOperator(dh::AbstractDofHandler, field_name::Symbol, element_model, element_qrc::QuadratureRuleCollection, boundary_model, boundary_qrc::FacetQuadratureRuleCollection)
     AssembledNonlinearOperator(
-        create_sparsity_pattern(dh),
+        allocate_matrix(dh),
         element_model, element_qrc,
         boundary_model, boundary_qrc,
         nothing, nothing,
@@ -177,7 +177,7 @@ end
 
 function AssembledNonlinearOperator(dh::AbstractDofHandler, field_name::Symbol, element_model, element_qrc::QuadratureRuleCollection, boundary_model, boundary_qrc::FacetQuadratureRuleCollection, tying_model, tying_qr)
     AssembledNonlinearOperator(
-        create_sparsity_pattern(dh),
+        allocate_matrix(dh),
         element_cache, element_qrc,
         boundary_cache, boundary_qrc,
         tying_cache, tying_qrc,

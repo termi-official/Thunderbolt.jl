@@ -15,7 +15,7 @@ function _spatial_coordinate(interpolation::ScalarInterpolation, ξ::Vec{<:Any,T
 
     x = zero(Vec{sdim, T})
     @inbounds for j in 1:n_basefuncs
-        M = shape_value(interpolation, ξ, j)
+        M = reference_shape_value(interpolation, ξ, j)
         x += M * cell_coordinates[j]
     end
     return x
