@@ -285,7 +285,7 @@ end
 @noinline check_subdomains(dh::Ferrite.AbstractDofHandler) = length(dh.subdofhandlers) == 1 || throw(ArgumentError("Using DofHandler with multiple subdomains is not currently supported"))
 @noinline check_subdomains(grid::Ferrite.AbstractGrid) = length(elementtypes(grid)) == 1 || throw(ArgumentError("Using mixed grid is not currently supported"))
 
-@inline function quadrature_order(f, fieldname)
+@inline function default_quadrature_order(f, fieldname)
     @unpack dh = f
     @assert fieldname ∈ dh.field_names "Field $fieldname not found in dof handler. Available fields are: $(dh.field_names)."
 
@@ -293,7 +293,7 @@ end
         idx = findfirst(s->s==fieldname, sdh.field_names)
         idx === nothing && continue
         ip = sdh.field_interpolations[idx]
-        return 2*Ferrite.getorder(ip)
+        return max(2*Ferrite.getorder(ip)-1, 2)
     end
 end
 
@@ -319,6 +319,9 @@ struct DenseDataRange{DataVectorType, IndexVectorType}
     offsets::IndexVectorType
 end
 
+Base.size(v::DenseDataRange) = size(v.data)
+Base.getindex(v::DenseDataRange, i) = getindex(v.data, i)
+
 Base.eltype(data::DenseDataRange) = eltype(data.data)
 
 @inline function get_data_for_index(r::DenseDataRange, i::Integer)
@@ -339,6 +342,13 @@ struct EAVector{T, EADataType <: AbstractVector{T}, IndexType <: AbstractVector{
     eadata::DenseDataRange{EADataType, IndexType}
     # Map from global dof index to element index and local dof index
     dof_to_element_map::DenseDataRange{DofMapType, IndexType}
+end
+
+Base.size(v::EAVector) = size(v.eadata)
+Base.getindex(v::EAVector, i) = getindex(v.eadata, i)
+
+function Base.show(io::IO, mime::MIME"text/plain", data::EAVector{T, EADataType, IndexType}) where {T, EADataType, IndexType}
+    println(io, "EAVector{T=", T, ", EADataType=", EADataType, ", IndexType=", IndexType, "} with storate for ", size(data.eadata), " entries." )
 end
 
 @inline get_data_for_index(r::EAVector, i::Integer) = get_data_for_index(r.eadata, i)

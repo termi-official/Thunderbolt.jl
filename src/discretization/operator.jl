@@ -461,7 +461,7 @@ function update_operator!(op::LinearOperator, time)
 end
 
 function _update_linear_operator_on_subdomain!(b, sdh, element_cache, time)
-    ndofs = ndofs_per_cell(dh)
+    ndofs = ndofs_per_cell(sdh)
     bₑ = zeros(ndofs)
     @inbounds for cell in CellIterator(sdh)
         fill!(bₑ, 0)

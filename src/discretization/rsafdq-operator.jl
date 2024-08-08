@@ -177,7 +177,7 @@ function setup_operator(f::RSAFDQ20223DFunction, solver::AbstractNonlinearSolver
 
     displacement_symbol = first(dh.field_names)
 
-    intorder = quadrature_order(structural_function, displacement_symbol)
+    intorder = default_quadrature_order(structural_function, displacement_symbol)
     qr = QuadratureRuleCollection(intorder)
     qr_face = FacetQuadratureRuleCollection(intorder)
 
