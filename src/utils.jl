@@ -320,7 +320,7 @@ struct DenseDataRange{DataVectorType, IndexVectorType}
 end
 
 Base.size(v::DenseDataRange) = size(v.data)
-Base.getindex(v::DenseDataRange, i) = getindex(v.data, i)
+Base.getindex(v::DenseDataRange, i::Int) = getindex(v.data, i)
 
 Base.eltype(data::DenseDataRange) = eltype(data.data)
 
@@ -345,7 +345,7 @@ struct EAVector{T, EADataType <: AbstractVector{T}, IndexType <: AbstractVector{
 end
 
 Base.size(v::EAVector) = size(v.eadata)
-Base.getindex(v::EAVector, i) = getindex(v.eadata, i)
+Base.getindex(v::EAVector, i::Int) = getindex(v.eadata, i)
 
 function Base.show(io::IO, mime::MIME"text/plain", data::EAVector{T, EADataType, IndexType}) where {T, EADataType, IndexType}
     println(io, "EAVector{T=", T, ", EADataType=", EADataType, ", IndexType=", IndexType, "} with storate for ", size(data.eadata), " entries." )
