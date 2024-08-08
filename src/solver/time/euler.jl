@@ -62,7 +62,7 @@ function perform_step!(f::TransientDiffusionFunction, cache::BackwardEulerSolver
     # TODO How to remove these two lines here?
     # Update source term
     @timeit_debug "update source term" begin
-        implicit_euler_heat_update_source_term!(cache, t)
+        implicit_euler_heat_update_source_term!(cache, t + Δt)
         add!(inner_solver.b, cache.source_term)
     end
     # Solve linear problem
