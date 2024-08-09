@@ -125,6 +125,7 @@ function compute_nodal_values(csc::CoordinateSystemCoefficient, dh::DofHandler, 
         cc = setup_coefficient_cache(csc, qr, sdh)
         _compute_nodal_values!(nodal_values, qr, cc, sdh)
     end
+    return nodal_values
 end
 
 function _compute_nodal_values!(nodal_values, qr, cc, sdh)
