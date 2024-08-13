@@ -45,7 +45,7 @@ end
 # called by DiffEqBase.init and DiffEqBase.solve
 function DiffEqBase.__init(
     prob::OperatorSplittingProblem,
-    alg::AbstractOperatorSplittingAlgorithm,
+    alg::LieTrotterGodunov{<:Any, AdaptivityController},
     args...;
     dt,
     tstops = (),
@@ -56,7 +56,7 @@ function DiffEqBase.__init(
     save_func = (u, t) -> copy(u), # custom kwarg
     dtchangeable = true,           # custom kwarg
     kwargs...,
-)
+) where AdaptivityController
     (; u0, p) = prob
     t0, tf = prob.tspan
 
@@ -94,6 +94,7 @@ function DiffEqBase.__init(
         callback,
         advance_to_tstop,
         false,
+        # AdaptivityController isa NoTimeAdaption ? false : true,
         cache,
         sol,
         subintegrators,
@@ -217,21 +218,25 @@ end
 function DiffEqBase.postamble!(integrator::OperatorSplittingIntegrator)
     DiffEqBase.finalize!(integrator.callback, integrator.u, integrator.t, integrator)
 end
-
-function __step!(integrator)
+@inline function get_reaction_tangent(_)
+    return 0.0
+end
+function __step!(integrator::OperatorSplittingIntegrator{<:Any, <:LieTrotterGodunov{<:Any, AdaptivityController}}) where AdaptivityController
     (; dtchangeable, tstops) = integrator
     _dt = DiffEqBase.get_dt(integrator)
 
     # update dt before incrementing u; if dt is changeable and there is
     # a tstop within dt, reduce dt to tstop - t
     integrator.dt =
-        !isempty(tstops) && dtchangeable ? tdir(integrator) * min(_dt, abs(first(tstops) - integrator.t)) :
-        tdir(integrator) * _dt
+        !isempty(tstops) && dtchangeable ? tdir(integrator) * min(integrator.dt, abs(first(tstops) - integrator.t)) :
+        tdir(integrator) * integrator.dt
 
     tnext = integrator.t + integrator.dt
+    R = sum(get_reaction_tangent.(integrator.subintegrators))
 
      # Solve inner problems
     advance_solution_to!(integrator, tnext)
+    R = max(R, sum(get_reaction_tangent.(integrator.subintegrators)))
 
     # Update integrator
     # increment t by dt, rounding to the first tstop if that is roughly
@@ -241,6 +246,11 @@ function __step!(integrator)
     max_t_error = 100 * eps(float(integrator.t / t_unit)) * t_unit
     integrator.tprev = integrator.t
     integrator.t = !isempty(tstops) && abs(first(tstops) - tnext) < max_t_error ? first(tstops) : tnext
+
+    controller = integrator.alg.time_adaption_alg
+    @info "before" integrator.dt
+    integrator.dt = get_next_dt(R, controller)
+    @info "after" integrator.dt
 
     # Propagate information down into the subintegrators
     synchronize_subintegrators!(integrator)

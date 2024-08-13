@@ -74,7 +74,7 @@ timestepper = OS.LieTrotterGodunov((
         solution_vector_type=Vector{Float32},
         reaction_threshold=0.1f0,
     ),
-))
+), OS.ReactionTangentController(0.5, 1.0, (0.01, 0.3)))
 
 problem = OS.OperatorSplittingProblem(odeform, u₀, tspan)
 
