@@ -9,6 +9,10 @@ struct LieTrotterGodunov{AlgTupleType} <: AbstractOperatorSplittingAlgorithm
     # transfer_algs::TransferTupleType # Tuple of transfer algorithms from the master solution into the individual ones
 end
 
+"""
+    is_adaptive(::AbstractOperatorSplittingAlgorithm)
+Returns whether the operator splitting algorithm is adaptive or not.
+"""
 @inline is_adaptive(::AbstractOperatorSplittingAlgorithm) = false
 
 struct LieTrotterGodunovCache{uType, tmpType, iiType} <: AbstractOperatorSplittingCache

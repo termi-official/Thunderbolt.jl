@@ -184,7 +184,16 @@ function (integrator::OperatorSplittingIntegrator)(tmp, t)
     linear_interpolation!(tmp, t, integrator.uprev, integrator.u, integrator.tprev, integrator.t)
 end
 
+"""
+    update_controller!(::OperatorSplittingIntegrator)
+Updates the controller using the current state of the integrator if the operator splitting algorithm is adaptive.
+"""
 @inline update_controller!(::OperatorSplittingIntegrator) = nothing
+
+"""
+    update_dt!(::OperatorSplittingIntegrator)
+Updates `_dt` of the integrator if the operator splitting algorithm is adaptive.
+"""
 @inline update_dt!(::OperatorSplittingIntegrator) = nothing
 
 # helper functions for dealing with time-reversed integrators in the same way

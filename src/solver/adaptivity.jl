@@ -1,7 +1,16 @@
 abstract type AbstractTimeAdaptionAlgorithm end
 
-struct NoTimeAdaption <: AbstractTimeAdaptionAlgorithm end
-
+"""
+    ReactionTangentController{T <: Real} <: AbstractTimeAdaptionAlgorithm
+A timestep length controller for [`LieTrotterGodunov`](@ref) [Lie:1880:tti,Tro:1959:psg,God:1959:dmn](@cite)
+operator splitting using the reaction tangent as proposed in [OgiBalPer:2023:seats](@cite)
+# Fields
+- `σ_s::T`: steepness
+- `σ_c::T`: offset in R axis
+- `Δt_bounds::NTuple{2,T}`: lower and upper timestep length bounds
+- `Rₙ₊₁::T`: updated maximal reaction magnitude
+- `Rₙ::T`: previous reaction magnitude
+"""
 mutable struct ReactionTangentController{T <: Real} <: AbstractTimeAdaptionAlgorithm
     const σ_s::T
     const σ_c::T
@@ -10,20 +19,37 @@ mutable struct ReactionTangentController{T <: Real} <: AbstractTimeAdaptionAlgor
     Rₙ::T
 end
 
+"""
+    get_next_dt(controller::ReactionTangentController)
+Returns the next timestep length using [`ReactionTangentController`](@ref) calculated as
+```math
+\\sigma\\left(R_{\\max }\\right):=\\left(1.0-\\frac{1}{1+\\exp \\left(\\left(\\sigma_{\\mathrm{c}}-R_{\\max }\\right) \\cdot \\sigma_{\\mathrm{s}}\\right)}\\right) \\cdot\\left(\\Delta t_{\\max }-\\Delta t_{\\min }\\right)+\\Delta t_{\\min }
+```
+"""
 function get_next_dt(controller::ReactionTangentController)
     @unpack σ_s, σ_c, Δt_bounds, Rₙ₊₁, Rₙ = controller
     R = max(Rₙ, Rₙ₊₁)
     (1 - 1/(1+exp((σ_c - R)*σ_s)))*(Δt_bounds[2] - Δt_bounds[1]) + Δt_bounds[1]
 end
 
+"""
+    AdaptiveOperatorSplittingAlgorithm{TOperatorSplittingAlg <: OS.AbstractOperatorSplittingAlgorithm, TTimeAdaptionAlgorithm <: AbstractTimeAdaptionAlgorithm} <: OS.AbstractOperatorSplittingAlgorithm
+A generic operator splitting algorithm `operator_splitting_algorithm` with adaptive timestepping using the controller `timestep_controller`.
+# Fields
+- `operator_splitting_algorithm::TOperatorSplittingAlg`: steepness
+- `timestep_controller::TTimeAdaptionAlgorithm`: offset in R axis
+"""
 struct AdaptiveOperatorSplittingAlgorithm{TOperatorSplittingAlg <: OS.AbstractOperatorSplittingAlgorithm, TTimeAdaptionAlgorithm <: AbstractTimeAdaptionAlgorithm} <: OS.AbstractOperatorSplittingAlgorithm
     operator_splitting_algorithm::TOperatorSplittingAlg
     timestep_controller::TTimeAdaptionAlgorithm
 end
 
-is_adaptive(::AdaptiveOperatorSplittingAlgorithm) = true
+@inline OS.is_adaptive(::AdaptiveOperatorSplittingAlgorithm) = true
 
-
+"""
+    get_reaction_tangent(integrator::OS.OperatorSplittingIntegrator)
+Returns the maximal reaction magnitude using the [`PointwiseODEFunction`](@ref) of an operator splitting integrator that uses [`LieTrotterGodunov`](@ref) [Lie:1880:tti,Tro:1959:psg,God:1959:dmn](@cite).
+"""
 @inline function get_reaction_tangent(integrator::OS.OperatorSplittingIntegrator)
     for subintegrator in integrator.subintegrators
         subintegrator.f isa PointwiseODEFunction || continue
