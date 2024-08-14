@@ -87,7 +87,7 @@ f3 = ODEFunction(ode3)
     fsplit2_inner = GenericSplitFunction((f3,f3), (f3dofs, f3dofs))
     fsplit2_outer = GenericSplitFunction((f1,fsplit2_inner), (f1dofs, f2dofs))
     for TimeStepperType in (LieTrotterGodunov,)
-        for controller in (Thunderbolt.ReactionTangentController(0.5, 1.0, (0.01, 0.3), 0.0, 0.0),) 
+        for controller in (Thunderbolt.ReactionTangentController(0.5, 1.0, (0.01, 0.3)),) 
             timestepper = TimeStepperType(
                 (DummyForwardEuler(), DummyForwardEuler())
             )
@@ -95,7 +95,7 @@ f3 = ODEFunction(ode3)
             timestepper_inner = TimeStepperType(
                 (DummyForwardEuler(), DummyForwardEuler())
             )
-            timestepper_inner_adaptive = Thunderbolt.AdaptiveOperatorSplittingAlgorithm(timestepper_inner, controller)
+            timestepper_inner_adaptive = Thunderbolt.AdaptiveOperatorSplittingAlgorithm(timestepper_inner, controller) #TODO: Copy the controller instead
             timestepper2 = TimeStepperType(
                 (DummyForwardEuler(), timestepper_inner)
             )
@@ -103,10 +103,10 @@ f3 = ODEFunction(ode3)
 
             for (tstepper1, tstepper_inner, tstepper2) in (
                     (timestepper, timestepper_inner, timestepper2),
-                    (timestepper_adaptive, timestepper_inner_adaptive, timestepper2_adaptive)
+                    # (timestepper_adaptive, timestepper_inner_adaptive, timestepper2_adaptive)
                     )
                 # The remaining code works as usual.
-                integrator = DiffEqBase.init(prob, timestepper, dt=0.01, verbose=true)
+                integrator = DiffEqBase.init(prob, tstepper1, dt=0.01, verbose=true)
                 DiffEqBase.solve!(integrator)
                 ufinal = copy(integrator.u)
                 @test ufinal ≉ u0 # Make sure the solve did something
@@ -126,7 +126,7 @@ f3 = ODEFunction(ode3)
                 @test integrator.sol.retcode == DiffEqBase.ReturnCode.Success
 
                 prob2 = OperatorSplittingProblem(fsplit2_outer, u0, tspan)
-                integrator2 = DiffEqBase.init(prob2, timestepper2, dt=0.01, verbose=true)
+                integrator2 = DiffEqBase.init(prob2, tstepper2, dt=0.01, verbose=true)
                 DiffEqBase.solve!(integrator2)
 
                 DiffEqBase.reinit!(integrator2, u0; tspan)
@@ -138,6 +138,11 @@ f3 = ODEFunction(ode3)
                 DiffEqBase.solve!(integrator2)
                 @test integrator2.sol.retcode == DiffEqBase.ReturnCode.Success
             end
+            # integrator = DiffEqBase.init(prob, timestepper, dt=0.01, verbose=true)
+            # for (u, t) in DiffEqBase.TimeChoiceIterator(integrator, 0.0:5.0:100.0) end
+            # integrator_adaptive = DiffEqBase.init(prob, timestepper_adaptive, dt=0.01, verbose=true)
+            # for (u, t) in DiffEqBase.TimeChoiceIterator(integrator_adaptive, 0.0:5.0:100.0) end
+            # @test  isapprox(integrator_adaptive.u, integrator.u, atol=1e-5)
         end
     end
 end
