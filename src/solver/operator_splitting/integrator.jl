@@ -235,11 +235,11 @@ function __step!(integrator::OperatorSplittingIntegrator{<:Any, <:LieTrotterGodu
     synchronize_subintegrators!(integrator)
 
     tnext = integrator.t + integrator.dt
-    R = sum(get_reaction_tangent.(integrator.subintegrators))
+    (AdaptivityController == NoTimeAdaption) || (R = sum(get_reaction_tangent.(integrator.subintegrators)))
 
      # Solve inner problems
     advance_solution_to!(integrator, tnext)
-    R = max(R, sum(get_reaction_tangent.(integrator.subintegrators)))
+    (AdaptivityController == NoTimeAdaption) || (R = max(R, sum(get_reaction_tangent.(integrator.subintegrators))))
 
     # Update integrator
     # increment t by dt, rounding to the first tstop if that is roughly
@@ -251,7 +251,7 @@ function __step!(integrator::OperatorSplittingIntegrator{<:Any, <:LieTrotterGodu
     integrator.t = !isempty(tstops) && abs(first(tstops) - tnext) < max_t_error ? first(tstops) : tnext
 
     controller = integrator.alg.time_adaption_alg
-    integrator._dt = get_next_dt(R, controller)
+    (AdaptivityController == NoTimeAdaption) || (integrator._dt = get_next_dt(R, controller))
 
     # remove tstops that were just reached
     while !isempty(tstops) && reached_tstop(integrator, first(tstops))

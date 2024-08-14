@@ -73,6 +73,9 @@ timestepper = LieTrotterGodunov(
     (DummyForwardEuler(), DummyForwardEuler())
 )
 
+timestepper_adaptive = LieTrotterGodunov(
+    (DummyForwardEuler(), DummyForwardEuler())
+    , OS.ReactionTangentController(0.5, 1.0, (0.01, 0.3)))
 # The remaining code works as usual.
 integrator = DiffEqBase.init(prob, timestepper, dt=0.01, verbose=true)
 DiffEqBase.solve!(integrator)
