@@ -54,7 +54,7 @@ function DiffEqBase.__init(
     callback = nothing,
     advance_to_tstop = false,
     save_func = (u, t) -> copy(u), # custom kwarg
-    dtchangeable = true,           # custom kwarg
+    dtchangeable = AdaptivityController isa NoTimeAdaption ? false : true,           # custom kwarg
     kwargs...,
 ) where AdaptivityController
     (; u0, p) = prob
@@ -94,7 +94,6 @@ function DiffEqBase.__init(
         callback,
         advance_to_tstop,
         false,
-        # AdaptivityController isa NoTimeAdaption ? false : true,
         cache,
         sol,
         subintegrators,
@@ -228,8 +227,12 @@ function __step!(integrator::OperatorSplittingIntegrator{<:Any, <:LieTrotterGodu
     # update dt before incrementing u; if dt is changeable and there is
     # a tstop within dt, reduce dt to tstop - t
     integrator.dt =
-        !isempty(tstops) && dtchangeable ? tdir(integrator) * min(integrator.dt, abs(first(tstops) - integrator.t)) :
-        tdir(integrator) * integrator.dt
+        !isempty(tstops) && dtchangeable ? tdir(integrator) * min(_dt, abs(first(tstops) - integrator.t)) :
+        tdir(integrator) * _dt
+
+
+    # Propagate information down into the subintegrators
+    synchronize_subintegrators!(integrator)
 
     tnext = integrator.t + integrator.dt
     R = sum(get_reaction_tangent.(integrator.subintegrators))
@@ -248,12 +251,7 @@ function __step!(integrator::OperatorSplittingIntegrator{<:Any, <:LieTrotterGodu
     integrator.t = !isempty(tstops) && abs(first(tstops) - tnext) < max_t_error ? first(tstops) : tnext
 
     controller = integrator.alg.time_adaption_alg
-    @info "before" integrator.dt
-    integrator.dt = get_next_dt(R, controller)
-    @info "after" integrator.dt
-
-    # Propagate information down into the subintegrators
-    synchronize_subintegrators!(integrator)
+    integrator._dt = get_next_dt(R, controller)
 
     # remove tstops that were just reached
     while !isempty(tstops) && reached_tstop(integrator, first(tstops))
