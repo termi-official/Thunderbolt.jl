@@ -14,8 +14,8 @@ abstract type AbstractOperatorSplittingCache end
 include("operator_splitting/utils.jl")
 include("operator_splitting/function.jl")
 include("operator_splitting/problem.jl")
-include("operator_splitting/solver.jl")
 include("operator_splitting/integrator.jl")
+include("operator_splitting/solver.jl")
 
 export GenericSplitFunction, OperatorSplittingProblem, LieTrotterGodunov,
     DiffEqBase, init, TimeChoiceIterator,

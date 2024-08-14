@@ -30,6 +30,7 @@ is_adaptive(::AdaptiveOperatorSplittingAlgorithm) = true
         φₘidx = transmembranepotential_index(subintegrator.f.ode)
         return maximum(@view subintegrator.cache.dumat[:, φₘidx])
     end
+    @error "PointwiseODEFunction not found"
 end
 
 
@@ -37,11 +38,13 @@ end
     controller = integrator.alg.timestep_controller
     controller.Rₙ = controller.Rₙ₊₁
     controller.Rₙ₊₁ = get_reaction_tangent(integrator)
+    return nothing
 end
 
 @inline function OS.update_dt!(integrator::OS.OperatorSplittingIntegrator{<:Any, <:AdaptiveOperatorSplittingAlgorithm{<:OS.LieTrotterGodunov, <:ReactionTangentController}})
     controller = integrator.alg.timestep_controller
     integrator._dt = get_next_dt(controller)
+    return nothing
 end
 
 # Dispatch for outer construction
