@@ -4,14 +4,12 @@
     LieTrotterGodunov <: AbstractOperatorSplittingAlgorithm
 A first order operator splitting algorithm attributed to [Lie:1880:tti,Tro:1959:psg,God:1959:dmn](@cite).
 """
-struct LieTrotterGodunov{AlgTupleType, TimeAdaptionAlgorithm <: AbstractTimeAdaptionAlgorithm} <: AbstractOperatorSplittingAlgorithm
+struct LieTrotterGodunov{AlgTupleType} <: AbstractOperatorSplittingAlgorithm
     inner_algs::AlgTupleType # Tuple of timesteppers for inner problems
-    time_adaption_alg::TimeAdaptionAlgorithm
     # transfer_algs::TransferTupleType # Tuple of transfer algorithms from the master solution into the individual ones
 end
-function LieTrotterGodunov(inner_algs)
-    LieTrotterGodunov(inner_algs, NoTimeAdaption())
-end
+
+@inline is_adaptive(::AbstractOperatorSplittingAlgorithm) = false
 
 struct LieTrotterGodunovCache{uType, tmpType, iiType} <: AbstractOperatorSplittingCache
     u::uType
@@ -22,9 +20,9 @@ struct LieTrotterGodunovCache{uType, tmpType, iiType} <: AbstractOperatorSplitti
 end
 
 # Dispatch for outer construction
-function init_cache(prob::OperatorSplittingProblem{<:GenericSplitFunction}, alg::LieTrotterGodunov; dt, kwargs...) # TODO
+function init_cache(prob::OperatorSplittingProblem, alg::LieTrotterGodunov; dt, kwargs...) # TODO
     @unpack f = prob
-    # @assert f isa GenericSplitFunction
+    @assert f isa GenericSplitFunction
 
     u          = copy(prob.u0)
     uprev      = copy(prob.u0)

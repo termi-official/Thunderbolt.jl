@@ -217,11 +217,3 @@ function perform_step!(integ::ThunderboltTimeIntegrator, cache::AbstractTimeSolv
     end
     return true
 end
-
-@inline function OS.get_reaction_tangent(_::ThunderboltTimeIntegrator)
-    return 0.0
-end
-@inline function OS.get_reaction_tangent(integrator::ThunderboltTimeIntegrator{<:PointwiseODEFunction})
-    φₘidx = transmembranepotential_index(integrator.f.ode)
-    return maximum(@view integrator.cache.dumat[:, φₘidx])
-end

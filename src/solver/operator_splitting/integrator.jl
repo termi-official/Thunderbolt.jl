@@ -45,7 +45,7 @@ end
 # called by DiffEqBase.init and DiffEqBase.solve
 function DiffEqBase.__init(
     prob::OperatorSplittingProblem,
-    alg::LieTrotterGodunov{<:Any, AdaptivityController},
+    alg::AbstractOperatorSplittingAlgorithm,
     args...;
     dt,
     tstops = (),
@@ -54,9 +54,9 @@ function DiffEqBase.__init(
     callback = nothing,
     advance_to_tstop = false,
     save_func = (u, t) -> copy(u), # custom kwarg
-    dtchangeable = AdaptivityController isa NoTimeAdaption ? false : true,           # custom kwarg
+    dtchangeable = is_adaptive(alg),           # custom kwarg
     kwargs...,
-) where AdaptivityController
+)
     (; u0, p) = prob
     t0, tf = prob.tspan
 
@@ -184,7 +184,8 @@ function (integrator::OperatorSplittingIntegrator)(tmp, t)
     linear_interpolation!(tmp, t, integrator.uprev, integrator.u, integrator.tprev, integrator.t)
 end
 
-
+@inline update_controller!(::OperatorSplittingIntegrator) = nothing
+@inline update_dt!(::OperatorSplittingIntegrator) = nothing
 
 # helper functions for dealing with time-reversed integrators in the same way
 # that OrdinaryDiffEq.jl does
@@ -217,10 +218,8 @@ end
 function DiffEqBase.postamble!(integrator::OperatorSplittingIntegrator)
     DiffEqBase.finalize!(integrator.callback, integrator.u, integrator.t, integrator)
 end
-@inline function get_reaction_tangent(_)
-    return 0.0
-end
-function __step!(integrator::OperatorSplittingIntegrator{<:Any, <:LieTrotterGodunov{<:Any, AdaptivityController}}) where AdaptivityController
+
+function __step!(integrator)
     (; dtchangeable, tstops) = integrator
     _dt = DiffEqBase.get_dt(integrator)
 
@@ -230,16 +229,13 @@ function __step!(integrator::OperatorSplittingIntegrator{<:Any, <:LieTrotterGodu
         !isempty(tstops) && dtchangeable ? tdir(integrator) * min(_dt, abs(first(tstops) - integrator.t)) :
         tdir(integrator) * _dt
 
-
     # Propagate information down into the subintegrators
     synchronize_subintegrators!(integrator)
-
     tnext = integrator.t + integrator.dt
-    (AdaptivityController == NoTimeAdaption) || (R = sum(get_reaction_tangent.(integrator.subintegrators)))
 
      # Solve inner problems
     advance_solution_to!(integrator, tnext)
-    (AdaptivityController == NoTimeAdaption) || (R = max(R, sum(get_reaction_tangent.(integrator.subintegrators))))
+    update_controller!(integrator)
 
     # Update integrator
     # increment t by dt, rounding to the first tstop if that is roughly
@@ -250,8 +246,7 @@ function __step!(integrator::OperatorSplittingIntegrator{<:Any, <:LieTrotterGodu
     integrator.tprev = integrator.t
     integrator.t = !isempty(tstops) && abs(first(tstops) - tnext) < max_t_error ? first(tstops) : tnext
 
-    controller = integrator.alg.time_adaption_alg
-    (AdaptivityController == NoTimeAdaption) || (integrator._dt = get_next_dt(R, controller))
+    update_dt!(integrator)
 
     # remove tstops that were just reached
     while !isempty(tstops) && reached_tstop(integrator, first(tstops))

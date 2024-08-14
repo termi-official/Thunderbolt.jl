@@ -69,66 +69,70 @@ tspan = (0.0,100.0)
 prob = OperatorSplittingProblem(fsplit1, u0, tspan)
 
 # The time stepper carries the individual solver information.
-timestepper = LieTrotterGodunov(
-    (DummyForwardEuler(), DummyForwardEuler())
-)
 
-timestepper_adaptive = LieTrotterGodunov(
-    (DummyForwardEuler(), DummyForwardEuler())
-    , OS.ReactionTangentController(0.5, 1.0, (0.01, 0.3)))
-# The remaining code works as usual.
-integrator = DiffEqBase.init(prob, timestepper, dt=0.01, verbose=true)
-DiffEqBase.solve!(integrator)
-ufinal = copy(integrator.u)
-@test ufinal ≉ u0 # Make sure the solve did something
+@testset "OperatorSplitting" begin
+    for TimeStepperType in (LieTrotterGodunov,)
+        for controller in (OS.NoTimeAdaption(),
+                OS.ReactionTangentController(0.5, 1.0, (0.01, 0.3)),) 
+            timestepper = TimeStepperType(
+                (DummyForwardEuler(), DummyForwardEuler())
+            )
+            # The remaining code works as usual.
+            integrator = DiffEqBase.init(prob, timestepper, dt=0.01, verbose=true)
+            DiffEqBase.solve!(integrator)
+            ufinal = copy(integrator.u)
+            @test ufinal ≉ u0 # Make sure the solve did something
 
-DiffEqBase.reinit!(integrator, u0; tspan)
-for (u, t) in DiffEqBase.TimeChoiceIterator(integrator, 0.0:5.0:100.0)
+            DiffEqBase.reinit!(integrator, u0; tspan)
+            for (u, t) in DiffEqBase.TimeChoiceIterator(integrator, 0.0:5.0:100.0)
+            end
+            @test  isapprox(ufinal, integrator.u, atol=1e-8)
+
+            DiffEqBase.reinit!(integrator, u0; tspan)
+            for (uprev, tprev, u, t) in DiffEqBase.intervals(integrator)
+            end
+            @test  isapprox(ufinal, integrator.u, atol=1e-8)
+
+            DiffEqBase.reinit!(integrator, u0; tspan)
+            DiffEqBase.solve!(integrator)
+            @test integrator.sol.retcode == DiffEqBase.ReturnCode.Success
+
+            # Now some recursive splitting
+            function ode3(du, u, p, t)
+                du[1] = 0.005u[2]
+                du[2] = 0.005u[1]
+            end
+            f3 = ODEFunction(ode3)
+
+            # Note that we define the dof indices w.r.t the parent function.
+            # Hence the indices for `fsplit2_inner` are.
+            f1dofs = [1,2,3]
+            f2dofs = [1,3]
+            f3dofs = [1,3]
+            fsplit2_inner = GenericSplitFunction((f3,f3), (f3dofs, f3dofs))
+            fsplit2_outer = GenericSplitFunction((f1,fsplit2_inner), (f1dofs, f2dofs))
+
+            timestepper_inner = TimeStepperType(
+                (DummyForwardEuler(), DummyForwardEuler())
+            )
+            timestepper2 = TimeStepperType(
+                (DummyForwardEuler(), timestepper_inner)
+            )
+            prob2 = OperatorSplittingProblem(fsplit2_outer, u0, tspan)
+            integrator2 = DiffEqBase.init(prob2, timestepper2, dt=0.01, verbose=true)
+            DiffEqBase.solve!(integrator2)
+
+            DiffEqBase.reinit!(integrator2, u0; tspan)
+            for (u, t) in DiffEqBase.TimeChoiceIterator(integrator2, 0.0:5.0:100.0)
+            end
+            @test isapprox(ufinal, integrator2.u, atol=1e-8)
+
+            DiffEqBase.reinit!(integrator2, u0; tspan)
+            DiffEqBase.solve!(integrator2)
+            @test integrator2.sol.retcode == DiffEqBase.ReturnCode.Success
+        end
+    end
 end
-@test  isapprox(ufinal, integrator.u, atol=1e-8)
-
-DiffEqBase.reinit!(integrator, u0; tspan)
-for (uprev, tprev, u, t) in DiffEqBase.intervals(integrator)
-end
-@test  isapprox(ufinal, integrator.u, atol=1e-8)
-
-DiffEqBase.reinit!(integrator, u0; tspan)
-DiffEqBase.solve!(integrator)
-@test integrator.sol.retcode == DiffEqBase.ReturnCode.Success
-
-# Now some recursive splitting
-function ode3(du, u, p, t)
-    du[1] = 0.005u[2]
-    du[2] = 0.005u[1]
-end
-f3 = ODEFunction(ode3)
-
-# Note that we define the dof indices w.r.t the parent function.
-# Hence the indices for `fsplit2_inner` are.
-f1dofs = [1,2,3]
-f2dofs = [1,3]
-f3dofs = [1,3]
-fsplit2_inner = GenericSplitFunction((f3,f3), (f3dofs, f3dofs))
-fsplit2_outer = GenericSplitFunction((f1,fsplit2_inner), (f1dofs, f2dofs))
-
-timestepper_inner = LieTrotterGodunov(
-    (DummyForwardEuler(), DummyForwardEuler())
-)
-timestepper2 = LieTrotterGodunov(
-    (DummyForwardEuler(), timestepper_inner)
-)
-prob2 = OperatorSplittingProblem(fsplit2_outer, u0, tspan)
-integrator2 = DiffEqBase.init(prob2, timestepper2, dt=0.01, verbose=true)
-DiffEqBase.solve!(integrator2)
-
-DiffEqBase.reinit!(integrator2, u0; tspan)
-for (u, t) in DiffEqBase.TimeChoiceIterator(integrator2, 0.0:5.0:100.0)
-end
-@test isapprox(ufinal, integrator2.u, atol=1e-8)
-
-DiffEqBase.reinit!(integrator2, u0; tspan)
-DiffEqBase.solve!(integrator2)
-@test integrator2.sol.retcode == DiffEqBase.ReturnCode.Success
 
 # tnext = tspan[1]+0.01
 # @btime OS.advance_solution_to!($integrator, $tnext) setup=(DiffEqBase.reinit!(integrator, u0; tspan))

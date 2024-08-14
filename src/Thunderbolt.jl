@@ -71,6 +71,8 @@ include("solver/interface.jl")
 include("solver/linear.jl")
 include("solver/nonlinear.jl")
 include("solver/time_integration.jl")
+include("solver/adaptivity.jl")
+
 
 include("processing/ecg.jl")
 
