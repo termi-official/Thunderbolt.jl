@@ -160,7 +160,7 @@ function mul!(y::AbstractVector{<:Number}, A_::ThreadedSparseMatrixCSR, x::Abstr
     A.n == size(x, 1) || throw(DimensionMismatch())
     A.m == size(y, 1) || throw(DimensionMismatch())
 
-    @batch minbatch = size(y, 1) ÷ Threads.nthreads() for row in 1:size(y, 1)
+    @batch minbatch = max(1, size(y, 1) ÷ Threads.nthreads()) for row in 1:size(y, 1)
         @inbounds begin
             v = zero(eltype(y))
             for nz in nzrange(A, row)
