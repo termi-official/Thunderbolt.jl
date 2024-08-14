@@ -19,6 +19,10 @@ mutable struct ReactionTangentController{T <: Real} <: AbstractTimeAdaptionAlgor
     Rₙ::T
 end
 
+function ReactionTangentController(σ_s::T, σ_c::T, Δt_bounds::NTuple{2,T}) where {T <: Real}
+    return ReactionTangentController(σ_s, σ_c, Δt_bounds, 0.0, 0.0)
+end
+
 """
     get_next_dt(controller::ReactionTangentController)
 Returns the next timestep length using [`ReactionTangentController`](@ref) calculated as
