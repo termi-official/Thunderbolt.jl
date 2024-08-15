@@ -55,14 +55,18 @@ end
 Returns the maximal reaction magnitude using the [`PointwiseODEFunction`](@ref) of an operator splitting integrator that uses [`LieTrotterGodunov`](@ref) [Lie:1880:tti,Tro:1959:psg,God:1959:dmn](@cite).
 """
 @inline function get_reaction_tangent(integrator::OS.OperatorSplittingIntegrator)
-    for subintegrator in integrator.subintegrators
-        subintegrator.f isa PointwiseODEFunction || continue
+    reaction_subintegrators = unrolled_filter(subintegrator -> subintegrator.f isa PointwiseODEFunction, integrator.subintegrators)
+    isempty(reaction_subintegrators) && @error "PointwiseODEFunction not found"
+    _get_reaction_tangent(reaction_subintegrators)
+end
+
+@unroll function _get_reaction_tangent(subintegrators)
+    @unroll for subintegrator in subintegrators
+        #TODO: It should be either all the the same type or just one subintegrator after filtering, don't unroll?
         φₘidx = transmembranepotential_index(subintegrator.f.ode)
         return maximum(@view subintegrator.cache.dumat[:, φₘidx])
     end
-    @error "PointwiseODEFunction not found"
 end
-
 
 @inline function OS.update_controller!(integrator::OS.OperatorSplittingIntegrator{<:Any, <:AdaptiveOperatorSplittingAlgorithm{<:OS.LieTrotterGodunov, <:ReactionTangentController}})
     controller = integrator.alg.timestep_controller

@@ -2,7 +2,7 @@ module Thunderbolt
 
 using TimerOutputs
 
-import Unrolled: @unroll
+import Unrolled: @unroll, unrolled_filter
 
 using Reexport, UnPack
 import LinearAlgebra: mul!
