@@ -111,6 +111,7 @@ function DiffEqBase.reinit!(
     tstops = integrator._tstops,
     saveat = integrator._saveat,
     reinit_callbacks = true,
+    reinit_retcode = true
 )
     (t0,tf) = tspan
     integrator.u .= u0
@@ -125,6 +126,9 @@ function DiffEqBase.reinit!(
     else # always reinit the saving callback so that t0 can be saved if needed
         saving_callback = integrator.callback.discrete_callbacks[end]
         DiffEqBase.initialize!(saving_callback, u0, t0, integrator)
+    end
+    if reinit_retcode
+        integrator.sol = DiffEqBase.solution_new_retcode(integrator.sol, DiffEqBase.ReturnCode.Default)
     end
 end
 
@@ -246,7 +250,7 @@ end
 
 function __step!(integrator)
     (; dtchangeable, tstops) = integrator
-    _dt = DiffEqBase.get_dt(integrator)
+    _dt = DiffEqBase.isadaptive(integrator.alg) ? DiffEqBase.get_dt(integrator) : integrator.dt
 
     # update dt before incrementing u; if dt is changeable and there is
     # a tstop within dt, reduce dt to tstop - t

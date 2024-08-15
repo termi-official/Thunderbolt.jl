@@ -78,7 +78,7 @@ end
 @inline function OS.step_accept_controller!(integrator::OS.OperatorSplittingIntegrator, controller::ReactionTangentController, alg::AdaptiveOperatorSplittingAlgorithm{<:OS.LieTrotterGodunov}, q)
     @unpack σ_s, σ_c, Δt_bounds, Rₙ₊₁, Rₙ = controller
     R = max(Rₙ, Rₙ₊₁)
-    integrator._dt = (1 - 1/(1+exp((σ_c - R)*σ_s)))*(Δt_bounds[2] - Δt_bounds[1]) + Δt_bounds[1]
+    integrator.dt = (1 - 1/(1+exp((σ_c - R)*σ_s)))*(Δt_bounds[2] - Δt_bounds[1]) + Δt_bounds[1]
     return nothing
 end
 
