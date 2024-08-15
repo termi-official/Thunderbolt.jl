@@ -63,21 +63,22 @@ steady_state_initializer!(u₀, odeform)
 
 # io = ParaViewWriter("spiral-wave-test")
 
-
-_timestepper = OS.LieTrotterGodunov((
-    BackwardEulerSolver(
-        solution_vector_type=Vector{Float32},
-        system_matrix_type=Thunderbolt.ThreadedSparseMatrixCSR{Float32, Int32},
-        inner_solver=LinearSolve.KrylovJL_CG(atol=1.0f-6, rtol=1.0f-5),
-    ),
-    AdaptiveForwardEulerSubstepper(
-        solution_vector_type=Vector{Float32},
-        reaction_threshold=0.1f0,
-    ),
-))
-controller = Thunderbolt.ReactionTangentController(0.5, 1.0, (0.01, 0.3), 0.0, 0.0)
-
-timestepper = Thunderbolt.AdaptiveOperatorSplittingAlgorithm(_timestepper, controller)
+timestepper = Thunderbolt.AdaptiveOperatorSplittingAlgorithm(
+    OS.LieTrotterGodunov((
+        BackwardEulerSolver(
+            solution_vector_type=Vector{Float32},
+            system_matrix_type=Thunderbolt.ThreadedSparseMatrixCSR{Float32, Int32},
+            inner_solver=LinearSolve.KrylovJL_CG(atol=1.0f-6, rtol=1.0f-5),
+        ),
+        AdaptiveForwardEulerSubstepper(
+            solution_vector_type=Vector{Float32},
+            reaction_threshold=0.1f0,
+        )
+    )),
+    Thunderbolt.ReactionTangentController(
+        0.5, 1.0, (0.01, 0.3)
+    )
+)
 
 problem = OS.OperatorSplittingProblem(odeform, u₀, tspan)
 
