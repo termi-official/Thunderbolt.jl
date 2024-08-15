@@ -76,16 +76,23 @@ end
 f3 = ODEFunction(ode3)
 # The time stepper carries the individual solver information.
 
-@testset "OperatorSplitting" begin
-    
+# Note that we define the dof indices w.r.t the parent function.
+# Hence the indices for `fsplit2_inner` are.
+f1dofs = [1,2,3]
+f2dofs = [1,3]
+f3dofs = [1,3]
+fsplit2_inner = GenericSplitFunction((f3,f3), (f3dofs, f3dofs))
+fsplit2_outer = GenericSplitFunction((f1,fsplit2_inner), (f1dofs, f2dofs))
 
-    # Note that we define the dof indices w.r.t the parent function.
-    # Hence the indices for `fsplit2_inner` are.
-    f1dofs = [1,2,3]
-    f2dofs = [1,3]
-    f3dofs = [1,3]
-    fsplit2_inner = GenericSplitFunction((f3,f3), (f3dofs, f3dofs))
-    fsplit2_outer = GenericSplitFunction((f1,fsplit2_inner), (f1dofs, f2dofs))
+function ode_NaN(du, u, p, t)
+    du[1] = NaN
+    du[2] = 0.01u[1]
+end
+f_NaN = ODEFunction(ode_NaN)
+f_NaN_dofs = f3dofs
+fsplit_NaN = GenericSplitFunction((f1,f_NaN), (f1dofs, f_NaN_dofs))
+
+@testset "OperatorSplitting" begin
     for TimeStepperType in (LieTrotterGodunov,)
         for controller in (Thunderbolt.ReactionTangentController(0.5, 1.0, (0.01, 0.3)),) 
             timestepper = TimeStepperType(
@@ -148,6 +155,13 @@ f3 = ODEFunction(ode3)
                 @test integrator2.sol.retcode == DiffEqBase.ReturnCode.Default
                 DiffEqBase.solve!(integrator2)
                 @test integrator2.sol.retcode == DiffEqBase.ReturnCode.Success
+                @testset "NaNs" begin
+                    # prob_NaN = OperatorSplittingProblem(fsplit_NaN, u0, tspan)
+                    # integrator_NaN = DiffEqBase.init(prob, tstepper1, dt=0.01π, verbose=true)
+                    # @test integrator_NaN.sol.retcode == DiffEqBase.ReturnCode.Default
+                    # DiffEqBase.solve!(integrator_NaN)
+                    # @test integrator_NaN.sol.retcode == DiffEqBase.ReturnCode.Failure
+                end
             end
             # integrator = DiffEqBase.init(prob, timestepper, dt=0.01, verbose=true)
             # for (u, t) in DiffEqBase.TimeChoiceIterator(integrator, 0.0:5.0:100.0) end
