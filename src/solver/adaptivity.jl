@@ -23,32 +23,20 @@ function ReactionTangentController(σ_s::T, σ_c::T, Δt_bounds::NTuple{2,T}) wh
     return ReactionTangentController(σ_s, σ_c, Δt_bounds, 0.0, 0.0)
 end
 
-"""
-    get_next_dt(controller::ReactionTangentController)
-Returns the next timestep length using [`ReactionTangentController`](@ref) calculated as
-```math
-\\sigma\\left(R_{\\max }\\right):=\\left(1.0-\\frac{1}{1+\\exp \\left(\\left(\\sigma_{\\mathrm{c}}-R_{\\max }\\right) \\cdot \\sigma_{\\mathrm{s}}\\right)}\\right) \\cdot\\left(\\Delta t_{\\max }-\\Delta t_{\\min }\\right)+\\Delta t_{\\min }
-```
-"""
-function get_next_dt(controller::ReactionTangentController)
-    @unpack σ_s, σ_c, Δt_bounds, Rₙ₊₁, Rₙ = controller
-    R = max(Rₙ, Rₙ₊₁)
-    (1 - 1/(1+exp((σ_c - R)*σ_s)))*(Δt_bounds[2] - Δt_bounds[1]) + Δt_bounds[1]
-end
 
 """
     AdaptiveOperatorSplittingAlgorithm{TOperatorSplittingAlg <: OS.AbstractOperatorSplittingAlgorithm, TTimeAdaptionAlgorithm <: AbstractTimeAdaptionAlgorithm} <: OS.AbstractOperatorSplittingAlgorithm
-A generic operator splitting algorithm `operator_splitting_algorithm` with adaptive timestepping using the controller `timestep_controller`.
+A generic operator splitting algorithm `operator_splitting_algorithm` with adaptive timestepping using the controller `controller`.
 # Fields
 - `operator_splitting_algorithm::TOperatorSplittingAlg`: steepness
-- `timestep_controller::TTimeAdaptionAlgorithm`: offset in R axis
+- `controller::TTimeAdaptionAlgorithm`: offset in R axis
 """
 struct AdaptiveOperatorSplittingAlgorithm{TOperatorSplittingAlg <: OS.AbstractOperatorSplittingAlgorithm, TTimeAdaptionAlgorithm <: AbstractTimeAdaptionAlgorithm} <: OS.AbstractOperatorSplittingAlgorithm
     operator_splitting_algorithm::TOperatorSplittingAlg
-    timestep_controller::TTimeAdaptionAlgorithm
+    controller::TTimeAdaptionAlgorithm
 end
 
-@inline OS.is_adaptive(::AdaptiveOperatorSplittingAlgorithm) = true
+@inline DiffEqBase.isadaptive(::AdaptiveOperatorSplittingAlgorithm) = true
 
 """
     get_reaction_tangent(integrator::OS.OperatorSplittingIntegrator)
@@ -60,7 +48,7 @@ Returns the maximal reaction magnitude using the [`PointwiseODEFunction`](@ref) 
     _get_reaction_tangent(reaction_subintegrators)
 end
 
-@unroll function _get_reaction_tangent(subintegrators)
+@inline @unroll function _get_reaction_tangent(subintegrators)
     @unroll for subintegrator in subintegrators
         #TODO: It should be either all the the same type or just one subintegrator after filtering, don't unroll?
         φₘidx = transmembranepotential_index(subintegrator.f.ode)
@@ -68,17 +56,34 @@ end
     end
 end
 
-@inline function OS.update_controller!(integrator::OS.OperatorSplittingIntegrator{<:Any, <:AdaptiveOperatorSplittingAlgorithm{<:OS.LieTrotterGodunov, <:ReactionTangentController}})
-    controller = integrator.alg.timestep_controller
+@inline function OS.stepsize_controller!(integrator::OS.OperatorSplittingIntegrator, alg::AdaptiveOperatorSplittingAlgorithm)
+    OS.stepsize_controller!(integrator, alg.controller, alg)
+end
+
+@inline function OS.step_accept_controller!(integrator::OS.OperatorSplittingIntegrator, alg::AdaptiveOperatorSplittingAlgorithm, q)
+    OS.step_accept_controller!(integrator, alg.controller, alg, q)
+end
+
+@inline function OS.step_reject_controller!(integrator::OS.OperatorSplittingIntegrator, alg::AdaptiveOperatorSplittingAlgorithm, q)
+    OS.step_reject_controller!(integrator, alg.controller, alg, q)
+end
+
+@inline function OS.stepsize_controller!(integrator::OS.OperatorSplittingIntegrator, controller::ReactionTangentController, alg::AdaptiveOperatorSplittingAlgorithm{<:OS.LieTrotterGodunov})
+    @unpack σ_s, σ_c, Δt_bounds, Rₙ₊₁, Rₙ = controller
     controller.Rₙ = controller.Rₙ₊₁
     controller.Rₙ₊₁ = get_reaction_tangent(integrator)
     return nothing
 end
 
-@inline function OS.update_dt!(integrator::OS.OperatorSplittingIntegrator{<:Any, <:AdaptiveOperatorSplittingAlgorithm{<:OS.LieTrotterGodunov, <:ReactionTangentController}})
-    controller = integrator.alg.timestep_controller
-    integrator._dt = get_next_dt(controller)
+@inline function OS.step_accept_controller!(integrator::OS.OperatorSplittingIntegrator, controller::ReactionTangentController, alg::AdaptiveOperatorSplittingAlgorithm{<:OS.LieTrotterGodunov}, q)
+    @unpack σ_s, σ_c, Δt_bounds, Rₙ₊₁, Rₙ = controller
+    R = max(Rₙ, Rₙ₊₁)
+    integrator._dt = (1 - 1/(1+exp((σ_c - R)*σ_s)))*(Δt_bounds[2] - Δt_bounds[1]) + Δt_bounds[1]
     return nothing
+end
+
+@inline function OS.step_reject_controller!(integrator::OS.OperatorSplittingIntegrator, controller::ReactionTangentController, alg::AdaptiveOperatorSplittingAlgorithm{<:OS.LieTrotterGodunov}, q)
+    return nothing # Do nothing
 end
 
 # Dispatch for outer construction

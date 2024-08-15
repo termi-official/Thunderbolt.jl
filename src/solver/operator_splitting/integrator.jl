@@ -54,7 +54,7 @@ function DiffEqBase.__init(
     callback = nothing,
     advance_to_tstop = false,
     save_func = (u, t) -> copy(u), # custom kwarg
-    dtchangeable = is_adaptive(alg),           # custom kwarg
+    dtchangeable = DiffEqBase.isadaptive(alg),           # custom kwarg
     kwargs...,
 )
     (; u0, p) = prob
@@ -166,8 +166,6 @@ function DiffEqBase.step!(integrator::OperatorSplittingIntegrator, dt, stop_at_t
     end
 end
 
-
-
 # TimeChoiceIterator API
 @inline function DiffEqBase.get_tmp_cache(integrator::OperatorSplittingIntegrator)
     DiffEqBase.get_tmp_cache(integrator, integrator.alg, integrator.cache)
@@ -185,16 +183,34 @@ function (integrator::OperatorSplittingIntegrator)(tmp, t)
 end
 
 """
-    update_controller!(::OperatorSplittingIntegrator)
+    stepsize_controller!(::OperatorSplittingIntegrator)
 Updates the controller using the current state of the integrator if the operator splitting algorithm is adaptive.
 """
-@inline update_controller!(::OperatorSplittingIntegrator) = nothing
+@inline function stepsize_controller!(integrator::OperatorSplittingIntegrator) 
+    algorithm = integrator.alg
+    DiffEqBase.isadaptive(algorithm) || return nothing
+    stepsize_controller!(integrator, algorithm)
+end
 
 """
-    update_dt!(::OperatorSplittingIntegrator)
-Updates `_dt` of the integrator if the operator splitting algorithm is adaptive.
+    step_accept_controller!(::OperatorSplittingIntegrator)
+Updates `_dt` of the integrator if the step is accepted and the operator splitting algorithm is adaptive.
 """
-@inline update_dt!(::OperatorSplittingIntegrator) = nothing
+@inline function step_accept_controller!(integrator::OperatorSplittingIntegrator) 
+    algorithm = integrator.alg
+    DiffEqBase.isadaptive(algorithm) || return nothing
+    step_accept_controller!(integrator, algorithm, nothing)
+end
+
+"""
+    step_reject_controller!(::OperatorSplittingIntegrator)
+Updates `_dt` of the integrator if the step is rejected and the the operator splitting algorithm is adaptive.
+"""
+@inline function step_reject_controller!(integrator::OperatorSplittingIntegrator) 
+    algorithm = integrator.alg
+    DiffEqBase.isadaptive(algorithm) || return nothing
+    step_reject_controller!(integrator, algorithm, nothing)
+end
 
 # helper functions for dealing with time-reversed integrators in the same way
 # that OrdinaryDiffEq.jl does
@@ -244,7 +260,7 @@ function __step!(integrator)
 
      # Solve inner problems
     advance_solution_to!(integrator, tnext)
-    update_controller!(integrator)
+    stepsize_controller!(integrator)
 
     # Update integrator
     # increment t by dt, rounding to the first tstop if that is roughly
@@ -255,7 +271,7 @@ function __step!(integrator)
     integrator.tprev = integrator.t
     integrator.t = !isempty(tstops) && abs(first(tstops) - tnext) < max_t_error ? first(tstops) : tnext
 
-    update_dt!(integrator)
+    step_accept_controller!(integrator)
 
     # remove tstops that were just reached
     while !isempty(tstops) && reached_tstop(integrator, first(tstops))

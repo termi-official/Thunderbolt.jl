@@ -39,10 +39,9 @@ Thunderbolt.OS.OperatorSplittingIntegrator
 
 ```@docs
 Thunderbolt.AdaptiveOperatorSplittingAlgorithm
-Thunderbolt.OS.is_adaptive
 Thunderbolt.ReactionTangentController
 Thunderbolt.get_reaction_tangent
-Thunderbolt.OS.update_controller!
+Thunderbolt.OS.stepsize_controller!
 Thunderbolt.OS.update_dt!
 Thunderbolt.get_next_dt
 ```
