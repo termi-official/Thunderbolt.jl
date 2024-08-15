@@ -107,34 +107,46 @@ f3 = ODEFunction(ode3)
                     )
                 # The remaining code works as usual.
                 integrator = DiffEqBase.init(prob, tstepper1, dt=0.01, verbose=true)
+                @test integrator.sol.retcode == DiffEqBase.ReturnCode.Default
                 DiffEqBase.solve!(integrator)
+                @test integrator.sol.retcode == DiffEqBase.ReturnCode.Success
                 ufinal = copy(integrator.u)
                 @test ufinal ≉ u0 # Make sure the solve did something
 
                 DiffEqBase.reinit!(integrator, u0; tspan)
+                @test integrator.sol.retcode == DiffEqBase.ReturnCode.Default
                 for (u, t) in DiffEqBase.TimeChoiceIterator(integrator, 0.0:5.0:100.0)
                 end
+                @test integrator.sol.retcode == DiffEqBase.ReturnCode.Success
                 @test  isapprox(ufinal, integrator.u, atol=1e-8)
 
                 DiffEqBase.reinit!(integrator, u0; tspan)
+                @test integrator.sol.retcode == DiffEqBase.ReturnCode.Default
                 for (uprev, tprev, u, t) in DiffEqBase.intervals(integrator)
                 end
+                @test integrator.sol.retcode == DiffEqBase.ReturnCode.Success
                 @test  isapprox(ufinal, integrator.u, atol=1e-8)
 
                 DiffEqBase.reinit!(integrator, u0; tspan)
+                @test integrator.sol.retcode == DiffEqBase.ReturnCode.Default
                 DiffEqBase.solve!(integrator)
                 @test integrator.sol.retcode == DiffEqBase.ReturnCode.Success
 
                 prob2 = OperatorSplittingProblem(fsplit2_outer, u0, tspan)
                 integrator2 = DiffEqBase.init(prob2, tstepper2, dt=0.01, verbose=true)
+                @test integrator.sol.retcode == DiffEqBase.ReturnCode.Default
                 DiffEqBase.solve!(integrator2)
+                @test integrator.sol.retcode == DiffEqBase.ReturnCode.Success
 
                 DiffEqBase.reinit!(integrator2, u0; tspan)
+                @test integrator.sol.retcode == DiffEqBase.ReturnCode.Default
                 for (u, t) in DiffEqBase.TimeChoiceIterator(integrator2, 0.0:5.0:100.0)
                 end
+                @test integrator.sol.retcode == DiffEqBase.ReturnCode.Success
                 @test isapprox(ufinal, integrator2.u, atol=1e-8)
 
                 DiffEqBase.reinit!(integrator2, u0; tspan)
+                @test integrator2.sol.retcode == DiffEqBase.ReturnCode.Default
                 DiffEqBase.solve!(integrator2)
                 @test integrator2.sol.retcode == DiffEqBase.ReturnCode.Success
             end
