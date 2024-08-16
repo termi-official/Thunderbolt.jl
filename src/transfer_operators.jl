@@ -1,33 +1,12 @@
 abstract type AbstractTransferOperator end
 
-# TODO remove after https://github.com/Ferrite-FEM/Ferrite.jl/pull/820 is merged
-"""
-    _spatial_coordinate(ip::VectorizedInterpolation, ξ::Vec, cell_coordinates::AbstractVector{<:Vec{sdim, T}})
-Compute the spatial coordinate in a given quadrature point. `cell_coordinates` contains the nodal coordinates of the cell.
-The coordinate is computed, using the geometric interpolation, as
-``\\mathbf{x} = \\sum\\limits_{i = 1}^n M_i (\\mathbf{\\xi}) \\mathbf{\\hat{x}}_i``
-"""
-_spatial_coordinate(ip::VectorizedInterpolation, ξ::Vec, cell_coordinates::AbstractVector{<:Vec{sdim, T}}) where {T, sdim} = spatial_coordinate(ip.ip, ξ, cell_coordinates)
-
-function _spatial_coordinate(interpolation::ScalarInterpolation, ξ::Vec{<:Any,T}, cell_coordinates::AbstractVector{<:Vec{sdim, T}}) where {T, sdim}
-    n_basefuncs = getnbasefunctions(interpolation)
-    @boundscheck checkbounds(cell_coordinates, Base.OneTo(n_basefuncs))
-
-    x = zero(Vec{sdim, T})
-    @inbounds for j in 1:n_basefuncs
-        M = shape_value(interpolation, ξ, j)
-        x += M * cell_coordinates[j]
-    end
-    return x
-end
-
 function _compute_dof_nodes_barrier!(nodes, sdh, dofrange, gip, dof_to_node_map, ref_coords)
     for cc ∈ CellIterator(sdh)
         # Compute for each dof the spatial coordinate of from the reference coordiante and store.
         # NOTE We assume a continuous coordinate field if the interpolation is continuous.
         dofs = @view celldofs(cc)[dofrange]
         for (dofidx,dof) in enumerate(dofs)
-            nodes[dof_to_node_map[dof]] = _spatial_coordinate(gip, ref_coords[dofidx], getcoordinates(cc))
+            nodes[dof_to_node_map[dof]] = spatial_coordinate(gip, ref_coords[dofidx], getcoordinates(cc))
         end
     end
 end
