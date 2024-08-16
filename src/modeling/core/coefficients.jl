@@ -28,7 +28,7 @@ function _create_field_coefficient_cache(coefficient::FieldCoefficient{T}, ipc::
     return FieldCoefficientCache(coefficient.elementwise_data, FerriteUtils.StaticInterpolationValues(fv.ip, SMatrix{Nξs[1], Nξs[2]}(fv.Nξ), nothing))
 end
 
-function _create_field_coefficient_cache(coefficient::FieldCoefficient{T}, ipc::VectorizedInterpolationCollection, qr::QuadratureRule, sdh::SubDofHandler) where T
+function _create_field_coefficient_cache(coefficient::FieldCoefficient{<:Vec{<:Any, T}}, ipc::VectorizedInterpolationCollection, qr::QuadratureRule, sdh::SubDofHandler) where T
     cell = get_first_cell(sdh)
     ip     = getinterpolation(coefficient.ip_collection, cell)
     fv     = Ferrite.FunctionValues{0}(T, ip.ip, qr, ip)
