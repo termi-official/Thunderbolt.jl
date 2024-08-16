@@ -116,7 +116,7 @@
                 end
             end
 
-            @testset "G xᵢ³" begin
+            @testset "Geselowitz xᵢ³" begin
                 Thunderbolt.update_ecg!(geselowitz_ecg, u_g)
                 ecg_vals = Thunderbolt.evaluate_ecg(geselowitz_ecg)
                 for dim2 in 1:3
@@ -157,7 +157,7 @@
                 end
             end
 
-            @testset "G -xᵢ³" begin
+            @testset "Geselowitz -xᵢ³" begin
                 Thunderbolt.update_ecg!(geselowitz_ecg, u_g)
                 ecg_vals = Thunderbolt.evaluate_ecg(geselowitz_ecg) 
                 for i in 1:3
@@ -174,6 +174,7 @@
 
         @testset "Symmetric stimuli" begin
             Ferrite.apply_analytical!(u, heart_fun.dh, :φₘ, x->sqrt(3)-norm(x) )
+            Ferrite.apply_analytical!(u_g, torso_fun.dh, :φₘ, x->sqrt(3)-norm(x) )
 
             @testset "Plonsey1964 √3-||x||" begin
                 Thunderbolt.update_ecg!(plonsey_ecg, u)
@@ -193,7 +194,16 @@
                 end
             end
 
+            @testset "Geselowitz √3-||x||" begin
+                Thunderbolt.update_ecg!(geselowitz_ecg, u_g)
+                ecg_vals = Thunderbolt.evaluate_ecg(geselowitz_ecg)
+                for i in 3:length(ecg_vals)
+                    @test ecg_vals[2] ≈ ecg_vals[i] atol=1e-1
+                end
+            end
+
             Ferrite.apply_analytical!(u, heart_fun.dh, :φₘ, x->x[1]^2 )
+            Ferrite.apply_analytical!(u_g, torso_fun.dh, :φₘ, x->x[1]^2 )
 
             @testset "Plonsey1964 x₁²" begin
                 Thunderbolt.update_ecg!(plonsey_ecg, u)
@@ -209,6 +219,14 @@
                 @test ecg_vals[1] ≈ 0.0 atol=1e-12 # Ground
                 for dim in 1:3
                     @test ecg_vals[2dim+1] ≈ ecg_vals[2dim] atol=1e-1
+                end
+            end
+
+            @testset "Geselowitz x₁²" begin
+                Thunderbolt.update_ecg!(geselowitz_ecg, u_g)
+                ecg_vals = Thunderbolt.evaluate_ecg(geselowitz_ecg)
+                for dim in 1:3
+                    @test ecg_vals[2dim] ≈ ecg_vals[2dim-1] atol=1e-1
                 end
             end
         end
