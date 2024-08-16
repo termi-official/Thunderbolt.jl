@@ -559,5 +559,5 @@ end
 
 # Batch evaluate all electrodes
 function evaluate_ecg(cache::Geselowitz1989ECGLeadCache{N}) where N    
-    return ntuple(i -> cache.Z[i] ⋅ cache.φₘ, N)
+    return ntuple(i -> -cache.Z[i] ⋅ cache.φₘ, N)
 end
