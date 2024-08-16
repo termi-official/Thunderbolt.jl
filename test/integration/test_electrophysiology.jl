@@ -24,7 +24,7 @@ using Thunderbolt
         end
     end
 
-    function solve_waveprop(mesh, coeff, subdomains)
+    function solve_waveprop(mesh, coeff, subdomains, isadaptive = false)
         cs = CoordinateSystemCoefficient(CartesianCoordinateSystem(mesh))
         model = MonodomainModel(
             ConstantCoefficient(1.0),
@@ -45,10 +45,18 @@ using Thunderbolt
             mesh
         )
 
-        timestepper = LieTrotterGodunov((
+        _timestepper = LieTrotterGodunov((
             BackwardEulerSolver(),
             ForwardEulerCellSolver()
         ))
+        if isadaptive
+            timestepper = Thunderbolt.AdaptiveOperatorSplittingAlgorithm(
+                _timestepper,
+                Thunderbolt.ReactionTangentController(0.5, 1.0, (0.01, 0.3))
+            )
+        else
+            timestepper = _timestepper
+        end
 
         u₀ = zeros(Float64, OS.function_size(odeform))
         simple_initializer!(u₀, odeform)
@@ -60,26 +68,43 @@ using Thunderbolt
         DiffEqBase.solve!(integrator)
         @test integrator.sol.retcode == DiffEqBase.ReturnCode.Success
         @test integrator.u ≉ u₀
+        return integrator.u
     end
 
     mesh  = generate_mesh(Hexahedron, (4, 4, 4), Vec{3}((0.0,0.0,0.0)), Vec{3}((1.0,1.0,1.0)))
     coeff = ConstantCoefficient(SymmetricTensor{2,3,Float64}((4.5e-5, 0, 0, 2.0e-5, 0, 1.0e-5)))
-    solve_waveprop(mesh, coeff, [""])
+    u = solve_waveprop(mesh, coeff, [""])
+    u_adaptive = solve_waveprop(mesh, coeff, [""], true)
+    @test u ≈ u_adaptive
 
     mesh  = generate_ideal_lv_mesh(4,1,1)
     coeff = ConstantCoefficient(SymmetricTensor{2,3,Float64}((4.5e-5, 0, 0, 2.0e-5, 0, 1.0e-5)))
-    solve_waveprop(mesh, coeff, [""])
-
+    u = solve_waveprop(mesh, coeff, [""])
+    u_adaptive = solve_waveprop(mesh, coeff, [""], true)
+    @test u ≈ u_adaptive
+    
     mesh = to_mesh(generate_mixed_grid_2D())
     coeff = ConstantCoefficient(SymmetricTensor{2,2,Float64}((4.5e-5, 0, 2.0e-5)))
-    solve_waveprop(mesh, coeff, ["Pacemaker", "Myocardium"])
-    solve_waveprop(mesh, coeff, ["Pacemaker"])
-    solve_waveprop(mesh, coeff, ["Myocardium"])
+    u = solve_waveprop(mesh, coeff, ["Pacemaker", "Myocardium"])
+    u_adaptive = solve_waveprop(mesh, coeff, ["Pacemaker", "Myocardium"], true)
+    @test u ≈ u_adaptive
+    u = solve_waveprop(mesh, coeff, ["Pacemaker"])
+    u_adaptive = solve_waveprop(mesh, coeff, ["Pacemaker"], true)
+    @test u ≈ u_adaptive
+    u = solve_waveprop(mesh, coeff, ["Myocardium"])
+    u_adaptive = solve_waveprop(mesh, coeff, ["Myocardium"], true)
+    @test u ≈ u_adaptive
 
     mesh = to_mesh(generate_mixed_dimensional_grid_3D())
     coeff = ConstantCoefficient(SymmetricTensor{2,3,Float64}((4.5e-5, 0, 0, 2.0e-5, 0, 1.0e-5)))
-    solve_waveprop(mesh, coeff, ["Ventricle"])
+    u = solve_waveprop(mesh, coeff, ["Ventricle"])
+    u_adaptive = solve_waveprop(mesh, coeff, ["Ventricle"])
+    @test u ≈ u_adaptive
     coeff = ConstantCoefficient(SymmetricTensor{2,3,Float64}((5e-5, 0, 0, 5e-5, 0, 5e-5)))
-    solve_waveprop(mesh, coeff, ["Purkinje"])
-    solve_waveprop(mesh, coeff, ["Ventricle", "Purkinje"])
+    u = solve_waveprop(mesh, coeff, ["Purkinje"])
+    u_adaptive = solve_waveprop(mesh, coeff, ["Purkinje"])
+    @test u ≈ u_adaptive
+    u = solve_waveprop(mesh, coeff, ["Ventricle", "Purkinje"])
+    u_adaptive = solve_waveprop(mesh, coeff, ["Ventricle", "Purkinje"])
+    @test u ≈ u_adaptive
 end
