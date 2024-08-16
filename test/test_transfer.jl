@@ -41,7 +41,7 @@
             dofs_v = @view celldofs(cc)[v_range]
             dofs_w = @view celldofs(cc)[w_range]
             for qp in QuadratureIterator(cvv)
-                x = Thunderbolt._spatial_coordinate(Lagrange{RefTriangle,1}(), qp.ξ, getcoordinates(cc))
+                x = Thunderbolt.spatial_coordinate(Lagrange{RefTriangle,1}(), qp.ξ, getcoordinates(cc))
                 @test function_value(cvv, qp, target_u[dofs_v]) ≈ -norm(x) atol=3e-1
                 @test all(isnan.(target_u[dofs_w]))
             end
@@ -56,7 +56,7 @@
             dofs_v = @view celldofs(cc)[v_range]
             dofs_w = @view celldofs(cc)[w_range]
             for qp in QuadratureIterator(cvw)
-                x = Thunderbolt._spatial_coordinate(Lagrange{RefTriangle,1}(), qp.ξ, getcoordinates(cc))
+                x = Thunderbolt.spatial_coordinate(Lagrange{RefTriangle,1}(), qp.ξ, getcoordinates(cc))
                 @test all(isnan.(target_u[dofs_v]))
                 @test function_value(cvw, qp, target_u[dofs_w]) ≈ norm(x) atol=3e-1
             end

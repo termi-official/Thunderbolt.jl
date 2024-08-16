@@ -18,13 +18,13 @@ function _thunderbolt_fix_create_vtk_grid(filename::AbstractString, grid::Abstra
     return  WriteVTK.vtk_grid(filename, coords, cls)
 end
 
-function __VTKFileCollection(name::String; kwargs...)
+function __paraview_collection(name::String; kwargs...)
     pvd = WriteVTK.paraview_collection(name; kwargs...)
     basename = string(first(split(pvd.path, ".pvd")))
-    return VTKFileCollection(pvd, nothing, basename, 0)
+    return WriteVTK.paraview_collection(basename)
 end
 
-ParaViewWriter(filename::String; kwargs...) = ParaViewWriter(filename, __VTKFileCollection("$filename.pvd"; kwargs...), nothing)
+ParaViewWriter(filename::String; kwargs...) = ParaViewWriter(filename, __paraview_collection("$filename.pvd"; kwargs...), nothing)
 
 function store_timestep!(io::ParaViewWriter, t, grid::AbstractGrid)
     if io.current_file === nothing
@@ -58,10 +58,10 @@ end
 
 function finalize_timestep!(io::ParaViewWriter, t)
     WriteVTK.vtk_save(io.current_file)
-    io.pvd.pvd[t] = io.current_file
+    io.pvd[t] = io.current_file
     io.current_file = nothing
     # This updates the PVD file
-    WriteVTK.save_file(io.pvd.pvd.xdoc, io.pvd.pvd.path)
+    WriteVTK.save_file(io.pvd.xdoc, io.pvd.path)
 end
 
 function finalize!(io::ParaViewWriter)
