@@ -65,5 +65,4 @@ end
 
 Ferrite.isclosed(::GPUDofHandler) = true
 
-# TODO needs an update after https://github.com/Ferrite-FEM/Ferrite.jl/pull/888 is merged
 Ferrite.allocate_matrix(dh::GPUDofHandler) = _allocate_matrix(dh, allocate_matrix(dh.dh), dh.gpudata.cellset)
