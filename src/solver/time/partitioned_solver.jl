@@ -1,6 +1,11 @@
 abstract type AbstractPointwiseSolver <: AbstractSolver end
 abstract type AbstractPointwiseSolverCache <: AbstractTimeSolverCache end
 
+# Auxilliary functions to query the coordinate
+@inline getcoordinate(f::F, i::I)       where {F<:AbstractPointwiseSolverCache,I}                  = getcoordinate(f, i, f.xs)
+@inline getcoordinate(f::F, i::I, x::X) where {F<:AbstractPointwiseSolverCache,I,X<:Nothing}       = nothing
+@inline getcoordinate(f::F, i::I, x::X) where {F<:AbstractPointwiseSolverCache,I,X<:AbstractArray} = x[i]
+
 # Redirect to inner solve
 function perform_step!(f::PointwiseODEFunction, cache::AbstractPointwiseSolverCache, t::Real, Δt::Real)
     _pointwise_step_outer_kernel!(f, t, Δt, cache, cache.uₙ)
@@ -11,7 +16,7 @@ function _pointwise_step_outer_kernel!(f::PointwiseODEFunction, t::Real, Δt::Re
     @unpack npoints = f
 
     @batch minbatch=cache.batch_size_hint for i ∈ 1:npoints
-        _pointwise_step_inner_kernel!(f, i, t, Δt, cache) || return false
+        _pointwise_step_inner_kernel!(f.ode, i, t, Δt, cache) || return false
     end
 
     return true
@@ -26,7 +31,7 @@ Base.@kwdef struct ForwardEulerCellSolver{SolutionVectorType} <: AbstractPointwi
 end
 
 # Fully accelerator compatible
-struct ForwardEulerCellSolverCache{duType, uType, dumType, umType} <: AbstractPointwiseSolverCache
+struct ForwardEulerCellSolverCache{duType, uType, dumType, umType, xType} <: AbstractPointwiseSolverCache
     du::duType
     # These vectors hold the data
     uₙ::uType
@@ -37,20 +42,18 @@ struct ForwardEulerCellSolverCache{duType, uType, dumType, umType} <: AbstractPo
     uₙmat::umType
     # uₙ₋₁mat::umType
     batch_size_hint::Int
+    xs::xType
 end
 Adapt.@adapt_structure ForwardEulerCellSolverCache
 
 # This is the actual solver
-@inline function _pointwise_step_inner_kernel!(f::F, i::I, t::T, Δt::T, cache::C) where {F <: PointwiseODEFunction, C <: ForwardEulerCellSolverCache, T <: Real, I <: Integer}
-    cell_model = f.ode
+@inline function _pointwise_step_inner_kernel!(cell_model::F, i::I, t::T, Δt::T, cache::C) where {F, C <: ForwardEulerCellSolverCache, T <: Real, I <: Integer}
     u_local    = @view cache.uₙmat[i, :]
     du_local   = @view cache.dumat[i, :]
-    # TODO this should happen in rhs call below
-    @inbounds φₘ_cell = u_local[1]
-    @inbounds s_cell  = @view u_local[2:end]
+    x          = getcoordinate(cache, i)
 
-    # #TODO get spatial coordinate x and Cₘ
-    cell_rhs!(du_local, φₘ_cell, s_cell, nothing, t, cell_model)
+    # TODO get Cₘ
+    cell_rhs!(du_local, u_local, x, t, cell_model)
 
     @inbounds for j in 1:length(u_local)
         u_local[j] += Δt*du_local[j]
@@ -69,8 +72,9 @@ function setup_solver_cache(f::PointwiseODEFunction, solver::ForwardEulerCellSol
     uₙ₋₁    = create_system_vector(solver.solution_vector_type, f)
     tmp     = create_system_vector(solver.solution_vector_type, f)
     uₙmat   = reshape(uₙ, (npoints,ndofs_local))
+    xs      = f.x === nothing ? nothing : Adapt.adapt(solver.solution_vector_type, f.x)
 
-    return ForwardEulerCellSolverCache(du, uₙ, uₙ₋₁, tmp, dumat, uₙmat, solver.batch_size_hint)
+    return ForwardEulerCellSolverCache(du, uₙ, uₙ₋₁, tmp, dumat, uₙmat, solver.batch_size_hint, xs)
 end
 
 Base.@kwdef struct AdaptiveForwardEulerSubstepper{T, SolutionVectorType <: AbstractVector{T}} <: AbstractPointwiseSolver
@@ -81,7 +85,7 @@ Base.@kwdef struct AdaptiveForwardEulerSubstepper{T, SolutionVectorType <: Abstr
 end
 
 # Fully accelerator compatible
-struct AdaptiveForwardEulerSubstepperCache{T, duType, uType, dumType, umType} <: AbstractPointwiseSolverCache
+struct AdaptiveForwardEulerSubstepperCache{T, duType, uType, dumType, umType, xType} <: AbstractPointwiseSolverCache
     du::duType
     # These vectors hold the data
     uₙ::uType
@@ -93,21 +97,21 @@ struct AdaptiveForwardEulerSubstepperCache{T, duType, uType, dumType, umType} <:
     substeps::Int
     reaction_threshold::T
     batch_size_hint::Int
+    xs::xType
 end
 Adapt.@adapt_structure AdaptiveForwardEulerSubstepperCache
 
-@inline function _pointwise_step_inner_kernel!(f::F, i::I, t::T, Δt::T, cache::C) where {F <: PointwiseODEFunction, C <: AdaptiveForwardEulerSubstepperCache, T <: Real, I <: Integer}
-    cell_model = f.ode
+@inline function _pointwise_step_inner_kernel!(cell_model::F, i::I, t::T, Δt::T, cache::C) where {F, C <: AdaptiveForwardEulerSubstepperCache, T <: Real, I <: Integer}
     u_local    = @view cache.uₙmat[i, :]
     du_local   = @view cache.dumat[i, :]
-    # TODO this should happen in rhs call below
-    @inbounds φₘ_cell = u_local[1]
-    @inbounds s_cell  = @view u_local[2:end]
+    x          = getcoordinate(cache, i)
 
-    # #TODO get spatial coordinate x and Cₘ
-    cell_rhs!(du_local, φₘ_cell, s_cell, nothing, t, cell_model)
+    φₘidx = transmembranepotential_index(cell_model)
 
-    if du_local[1] < cache.reaction_threshold
+    # TODO get Cₘ
+    cell_rhs!(du_local, u_local, x, t, cell_model)
+
+    if abs(du_local[φₘidx]) < cache.reaction_threshold
         for j in 1:length(u_local)
             u_local[j] += Δt*du_local[j]
         end
@@ -119,10 +123,8 @@ Adapt.@adapt_structure AdaptiveForwardEulerSubstepperCache
 
         for substep ∈ 2:cache.substeps
             tₛ = t + substep*Δtₛ
-            @inbounds φₘ_cell = u_local[1]
-
-            #TODO get x and Cₘ
-            cell_rhs!(du_local, φₘ_cell, s_cell, nothing, tₛ, cell_model)
+            #TODO Cₘ
+            cell_rhs!(du_local, u_local, x, t, cell_model)
 
             for j in 1:length(u_local)
                 u_local[j] += Δtₛ*du_local[j]
@@ -142,6 +144,7 @@ function setup_solver_cache(f::PointwiseODEFunction, solver::AdaptiveForwardEule
     uₙ      = create_system_vector(solver.solution_vector_type, f)
     uₙ₋₁    = create_system_vector(solver.solution_vector_type, f)
     uₙmat   = reshape(uₙ, (npoints,ndofs_local))
+    xs      = f.x === nothing ? nothing : Adapt.adapt(solver.solution_vector_type, f.x)
 
-    return AdaptiveForwardEulerSubstepperCache(du, uₙ, uₙ₋₁, dumat, uₙmat, solver.substeps, solver.reaction_threshold, solver.batch_size_hint)
+    return AdaptiveForwardEulerSubstepperCache(du, uₙ, uₙ₋₁, dumat, uₙmat, solver.substeps, solver.reaction_threshold, solver.batch_size_hint, xs)
 end

@@ -156,7 +156,7 @@ end
 
 function AssembledNonlinearOperator(dh::AbstractDofHandler, field_name::Symbol, element_model, element_qrc::QuadratureRuleCollection)
     AssembledNonlinearOperator(
-        create_sparsity_pattern(dh),
+        allocate_matrix(dh),
         element_model, element_qrc,
         nothing, nothing,
         nothing, nothing,
@@ -167,7 +167,7 @@ end
 #Utility constructor to get the nonlinear operator for a single field problem.
 function AssembledNonlinearOperator(dh::AbstractDofHandler, field_name::Symbol, element_model, element_qrc::QuadratureRuleCollection, boundary_model, boundary_qrc::FacetQuadratureRuleCollection)
     AssembledNonlinearOperator(
-        create_sparsity_pattern(dh),
+        allocate_matrix(dh),
         element_model, element_qrc,
         boundary_model, boundary_qrc,
         nothing, nothing,
@@ -177,7 +177,7 @@ end
 
 function AssembledNonlinearOperator(dh::AbstractDofHandler, field_name::Symbol, element_model, element_qrc::QuadratureRuleCollection, boundary_model, boundary_qrc::FacetQuadratureRuleCollection, tying_model, tying_qr)
     AssembledNonlinearOperator(
-        create_sparsity_pattern(dh),
+        allocate_matrix(dh),
         element_cache, element_qrc,
         boundary_cache, boundary_qrc,
         tying_cache, tying_qrc,
@@ -234,7 +234,9 @@ function _update_linearization_on_subdomain_J!(assembler, sdh, element_cache, fa
         @timeit_debug "assemble element" assemble_element!(Jₑ, uₑ, cell, element_cache, time)
         # TODO maybe it makes sense to merge this into the element routine in a modular fasion?
         # TODO benchmark against putting this into the FacetIterator
-        @timeit_debug "assemble faces" assemble_element!(Jₑ, uₑ, cell, local_face_index, face_cache, time)
+        @timeit_debug "assemble faces" for local_face_index ∈ 1:nfacets(cell)
+            assemble_face!(Jₑ, uₑ, cell, local_face_index, face_cache, time)
+        end
         @timeit_debug "assemble tying"  assemble_tying!(Jₑ, uₑ, uₜ, cell, tying_cache, time)
         assemble!(assembler, celldofs(cell), Jₑ)
     end
@@ -289,10 +291,9 @@ function _update_linearization_on_subdomain_Jr!(assembler, sdh, element_cache, f
         @timeit_debug "assemble element" assemble_element!(Jₑ, rₑ, uₑ, cell, element_cache, time)
         # TODO maybe it makes sense to merge this into the element routine in a modular fasion?
         # TODO benchmark against putting this into the FacetIterator
-        # @timeit_debug "assemble faces" for local_face_index ∈ 1:nfacets(cell)
-        #     assemble_face!(Jₑ, rₑ, uₑ, cell, local_face_index, face_cache, time)
-        # end
-        @timeit_debug "assemble faces" assemble_element!(Jₑ, rₑ, uₑ, cell, face_cache, time)
+        @timeit_debug "assemble faces" for local_face_index ∈ 1:nfacets(cell)
+            assemble_face!(Jₑ, rₑ, uₑ, cell, local_face_index, face_cache, time)
+        end
         @timeit_debug "assemble tying"  assemble_tying!(Jₑ, rₑ, uₑ, uₜ, cell, tying_cache, time)
         assemble!(assembler, dofs, Jₑ, rₑ)
     end
@@ -460,7 +461,7 @@ function update_operator!(op::LinearOperator, time)
 end
 
 function _update_linear_operator_on_subdomain!(b, sdh, element_cache, time)
-    ndofs = ndofs_per_cell(dh)
+    ndofs = ndofs_per_cell(sdh)
     bₑ = zeros(ndofs)
     @inbounds for cell in CellIterator(sdh)
         fill!(bₑ, 0)

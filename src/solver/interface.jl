@@ -15,7 +15,7 @@ function setup_operator(f::AbstractQuasiStaticFunction, solver::AbstractNonlinea
 
     displacement_symbol = first(dh.field_names)
 
-    intorder = quadrature_order(f, displacement_symbol)::Int
+    intorder = default_quadrature_order(f, displacement_symbol)::Int
     qr = QuadratureRuleCollection(intorder)
     qr_face = FacetQuadratureRuleCollection(intorder)
 
@@ -40,7 +40,7 @@ end
 
 function setup_assembled_operator(integrator::AbstractBilinearIntegrator, system_matrix_type::Type, dh::AbstractDofHandler, field_name::Symbol, qrc::QuadratureRuleCollection)
     A  = create_system_matrix(system_matrix_type, dh)
-    A_ = create_sparsity_pattern(dh) #  TODO how to query this?
+    A_ = allocate_matrix(dh) #  TODO how to query this?
     return AssembledBilinearOperator(
         A, A_,
         integrator, qrc,
@@ -57,7 +57,7 @@ end
 #     @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the Newton solver."
 #     @assert length(dh.field_names) == 1 "Multiple fields not yet supported in the nonlinear solver."
 
-#     intorder = quadrature_order(problem, displacement_symbol)
+#     intorder = default_quadrature_order(problem, displacement_symbol)
 #     qr = QuadratureRuleCollection(intorder)
 #     qr_face = FacetQuadratureRuleCollection(intorder)
 
@@ -103,12 +103,12 @@ update_constraints_block!(f::NullFunction, i::Block, solver_cache::AbstractTimeS
 create_system_matrix(T::Type{<:AbstractMatrix}, f::AbstractSemidiscreteFunction) = create_system_matrix(T, f.dh)
 
 function create_system_matrix(::Type{<:ThreadedSparseMatrixCSR{Tv,Ti}}, dh::AbstractDofHandler) where {Tv,Ti}
-    Acsct = transpose(convert(SparseMatrixCSC{Tv,Ti}, create_sparsity_pattern(dh)))
+    Acsct = transpose(convert(SparseMatrixCSC{Tv,Ti}, allocate_matrix(dh)))
     return ThreadedSparseMatrixCSR(Acsct)
 end
 
 function create_system_matrix(SpMatType::Type{<:SparseMatrixCSC}, dh::AbstractDofHandler)
-    A = convert(SpMatType, create_sparsity_pattern(dh))
+    A = convert(SpMatType, allocate_matrix(dh))
     return A
 end
 
@@ -121,6 +121,6 @@ function create_system_vector(::Type{<:Vector{T}}, dh::DofHandler) where T
 end
 
 function create_quadrature_rule(f::AbstractSemidiscreteFunction, solver::AbstractSolver, field_name::Symbol)
-    intorder = quadrature_order(f, field_name)
+    intorder = default_quadrature_order(f, field_name)
     return QuadratureRuleCollection(intorder)
 end

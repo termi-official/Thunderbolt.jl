@@ -6,6 +6,8 @@ Standard cartesian coordinate system.
 struct CartesianCoordinateSystem{sdim}
 end
 
+value_type(::CartesianCoordinateSystem{sdim}) where sdim = Vec{sdim}
+
 CartesianCoordinateSystem(mesh::AbstractGrid{sdim}) where sdim = CartesianCoordinateSystem{sdim}()
 
 """
@@ -45,6 +47,8 @@ struct LVCoordinate{T}
     circumferential::T
 end
 
+value_type(::LVCoordinateSystem) = LVCoordinate
+
 
 """
     getcoordinateinterpolation(cs::LVCoordinateSystem, cell::AbstractCell)
@@ -81,7 +85,7 @@ function compute_lv_coordinate_system(mesh::SimpleMesh{3}, subdomains::Vector{St
 
     # Assemble Laplacian
     # TODO use bilinear operator for performance
-    K = create_sparsity_pattern(dh)
+    K = allocate_matrix(dh)
 
     assembler = start_assemble(K)
     for sdh in dh.subdofhandlers
@@ -179,7 +183,7 @@ function compute_midmyocardial_section_coordinate_system(mesh::SimpleMesh{3}, su
 
     # Assemble Laplacian
     # TODO use bilinear operator
-    K = create_sparsity_pattern(dh)
+    K = allocate_matrix(dh)
 
     assembler = start_assemble(K)
     for sdh in dh.subdofhandlers
@@ -283,6 +287,8 @@ struct BiVCoordinate{T}
     transventricular::T
 end
 
+value_type(::BiVCoordinateSystem) = BiVCoordinate
+
 getcoordinateinterpolation(cs::BiVCoordinateSystem, cell::Ferrite.AbstractCell) = Ferrite.getfieldinterpolation(cs.dh, (1,1))
 
 function vtk_coordinate_system(vtk, cs::BiVCoordinateSystem)
@@ -291,3 +297,4 @@ function vtk_coordinate_system(vtk, cs::BiVCoordinateSystem)
     vtk_point_data(vtk, bivcs.dh, bivcs.u_rotational, "_rotational")
     vtk_point_data(vtk, bivcs.dh, bivcs.u_transventricular, "_transventricular")
 end
+

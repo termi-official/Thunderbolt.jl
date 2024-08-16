@@ -70,7 +70,8 @@ function generate_mixed_dimensional_grid_3D()
     return Grid(elements, nodes; cellsets, facetsets)
 end
 
-# include("test_operators.jl")
+# include("test_elements.jl")
+include("test_operators.jl")
 
 # include("test_solver.jl")
 

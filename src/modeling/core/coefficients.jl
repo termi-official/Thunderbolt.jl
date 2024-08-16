@@ -20,7 +20,7 @@ duplicate_for_parallel(cache::FieldCoefficientCache) = cache
     return _create_field_coefficient_cache(coefficient, coefficient.ip_collection, qr, sdh)
 end
 
-function _create_field_coefficient_cache(coefficient::FieldCoefficient, ipc::ScalarInterpolationCollection, qr::QuadratureRule{<:Any, T}, sdh::SubDofHandler) where T
+function _create_field_coefficient_cache(coefficient::FieldCoefficient{T}, ipc::ScalarInterpolationCollection, qr::QuadratureRule, sdh::SubDofHandler) where T
     cell = get_first_cell(sdh)
     ip     = getinterpolation(coefficient.ip_collection, cell)
     fv     = Ferrite.FunctionValues{0}(T, ip, qr, ip^3)
@@ -28,7 +28,7 @@ function _create_field_coefficient_cache(coefficient::FieldCoefficient, ipc::Sca
     return FieldCoefficientCache(coefficient.elementwise_data, FerriteUtils.StaticInterpolationValues(fv.ip, SMatrix{Nξs[1], Nξs[2]}(fv.Nξ), nothing))
 end
 
-function _create_field_coefficient_cache(coefficient::FieldCoefficient, ipc::VectorizedInterpolationCollection, qr::QuadratureRule{<:Any, T}, sdh::SubDofHandler) where T
+function _create_field_coefficient_cache(coefficient::FieldCoefficient{<:Vec{<:Any, T}}, ipc::VectorizedInterpolationCollection, qr::QuadratureRule, sdh::SubDofHandler) where T
     cell = get_first_cell(sdh)
     ip     = getinterpolation(coefficient.ip_collection, cell)
     fv     = Ferrite.FunctionValues{0}(T, ip.ip, qr, ip)
@@ -114,6 +114,28 @@ struct CoordinateSystemCoefficient{CS}
     cs::CS
 end
 
+function compute_nodal_values(csc::CoordinateSystemCoefficient, dh::DofHandler, field_name::Symbol)
+    nodal_values = Vector{value_type(csc.cs)}(UndefInitializer(), ndofs(dh))
+    for sdh in dh.subdofhandlers
+        field_name ∈ sdh.field_names || continue
+        ip = Ferrite.getfieldinterpolation(sdh, field_name)
+        positions = Ferrite.reference_coordinates(ip)
+        # This little trick uses the delta property of interpolations
+        qr = QuadratureRule{Ferrite.getrefshape(ip), eltype(first(positions))}([1.0 for _ in 1:length(positions)], positions)
+        cc = setup_coefficient_cache(csc, qr, sdh)
+        _compute_nodal_values!(nodal_values, qr, cc, sdh)
+    end
+end
+
+function _compute_nodal_values!(nodal_values, qr, cc, sdh)
+    for cell in CellIterator(sdh)
+        dofs = celldofs(cell)
+        for qp in QuadratureIterator(qr)
+            nodal_values[dofs[qp.i]] = evaluate_coefficient(cc, cell, qp, NaN)
+        end
+    end
+end
+
 struct CartesianCoordinateSystemCache{CS, CV}
     cs::CS
     cv::CV
@@ -121,7 +143,7 @@ end
 
 duplicate_for_parallel(cache::CartesianCoordinateSystemCache) = cache
 
-function setup_coefficient_cache(coefficient::CoordinateSystemCoefficient{<:CartesianCoordinateSystem}, qr::QuadratureRule{<:Any,T}, sdh::SubDofHandler) where T
+function setup_coefficient_cache(coefficient::CoordinateSystemCoefficient{<:CartesianCoordinateSystem}, qr::QuadratureRule{<:Any, <:AbstractArray{T}}, sdh::SubDofHandler) where T
     cell = get_first_cell(sdh)
     ip = getcoordinateinterpolation(coefficient.cs, cell)
     fv = Ferrite.FunctionValues{0}(T, ip.ip, qr, ip) # We scalarize the interpolation again as an optimization step
@@ -146,7 +168,7 @@ end
 
 duplicate_for_parallel(cache::LVCoordinateSystemCache) = cache
 
-function setup_coefficient_cache(coefficient::CoordinateSystemCoefficient{<:LVCoordinateSystem}, qr::QuadratureRule{<:Any, T}, sdh::SubDofHandler) where T
+function setup_coefficient_cache(coefficient::CoordinateSystemCoefficient{<:LVCoordinateSystem}, qr::QuadratureRule{<:Any, <:AbstractArray{T}}, sdh::SubDofHandler) where T
     cell = get_first_cell(sdh)
     ip = getcoordinateinterpolation(coefficient.cs, cell)
     ip_geo = ip^3

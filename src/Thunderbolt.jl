@@ -25,6 +25,7 @@ solution_size(f::GenericSplitFunction) = OS.function_size(f)
 import Ferrite: AbstractDofHandler, AbstractGrid, AbstractRefShape, AbstractCell, get_grid
 import Ferrite: vertices, edges, faces, sortedge, sortface
 import Ferrite: get_coordinate_type, getspatialdim
+import Ferrite: reference_shape_value
 
 import DiffEqBase#: AbstractDiffEqFunction, AbstractDEProblem
 @reexport import LinearSolve

@@ -42,7 +42,6 @@ end
 u₁ = test_solve_passive_structure(
     PK1Model(
         HolzapfelOgden2009Model(),
-        Thunderbolt.EmptyInternalVariableModel(),
         ConstantCoefficient(OrthotropicMicrostructure(
             Vec((1.0, 0.0, 0.0)),
             Vec((0.0, 1.0, 0.0)),
@@ -50,12 +49,12 @@ u₁ = test_solve_passive_structure(
         )),
     )
 )
+@test !iszero(u₁)
 
 u₂ = test_solve_passive_structure(
     PrestressedMechanicalModel(
         PK1Model(
             HolzapfelOgden2009Model(),
-            Thunderbolt.EmptyInternalVariableModel(),
             ConstantCoefficient(OrthotropicMicrostructure(
                 Vec((1.0, 0.0, 0.0)),
                 Vec((0.0, 1.0, 0.0)),
