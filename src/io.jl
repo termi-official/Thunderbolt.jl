@@ -44,7 +44,7 @@ function store_timestep_field!(io::ParaViewWriter, t, dh::AbstractDofHandler, u:
     fieldnames = Ferrite.getfieldnames(dh)
     idx = findfirst(f->f == sym, fieldnames)
     if idx === nothing
-        @warn "Cannot write data for PVD '$(io.name)'. Field $sym not found in $fieldnames of DofHandler. Skipping."
+        @warn "Cannot write data for PVD '$(io.filename)'. Field $sym not found in $fieldnames of DofHandler. Skipping."
         return nothing
     end
     data = Ferrite._evaluate_at_grid_nodes(dh, u, sym, #=vtk=# Val(true))
