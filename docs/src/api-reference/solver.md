@@ -38,7 +38,5 @@ Thunderbolt.OS.OperatorSplittingIntegrator
 ## Operator Splitting Adaptivity
 
 ```@docs
-Thunderbolt.AdaptiveOperatorSplittingAlgorithm
 Thunderbolt.ReactionTangentController
-Thunderbolt.get_reaction_tangent
 ```

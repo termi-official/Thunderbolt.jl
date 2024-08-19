@@ -4,6 +4,10 @@ abstract type AbstractTimeAdaptionAlgorithm end
     ReactionTangentController{T <: Real} <: OS.AbstractOperatorSplittingAlgorithm
 A timestep length controller for [`LieTrotterGodunov`](@ref) [Lie:1880:tti,Tro:1959:psg,God:1959:dmn](@cite)
 operator splitting using the reaction tangent as proposed in [OgiBalPer:2023:seats](@cite)
+The next timestep length is calculated as
+```math
+\\sigma\\left(R_{\\max }\\right):=\\left(1.0-\\frac{1}{1+\\exp \\left(\\left(\\sigma_{\\mathrm{c}}-R_{\\max }\\right) \\cdot \\sigma_{\\mathrm{s}}\\right)}\\right) \\cdot\\left(\\Delta t_{\\max }-\\Delta t_{\\min }\\right)+\\Delta t_{\\min }
+```
 # Fields
 - `σ_s::T`: steepness
 - `σ_c::T`: offset in R axis
