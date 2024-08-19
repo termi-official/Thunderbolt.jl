@@ -445,6 +445,6 @@ function get_first_cell(sdh::SubDofHandler)
     return getcells(grid, first(sdh.cellset))
 end
 
-function adapt_vector_type(::Type{VT}, v::VT)
+function adapt_vector_type(::Type{<:Vector}, v::VT) where VT
     return v
 end

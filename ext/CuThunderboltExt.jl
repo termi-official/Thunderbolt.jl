@@ -117,4 +117,8 @@ end
 Thunderbolt.__add_to_vector!(b::Vector, a::CuVector) = b .+= Vector(a)
 Thunderbolt.__add_to_vector!(b::CuVector, a::Vector) = b .+= CuVector(a)
 
+function Thunderbolt.adapt_vector_type(::Type{<:CuVector}, v::VT) where {VT <: Vector}
+    return CuVector(v)
+end
+
 end
