@@ -60,7 +60,7 @@
         poisson_ecg = Thunderbolt.PoissonECGReconstructionCache(heart_fun, torso_grid, ConstantCoefficient(κᵢ), ConstantCoefficient(κ), electrodes; ground = OrderedSet([Thunderbolt._get_vertex(ground_vertex, torso_grid)]))
 
         geselowitz_electrodes = [electrodes[1] => electrodes[i] for i in 2:length(electrodes)]
-        geselowitz_ecg = Thunderbolt.Geselowitz1989ECGLeadCache(torso_grid, ConstantCoefficient(κᵢ), ConstantCoefficient(κ), Tuple(geselowitz_electrodes); ground = OrderedSet([Thunderbolt._get_vertex(ground_vertex, torso_grid)]))
+        geselowitz_ecg = Thunderbolt.Geselowitz1989ECGLeadCache(torso_grid, ConstantCoefficient(κᵢ), ConstantCoefficient(κ), geselowitz_electrodes; ground = OrderedSet([Thunderbolt._get_vertex(ground_vertex, torso_grid)]))
 
         @testset "Equilibrium" begin
             u .= 0.0

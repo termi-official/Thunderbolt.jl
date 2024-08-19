@@ -56,10 +56,9 @@ heart_fun = semidiscretize(
     mesh
 )
 
-ecg_reconst_cache = Thunderbolt.PoissonECGReconstructionCache(heart_fun, mesh, κᵢ, κ, [Vec(0., 0., 0.), Vec(20., 0., 0.)]; ground = Ferrite.OrderedSet([Thunderbolt._get_vertex(ground_vertex, mesh)]))
 
 io = ParaViewWriter("Lead")
 
 store_timestep!(io, 0.0, lead_field_cache.lead_field_op.dh.grid) do vtk
-    store_timestep_field!(io, 0.0, lead_field_cache.lead_field_op.dh, lead_field_cache.Z[1], :Z, "Z")
+    store_timestep_field!(io, 0.0, lead_field_cache.lead_field_op.dh, lead_field_cache.Z[1, :], :Z, "Z")
 end

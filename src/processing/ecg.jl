@@ -361,16 +361,13 @@ Calling [`reinit!`](@ref) with this method simply evaluates the following integr
 V(t)=\\int \\nabla Z(\\boldsymbol{x}) \\cdot \\boldsymbol{\\kappa}_\\mathrm{i} \\nabla \\varphi_\\mathrm{m} \\,\\mathrm{d}\\boldsymbol{x}.
 ```
 """
-struct Geselowitz1989ECGLeadCache{N, DiffusionOperatorType1, SolutionVectorType}
-    lead_field_op::DiffusionOperatorType1  # Operator on the torso mesh for ∇κ∇
+struct Geselowitz1989ECGLeadCache{TZ <: AbstractMatrix, DiffusionOperatorType1, SolutionVectorType <: AbstractVector, ElectrodesVecType <: AbstractVector}
+    lead_field_op::DiffusionOperatorType1               # Operator on the torso mesh for ∇κ∇
     extracellular_potential_op::DiffusionOperatorType1  # Operator on the torso mesh for ∇κ∇
-    ϕₑ::SolutionVectorType                  # Solution vector buffer
-    Z::NTuple{N, SolutionVectorType}  # Solution vector buffer
-    φₘ::SolutionVectorType        # Source term buffer on torso
-    # solver::SolverCacheType     # Linear solver
-    electrode_positions::NTuple{N, Pair{VertexIndex, VertexIndex}}
-    # ∇Zκ∇Nⱼ::NTuple{N, T}                  # Solution vector buffer
-    # ch::CHType                        # ConstraintHandler on the torso
+    ϕₑ::SolutionVectorType                              # Solution vector buffer
+    Z::TZ                                               # Solution vector buffer
+    φₘ::SolutionVectorType                              # Source term buffer on torso
+    electrode_positions::ElectrodesVecType
 end
 
 # Convenience ctor to unpack default setup
@@ -378,12 +375,12 @@ function Geselowitz1989ECGLeadCache(
     torso_grid::AbstractGrid,
     heart_diffusion_tensor_field, # κᵢ
     bulk_diffusion_tensor_field, # κ
-    electrode_positions::NTuple{N, Pair{VertexIndex, VertexIndex}};
+    electrode_positions::AbstractVector{Pair{VertexIndex, VertexIndex}};
     ground               = Set([VertexIndex(1, 1)]),
     linear_solver        = LinearSolve.KrylovJL_CG(),
     solution_vector_type = Vector{Float64},
     system_matrix_type   = ThreadedSparseMatrixCSR{Float64,Int64},
-) where {N}
+)
     Geselowitz1989ECGLeadCache(
         torso_grid,
         heart_diffusion_tensor_field,
@@ -400,28 +397,26 @@ function Geselowitz1989ECGLeadCache(
     grid::AbstractGrid,
     heart_diffusion_tensor_field, # κᵢ
     bulk_diffusion_tensor_field, # κ
-    electrode_positions::NTuple{N, <:Pair{<:Vec, <:Vec}};
+    electrode_positions::AbstractVector{<:Pair{<:Vec, <:Vec}};
     ipc                  = LagrangeCollection{1}(),
     qrc                  = QuadratureRuleCollection(2),
     ground               = OrderedSet([VertexIndex(1, 1)]),
     linear_solver        = LinearSolve.KrylovJL_CG(),
     solution_vector_type = Vector{Float64},
     system_matrix_type   = ThreadedSparseMatrixCSR{Float64,Int64},
-    extracellular_potential_symbol = :φₑ,
-) where {N}
+)
 
 return Geselowitz1989ECGLeadCache(
     grid,
     heart_diffusion_tensor_field, # κᵢ
     bulk_diffusion_tensor_field, # κ
-    ntuple(i -> _get_vertex(electrode_positions[i][1], grid) => _get_vertex(electrode_positions[i][2], grid), N);
+    [_get_vertex(electrode_positions[i][1], grid) => _get_vertex(electrode_positions[i][2], grid) for i in eachindex(electrode_positions)];
     ipc                  ,
     qrc                  ,
     ground               ,
     linear_solver       ,
     solution_vector_type,
     system_matrix_type,
-    extracellular_potential_symbol,
 )
 
 end
@@ -430,15 +425,14 @@ function Geselowitz1989ECGLeadCache(
     grid::AbstractGrid,
     heart_diffusion_tensor_field, # κᵢ
     bulk_diffusion_tensor_field, # κ
-    electrode_positions::NTuple{N, Pair{VertexIndex, VertexIndex}};
+    electrode_positions::AbstractVector{Pair{VertexIndex, VertexIndex}};
     ipc                  = LagrangeCollection{1}(),
     qrc                  = QuadratureRuleCollection(2),
     ground               = OrderedSet([VertexIndex(1, 1)]),
     linear_solver        = LinearSolve.KrylovJL_CG(),
     solution_vector_type = Vector{Float64},
     system_matrix_type   = ThreadedSparseMatrixCSR{Float64,Int64},
-    extracellular_potential_symbol = :φₑ,
-) where {N}
+)
 
     lead_field_model = SteadyDiffusionModel(
         bulk_diffusion_tensor_field,
@@ -503,24 +497,24 @@ function Geselowitz1989ECGLeadCache(
     lead_fun::SteadyDiffusionFunction,
     lead_op::AssembledBilinearOperator,
     ϕₘ_op::AssembledBilinearOperator,
-    electrode_positions::NTuple{N, Pair{VertexIndex, VertexIndex}};
+    electrode_positions::AbstractVector{Pair{VertexIndex, VertexIndex}};
     linear_solver        = LinearSolve.KrylovJL_CG(),
     solution_vector_type = Vector,
-) where {N}
+)
     lead_dh = lead_op.dh
     length(lead_dh.field_names) == 1 || @warn "Multiple fields detected. Setup might be broken..."
     nelectrodes = length(electrode_positions)
     φₘ    = create_system_vector(solution_vector_type, lead_fun) # Solution vector
-    Z    = ntuple(_ -> create_system_vector(solution_vector_type, lead_fun), nelectrodes) # Solution vector
+    Z    = Matrix{eltype(φₘ)}(undef, nelectrodes, length(φₘ)) # Solution vector
     ϕₑ    = zeros(nelectrodes)
 
-    lead_rhs = ntuple(_ -> create_system_vector(solution_vector_type, lead_fun), nelectrodes)
+    lead_rhs = Matrix{eltype(φₘ)}(undef, nelectrodes, length(φₘ))
 
-    for (i, electrode_pair) in enumerate(electrode_positions)
-        _add_electrode!(lead_rhs[i], lead_dh, electrode_pair[1], true)
-        _add_electrode!(lead_rhs[i], lead_dh, electrode_pair[2], false)
+    @views for (i, electrode_pair) in enumerate(electrode_positions)
+        _add_electrode!(lead_rhs[i,:], lead_dh, electrode_pair[1], true)
+        _add_electrode!(lead_rhs[i,:], lead_dh, electrode_pair[2], false)
         leadprob = LinearSolve.LinearProblem(
-            lead_op.A, lead_rhs[i]; u0=Z[i]
+            lead_op.A, lead_rhs[i,:]; u0= Z[i,:]
         )
         lincache = init(leadprob, linear_solver)
         LinearSolve.solve!(lincache)
@@ -558,6 +552,6 @@ function update_ecg!(cache::Geselowitz1989ECGLeadCache, φₘ::AbstractVector)
 end
 
 # Batch evaluate all electrodes
-function evaluate_ecg(cache::Geselowitz1989ECGLeadCache{N}) where N    
-    return ntuple(i -> -cache.Z[i] ⋅ cache.φₘ, N)
+function evaluate_ecg(cache::Geselowitz1989ECGLeadCache)
+    return -cache.Z * cache.φₘ
 end
