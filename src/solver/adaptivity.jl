@@ -1,42 +1,36 @@
 abstract type AbstractTimeAdaptionAlgorithm end
 
 """
-    ReactionTangentController{T <: Real} <: AbstractTimeAdaptionAlgorithm
+    ReactionTangentController{T <: Real} <: OS.AbstractOperatorSplittingAlgorithm
 A timestep length controller for [`LieTrotterGodunov`](@ref) [Lie:1880:tti,Tro:1959:psg,God:1959:dmn](@cite)
 operator splitting using the reaction tangent as proposed in [OgiBalPer:2023:seats](@cite)
 # Fields
 - `σ_s::T`: steepness
 - `σ_c::T`: offset in R axis
 - `Δt_bounds::NTuple{2,T}`: lower and upper timestep length bounds
-- `Rₙ₊₁::T`: updated maximal reaction magnitude
-- `Rₙ::T`: previous reaction magnitude
 """
-mutable struct ReactionTangentController{T <: Real} <: AbstractTimeAdaptionAlgorithm
-    const σ_s::T
-    const σ_c::T
-    const Δt_bounds::NTuple{2,T}
+struct ReactionTangentController{LTG <: OS.LieTrotterGodunov, T <: Real} <: OS.AbstractOperatorSplittingAlgorithm
+    ltg::LTG
+    σ_s::T
+    σ_c::T
+    Δt_bounds::NTuple{2,T}
+end
+
+mutable struct ReactionTangentControllerCache{T <: Real, LTGCache <: OS.LieTrotterGodunovCache} <: OS.AbstractOperatorSplittingCache
+    const ltg_cache::LTGCache #It has Arrays so it can be const?
     Rₙ₊₁::T
     Rₙ::T
 end
 
-function ReactionTangentController(σ_s::T, σ_c::T, Δt_bounds::NTuple{2,T}) where {T <: Real}
-    return ReactionTangentController(σ_s, σ_c, Δt_bounds, 0.0, 0.0)
+@inline OS.get_u(cache::ReactionTangentControllerCache) = OS.get_u(cache.ltg_cache)
+@inline OS.get_uprev(cache::ReactionTangentControllerCache) = OS.get_uprev(cache.ltg_cache)
+@inline DiffEqBase.get_tmp_cache(integrator::OS.OperatorSplittingIntegrator, alg::OS.AbstractOperatorSplittingAlgorithm, cache::ReactionTangentControllerCache) = DiffEqBase.get_tmp_cache(integrator, alg, cache.ltg_cache)
+
+@inline function OS.advance_solution_to!(subintegrators::Tuple, cache::ReactionTangentControllerCache, tnext) 
+    OS.advance_solution_to!(subintegrators, cache.ltg_cache, tnext)
 end
 
-
-"""
-    AdaptiveOperatorSplittingAlgorithm{TOperatorSplittingAlg <: OS.AbstractOperatorSplittingAlgorithm, TTimeAdaptionAlgorithm <: AbstractTimeAdaptionAlgorithm} <: OS.AbstractOperatorSplittingAlgorithm
-A generic operator splitting algorithm `operator_splitting_algorithm` with adaptive timestepping using the controller `controller`.
-# Fields
-- `operator_splitting_algorithm::TOperatorSplittingAlg`: steepness
-- `controller::TTimeAdaptionAlgorithm`: offset in R axis
-"""
-struct AdaptiveOperatorSplittingAlgorithm{TOperatorSplittingAlg <: OS.AbstractOperatorSplittingAlgorithm, TTimeAdaptionAlgorithm <: AbstractTimeAdaptionAlgorithm} <: OS.AbstractOperatorSplittingAlgorithm
-    operator_splitting_algorithm::TOperatorSplittingAlg
-    controller::TTimeAdaptionAlgorithm
-end
-
-@inline DiffEqBase.isadaptive(::AdaptiveOperatorSplittingAlgorithm) = true
+@inline DiffEqBase.isadaptive(::ReactionTangentController) = true
 
 """
     get_reaction_tangent(integrator::OS.OperatorSplittingIntegrator)
@@ -58,42 +52,42 @@ end
     # end
 end
 
-@inline function OS.stepsize_controller!(integrator::OS.OperatorSplittingIntegrator, alg::AdaptiveOperatorSplittingAlgorithm)
-    OS.stepsize_controller!(integrator, alg.controller, alg)
-end
-
-@inline function OS.step_accept_controller!(integrator::OS.OperatorSplittingIntegrator, alg::AdaptiveOperatorSplittingAlgorithm, q)
-    OS.step_accept_controller!(integrator, alg.controller, alg, q)
-end
-
-@inline function OS.step_reject_controller!(integrator::OS.OperatorSplittingIntegrator, alg::AdaptiveOperatorSplittingAlgorithm, q)
-    OS.step_reject_controller!(integrator, alg.controller, alg, q)
-end
-
-@inline function OS.stepsize_controller!(integrator::OS.OperatorSplittingIntegrator, controller::ReactionTangentController, alg::AdaptiveOperatorSplittingAlgorithm{<:OS.LieTrotterGodunov})
-    @unpack σ_s, σ_c, Δt_bounds, Rₙ₊₁, Rₙ = controller
-    controller.Rₙ = controller.Rₙ₊₁
-    controller.Rₙ₊₁ = get_reaction_tangent(integrator)
+@inline function OS.stepsize_controller!(integrator::OS.OperatorSplittingIntegrator, alg::ReactionTangentController)
+    integrator.cache.Rₙ = integrator.cache.Rₙ₊₁
+    integrator.cache.Rₙ₊₁ = get_reaction_tangent(integrator)
     return nothing
 end
 
-@inline function OS.step_accept_controller!(integrator::OS.OperatorSplittingIntegrator, controller::ReactionTangentController, alg::AdaptiveOperatorSplittingAlgorithm{<:OS.LieTrotterGodunov}, q)
-    @unpack σ_s, σ_c, Δt_bounds, Rₙ₊₁, Rₙ = controller
+@inline function OS.step_accept_controller!(integrator::OS.OperatorSplittingIntegrator, alg::ReactionTangentController, q)
+    @unpack Rₙ₊₁, Rₙ = integrator.cache
+    @unpack σ_s, σ_c, Δt_bounds = alg
     R = max(Rₙ, Rₙ₊₁)
-    integrator.dt = (1 - 1/(1+exp((σ_c - R)*σ_s)))*(Δt_bounds[2] - Δt_bounds[1]) + Δt_bounds[1]
+    integrator._dt = (1 - 1/(1+exp((σ_c - R)*σ_s)))*(Δt_bounds[2] - Δt_bounds[1]) + Δt_bounds[1]
     return nothing
 end
 
-@inline function OS.step_reject_controller!(integrator::OS.OperatorSplittingIntegrator, controller::ReactionTangentController, alg::AdaptiveOperatorSplittingAlgorithm{<:OS.LieTrotterGodunov}, q)
+@inline function OS.step_reject_controller!(integrator::OS.OperatorSplittingIntegrator, alg::ReactionTangentController, q)
     return nothing # Do nothing
 end
 
 # Dispatch for outer construction
-function OS.init_cache(prob::OS.OperatorSplittingProblem, alg::AdaptiveOperatorSplittingAlgorithm; dt, kwargs...) # TODO
-    OS.init_cache(prob, alg.operator_splitting_algorithm;dt = dt, kwargs...)
+function OS.init_cache(prob::OS.OperatorSplittingProblem, alg::ReactionTangentController; dt, kwargs...) # TODO
+    @unpack f = prob
+    @assert f isa GenericSplitFunction
+
+    u          = copy(prob.u0)
+    uprev      = copy(prob.u0)
+
+    # Build inner integrator
+    return OS.construct_inner_cache(f, alg, u, uprev)
 end
 
 # Dispatch for recursive construction
-function OS.construct_inner_cache(f::OS.AbstractOperatorSplitFunction, alg::AdaptiveOperatorSplittingAlgorithm, u::AbstractArray, uprev::AbstractArray)
-    OS.construct_inner_cache(f, alg.operator_splitting_algorithm, u, uprev)
+function OS.construct_inner_cache(f::OS.AbstractOperatorSplitFunction, alg::ReactionTangentController, u::AbstractArray{T}, uprev::AbstractArray) where T <: Number
+    ltg_cache = OS.construct_inner_cache(f, alg.ltg, u, uprev)
+    return ReactionTangentControllerCache(ltg_cache, zero(T), zero(T))
+end
+
+function OS.build_subintegrators_recursive(f::GenericSplitFunction, synchronizers::Tuple, p::Tuple, cache::ReactionTangentControllerCache, u::AbstractArray, uprev::AbstractArray, t, dt, dof_range, uparent, tstops, _tstops, saveat, _saveat)
+    OS.build_subintegrators_recursive(f, synchronizers, p, cache.ltg_cache, u, uprev, t, dt, dof_range, uparent, tstops, _tstops, saveat, _saveat)
 end

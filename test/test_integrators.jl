@@ -94,19 +94,18 @@ fsplit_NaN = GenericSplitFunction((f1,f_NaN), (f1dofs, f_NaN_dofs))
 
 @testset "OperatorSplitting" begin
     for TimeStepperType in (LieTrotterGodunov,)
-        for controller in (Thunderbolt.ReactionTangentController(0.5, 1.0, (0.01, 0.3)),) 
             timestepper = TimeStepperType(
                 (DummyForwardEuler(), DummyForwardEuler())
             )
-            timestepper_adaptive = Thunderbolt.AdaptiveOperatorSplittingAlgorithm(timestepper, controller)
+            timestepper_adaptive = Thunderbolt.ReactionTangentController(timestepper, 0.5, 1.0, (0.01, 0.3))
             timestepper_inner = TimeStepperType(
                 (DummyForwardEuler(), DummyForwardEuler())
             )
-            timestepper_inner_adaptive = Thunderbolt.AdaptiveOperatorSplittingAlgorithm(timestepper_inner, controller) #TODO: Copy the controller instead
+            timestepper_inner_adaptive = Thunderbolt.ReactionTangentController(timestepper_inner, 0.5, 1.0, (0.01, 0.3)) #TODO: Copy the controller instead
             timestepper2 = TimeStepperType(
                 (DummyForwardEuler(), timestepper_inner)
             )
-            timestepper2_adaptive = Thunderbolt.AdaptiveOperatorSplittingAlgorithm(timestepper2, controller)
+            timestepper2_adaptive = Thunderbolt.ReactionTangentController(timestepper2, 0.5, 1.0, (0.01, 0.3))
 
             for (tstepper1, tstepper_inner, tstepper2) in (
                     (timestepper, timestepper_inner, timestepper2),
@@ -162,7 +161,6 @@ fsplit_NaN = GenericSplitFunction((f1,f_NaN), (f1dofs, f_NaN_dofs))
                     # DiffEqBase.solve!(integrator_NaN)
                     # @test integrator_NaN.sol.retcode == DiffEqBase.ReturnCode.Failure
                 end
-            end
             # integrator = DiffEqBase.init(prob, timestepper, dt=0.01, verbose=true)
             # for (u, t) in DiffEqBase.TimeChoiceIterator(integrator, 0.0:5.0:100.0) end
             # integrator_adaptive = DiffEqBase.init(prob, timestepper_adaptive, dt=0.01, verbose=true)

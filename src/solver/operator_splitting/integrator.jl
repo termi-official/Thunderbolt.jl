@@ -73,14 +73,17 @@ function DiffEqBase.__init(
     callback = DiffEqBase.CallbackSet(callback)
 
     cache = init_cache(prob, alg; dt, kwargs...)
+    
+    u = get_u(cache)
+    uprev = get_uprev(cache)
 
-    subintegrators = build_subintegrators_recursive(prob.f, prob.f.synchronizers, p, cache, cache.u, cache.uprev, t0, dt, 1:length(u0), cache.u, tstops, _tstops, saveat, _saveat)
+    subintegrators = build_subintegrators_recursive(prob.f, prob.f.synchronizers, p, cache, u, uprev, t0, dt, 1:length(u0), u, tstops, _tstops, saveat, _saveat)
 
     integrator = OperatorSplittingIntegrator(
         prob.f,
         alg,
-        cache.u,
-        cache.uprev,
+        u,
+        uprev,
         p,
         t0,
         copy(t0),
@@ -250,7 +253,7 @@ end
 
 function __step!(integrator)
     (; dtchangeable, tstops) = integrator
-    _dt = DiffEqBase.isadaptive(integrator.alg) ? DiffEqBase.get_dt(integrator) : integrator.dt
+    _dt = DiffEqBase.get_dt(integrator)
 
     # update dt before incrementing u; if dt is changeable and there is
     # a tstop within dt, reduce dt to tstop - t
