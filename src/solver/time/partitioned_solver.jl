@@ -144,7 +144,11 @@ function setup_solver_cache(f::PointwiseODEFunction, solver::AdaptiveForwardEule
     uₙ      = create_system_vector(solver.solution_vector_type, f)
     uₙ₋₁    = create_system_vector(solver.solution_vector_type, f)
     uₙmat   = reshape(uₙ, (npoints,ndofs_local))
-    xs      = f.x === nothing ? nothing : Adapt.adapt(solver.solution_vector_type, f.x)
+    xs      = if f.x === nothing
+        nothing
+    else
+        adapt_vector_type(solver.solution_vector_type, f.x)
+    end
 
     return AdaptiveForwardEulerSubstepperCache(du, uₙ, uₙ₋₁, dumat, uₙmat, solver.substeps, solver.reaction_threshold, solver.batch_size_hint, xs)
 end

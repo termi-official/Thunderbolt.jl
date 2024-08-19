@@ -1,4 +1,26 @@
-using Thunderbolt, Thunderbolt.TimerOutputs, CUDA
+using Thunderbolt, Thunderbolt.TimerOutputs, CUDA, UnPack
+
+Base.@kwdef struct HeterogeneousFHNModel{T, T2} <: Thunderbolt.AbstractIonicModel
+    a::T = T(0.1)
+    b::T = T(0.5)
+    c::T = T(1.0)
+    d::T = T(0.0)
+    e::T2 = T2((x,t)->0.01)
+end;
+HeterogeneousFHNModel(::Type{T}, e::F) where {T,F} = HeterogeneousFHNModel{T,F}(0.1,0.5,1.0,0.0,e)
+
+Thunderbolt.transmembranepotential_index(cell_model::HeterogeneousFHNModel) = 1
+Thunderbolt.num_states(::HeterogeneousFHNModel) = 2
+Thunderbolt.default_initial_state(::HeterogeneousFHNModel) = [0.0, 0.0]
+
+function Thunderbolt.cell_rhs!(du::TD,u::TU,x::TX,t::TT,cell_parameters::TP) where {TD,TU,TX,TT,TP <: HeterogeneousFHNModel}
+    @unpack a,b,c,d,e = cell_parameters
+    φₘ = u[1]
+    s  = u[2]
+    du[1] = φₘ*(1-φₘ)*(φₘ-a) - s
+    du[2] = e(x,t)*(b*φₘ - c*s - d)
+    return nothing
+end
 
 function spiral_wave_initializer!(u₀, f::GenericSplitFunction)
     # TODO cleaner implementation. We need to extract this from the types or via dispatch.
@@ -34,19 +56,31 @@ tspan = (0.0, 1000.0)
 dtvis = 25.0
 dt₀ = 1.0
 
+function parabolic_e(x,t)
+    clamp(0.01 + 0.1x[1], 0.009, 0.011)
+end
+
+cell_model = HeterogeneousFHNModel(
+    Float32, parabolic_e
+)
+
 model = MonodomainModel(
     ConstantCoefficient(1.0),
     ConstantCoefficient(1.0),
     ConstantCoefficient(SymmetricTensor{2,2,Float32}((4.5e-5, 0, 2.0e-5))),
     NoStimulationProtocol(),
-    Thunderbolt.ParametrizedFHNModel{Float32}(),
+    cell_model,
     :φₘ, :s,
 )
 
 mesh = generate_mesh(Quadrilateral, (2^7, 2^7), Vec{2}((0.0,0.0)), Vec{2}((2.5,2.5)))
 
+csc = CoordinateSystemCoefficient(
+    CartesianCoordinateSystem(mesh)
+)
+
 odeform = semidiscretize(
-    ReactionDiffusionSplit(model),
+    ReactionDiffusionSplit(model, csc),
     FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}())),
     mesh
 )
