@@ -58,6 +58,5 @@ Thunderbolt.transfer!
 Thunderbolt.PoissonECGReconstructionCache
 Thunderbolt.Plonsey1964ECGGaussCache
 Thunderbolt.Geselowitz1989ECGLeadCache
-Thunderbolt.Potse2006ECGPoissonReconstructionCache
 Thunderbolt.evaluate_ecg
 ```

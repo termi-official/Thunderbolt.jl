@@ -341,7 +341,7 @@ function evaluate_ecg(cache::PoissonECGReconstructionCache)
 end
 
 """
-    Geselowitz1989ECGLeadCache(problem, κ, κᵢ, electordes, electrode_pairs, [zero_vertex])
+    Geselowitz1989ECGLeadCache(problem, κ, κᵢ, electordes, electrode_pairs, [ground, linear_solver, solution_vector_type, system_matrix_type])
 
 Here the lead field, `Z`, is computed using the discretization of `problem`.
 The lead field is computed as the solution of 
@@ -505,10 +505,10 @@ function Geselowitz1989ECGLeadCache(
     length(lead_dh.field_names) == 1 || @warn "Multiple fields detected. Setup might be broken..."
     nelectrodes = length(electrode_positions)
     φₘ    = create_system_vector(solution_vector_type, lead_fun) # Solution vector
-    Z    = Matrix{eltype(φₘ)}(undef, nelectrodes, length(φₘ)) # Solution vector
+    Z    = zeros(eltype(φₘ), nelectrodes, length(φₘ))
     ϕₑ    = zeros(nelectrodes)
 
-    lead_rhs = Matrix{eltype(φₘ)}(undef, nelectrodes, length(φₘ))
+    lead_rhs = zeros(eltype(φₘ), nelectrodes, length(φₘ))
 
     @views for (i, electrode_pair) in enumerate(electrode_positions)
         _add_electrode!(lead_rhs[i,:], lead_dh, electrode_pair[1], true)

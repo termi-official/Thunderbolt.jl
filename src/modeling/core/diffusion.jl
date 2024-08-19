@@ -19,7 +19,7 @@ function assemble_element!(Kₑ::AbstractMatrix, cell, element_cache::BilinearDi
     @unpack cellvalues, Dcache = element_cache
     n_basefuncs = getnbasefunctions(cellvalues)
 
-    Ferrite.reinit!(cellvalues, cell)
+    reinit!(cellvalues, cell)
 
     for qp in QuadratureIterator(cellvalues)
         D_loc = evaluate_coefficient(Dcache, cell, qp, time)
