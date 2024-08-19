@@ -85,7 +85,7 @@ function compute_lv_coordinate_system(mesh::SimpleMesh{3}, subdomains::Vector{St
 
     # Assemble Laplacian
     # TODO use bilinear operator for performance
-    K = create_sparsity_pattern(dh)
+    K = allocate_matrix(dh)
 
     assembler = start_assemble(K)
     for sdh in dh.subdofhandlers
@@ -183,7 +183,7 @@ function compute_midmyocardial_section_coordinate_system(mesh::SimpleMesh{3}, su
 
     # Assemble Laplacian
     # TODO use bilinear operator
-    K = create_sparsity_pattern(dh)
+    K = allocate_matrix(dh)
 
     assembler = start_assemble(K)
     for sdh in dh.subdofhandlers

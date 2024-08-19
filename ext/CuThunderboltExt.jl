@@ -99,15 +99,15 @@ function Thunderbolt._pointwise_step_outer_kernel!(f::AbstractPointwiseFunction,
     return true
 end
 
-_create_sparsity_pattern(dh::GPUDofHandler, A::SparseMatrixCSR, ::CuVector) = CuSparseMatrixCSR(A)
-_create_sparsity_pattern(dh::GPUDofHandler, A::SparseMatrixCSC, ::CuVector) = CuSparseMatrixCSC(A)
+_allocate_matrix(dh::GPUDofHandler, A::SparseMatrixCSR, ::CuVector) = CuSparseMatrixCSR(A)
+_allocate_matrix(dh::GPUDofHandler, A::SparseMatrixCSC, ::CuVector) = CuSparseMatrixCSC(A)
 
 Thunderbolt.create_system_vector(::Type{<:CuVector{T}}, f::AbstractSemidiscreteFunction) where T = CUDA.zeros(T, solution_size(f))
 Thunderbolt.create_system_vector(::Type{<:CuVector{T}}, dh::DofHandler) where T                  = CUDA.zeros(T, ndofs(dh))
 
 function Thunderbolt.create_system_matrix(SpMatType::Type{<:Union{CUSPARSE.CuSparseMatrixCSC, CUSPARSE.CuSparseMatrixCSR}}, dh::AbstractDofHandler)
     # FIXME in general the pattern is not symmetric
-    Acpu      = create_sparsity_pattern(dh)
+    Acpu      = allocate_matrix(dh)
     colptrgpu = CuArray(Acpu.colptr)
     rowvalgpu = CuArray(Acpu.rowval)
     nzvalgpu  = CuArray(Acpu.nzval)

@@ -40,7 +40,7 @@ end
 
 function setup_assembled_operator(integrator::AbstractBilinearIntegrator, system_matrix_type::Type, dh::AbstractDofHandler, field_name::Symbol, qrc::QuadratureRuleCollection)
     A  = create_system_matrix(system_matrix_type, dh)
-    A_ = create_sparsity_pattern(dh) #  TODO how to query this?
+    A_ = allocate_matrix(dh) #  TODO how to query this?
     return AssembledBilinearOperator(
         A, A_,
         integrator, qrc,
@@ -103,12 +103,12 @@ update_constraints_block!(f::NullFunction, i::Block, solver_cache::AbstractTimeS
 create_system_matrix(T::Type{<:AbstractMatrix}, f::AbstractSemidiscreteFunction) = create_system_matrix(T, f.dh)
 
 function create_system_matrix(::Type{<:ThreadedSparseMatrixCSR{Tv,Ti}}, dh::AbstractDofHandler) where {Tv,Ti}
-    Acsct = transpose(convert(SparseMatrixCSC{Tv,Ti}, create_sparsity_pattern(dh)))
+    Acsct = transpose(convert(SparseMatrixCSC{Tv,Ti}, allocate_matrix(dh)))
     return ThreadedSparseMatrixCSR(Acsct)
 end
 
 function create_system_matrix(SpMatType::Type{<:SparseMatrixCSC}, dh::AbstractDofHandler)
-    A = convert(SpMatType, create_sparsity_pattern(dh))
+    A = convert(SpMatType, allocate_matrix(dh))
     return A
 end
 
