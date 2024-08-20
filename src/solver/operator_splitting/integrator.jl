@@ -147,7 +147,11 @@ function DiffEqBase.solve!(integrator::OperatorSplittingIntegrator)
         __step!(integrator)
     end
     DiffEqBase.finalize!(integrator.callback, integrator.u, integrator.t, integrator)
-    integrator.sol = DiffEqBase.solution_new_retcode(integrator.sol, DiffEqBase.ReturnCode.Success)
+    if DiffEqBase.NAN_CHECK(integrator.u)
+        integrator.sol = DiffEqBase.solution_new_retcode(integrator.sol, DiffEqBase.ReturnCode.Failure)
+    else
+        integrator.sol = DiffEqBase.solution_new_retcode(integrator.sol, DiffEqBase.ReturnCode.Success)
+    end
     return integrator.sol
 end
 
@@ -248,7 +252,6 @@ function DiffEqBase.SciMLBase.done(integrator::OperatorSplittingIntegrator)
 end
 
 function DiffEqBase.postamble!(integrator::OperatorSplittingIntegrator)
-    # DiffEqBase.check_error!(integrator) != ReturnCode.Success
     DiffEqBase.finalize!(integrator.callback, integrator.u, integrator.t, integrator)
 end
 
