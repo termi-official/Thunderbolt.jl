@@ -6,7 +6,7 @@ Standard cartesian coordinate system.
 struct CartesianCoordinateSystem{sdim}
 end
 
-value_type(::CartesianCoordinateSystem{sdim}) where sdim = Vec{sdim}
+value_type(::CartesianCoordinateSystem{sdim}) where sdim = Vec{sdim, Float32}
 
 CartesianCoordinateSystem(mesh::AbstractGrid{sdim}) where sdim = CartesianCoordinateSystem{sdim}()
 
@@ -47,7 +47,7 @@ struct LVCoordinate{T}
     circumferential::T
 end
 
-value_type(::LVCoordinateSystem) = LVCoordinate
+value_type(::LVCoordinateSystem) = LVCoordinate{Float32}
 
 
 """
