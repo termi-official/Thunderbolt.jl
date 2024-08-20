@@ -43,18 +43,20 @@ Returns the maximal reaction magnitude using the [`PointwiseODEFunction`](@ref) 
 It is assumed that the problem containing the reaction tangent is a [`PointwiseODEFunction`](@ref).
 """
 @inline function get_reaction_tangent(integrator::OS.OperatorSplittingIntegrator)
-    reaction_subintegrators = unrolled_filter(subintegrator -> subintegrator.f isa PointwiseODEFunction, integrator.subintegrators)
-    isempty(reaction_subintegrators) && @error "PointwiseODEFunction not found"
-    _get_reaction_tangent(reaction_subintegrators)
+    _get_reaction_tangent(integrator.subintegrators)
 end
 
-@inline #=@unroll=# function _get_reaction_tangent(subintegrators)
-    subintegrator = subintegrators[1]
-    # @unroll for subintegrator in subintegrators
-        #TODO: It should be either all the the same type or just one subintegrator after filtering, don't unroll?
-    φₘidx = transmembranepotential_index(subintegrator.f.ode)
-    return maximum(@view subintegrator.cache.dumat[:, φₘidx])
-    # end
+@inline @unroll function _get_reaction_tangent(subintegrators)
+    @unroll for subintegrator in subintegrators
+        if subintegrator isa Tuple
+            temp = _get_reaction_tangent(subintegrator)
+            isnan(temp) || return temp 
+        elseif subintegrator.f isa PointwiseODEFunction
+            φₘidx = transmembranepotential_index(subintegrator.f.ode)
+            return maximum(@view subintegrator.cache.dumat[:, φₘidx])
+        end
+    end
+    return NaN
 end
 
 @inline function OS.stepsize_controller!(integrator::OS.OperatorSplittingIntegrator, alg::ReactionTangentController)

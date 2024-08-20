@@ -248,6 +248,7 @@ function DiffEqBase.SciMLBase.done(integrator::OperatorSplittingIntegrator)
 end
 
 function DiffEqBase.postamble!(integrator::OperatorSplittingIntegrator)
+    # DiffEqBase.check_error!(integrator) != ReturnCode.Success
     DiffEqBase.finalize!(integrator.callback, integrator.u, integrator.t, integrator)
 end
 
