@@ -202,7 +202,7 @@ end
 
 duplicate_for_parallel(cache::BiVCoordinateSystemCache) = cache
 
-function setup_coefficient_cache(coefficient::CoordinateSystemCoefficient{<:BiVCoordinateSystem}, qr::QuadratureRule{<:Any,T}, sdh::SubDofHandler) where T
+function setup_coefficient_cache(coefficient::CoordinateSystemCoefficient{<:BiVCoordinateSystem}, qr::QuadratureRule{<:Any,<:AbstractArray{T}}, sdh::SubDofHandler) where T
     cell = get_first_cell(sdh)
     ip = getcoordinateinterpolation(coefficient.cs, cell)
     ip_geo = ip^3
