@@ -47,13 +47,16 @@ It is assumed that the problem containing the reaction tangent is a [`PointwiseO
 end
 
 @inline @unroll function _get_reaction_tangent(subintegrators)
+    has_more_than_one_reaction_tangent = false
+    R = NaN
     @unroll for subintegrator in subintegrators
         if subintegrator isa Tuple
             temp = _get_reaction_tangent(subintegrator)
             isnan(temp) || return temp 
         elseif subintegrator.f isa PointwiseODEFunction
+            isnan(R) || @error "More than one reaction tangent were found" 
             φₘidx = transmembranepotential_index(subintegrator.f.ode)
-            return maximum(@view subintegrator.cache.dumat[:, φₘidx])
+            R = maximum(@view subintegrator.cache.dumat[:, φₘidx])
         end
     end
     return NaN
@@ -70,7 +73,7 @@ end
     @unpack σ_s, σ_c, Δt_bounds = alg
     R = max(Rₙ, Rₙ₊₁)
     if DiffEqBase.NAN_CHECK(R)
-        # TODO: Maybe throw a warning?
+        @error "reaction tangent cannot be NaN"
     else
         integrator._dt = (1 - 1/(1+exp((σ_c - R)*σ_s)))*(Δt_bounds[2] - Δt_bounds[1]) + Δt_bounds[1]
     end
