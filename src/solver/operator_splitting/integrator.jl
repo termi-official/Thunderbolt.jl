@@ -74,8 +74,8 @@ function DiffEqBase.__init(
 
     cache = init_cache(prob, alg; dt, kwargs...)
     
-    u = get_u(cache)
-    uprev = get_uprev(cache)
+    u = cache.u
+    uprev = cache.uprev
 
     subintegrators = build_subintegrators_recursive(prob.f, prob.f.synchronizers, p, cache, u, uprev, t0, dt, 1:length(u0), u, tstops, _tstops, saveat, _saveat)
 

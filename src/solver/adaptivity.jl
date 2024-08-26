@@ -21,14 +21,18 @@ struct ReactionTangentController{LTG <: OS.LieTrotterGodunov, T <: Real} <: OS.A
     Δt_bounds::NTuple{2,T}
 end
 
-mutable struct ReactionTangentControllerCache{T <: Real, LTGCache <: OS.LieTrotterGodunovCache} <: OS.AbstractOperatorSplittingCache
+mutable struct ReactionTangentControllerCache{T <: Real, LTGCache <: OS.LieTrotterGodunovCache, uType} <: OS.AbstractOperatorSplittingCache
     const ltg_cache::LTGCache #It has Arrays so it can be const?
+    u::uType
+    uprev::uType # True previous solution
     Rₙ₊₁::T
     Rₙ::T
+    function ReactionTangentControllerCache(ltg_cache::LTGCache, Rₙ₊₁::T, Rₙ::T) where {T, LTGCache <: OS.LieTrotterGodunovCache}
+        uType = typeof(ltg_cache.u)
+        return new{T, LTGCache, uType}(ltg_cache, ltg_cache.u, ltg_cache.uprev, Rₙ₊₁, Rₙ)
+    end
 end
 
-@inline OS.get_u(cache::ReactionTangentControllerCache) = OS.get_u(cache.ltg_cache)
-@inline OS.get_uprev(cache::ReactionTangentControllerCache) = OS.get_uprev(cache.ltg_cache)
 @inline DiffEqBase.get_tmp_cache(integrator::OS.OperatorSplittingIntegrator, alg::OS.AbstractOperatorSplittingAlgorithm, cache::ReactionTangentControllerCache) = DiffEqBase.get_tmp_cache(integrator, alg, cache.ltg_cache)
 
 @inline function OS.advance_solution_to!(subintegrators::Tuple, cache::ReactionTangentControllerCache, tnext) 

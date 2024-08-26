@@ -18,9 +18,6 @@ struct LieTrotterGodunovCache{uType, tmpType, iiType} <: AbstractOperatorSplitti
     inner_caches::iiType
 end
 
-get_u(cache::LieTrotterGodunovCache) = cache.u
-get_uprev(cache::LieTrotterGodunovCache) = cache.uprev
-
 # Dispatch for outer construction
 function init_cache(prob::OperatorSplittingProblem, alg::LieTrotterGodunov; dt, kwargs...) # TODO
     @unpack f = prob
