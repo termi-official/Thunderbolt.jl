@@ -366,7 +366,7 @@ struct Geselowitz1989ECGLeadCache{TZ <: AbstractMatrix, DiffusionOperatorType1, 
     extracellular_potential_op::DiffusionOperatorType1  # Operator on the torso mesh for ∇κ∇
     ϕₑ::SolutionVectorType                              # Solution vector buffer
     Z::TZ                                               # Solution vector buffer
-    φₘ::SolutionVectorType                              # Source term buffer on torso
+    ∇Njκ∇φₘ::SolutionVectorType                              # Source term buffer on torso
     electrode_positions::ElectrodesVecType
 end
 
@@ -504,11 +504,11 @@ function Geselowitz1989ECGLeadCache(
     lead_dh = lead_op.dh
     length(lead_dh.field_names) == 1 || @warn "Multiple fields detected. Setup might be broken..."
     nelectrodes = length(electrode_positions)
-    φₘ    = create_system_vector(solution_vector_type, lead_fun) # Solution vector
-    Z    = zeros(eltype(φₘ), nelectrodes, length(φₘ))
+    ∇Njκ∇φₘ    = create_system_vector(solution_vector_type, lead_fun) # Solution vector
+    Z    = zeros(eltype(∇Njκ∇φₘ), nelectrodes, length(∇Njκ∇φₘ))
     ϕₑ    = zeros(nelectrodes)
 
-    lead_rhs = zeros(eltype(φₘ), nelectrodes, length(φₘ))
+    lead_rhs = zeros(eltype(∇Njκ∇φₘ), nelectrodes, length(∇Njκ∇φₘ))
 
     @views for (i, electrode_pair) in enumerate(electrode_positions)
         _add_electrode!(lead_rhs[i,:], lead_dh, electrode_pair[1], true)
@@ -521,7 +521,7 @@ function Geselowitz1989ECGLeadCache(
 
     end
     
-    return Geselowitz1989ECGLeadCache(lead_op, ϕₘ_op, ϕₑ, Z, φₘ, electrode_positions)
+    return Geselowitz1989ECGLeadCache(lead_op, ϕₘ_op, ϕₑ, Z, ∇Njκ∇φₘ, electrode_positions)
 end
 
 function _add_electrode!(f::AbstractVector{T}, dh::DofHandler, electrode::VertexIndex, is_positive::Bool) where {T<:Number}
@@ -547,11 +547,11 @@ end
 
 function update_ecg!(cache::Geselowitz1989ECGLeadCache, φₘ::AbstractVector)
     # Compute κᵢ∇φₘ on the heart
-    mul!(cache.φₘ, cache.extracellular_potential_op, φₘ)
+    mul!(cache.∇Njκ∇φₘ, cache.extracellular_potential_op, φₘ)
     return nothing
 end
 
 # Batch evaluate all electrodes
 function evaluate_ecg(cache::Geselowitz1989ECGLeadCache)
-    return -cache.Z * cache.φₘ
+    return -cache.Z * cache.∇Njκ∇φₘ
 end
