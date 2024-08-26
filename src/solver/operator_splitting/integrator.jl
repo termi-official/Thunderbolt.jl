@@ -144,6 +144,7 @@ end
 # either called directly (after init), or by DiffEqBase.solve (via __solve)
 function DiffEqBase.solve!(integrator::OperatorSplittingIntegrator)
     while !isempty(integrator.tstops)
+        DiffEqBase.check_error!(integrator) ∉ (DiffEqBase.ReturnCode.Success, DiffEqBase.ReturnCode.Default) && return
         __step!(integrator)
     end
     DiffEqBase.finalize!(integrator.callback, integrator.u, integrator.t, integrator)
@@ -159,11 +160,20 @@ function DiffEqBase.step!(integrator::OperatorSplittingIntegrator)
     if integrator.advance_to_tstop
         tstop = first(integrator.tstops)
         while !reached_tstop(integrator, tstop)
+            DiffEqBase.check_error!(integrator) ∉ (DiffEqBase.ReturnCode.Success, DiffEqBase.ReturnCode.Default) && return
             __step!(integrator)
         end
     else
+        DiffEqBase.check_error!(integrator) ∉ (DiffEqBase.ReturnCode.Success, DiffEqBase.ReturnCode.Default) && return
         __step!(integrator)
     end
+end
+
+function DiffEqBase.check_error!(integrator::OperatorSplittingIntegrator)
+    if DiffEqBase.NAN_CHECK(integrator._dt) # replace with https://github.com/SciML/OrdinaryDiffEq.jl/blob/373a8eec8024ef1acc6c5f0c87f479aa0cf128c3/lib/OrdinaryDiffEqCore/src/iterator_interface.jl#L5-L6 after moving to sciml integrators
+        integrator.sol = DiffEqBase.solution_new_retcode(integrator.sol, DiffEqBase.ReturnCode.Failure)
+    end
+    return integrator.sol.retcode
 end
 
 function DiffEqBase.step!(integrator::OperatorSplittingIntegrator, dt, stop_at_tdt = false)
@@ -173,6 +183,7 @@ function DiffEqBase.step!(integrator::OperatorSplittingIntegrator, dt, stop_at_t
     tnext = integrator.t + tdir(integrator) * dt
     stop_at_tdt && DiffEqBase.add_tstop!(integrator, tnext)
     while !reached_tstop(integrator, tnext, stop_at_tdt)
+        DiffEqBase.check_error!(integrator) ∉ (DiffEqBase.ReturnCode.Success, DiffEqBase.ReturnCode.Default) && return
         __step!(integrator)
     end
 end

@@ -43,23 +43,23 @@ Returns the maximal reaction magnitude using the [`PointwiseODEFunction`](@ref) 
 It is assumed that the problem containing the reaction tangent is a [`PointwiseODEFunction`](@ref).
 """
 @inline function get_reaction_tangent(integrator::OS.OperatorSplittingIntegrator)
-    _get_reaction_tangent(integrator.subintegrators)
+    R, _ = _get_reaction_tangent(integrator.subintegrators)
+    return R
 end
 
-@inline @unroll function _get_reaction_tangent(subintegrators)
-    has_more_than_one_reaction_tangent = false
-    R = NaN
+@inline @unroll function _get_reaction_tangent(subintegrators, n_reaction_tangents::Int = 0)
+    R = 0.0
     @unroll for subintegrator in subintegrators
         if subintegrator isa Tuple
-            temp = _get_reaction_tangent(subintegrator)
-            isnan(temp) || return temp 
+            R, n_reaction_tangents = _get_reaction_tangent(subintegrator, n_reaction_tangents)
         elseif subintegrator.f isa PointwiseODEFunction
-            isnan(R) || @error "More than one reaction tangent were found" 
+            n_reaction_tangents += 1
             φₘidx = transmembranepotential_index(subintegrator.f.ode)
-            R = maximum(@view subintegrator.cache.dumat[:, φₘidx])
+            R = max(R, maximum(@view subintegrator.cache.dumat[:, φₘidx]))
         end
     end
-    return NaN
+    @assert n_reaction_tangents == 1 "No or multiple integrators using PointwiseODEFunction found"
+    return (R, n_reaction_tangents)
 end
 
 @inline function OS.stepsize_controller!(integrator::OS.OperatorSplittingIntegrator, alg::ReactionTangentController)
@@ -72,11 +72,7 @@ end
     @unpack Rₙ₊₁, Rₙ = integrator.cache
     @unpack σ_s, σ_c, Δt_bounds = alg
     R = max(Rₙ, Rₙ₊₁)
-    if DiffEqBase.NAN_CHECK(R)
-        @error "reaction tangent cannot be NaN"
-    else
-        integrator._dt = (1 - 1/(1+exp((σ_c - R)*σ_s)))*(Δt_bounds[2] - Δt_bounds[1]) + Δt_bounds[1]
-    end
+    integrator._dt = (1 - 1/(1+exp((σ_c - R)*σ_s)))*(Δt_bounds[2] - Δt_bounds[1]) + Δt_bounds[1]
     return nothing
 end
 
