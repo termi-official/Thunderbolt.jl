@@ -370,29 +370,6 @@ struct Geselowitz1989ECGLeadCache{TZ <: AbstractMatrix, DiffusionOperatorType1, 
     electrode_positions::ElectrodesVecType
 end
 
-# Convenience ctor to unpack default setup
-function Geselowitz1989ECGLeadCache(
-    torso_grid::AbstractGrid,
-    heart_diffusion_tensor_field, # κᵢ
-    bulk_diffusion_tensor_field, # κ
-    electrode_positions::AbstractVector{Pair{VertexIndex, VertexIndex}};
-    ground               = Set([VertexIndex(1, 1)]),
-    linear_solver        = LinearSolve.KrylovJL_CG(),
-    solution_vector_type = Vector{Float64},
-    system_matrix_type   = ThreadedSparseMatrixCSR{Float64,Int64},
-)
-    Geselowitz1989ECGLeadCache(
-        torso_grid,
-        heart_diffusion_tensor_field,
-        bulk_diffusion_tensor_field;
-        electrode_positions,
-        ground,
-        linear_solver,
-        solution_vector_type,
-        system_matrix_type,
-    )
-end
-
 function Geselowitz1989ECGLeadCache(
     grid::AbstractGrid,
     heart_diffusion_tensor_field, # κᵢ

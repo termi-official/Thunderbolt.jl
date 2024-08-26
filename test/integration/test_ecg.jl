@@ -94,25 +94,23 @@
 
             @testset "Plonsey1964" begin
                 Thunderbolt.update_ecg!(plonsey_ecg, u)
-                _updated_once = deepcopy(plonsey_ecg)
+                val_1_init = Thunderbolt.evaluate_ecg.(Ref(plonsey_ecg), electrodes, 1.0)
                 Thunderbolt.update_ecg!(plonsey_ecg, u)
-                @test _updated_once.κ∇φₘ.data == plonsey_ecg.κ∇φₘ.data
-                @test _updated_once.κ∇φₘ.offsets == plonsey_ecg.κ∇φₘ.offsets
+                @test Thunderbolt.evaluate_ecg.(Ref(plonsey_ecg), electrodes, 1.0) == val_1_init
             end
 
             @testset "Poisson" begin
                 Thunderbolt.update_ecg!(poisson_ecg, u)
-                _updated_once = deepcopy(poisson_ecg)
+                val_1_init = Thunderbolt.evaluate_ecg(poisson_ecg)
                 Thunderbolt.update_ecg!(poisson_ecg, u)
-                @test _updated_once.κ∇φₘ_t == poisson_ecg.κ∇φₘ_t
-                @test _updated_once.κ∇φₘ_h == poisson_ecg.κ∇φₘ_h
+                @test Thunderbolt.evaluate_ecg(poisson_ecg) == val_1_init
             end
 
             @testset "Geselowitz" begin
                 Thunderbolt.update_ecg!(geselowitz_ecg, u_g)
-                _updated_once = deepcopy(geselowitz_ecg)
+                val_1_init = Thunderbolt.evaluate_ecg(geselowitz_ecg)
                 Thunderbolt.update_ecg!(geselowitz_ecg, u_g)
-                @test _updated_once.∇Njκ∇φₘ == geselowitz_ecg.∇Njκ∇φₘ
+                @test Thunderbolt.evaluate_ecg(geselowitz_ecg) == val_1_init
             end
         end
 
