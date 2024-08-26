@@ -80,11 +80,39 @@
                 @test all(ecg_vals .≈ 0.0)
             end
 
-            @testset "G" begin
+            @testset "Geselowitz" begin
                 Thunderbolt.update_ecg!(geselowitz_ecg, u_g)
                 ecg_vals = Thunderbolt.evaluate_ecg(geselowitz_ecg)
                 @test length(ecg_vals) == length(geselowitz_electrodes)
                 @test all(ecg_vals .≈ 0.0)
+            end
+        end
+
+        @testset "Idempotence" begin
+            u .= [randn() for _ in u]
+            u_g .= [randn() for _ in u_g]
+
+            @testset "Plonsey1964" begin
+                Thunderbolt.update_ecg!(plonsey_ecg, u)
+                _updated_once = deepcopy(plonsey_ecg)
+                Thunderbolt.update_ecg!(plonsey_ecg, u)
+                @test _updated_once.κ∇φₘ.data == plonsey_ecg.κ∇φₘ.data
+                @test _updated_once.κ∇φₘ.offsets == plonsey_ecg.κ∇φₘ.offsets
+            end
+
+            @testset "Poisson" begin
+                Thunderbolt.update_ecg!(poisson_ecg, u)
+                _updated_once = deepcopy(poisson_ecg)
+                Thunderbolt.update_ecg!(poisson_ecg, u)
+                @test _updated_once.κ∇φₘ_t == poisson_ecg.κ∇φₘ_t
+                @test _updated_once.κ∇φₘ_h == poisson_ecg.κ∇φₘ_h
+            end
+
+            @testset "Geselowitz" begin
+                Thunderbolt.update_ecg!(geselowitz_ecg, u_g)
+                _updated_once = deepcopy(geselowitz_ecg)
+                Thunderbolt.update_ecg!(geselowitz_ecg, u_g)
+                @test _updated_once.∇Njκ∇φₘ == geselowitz_ecg.∇Njκ∇φₘ
             end
         end
 
