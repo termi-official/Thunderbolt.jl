@@ -106,6 +106,8 @@ using UnPack
     fsplit2_inner = GenericSplitFunction((fpw,f3), (f3dofs, f3dofs))
     fsplit2_outer = GenericSplitFunction((f1,fsplit2_inner), (f1dofs, f2dofs))
 
+    prob2 = OperatorSplittingProblem(fsplit2_outer, u0, tspan)
+
     function ode_NaN(du, u, p, t)
         du[1] = NaN
         du[2] = 0.01u[1]
@@ -120,6 +122,11 @@ using UnPack
     f_NaN_dofs = f3dofs
     fsplit_NaN = GenericSplitFunction((f1,fpw_NaN), (f1dofs, f_NaN_dofs))
     prob_NaN = OperatorSplittingProblem(fsplit_NaN, u0, tspan)
+
+    fsplit_multiple_pwode_outer = GenericSplitFunction((fpw,fsplit2_inner), (f3dofs, f2dofs))
+
+    prob_multiple_pwode = OperatorSplittingProblem(fsplit_multiple_pwode_outer, u0, tspan)
+
     dt = 0.01π
     adaptive_tstep_range = (dt * 1, dt * 5)
     @testset "OperatorSplitting" begin
@@ -166,7 +173,6 @@ using UnPack
                 DiffEqBase.solve!(integrator)
                 @test integrator.sol.retcode == DiffEqBase.ReturnCode.Success
 
-                prob2 = OperatorSplittingProblem(fsplit2_outer, u0, tspan)
                 integrator2 = DiffEqBase.init(prob2, tstepper2, dt=dt, verbose=true)
                 @test integrator2.sol.retcode == DiffEqBase.ReturnCode.Default
                 DiffEqBase.solve!(integrator2)
@@ -196,6 +202,10 @@ using UnPack
             integrator_adaptive = DiffEqBase.init(prob, timestepper_adaptive, dt=dt, verbose=true)
             for (u, t) in DiffEqBase.TimeChoiceIterator(integrator_adaptive, 0.0:5.0:100.0) end
             @test  isapprox(integrator_adaptive.u, integrator.u, atol=1e-5)
+            @testset "Multiple `PointwiseODEFunction`s" begin
+                integrator_multiple_pwode = DiffEqBase.init(prob_multiple_pwode, timestepper2_adaptive, dt=dt, verbose=true)
+                @test_throws AssertionError("No or multiple integrators using PointwiseODEFunction found") DiffEqBase.solve!(integrator_multiple_pwode)
+            end
         end
     end
 
