@@ -72,6 +72,10 @@ end
     @unpack Rₙ₊₁, Rₙ = integrator.cache
     @unpack σ_s, σ_c, Δt_bounds = alg
     R = max(Rₙ, Rₙ₊₁)
+    if isinf(σ_s) && R == σ_c
+        # Handle it?
+        throw(ErrorException("Δt is undefined for R = σ_c where σ_s = ∞"))
+    end
     integrator._dt = (1 - 1/(1+exp((σ_c - R)*σ_s)))*(Δt_bounds[2] - Δt_bounds[1]) + Δt_bounds[1]
     return nothing
 end

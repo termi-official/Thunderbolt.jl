@@ -127,6 +127,20 @@ using UnPack
 
     prob_multiple_pwode = OperatorSplittingProblem(fsplit_multiple_pwode_outer, u0, tspan)
 
+    function ode2_force_half(du, u, p, t)
+        du[1] = 0.5
+        du[2] = 0.5
+    end
+
+    fpw_force_half = PointwiseODEFunction(
+        1,
+        ODEFunction(ode2_force_half),
+        [0.0]
+    )
+
+    fsplit_force_half = GenericSplitFunction((f1,fpw_force_half), (f1dofs, f2dofs))
+    prob_force_half = OperatorSplittingProblem(fsplit_force_half, u0, tspan)
+
     dt = 0.01π
     adaptive_tstep_range = (dt * 1, dt * 5)
     @testset "OperatorSplitting" begin
@@ -205,6 +219,11 @@ using UnPack
             @testset "Multiple `PointwiseODEFunction`s" begin
                 integrator_multiple_pwode = DiffEqBase.init(prob_multiple_pwode, timestepper2_adaptive, dt=dt, verbose=true)
                 @test_throws AssertionError("No or multiple integrators using PointwiseODEFunction found") DiffEqBase.solve!(integrator_multiple_pwode)
+            end
+            @testset "σ_s = Inf, R = σ_c" begin
+                timestepper_stepfunc_adaptive = Thunderbolt.ReactionTangentController(timestepper, Inf, 0.5, adaptive_tstep_range)
+                integrator_stepfunc_adaptive = DiffEqBase.init(prob_force_half, timestepper_stepfunc_adaptive, dt=dt, verbose=true)
+                @test_throws ErrorException("Δt is undefined for R = σ_c where σ_s = ∞") DiffEqBase.solve!(integrator_stepfunc_adaptive)
             end
         end
     end
