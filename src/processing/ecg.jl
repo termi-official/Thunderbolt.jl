@@ -528,3 +528,4 @@ end
 function evaluate_ecg(cache::Geselowitz1989ECGLeadCache)
     return -cache.Z * cache.∇Njκ∇φₘ
 end
+
