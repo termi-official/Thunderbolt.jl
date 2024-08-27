@@ -89,8 +89,8 @@
         end
 
         @testset "Idempotence" begin
-            u .= [randn() for _ in u]
-            u_g .= [randn() for _ in u_g]
+            u .= randn(length(u))
+            u_g .= randn(length(u_g))
 
             @testset "Plonsey1964" begin
                 Thunderbolt.update_ecg!(plonsey_ecg, u)
