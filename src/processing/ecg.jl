@@ -123,6 +123,14 @@ function evaluate_ecg(method::Plonsey1964ECGGaussCache, x::Vec, κₜ::Real)
     return -φₑ / (4π*κₜ)
 end
 
+function evaluate_ecg(method::Plonsey1964ECGGaussCache, x::AbstractVector{<:Vec}, κₜ::Real)
+    φₑ = zeros(length(x))
+    for i in eachindex(x)
+        φₑ = evaluate_ecg(method, x[i], κₜ)
+    end
+    return φₑ
+end
+
 function _evaluate_ecg_inner!(κ∇φₘ, method::Plonsey1964ECGGaussCache, x::Vec, κₜ::Real, sdh, cv)
     φₑ = 0.0
     for cell ∈ CellIterator(sdh)

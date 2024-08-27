@@ -68,9 +68,7 @@
 
             @testset "Plonsey1964" begin
                 Thunderbolt.update_ecg!(plonsey_ecg, u)
-                for electrode in electrodes
-                    @test Thunderbolt.evaluate_ecg(plonsey_ecg, electrode, 1.0) ≈ 0.0
-                end
+                @test Thunderbolt.evaluate_ecg(plonsey_ecg, electrodes, 1.0) .≈ 0.0
             end
 
             @testset "Poisson" begin
@@ -94,9 +92,9 @@
 
             @testset "Plonsey1964" begin
                 Thunderbolt.update_ecg!(plonsey_ecg, u)
-                val_1_init = Thunderbolt.evaluate_ecg.(Ref(plonsey_ecg), electrodes, 1.0)
+                val_1_init = Thunderbolt.evaluate_ecg(plonsey_ecg, electrodes, 1.0)
                 Thunderbolt.update_ecg!(plonsey_ecg, u)
-                @test Thunderbolt.evaluate_ecg.(Ref(plonsey_ecg), electrodes, 1.0) == val_1_init
+                @test Thunderbolt.evaluate_ecg(plonsey_ecg, electrodes, 1.0) == val_1_init
             end
 
             @testset "Poisson" begin
