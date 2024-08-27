@@ -510,18 +510,6 @@ function _add_electrode!(f::AbstractVector{T}, dh::DofHandler, electrode::Vertex
     return nothing
 end
 
-function _get_vertex(val::Vec, grid::AbstractGrid)
-    for (cell_idx, cell) in enumerate(getcells(grid))
-        for (vertex_idx, vertex) in enumerate(vertices(cell))
-            for node_idx in vertex # ?
-                val ≈ get_node_coordinate(grid, node_idx) && return VertexIndex(cell_idx, vertex_idx)
-            end
-        end
-    end
-    @error "No vertices found with specified coordinates"
-    return nothing
-end
-
 function update_ecg!(cache::Geselowitz1989ECGLeadCache, φₘ::AbstractVector)
     # Compute κᵢ∇φₘ on the heart
     mul!(cache.∇Njκ∇φₘ, cache.extracellular_potential_op, φₘ)
