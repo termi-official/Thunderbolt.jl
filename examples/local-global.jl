@@ -96,7 +96,7 @@ function assemble_cell_Jq!(ke, u, q, cell, cellvalues, material::LinearViscoelas
     @unpack Gᵥ   = material.viscosity
     @unpack K, G = material
     for q_point in 1:getnquadpoints(cellvalues)
-        Eᵥ = frommandel(SymmetricTensor{2,3},q)#frommandel(SymmetricTensor{2,3}, @view q[q_offset+q_point, :])
+        Eᵥ = frommandel(SymmetricTensor{2,3}, @view q[q_offset+q_point, :])
         # Get the integration weight for the quadrature point
         dΩ = getdetJdV(cellvalues, q_point)
         for i in 1:getnbasefunctions(cellvalues)
@@ -194,7 +194,7 @@ function stress_Jq!(K, u, q, material::MaterialCache, t)
         # Reset the element stiffness matrix
         fill!(ke, 0.0)
         # Compute element contribution
-        assemble_cell_Jq!(ke, cell, cache.cv, material)
+        assemble_cell_Jq!(ke, u, q, cell, cache.cv, material)
         # Assemble ke into K
         assemble!(assembler, celldofs(cell), ke)
     end
@@ -394,9 +394,6 @@ for t ∈ 0.0:dt:T
                     (resnorm < 1e-8 || norm(local_Δq) < 1e-8) && break
                     inner_iter == max_iter && error("Newton diverged for cell=$(cellid(cell))|qp=$qp at t=$t resnorm=$resnorm")
                 end
-                # update local Jacobian contribution
-                # Contribution to corrector part ,,∂G∂Qₑ``
-                chunk_jacobian_q(∂G∂Qₑ, ue, local_q, cell, cache.cv, cache.material)
                 # Contribution to corrector part ,,dQdUₑ``
                 local_J     = local_jacobian_q(ue, local_q, cache.material.viscosity, t+dt, chunk_item)
                 invlocal_Jq = inv(local_J)
@@ -405,11 +402,14 @@ for t ∈ 0.0:dt:T
                     dQdUₑ[qp,j] = frommandel(SymmetricTensor{2,3}, invlocal_Jq * tomandel(∂L∂U[j]))
                 end
             end
+            # update local Jacobian contribution
+            # Contribution to corrector part ,,∂G∂Qₑ``
+            chunk_jacobian_q(∂G∂Qₑ, ue, qmat, cell, cache.cv, cache.material)
             # Correction of global Jacobian
             for i in getnbasefunctions(cache.cv)
                 for j in getnbasefunctions(cache.cv)
                     for k in getnquadpoints(cache.cv)
-                        # ke[i,j] += ∂G∂Qₑ[i,k] ⊡ dQdUₑ[k,j]
+                        ke[i,j] += ∂G∂Qₑ[i,k] ⊡ dQdUₑ[k,j]
                     end
                 end
             end
