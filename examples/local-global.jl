@@ -95,15 +95,15 @@ function assemble_cell_Jq!(ke, u, q, cell, cellvalues, material::LinearViscoelas
     @unpack Gᵥ   = material.viscosity
     @unpack K, G = material
     for q_point in 1:getnquadpoints(cellvalues)
-        Eᵥ = q[q_offset+q_point]
+        Eᵥ = frommandel(SymmetricTensor{2,3},q)#frommandel(SymmetricTensor{2,3}, @view q[q_offset+q_point, :])
         # Get the integration weight for the quadrature point
         dΩ = getdetJdV(cellvalues, q_point)
         for i in 1:getnbasefunctions(cellvalues)
             C = gradient(ϵ -> -2*Gᵥ*dev(ϵ), Eᵥ);
             for j in 1:getnbasefunctions(cellvalues)
                 # Gradient of the test function
-                ∇Nⱼ = shape_gradient(cellvalues, q_point, j)
-                ke[4*(q_point-1)+1, j] += (∇Nⱼ ⊡ C) * dΩ
+                ∇Nⱼ = shape_symmetric_gradient(cellvalues, q_point, j)
+                ke[j, q_point] += (∇Nⱼ ⊡ C) * dΩ
             end
         end
     end
@@ -180,24 +180,24 @@ function stress_Ju!(K, u, q, cache::MaterialCache, t)
     end
 end
 
-# function stress_Jq!(K, u, q, material::MaterialCache, t)
-#     # Allocate the element stiffness matrix
-#     n_basefuncs = getnbasefunctions(cache.cv)
-#     ke = zeros(n_basefuncs, n_basefuncs)
-#     # Create an assembler
-#     assembler = start_assemble(K)
-#     # Loop over all cells
-#     for cell in CellIterator(dh)
-#         # Update the shape function gradients based on the cell coordinates
-#         reinit!(cache.cv, cell)
-#         # Reset the element stiffness matrix
-#         fill!(ke, 0.0)
-#         # Compute element contribution
-#         assemble_cell_Jq!(ke, cell, cache.cv, material)
-#         # Assemble ke into K
-#         assemble!(assembler, celldofs(cell), ke)
-#     end
-# end
+function stress_Jq!(K, u, q, material::MaterialCache, t)
+    # Allocate the element stiffness matrix
+    n_basefuncs = getnbasefunctions(cache.cv)
+    ke = zeros(n_basefuncs, n_basefuncs)
+    # Create an assembler
+    assembler = start_assemble(K)
+    # Loop over all cells
+    for cell in CellIterator(dh)
+        # Update the shape function gradients based on the cell coordinates
+        reinit!(cache.cv, cell)
+        # Reset the element stiffness matrix
+        fill!(ke, 0.0)
+        # Compute element contribution
+        assemble_cell_Jq!(ke, cell, cache.cv, material)
+        # Assemble ke into K
+        assemble!(assembler, celldofs(cell), ke)
+    end
+end
 
 struct OverstressedViscosity{T}
     Gᵥ::T
@@ -243,12 +243,20 @@ function viscosity_evolution_Ju(u, q, p::OverstressedViscosity, t, local_chunk_i
     @unpack Gᵥ, η₀, s₀ = p
     @unpack cv, qpᵢ = local_chunk_info
 
-    E   = function_symmetric_gradient(cv, qpᵢ, u)
-    Eᵥ  = frommandel(SymmetricTensor{2,3}, q)
-    Tₒᵥ = 2Gᵥ * (E-Eᵥ) #dev(E-Eᵥ)
-    η   = η₀ #* exp(-s₀*norm(Tₒᵥ))
+    Ju = zeros(SymmetricTensor{2,3}, getnbasefunctions(cv))
 
-    return NaN # TODO via chain rule Tₒᵥ/η
+    # Ein    = function_symmetric_gradient(cv, qpᵢ, u)
+    Eᵥ     = frommandel(SymmetricTensor{2,3}, q)
+    Tₒᵥ(E) = 2Gᵥ * (E-Eᵥ) #dev(E-Eᵥ)
+    η(E)   = η₀ #* exp(-s₀*norm(Tₒᵥ))
+
+    for i in 1:getnbasefunctions(cv)
+        ∇Nᵢ = shape_symmetric_gradient(cv, qpᵢ, i)
+        C   = gradient(E -> Tₒᵥ(E)/η(E), ∇Nᵢ)
+        Ju[i] = C ⊡ ∇Nᵢ
+    end
+
+    return Ju
 end
 
 # function solve_local()
@@ -324,10 +332,15 @@ qmat     = reshape(q,     (getnquadpoints(cv)*getncells(dh.grid), 6)) # This can
 qprevmat = reshape(qprev, (getnquadpoints(cv)*getncells(dh.grid), 6)) # This can be relaxed
 
 # solve
-global_f        = stress!
-global_jacobian = stress_Ju!
-local_jacobian  = viscosity_evolution_Jq
-local_f         = viscosity_evolution
+
+# Translation Ferrite->SciML
+global_f          = stress!
+global_jacobian_u = stress_Ju!
+global_jacobian_q = stress_Jq!
+chunk_jacobian_q  = assemble_cell_Jq!
+local_jacobian_q  = viscosity_evolution_Jq
+local_jacobian_u  = viscosity_evolution_Ju
+local_f           = viscosity_evolution
 
 for t ∈ 0.0:dt:T
     # For each stage ... this is a backward Euler for now, so just 1 stage :)
@@ -343,13 +356,21 @@ for t ∈ 0.0:dt:T
 
         #Setup Jacobian
         # 1. Jacobian of global function G w.r.t. to global vector u
-        global_jacobian(J, u, qmat, cache, t+dt)
-        # 2. Local solves and Jacobian corrections
+        global_jacobian_u(J, u, qmat, cache, t+dt)
+        # 2. Local solves and Jacobian corrections (normally these are done IN global_jacobian_u for efficiency reasons)
         # for each local chunk # Element loop
+        ∂G∂Qₑ = zeros(SymmetricTensor{2,3}, (getnbasefunctions(cache.cv), getnquadpoints(cache.cv))) # TODO flatten to second order tensor
+        dQdUₑ = zeros(SymmetricTensor{2,3}, (getnquadpoints(cache.cv), getnbasefunctions(cache.cv)))
+
+        assembler = start_assemble(J; fillzero=false)
+        ke = zeros(getnbasefunctions(cache.cv), getnbasefunctions(cache.cv))
         for cell in CellIterator(dh)
             # prepare iteration
             reinit!(cache.cv, cell)
-            # chunk_info = FerriteElementChunkInfo(cache.cv, qp)
+            fill!(ke, 0.0)
+            fill!(∂G∂Qₑ, zero(SymmetricTensor{2,3}))
+
+            # chunk_info = FerriteElementChunkInfo(cache.cv, qp, keq)
             ue = @views u[celldofs(cell)] # TODO copy for better cache utilization
             q_offset     = getnquadpoints(cv)*(cellid(cell)-1)
             # for each item in local chunk # Quadrature loop
@@ -360,7 +381,7 @@ for t ∈ 0.0:dt:T
                 local_qprev = @view qprevmat[q_offset+qp, :]
                 for inner_iter in 1:10
                     # setup system for local backward Euler solve (qₙ₊₁ - qₙ)/Δt - rhs(...) = 0
-                    local_J        = local_jacobian(ue, local_q, cache.material.viscosity, t+dt, chunk_item)
+                    local_J        = local_jacobian_q(ue, local_q, cache.material.viscosity, t+dt, chunk_item)
                     local_dq       = local_f(ue, local_q, cache.material.viscosity, t+dt, chunk_item)
                     local_residual = (local_q .- local_qprev)./dt .- local_dq
                     # solve linear sytem and update local solution
@@ -371,14 +392,26 @@ for t ∈ 0.0:dt:T
                     resnorm < 1e-4 && break
                     inner_iter == 10 && error("Newton diverged for cell=$(cellid(cell))|qp=$qp at t=$t")
                 end
-                # update Jacobian
-                # invlocal_Jq = inv()
-                # for i in 1:getnbasefunctions(cv)
-                #     for j in 1:getnbasefunctions(cv)
-                #         invlocal_Jq ⊡ local_residual
-                #     end
-                # end
+                # update local Jacobian contribution
+                # Contribution to corrector part ,,∂G∂Qₑ``
+                chunk_jacobian_q(∂G∂Qₑ, ue, local_q, cell, cache.cv, cache.material)
+                # Contribution to corrector part ,,dQdUₑ``
+                local_J     = local_jacobian_q(ue, local_q, cache.material.viscosity, t+dt, chunk_item)
+                invlocal_Jq = inv(local_J)
+                ∂L∂U = local_jacobian_u(u, q, cache.material.viscosity, t+dt, chunk_item)
+                for j in 1:getnbasefunctions(cv)
+                    dQdUₑ[qp,j] = frommandel(SymmetricTensor{2,3}, invlocal_Jq * tomandel(∂L∂U[j]))
+                end
             end
+            # Correction of global Jacobian
+            for i in getnbasefunctions(cache.cv)
+                for j in getnbasefunctions(cache.cv)
+                    for k in getnquadpoints(cache.cv)
+                        ke[i,j] += ∂G∂Qₑ[i,k] ⊡ dQdUₑ[k,j]
+                    end
+                end
+            end
+            assemble!(assembler, celldofs(cell), ke)
         end
         # 3. Apply boundary conditions
         apply!(J, global_residual, ch)
