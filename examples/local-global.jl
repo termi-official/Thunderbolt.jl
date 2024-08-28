@@ -1,5 +1,7 @@
 using Thunderbolt, UnPack
 
+import Thunderbolt.WriteVTK: paraview_collection 
+
 # # 0 = G(du,u,q,p⁰,t)
 # # 0 = L(dq,u,q,p ,t) = (L₁(Pₑ¹dq, Pₐ¹u, Pₑ¹q, p¹, t), ..., Lₙ(Pₑⁿdq, Pₐⁿu, Pₑⁿq, pⁿ, t))
 # # Where Pₐⁱ,Pₑⁱ are the mappings from global to the local chunk for the respective variables.
@@ -78,8 +80,7 @@ function assemble_cell_Ju!(ke, u, q, cell, cellvalues, material::LinearViscoelas
             ∇Nᵢ = shape_symmetric_gradient(cellvalues, q_point, i)
             # Stress (Eq. 3)
             E = ∇Nᵢ
-            I = one(E)
-            T = K*tr(E)*I + 2*(G+Gᵥ)*dev(E) - 2*Gᵥ*dev(Eᵥ)
+            T = K*tr(E)*one(E) + 2*(G+Gᵥ)*dev(E) - 2*Gᵥ*dev(Eᵥ)
             for j in 1:getnbasefunctions(cellvalues)
                 # Symmetric gradient of the test function
                 ∇ˢʸᵐNⱼ = shape_symmetric_gradient(cellvalues, q_point, j)
@@ -225,7 +226,7 @@ function viscosity_evolution(u, q, p::OverstressedViscosity, t, local_chunk_info
 
     return tomandel(Tₒᵥ/η)
 end
-    
+
 function viscosity_evolution_Jq(u, q, p::OverstressedViscosity, t, local_chunk_info)
     @unpack Gᵥ, η₀, s₀ = p
     @unpack cv, qpᵢ = local_chunk_info
@@ -270,7 +271,7 @@ end
 # end
 
 function traction(x, t)
-    return Vec(0.0, t * x[2], 0.0)
+    return Vec(0.0, 0.0, 0.0)
 end
 
 # Hartmann 2005 Table 5
@@ -286,7 +287,7 @@ material = LinearViscoelasticity(
 )
 
 function generate_linear_elasticity_problem()
-    grid = generate_grid(Hexahedron, (2, 2, 2));
+    grid = generate_grid(Hexahedron, (2, 1, 1));
 
     dim = 3
     order = 1 # linear interpolation
@@ -304,6 +305,7 @@ function generate_linear_elasticity_problem()
 
     ch = ConstraintHandler(dh)
     add!(ch, Dirichlet(:u, getfacetset(grid, "left"),   (x, t) -> Vec((0.0,0.0,0.0)), [1,2,3]))
+    add!(ch, Dirichlet(:u, getfacetset(grid, "right"),   (x, t) -> Vec((0.1,0.0,0.0)), [1,2,3]))
     close!(ch);
 
     return dh, ch, cellvalues, facetvalues
@@ -319,8 +321,8 @@ cache = MaterialCache(
 u₀ = zeros(ndofs(dh))
 q₀ = zeros(getnquadpoints(cv)*getncells(dh.grid)*6)
 
-dt = 1.0
-T  = 10.0
+dt = 0.01
+T  = 1.0
 
 # init
 J = allocate_matrix(dh)
@@ -330,6 +332,8 @@ q = copy(q₀)
 qprev = copy(q₀)
 qmat     = reshape(q,     (getnquadpoints(cv)*getncells(dh.grid), 6)) # This can be relaxed
 qprevmat = reshape(qprev, (getnquadpoints(cv)*getncells(dh.grid), 6)) # This can be relaxed
+
+max_iter = 100 # Should be 1
 
 # solve
 
@@ -342,17 +346,14 @@ local_jacobian_q  = viscosity_evolution_Jq
 local_jacobian_u  = viscosity_evolution_Ju
 local_f           = viscosity_evolution
 
+pvd = paraview_collection("linear-viscoelasticity")
 for t ∈ 0.0:dt:T
     # For each stage ... this is a backward Euler for now, so just 1 stage :)
     # Outer newton loop
-    for outer_iter in 1:10
+    for outer_iter in 1:max_iter
         #Compute residual
-        global_f(global_residual, u, qmat, cache::MaterialCache, t+dt)
-
-        #Check convergence
-        rnorm = norm(global_residual)
-        @info "$t: Iteration=$outer_iter rnorm=$rnorm"
-        (rnorm < 1e-4 && outer_iter> 1) && break
+        apply!(u, ch)
+        global_f(global_residual, u, qmat, cache, t+dt)
 
         #Setup Jacobian
         # 1. Jacobian of global function G w.r.t. to global vector u
@@ -379,18 +380,19 @@ for t ∈ 0.0:dt:T
                 # solve local problem
                 local_q     = @view qmat[q_offset+qp, :]
                 local_qprev = @view qprevmat[q_offset+qp, :]
-                for inner_iter in 1:10
+                for inner_iter in 1:max_iter
                     # setup system for local backward Euler solve (qₙ₊₁ - qₙ)/Δt - rhs(...) = 0
                     local_J        = local_jacobian_q(ue, local_q, cache.material.viscosity, t+dt, chunk_item)
                     local_dq       = local_f(ue, local_q, cache.material.viscosity, t+dt, chunk_item)
-                    local_residual = (local_q .- local_qprev)./dt .- local_dq
+                    local_residual = (local_q .- local_qprev) .- dt .* local_dq
                     # solve linear sytem and update local solution
-                    local_Δq       = local_J \ local_residual
-                    local_q      .+= local_Δq
+                    local_Δq       = (one(local_J) - (dt .*local_J)) \ local_residual
+                    local_q      .-= local_Δq
                     # check convergence
                     resnorm        = norm(local_residual)
-                    resnorm < 1e-4 && break
-                    inner_iter == 10 && error("Newton diverged for cell=$(cellid(cell))|qp=$qp at t=$t")
+                    # println("Progress... $inner_iter cell=$(cellid(cell))|qp=$qp at t=$t resnorm=$resnorm")
+                    (resnorm < 1e-8 || norm(local_Δq) < 1e-8) && break
+                    inner_iter == max_iter && error("Newton diverged for cell=$(cellid(cell))|qp=$qp at t=$t resnorm=$resnorm")
                 end
                 # update local Jacobian contribution
                 # Contribution to corrector part ,,∂G∂Qₑ``
@@ -407,20 +409,40 @@ for t ∈ 0.0:dt:T
             for i in getnbasefunctions(cache.cv)
                 for j in getnbasefunctions(cache.cv)
                     for k in getnquadpoints(cache.cv)
-                        ke[i,j] += ∂G∂Qₑ[i,k] ⊡ dQdUₑ[k,j]
+                        # ke[i,j] += ∂G∂Qₑ[i,k] ⊡ dQdUₑ[k,j]
                     end
                 end
             end
             assemble!(assembler, celldofs(cell), ke)
         end
         # 3. Apply boundary conditions
-        apply!(J, global_residual, ch)
+        apply_zero!(J, global_residual, ch)
         # 4. Solve linear system
         Δu = J \ global_residual
         # 5. Update solution
         u .-= Δu
-        (norm(Δu) < 1e-8) && break
-        qprev .= q 
-        outer_iter == 10 && error("max iter")
+        #Check convergence
+        rnorm = norm(global_residual)
+        @info "$t: Iteration=$outer_iter rnorm=$rnorm"
+        if rnorm < 1e-7
+            break
+        end
+        if norm(Δu) < 1e-8
+            break
+        end
+        outer_iter == max_iter && error("max iter")
+    end
+    @show qmat[1,1]
+    qprev .= q
+
+    VTKGridFile("linear-viscoelasticity-$t.vtu", dh) do vtk
+        write_solution(vtk, dh, u)
+        # for (i, key) in enumerate(("11", "22", "12"))
+        #     write_cell_data(vtk, avg_cell_stresses[i], "sigma_" * key)
+        # end
+        # write_projection(vtk, proj, stress_field, "stress field")
+        # Ferrite.write_cellset(vtk, grid)
+        pvd[t] = vtk
     end
 end
+# close(pvd)
