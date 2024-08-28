@@ -1,32 +1,31 @@
-using Ferrite, Tensors, UnPack
+using Thunderbolt, UnPack
 
-using SciMLBase#, DiffEqBase, OrdinaryDiffEq
+# # 0 = G(du,u,q,p⁰,t)
+# # 0 = L(dq,u,q,p ,t) = (L₁(Pₑ¹dq, Pₐ¹u, Pₑ¹q, p¹, t), ..., Lₙ(Pₑⁿdq, Pₐⁿu, Pₑⁿq, pⁿ, t))
+# # Where Pₐⁱ,Pₑⁱ are the mappings from global to the local chunk for the respective variables.
+# struct LocalGlobalFunction{GType, LTYpe} <: Thunderbolt.SciMLBase.AbstactNonlinearFunction
+#     G::GType
+#     L::LType
+# end
 
-# 0 = G(du,u,q,p,t)
-# 0 = L(dq,u,q,p,t)
-struct LocalGlobalFunction{GType, LTYpe} <: SciMLBase.AbstactNonlinearFunction
-    G::GType
-    L::LType
-end
+# struct LocalGlobalProblem{F <: LocalGlobalFunction}
+#     f::F
+# end
 
-struct LocalGlobalProblem{F <: LocalGlobalFunction}
-    f::F
-end
+# # TODO citation of original paper and Hartmann's benchmark paper
+# struct MultilevelNewton
+#     max_iter::Int
+# end
 
-# TODO citation of original paper and Hartmann's benchmark paper
-struct MultilevelNewton
-    max_iter::Int
-end
-
-struct MultilevelNewtonCache{VT, JT, LCTG, LCTL}
-    max_iter::Int
-    residual_global::VT
-    residual_local::VT
-    δu::VT
-    J::JT
-    lincache_global::LCTG # Global linear solver
-    lincache_local::LCTL # Local linear solver
-end
+# struct MultilevelNewtonCache{VT, JT, LCTG, LCTL}
+#     max_iter::Int
+#     residual_global::VT
+#     residual_local::VT
+#     δu::VT
+#     J::JT
+#     lincache_global::LCTG # Global linear solver
+#     lincache_local::LCTL # Local linear solver
+# end
 
 # function OrdinaryDiffEq.build_nlsolver(
 #     alg, nlalg::MultilevelNewton,
@@ -71,7 +70,7 @@ function assemble_cell_Ju!(ke, u, q, cell, cellvalues, material::LinearViscoelas
     @unpack Gᵥ   = material.viscosity
     @unpack K, G = material
     for q_point in 1:getnquadpoints(cellvalues)
-        Eᵥ = q[q_offset+q_point]
+        Eᵥ = frommandel(SymmetricTensor{2,3}, @view q[q_offset+q_point, :])
         # Get the integration weight for the quadrature point
         dΩ = getdetJdV(cellvalues, q_point)
         for i in 1:getnbasefunctions(cellvalues)
@@ -119,6 +118,7 @@ end
 # Standard assembly loop for global problem
 function stress!(du, u, q, cache::MaterialCache, t)
     K = allocate_matrix(cache.dh)
+    f = zeros(ndofs(cache.dh))
     # Allocate the element stiffness matrix
     n_basefuncs = getnbasefunctions(cache.cv)
     ke = zeros(n_basefuncs, n_basefuncs)
@@ -126,18 +126,18 @@ function stress!(du, u, q, cache::MaterialCache, t)
     # Create an assembler
     assembler = start_assemble(K, f)
     # Loop over all cells
-    for cell in CellIterator(dh)
+    for cell in CellIterator(cache.dh)
         # Update the shape function gradients based on the cell coordinates
         reinit!(cache.cv, cell)
         # Reset the element stiffness matrix
         fill!(ke, 0.0)
         fill!(fe, 0.0)
         # Compute element contribution
-        assemble_cell!(ke, fe, cell, cache.cv, material)
+        assemble_cell!(ke, fe, u, q, cell, cache.cv, material)
         # Assemble ke into K
         assemble!(assembler, celldofs(cell), ke, fe)
     end
-    for face in FacetIterator(dh, "right")
+    for face in FacetIterator(cache.dh, getfacetset(cache.dh.grid,"right"))
         # Update the facetvalues to the correct facet number
         reinit!(cache.fv, face)
         # Reset the temporary array for the next facet
@@ -152,11 +152,11 @@ function stress!(du, u, q, cache::MaterialCache, t)
             dΓ = getdetJdV(cache.fv, qp)
             for i in 1:getnbasefunctions(cache.fv)
                 Nᵢ = shape_value(cache.fv, qp, i)
-                fe_ext[i] -= tₚ ⋅ Nᵢ * dΓ
+                fe[i] -= tₚ ⋅ Nᵢ * dΓ
             end
         end
         # Add the local contributions to the correct indices in the global external force vector
-        assemble!(f_ext, celldofs(face), fe_ext)
+        assemble!(f, celldofs(face), fe)
     end
     du .= K*u .- f
 end
@@ -205,44 +205,50 @@ struct OverstressedViscosity{T}
     s₀::T
 end
 
-struct FerriteLocalChunkInfo{CV, QP}
+struct FerriteElementChunkInfo{CV}
     cv::CV
-    qpᵢ::QP
 end
 
-function viscosity_evolution!(dq, u, q, p::OverstressedViscosity, t, local_chunk_info)
+struct FerriteQuadratureInfo{CV}
+    cv::CV
+    qpᵢ::Int
+end
+
+function viscosity_evolution(u, q, p::OverstressedViscosity, t, local_chunk_info)
     @unpack Gᵥ, η₀, s₀ = p
     @unpack cv, qpᵢ = local_chunk_info
 
-    E   = symmetric_function_gradient(u, cv)
-    Eᵥ  = q
-    Tₒᵥ = 2Gᵥ * dev(E-Eᵥ)
-    η   = η₀ * exp(-s₀*norm(Tₒᵥ))
+    E   = function_symmetric_gradient(cv, qpᵢ, u)
+    Eᵥ  = frommandel(SymmetricTensor{2,3}, q)
+    Tₒᵥ = 2Gᵥ * (E-Eᵥ) #dev(E-Eᵥ)
+    η   = η₀ #* exp(-s₀*norm(Tₒᵥ))
 
-    dq .= Tₒᵥ/η
+    return tomandel(Tₒᵥ/η)
 end
-
+    
 function viscosity_evolution_Jq(u, q, p::OverstressedViscosity, t, local_chunk_info)
     @unpack Gᵥ, η₀, s₀ = p
-    @unpack cv = local_chunk_info
+    @unpack cv, qpᵢ = local_chunk_info
 
-    E   = symmetric_function_gradient(u, cv)
-    Tₒᵥ(Eᵥ) = 2Gᵥ * dev(E-Eᵥ)
-    η(Eᵥ)   = η₀ * exp(-s₀*norm(Tₒᵥ))
+    E   = function_symmetric_gradient(cv, qpᵢ, u)
+    Tₒᵥ(Eᵥ) = 2Gᵥ * (E-Eᵥ) #dev(E-Eᵥ)
+    η(Eᵥ)   = η₀ #* exp(-s₀*norm(Tₒᵥ(Eᵥ)))
 
-    return gradient(Eᵥ -> Tₒᵥ(Eᵥ)/η(Eᵥ), q); 
+    Eᵥin = frommandel(SymmetricTensor{2,3}, q)
+    C = gradient(Eᵥ -> Tₒᵥ(Eᵥ)/η(Eᵥ), Eᵥin)
+    return tomandel(C)
 end
 
-function viscosity_evolution_Ju!(Ju, u, q, p::OverstressedViscosity, t, local_chunk_info)
+function viscosity_evolution_Ju(u, q, p::OverstressedViscosity, t, local_chunk_info)
     @unpack Gᵥ, η₀, s₀ = p
     @unpack cv, qpᵢ = local_chunk_info
 
-    E   = symmetric_function_gradient(u, cv)
-    Eᵥ  = q
-    Tₒᵥ = 2Gᵥ * dev(E-Eᵥ)
-    η   = η₀ * exp(-s₀*norm(Tₒᵥ))
+    E   = function_symmetric_gradient(cv, qpᵢ, u)
+    Eᵥ  = frommandel(SymmetricTensor{2,3}, q)
+    Tₒᵥ = 2Gᵥ * (E-Eᵥ) #dev(E-Eᵥ)
+    η   = η₀ #* exp(-s₀*norm(Tₒᵥ))
 
-    dq .= Tₒᵥ/η
+    return NaN # TODO via chain rule Tₒᵥ/η
 end
 
 # function solve_local()
@@ -255,8 +261,8 @@ end
 #     # end
 # end
 
-function traction(x)
-    return Vec(0.0, 1.0 * x[2])
+function traction(x, t)
+    return Vec(0.0, t * x[2], 0.0)
 end
 
 # Hartmann 2005 Table 5
@@ -265,28 +271,21 @@ material = LinearViscoelasticity(
        8.75,
     OverstressedViscosity(
         150.0,
-        13.0
+        13.0,
         1.1,
     ),
     traction,
 )
 
-u₀ = zeros(ndofs(dh))
-q₀ = zeros(getnquadpoints(cv)*getncells(dh.grid))
-
-dt = 1.0
-T  = 10.0
-
-
 function generate_linear_elasticity_problem()
-    grid = generate_grid(Quadrilateral, (1, 1));
+    grid = generate_grid(Hexahedron, (1, 1, 1));
 
-    dim = 2
+    dim = 3
     order = 1 # linear interpolation
-    ip = Lagrange{RefQuadrilateral, order}()^dim; # vector valued interpolation
+    ip = Lagrange{RefHexahedron, order}()^dim; # vector valued interpolation
 
-    qr = QuadratureRule{RefQuadrilateral}(2)
-    qr_face = FacetQuadratureRule{RefQuadrilateral}(2);
+    qr = QuadratureRule{RefHexahedron}(2)
+    qr_face = FacetQuadratureRule{RefHexahedron}(2);
 
     cellvalues = CellValues(qr, ip)
     facetvalues = FacetValues(qr_face, ip);
@@ -296,18 +295,27 @@ function generate_linear_elasticity_problem()
     close!(dh);
 
     ch = ConstraintHandler(dh)
-    add!(ch, Dirichlet(:u, getfacetset(grid, "left"),   (x, t) -> 0.0, [1,2]))
+    add!(ch, Dirichlet(:u, getfacetset(grid, "left"),   (x, t) -> Vec((0.0,0.0,0.0)), [1,2,3]))
     close!(ch);
 
     return dh, ch, cellvalues, facetvalues
 end
 
-# init
 dh,ch,cv,fv = generate_linear_elasticity_problem()
+u₀ = zeros(ndofs(dh))
+q₀ = zeros(getnquadpoints(cv)*getncells(dh.grid)*6)
+
+dt = 1.0
+T  = 10.0
+
+# init
 J = allocate_matrix(dh)
 global_residual = zeros(ndofs(dh))
 u = copy(u₀)
 q = copy(q₀)
+qprev = copy(q₀)
+qmat     = reshape(q,     (getnquadpoints(cv)*getncells(dh.grid), 6)) # This can be relaxed
+qprevmat = reshape(qprev, (getnquadpoints(cv)*getncells(dh.grid), 6)) # This can be relaxed
 cache = MaterialCache(
     material,
     dh,
@@ -317,39 +325,55 @@ cache = MaterialCache(
 
 # solve
 for t ∈ 0.0:dt:T
-    for iter in 1:10
+    # For each stage ... this is a backward Euler for now, so just 1 stage :)
+    # Outer newton loop
+    for outer_iter in 1:10
         #Compute residual
-        stress!(global_residual, u, q, cache::MaterialCache, t+dt)
+        stress!(global_residual, u, qmat, cache::MaterialCache, t+dt)
 
         #Check convergence
         rnorm = norm(global_residual)
-        @info "$t: Iteration $iter $rnorm"
-        rnorm < 1e-4 && break
+        @info "$t: Iteration=$outer_iter residaul norm=$rnorm"
+        (rnorm < 1e-4 && outer_iter> 1) && break
 
         #Setup Jacobian
-        # 1. Global part
-        stress_Ju!(J, u, q, cache, t+dt)
-        # 2. Local corrections
+        # 1. Jacobian of global function G w.r.t. to global vector u
+        stress_Ju!(J, u, qmat, cache, t+dt)
+        # 2. Local solves and Jacobian corrections
         # for each local chunk # Element loop
         for cell in CellIterator(dh)
             # prepare iteration
             reinit!(cache.cv, cell)
+            # chunk_info = FerriteElementChunkInfo(cache.cv, qp)
             ue = @views u[celldofs(cell)] # TODO copy for better cache utilization
-            q_offset     = getnquadpoints(cellvalues)*(cellid(cell)-1)
-            local_chunk_info = FerriteLocalChunkInfo(cache.cv, qp)
+            q_offset     = getnquadpoints(cv)*(cellid(cell)-1)
             # for each item in local chunk # Quadrature loop
             for qp in 1:getnquadpoints(cache.cv)
+                chunk_item = FerriteQuadratureInfo(cache.cv, qp)
                 # solve local problem
+                local_q     = @view qmat[q_offset+qp, :]
+                local_qprev = @view qprevmat[q_offset+qp, :]
                 for inner_iter in 1:10
-                    q[q_offset+qp] .+= ...?
+                    # setup system for local backward Euler solve (qₙ₊₁ - qₙ)/Δt - rhs(...) = 0
+                    local_J        = viscosity_evolution_Jq(ue, local_q, cache.material.viscosity, t+dt, chunk_item)
+                    local_dq       = viscosity_evolution(ue, local_q, cache.material.viscosity, t+dt, chunk_item)
+                    local_residual = (local_q .- local_qprev)./dt .- local_dq
+                    # solve linear sytem and update local solution
+                    local_Δq       = local_J \ local_residual
+                    local_q      .+= local_Δq
+                    # check convergence
+                    resnorm        = norm(local_residual)
+                    @show resnorm
+                    resnorm < 1e-4 && break
+                    inner_iter == 10 && error("Newton diverged for cell=$(cellid(cell))|qp=$qp at t=$t")
                 end
                 # update Jacobian
-                invlocal_Jq = inv(viscosity_evolution_Jq(ue, q[q_offset+qp], cache.material.viscosity, t+dt, local_chunk_info))
-                for i in 1:getnbasefunctions(cv)
-                    for j in 1:getnbasefunctions(cv)
-                        invlocal_Jq ⊡ local_residual
-                    end
-                end
+                # invlocal_Jq = inv()
+                # for i in 1:getnbasefunctions(cv)
+                #     for j in 1:getnbasefunctions(cv)
+                #         invlocal_Jq ⊡ local_residual
+                #     end
+                # end
             end
         end
         # 3. Boundary conditions
@@ -357,7 +381,9 @@ for t ∈ 0.0:dt:T
         # 4. Solve linear system
         Δu = J \ global_residual
         # 5. Update solution
-        u .+= Δu
-        iter == 10 && error("max iter")
+        u .-= Δu
+        (norm(Δu) < 1e-4) && break
+        qprev .= q 
+        outer_iter == 10 && error("max iter")
     end
 end
