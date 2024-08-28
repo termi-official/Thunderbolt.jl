@@ -448,3 +448,15 @@ end
 function adapt_vector_type(::Type{<:Vector}, v::VT) where VT
     return v
 end
+
+function _get_vertex(val::Vec, grid::AbstractGrid)
+    for (cell_idx, cell) in enumerate(getcells(grid))
+        for (vertex_idx, vertex) in enumerate(vertices(cell))
+            for node_idx in vertex # ?
+                val ≈ get_node_coordinate(grid, node_idx) && return VertexIndex(cell_idx, vertex_idx)
+            end
+        end
+    end
+    @error "No vertices found with specified coordinates"
+    return nothing
+end
