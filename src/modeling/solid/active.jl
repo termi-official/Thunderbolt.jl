@@ -108,7 +108,7 @@ $T^{\rm{a}} = T^{\rm{max}} \, [Ca_{\rm{i}}] (F \cdot f_0) \otimes f_0$
 
 """
 Base.@kwdef struct Guccione1993ActiveModel
-    Tₘₐₓ::Float64 = 100.0
+    Tmax::Float64 = 100.0
 end
 
 ∂(sas::Guccione1993ActiveModel, Caᵢ, F::Tensor{2, dim}, coeff::AbstractTransverselyIsotropicMicrostructure) where {dim} = sas.Tmax * Caᵢ * (F ⋅ coeff.f) ⊗ coeff.f
