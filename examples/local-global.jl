@@ -147,7 +147,7 @@ function stress!(du, u, q, cache::MaterialCache, t)
         for qp in 1:getnquadpoints(cache.fv)
             # Calculate the global coordinate of the quadrature point.
             x = spatial_coordinate(cache.fv, qp, cell_coordinates)
-            tₚ = cache.material.traction(x)
+            tₚ = cache.material.traction(x, t)
             # Get the integration weight for the current quadrature point.
             dΓ = getdetJdV(cache.fv, qp)
             for i in 1:getnbasefunctions(cache.fv)
@@ -278,7 +278,7 @@ material = LinearViscoelasticity(
 )
 
 function generate_linear_elasticity_problem()
-    grid = generate_grid(Hexahedron, (1, 1, 1));
+    grid = generate_grid(Hexahedron, (2, 2, 2));
 
     dim = 3
     order = 1 # linear interpolation
@@ -302,6 +302,12 @@ function generate_linear_elasticity_problem()
 end
 
 dh,ch,cv,fv = generate_linear_elasticity_problem()
+cache = MaterialCache(
+    material,
+    dh,
+    cv,
+    fv,
+)
 u₀ = zeros(ndofs(dh))
 q₀ = zeros(getnquadpoints(cv)*getncells(dh.grid)*6)
 
@@ -316,29 +322,28 @@ q = copy(q₀)
 qprev = copy(q₀)
 qmat     = reshape(q,     (getnquadpoints(cv)*getncells(dh.grid), 6)) # This can be relaxed
 qprevmat = reshape(qprev, (getnquadpoints(cv)*getncells(dh.grid), 6)) # This can be relaxed
-cache = MaterialCache(
-    material,
-    dh,
-    cv,
-    fv,
-)
 
 # solve
+global_f        = stress!
+global_jacobian = stress_Ju!
+local_jacobian  = viscosity_evolution_Jq
+local_f         = viscosity_evolution
+
 for t ∈ 0.0:dt:T
     # For each stage ... this is a backward Euler for now, so just 1 stage :)
     # Outer newton loop
     for outer_iter in 1:10
         #Compute residual
-        stress!(global_residual, u, qmat, cache::MaterialCache, t+dt)
+        global_f(global_residual, u, qmat, cache::MaterialCache, t+dt)
 
         #Check convergence
         rnorm = norm(global_residual)
-        @info "$t: Iteration=$outer_iter residaul norm=$rnorm"
+        @info "$t: Iteration=$outer_iter rnorm=$rnorm"
         (rnorm < 1e-4 && outer_iter> 1) && break
 
         #Setup Jacobian
         # 1. Jacobian of global function G w.r.t. to global vector u
-        stress_Ju!(J, u, qmat, cache, t+dt)
+        global_jacobian(J, u, qmat, cache, t+dt)
         # 2. Local solves and Jacobian corrections
         # for each local chunk # Element loop
         for cell in CellIterator(dh)
@@ -355,15 +360,14 @@ for t ∈ 0.0:dt:T
                 local_qprev = @view qprevmat[q_offset+qp, :]
                 for inner_iter in 1:10
                     # setup system for local backward Euler solve (qₙ₊₁ - qₙ)/Δt - rhs(...) = 0
-                    local_J        = viscosity_evolution_Jq(ue, local_q, cache.material.viscosity, t+dt, chunk_item)
-                    local_dq       = viscosity_evolution(ue, local_q, cache.material.viscosity, t+dt, chunk_item)
+                    local_J        = local_jacobian(ue, local_q, cache.material.viscosity, t+dt, chunk_item)
+                    local_dq       = local_f(ue, local_q, cache.material.viscosity, t+dt, chunk_item)
                     local_residual = (local_q .- local_qprev)./dt .- local_dq
                     # solve linear sytem and update local solution
                     local_Δq       = local_J \ local_residual
                     local_q      .+= local_Δq
                     # check convergence
                     resnorm        = norm(local_residual)
-                    @show resnorm
                     resnorm < 1e-4 && break
                     inner_iter == 10 && error("Newton diverged for cell=$(cellid(cell))|qp=$qp at t=$t")
                 end
@@ -376,13 +380,13 @@ for t ∈ 0.0:dt:T
                 # end
             end
         end
-        # 3. Boundary conditions
+        # 3. Apply boundary conditions
         apply!(J, global_residual, ch)
         # 4. Solve linear system
         Δu = J \ global_residual
         # 5. Update solution
         u .-= Δu
-        (norm(Δu) < 1e-4) && break
+        (norm(Δu) < 1e-8) && break
         qprev .= q 
         outer_iter == 10 && error("max iter")
     end
