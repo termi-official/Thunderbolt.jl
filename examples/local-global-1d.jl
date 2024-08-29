@@ -245,10 +245,12 @@ qprev = copy(q₀)
 qmat     = reshape(q,     (getnquadpoints(cv)*getncells(dh.grid), 6)) # This can be relaxed
 qprevmat = reshape(qprev, (getnquadpoints(cv)*getncells(dh.grid), 6)) # This can be relaxed
 
-max_iter = 100 # Should be 1
+max_iter   = 100 # Should be 1
+local_tol⁰ = 1e-16
+global_tol = 1e-8
 
 # solve
-
+Δu = zeros(ndofs(dh))
 # Translation Ferrite->SciML
 global_f          = stress!
 global_jacobian_u = stress_Ju!
@@ -273,14 +275,11 @@ for t ∈ 0.0:dt:T
         dQdUₑ = zeros((getnquadpoints(cache.cv), getnbasefunctions(cache.cv)))
 
         assembler = start_assemble(J; fillzero=true)
-        ke = zeros(getnbasefunctions(cache.cv), getnbasefunctions(cache.cv))
         for cell in CellIterator(dh)
             # prepare iteration
             reinit!(cache.cv, cell)
-
-            # chunk_info = FerriteElementChunkInfo(cache.cv, qp, keq)
-            ue = @views u[celldofs(cell)] # TODO copy for better cache utilization
-            q_offset     = getnquadpoints(cv)*(cellid(cell)-1)
+            ue          = @views u[celldofs(cell)] # TODO copy for better cache utilization
+            q_offset    = getnquadpoints(cv)*(cellid(cell)-1)
             # for each item in local chunk # Quadrature loop
             for qp in 1:getnquadpoints(cache.cv)
                 chunk_item = FerriteQuadratureInfo(cache.cv, qp)
@@ -288,27 +287,28 @@ for t ∈ 0.0:dt:T
                 local_q     = @view qmat[q_offset+qp, :]
                 local_qprev = @view qprevmat[q_offset+qp, :]
                 for inner_iter in 1:max_iter
-                    # setup system for local backward Euler solve (qₙ₊₁ - qₙ)/Δt - rhs(...) = 0
+                    # setup system for local backward Euler solve L(qₙ₊₁, uₙ₊₁) = (qₙ₊₁ - qₙ) - Δt*rhs(qₙ₊₁, uₙ₊₁) = 0 w.r.t. qₙ₊₁ with uₙ₊₁ frozen
                     local_J        = local_jacobian_q(ue, local_q, cache.material.viscosity, t+dt, chunk_item)
                     local_dq       = local_f(ue, local_q, cache.material.viscosity, t+dt, chunk_item)
                     local_residual = (local_q .- local_qprev) .- dt .* local_dq # = L(u,q)
                     # solve linear sytem and update local solution
-                    ∂L∂q           = (one(local_J) - (dt .* local_J))
+                    ∂L∂q           = one(local_J) - (dt .* local_J)
                     local_Δq       = ∂L∂q \ local_residual
                     local_q      .-= local_Δq
                     # check convergence
                     resnorm        = norm(local_residual)
                     # println("Progress... $inner_iter cell=$(cellid(cell))|qp=$qp at t=$t resnorm=$resnorm")
-                    (resnorm < 1e-12 || norm(local_Δq) < 1e-8) && break
+                    local_tol = local_tol⁰ # min(norm(Δu)*norm(Δu), local_tol⁰)
+                    (resnorm ≤ local_tol || norm(local_Δq) ≤ local_tol) && break
                     inner_iter == max_iter && error("Newton diverged for cell=$(cellid(cell))|qp=$qp at t=$t resnorm=$resnorm")
                 end
-                # Contribution to corrector part ,,dQdUₑ``
+                # Contribution to corrector part ,,dQdUₑ`` by solving the linear system with multiple right hand sides
                 local_J     = local_jacobian_q(ue, local_q, cache.material.viscosity, t+dt, chunk_item)
                 ∂L∂q        = (one(local_J) - (dt .* local_J))
                 inv∂L∂q     = inv(∂L∂q)
-                ∂L∂U = dt .* local_jacobian_u(ue, local_q, cache.material.viscosity, t+dt, chunk_item)
+                ∂L∂U        = -dt * local_jacobian_u(ue, local_q, cache.material.viscosity, t+dt, chunk_item)
                 for j in 1:getnbasefunctions(cv)
-                    dQdUₑ[qp,j] -= inv∂L∂q * ∂L∂U[j]
+                    dQdUₑ[qp,j] = inv∂L∂q * -∂L∂U[j]
                 end
             end
             # update local Jacobian contribution
@@ -316,32 +316,25 @@ for t ∈ 0.0:dt:T
             fill!(∂G∂Qₑ, 0.0)
             chunk_jacobian_q(∂G∂Qₑ, ue, qmat, cell, cache.cv, cache.material)
             # Correction of global Jacobian
-            fill!(ke, 0.0)
-            for i in 1:getnbasefunctions(cache.cv)
-                for j in 1:getnbasefunctions(cache.cv)
-                    for k in 1:getnquadpoints(cache.cv)
-                        ke[i,j] += ∂G∂Qₑ[i,k] * dQdUₑ[k,j]
-                    end
-                end
-            end
+            ke = ∂G∂Qₑ * dQdUₑ
             assemble!(assembler, celldofs(cell), ke)
         end
-        # 2. Jacobian of global function G w.r.t. to global vector u with Q frozen
+        # 2. Residual and Jacobian of global function G(qₙ₊₁, uₙ₊₁) w.r.t. to global vector uₙ₊₁ with qₙ₊₁ frozen
         global_f(global_residual, u, qmat, cache, t+dt)
         global_jacobian_u(J, u, qmat, cache, t+dt)
         # 3. Apply boundary conditions
         apply_zero!(J, global_residual, ch)
         # 4. Solve linear system
-        Δu = J \ global_residual
+        Δu .= J \ global_residual
         # 5. Update solution
         u .-= Δu
         #Check convergence
         rnorm = norm(global_residual)
         @info "$t: Iteration=$outer_iter rnorm=$rnorm"
-        if rnorm < 1e-7
+        if rnorm ≤ global_tol
             break
         end
-        if norm(Δu) < 1e-8
+        if norm(Δu) ≤ global_tol
             break
         end
         outer_iter == max_iter && error("max iter")
