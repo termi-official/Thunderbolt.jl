@@ -1,4 +1,3 @@
-
 # Lie-Trotter-Godunov Splitting Implementation
 """
     LieTrotterGodunov <: AbstractOperatorSplittingAlgorithm
@@ -8,6 +7,8 @@ struct LieTrotterGodunov{AlgTupleType} <: AbstractOperatorSplittingAlgorithm
     inner_algs::AlgTupleType # Tuple of timesteppers for inner problems
     # transfer_algs::TransferTupleType # Tuple of transfer algorithms from the master solution into the individual ones
 end
+
+@inline DiffEqBase.isadaptive(::AbstractOperatorSplittingAlgorithm) = false
 
 struct LieTrotterGodunovCache{uType, tmpType, iiType} <: AbstractOperatorSplittingCache
     u::uType
@@ -54,5 +55,4 @@ end
         advance_solution_to!(subinteg, inner_caches[i], tnext)
         finalize_local_step!(subinteg)
     end
-end
-
+end 
