@@ -298,7 +298,7 @@ for t ∈ 0.0:dt:T
             # for each item in local chunk # Quadrature loop
             for qp in 1:getnquadpoints(cache.cv)
                 chunk_item = FerriteQuadratureInfo(cache.cv, qp)
-                # solve local problem
+                # solve local problem with Newton-Raphson
                 local_q     = @view qmat[q_offset+qp, :]
                 local_qprev = @view qprevmat[q_offset+qp, :]
                 for inner_iter in 1:max_iter
