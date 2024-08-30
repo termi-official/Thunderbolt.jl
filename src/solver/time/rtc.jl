@@ -20,7 +20,7 @@ struct ReactionTangentController{LTG <: OS.LieTrotterGodunov, T <: Real} <: OS.A
 end
 
 mutable struct ReactionTangentControllerCache{T <: Real, LTGCache <: OS.LieTrotterGodunovCache, uType} <: OS.AbstractOperatorSplittingCache
-    const ltg_cache::LTGCache #It has Arrays so it can be const?
+    const ltg_cache::LTGCache
     u::uType
     uprev::uType # True previous solution
     Rₙ₊₁::T
