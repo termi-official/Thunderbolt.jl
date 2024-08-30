@@ -14,7 +14,7 @@ struct LinearViscoelasticity1D{T,TV,FT}
 end
 
 # Ferrite-specific
-struct MaterialCache{M, DH, CV, FV}
+struct ElementCache{M, DH, CV, FV}
     material::M
     dh::DH
     cv::CV
@@ -71,7 +71,7 @@ function assemble_cell!(ke, fe, u, q, cell, cellvalues, material::LinearViscoela
 end
 
 # Standard assembly loop for global problem
-function stress!(du, u, q, cache::MaterialCache, t)
+function stress!(du, u, q, cache::ElementCache, t)
     K = allocate_matrix(cache.dh)
     f = zeros(ndofs(cache.dh))
     # Allocate the element stiffness matrix
@@ -116,7 +116,7 @@ function stress!(du, u, q, cache::MaterialCache, t)
     du .= K*u .- f
 end
 
-function stress_Ju!(K, u, q, cache::MaterialCache, t)
+function stress_Ju!(K, u, q, cache::ElementCache, t)
     # Allocate the element stiffness matrix
     n_basefuncs = getnbasefunctions(cache.cv)
     ke = zeros(n_basefuncs, n_basefuncs)
@@ -135,7 +135,7 @@ function stress_Ju!(K, u, q, cache::MaterialCache, t)
     end
 end
 
-function stress_Jq!(K, u, q, cache::MaterialCache, t)
+function stress_Jq!(K, u, q, cache::ElementCache, t)
     # Allocate the element stiffness matrix
     n_basefuncs = getnbasefunctions(cache.cv)
     ke = zeros(n_basefuncs, n_basefuncs)
@@ -224,7 +224,7 @@ function generate_linear_elasticity_problem()
 end
 
 dh,ch,cv,fv = generate_linear_elasticity_problem()
-cache = MaterialCache(
+cache = ElementCache(
     material,
     dh,
     cv,
@@ -320,8 +320,10 @@ for t ∈ 0.0:dt:T
             assemble!(assembler, celldofs(cell), ke)
         end
         # 2. Residual and Jacobian of global function G(qₙ₊₁, uₙ₊₁) w.r.t. to global vector uₙ₊₁ with qₙ₊₁ frozen
+        @show J
         global_f(global_residual, u, qmat, cache, t+dt)
         global_jacobian_u(J, u, qmat, cache, t+dt)
+        @show J
         # 3. Apply boundary conditions
         apply_zero!(J, global_residual, ch)
         # 4. Solve linear system

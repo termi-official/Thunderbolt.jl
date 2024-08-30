@@ -167,7 +167,7 @@ function stress_Ju!(K, u, q, cache::MaterialCache, t)
     n_basefuncs = getnbasefunctions(cache.cv)
     ke = zeros(n_basefuncs, n_basefuncs)
     # Create an assembler
-    assembler = start_assemble(K)
+    assembler = start_assemble(K; fillzero=false)
     # Loop over all cells
     for cell in CellIterator(dh)
         # Update the shape function gradients based on the cell coordinates
@@ -259,7 +259,6 @@ function viscosity_evolution_Ju(u, q, p::OverstressedViscosity, t, local_chunk_i
 
     return Ju
 end
-
 # function solve_local()
 #     # for each local chunk # Element loop
 #     #     for each element in chunk # Quadrature loop
@@ -356,14 +355,11 @@ for t ∈ 0.0:dt:T
         global_f(global_residual, u, qmat, cache, t+dt)
 
         #Setup Jacobian
-        # 1. Jacobian of global function G w.r.t. to global vector u
-        global_jacobian_u(J, u, qmat, cache, t+dt)
-        # 2. Local solves and Jacobian corrections (normally these are done IN global_jacobian_u for efficiency reasons)
+        # 1. Local solves and Jacobian corrections (normally these are done IN global_jacobian_u for efficiency reasons)
         # for each local chunk # Element loop
         ∂G∂Qₑ = zeros(SymmetricTensor{2,3}, (getnbasefunctions(cache.cv), getnquadpoints(cache.cv))) # TODO flatten to second order tensor
         dQdUₑ = zeros(SymmetricTensor{2,3}, (getnquadpoints(cache.cv), getnbasefunctions(cache.cv)))
-
-        assembler = start_assemble(J; fillzero=false)
+        assembler = start_assemble(J; fillzero=true)
         ke = zeros(getnbasefunctions(cache.cv), getnbasefunctions(cache.cv))
         for cell in CellIterator(dh)
             # prepare iteration
@@ -406,15 +402,17 @@ for t ∈ 0.0:dt:T
             # Contribution to corrector part ,,∂G∂Qₑ``
             chunk_jacobian_q(∂G∂Qₑ, ue, qmat, cell, cache.cv, cache.material)
             # Correction of global Jacobian
-            for i in getnbasefunctions(cache.cv)
-                for j in getnbasefunctions(cache.cv)
-                    for k in getnquadpoints(cache.cv)
+            for i in 1:getnbasefunctions(cache.cv)
+                for j in 1:getnbasefunctions(cache.cv)
+                    for k in 1:getnquadpoints(cache.cv)
                         ke[i,j] += ∂G∂Qₑ[i,k] ⊡ dQdUₑ[k,j]
                     end
                 end
             end
             assemble!(assembler, celldofs(cell), ke)
         end
+        # 2. Jacobian of global function G w.r.t. to global vector u
+        global_jacobian_u(J, u, qmat, cache, t+dt)
         # 3. Apply boundary conditions
         apply_zero!(J, global_residual, ch)
         # 4. Solve linear system
@@ -432,7 +430,6 @@ for t ∈ 0.0:dt:T
         end
         outer_iter == max_iter && error("max iter")
     end
-    @show qmat[1,1]
     qprev .= q
 
     VTKGridFile("linear-viscoelasticity-$t.vtu", dh) do vtk
