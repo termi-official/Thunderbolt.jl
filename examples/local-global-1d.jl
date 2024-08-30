@@ -26,15 +26,13 @@ function assemble_cell_Ju!(ke, u, q, cell, cellvalues, material::LinearViscoelas
     @unpack E1   = material.viscosity
     @unpack E0   = material
     for q_point in 1:getnquadpoints(cellvalues)
-        Eᵥ = q[q_offset+q_point]
         # Get the integration weight for the quadrature point
         dΩ = getdetJdV(cellvalues, q_point)
         for i in 1:getnbasefunctions(cellvalues)
             # Gradient of the trial function
             ∇Nᵢ = shape_gradient(cellvalues, q_point, i)[1]
             # Stress (Eq. 3)
-            E = ∇Nᵢ
-            T = E0*E + E1*(E-Eᵥ)
+            T = (E0+E1)*∇Nᵢ #- E1*Eᵥ->0
             for j in 1:getnbasefunctions(cellvalues)
                 # Symmetric gradient of the test function
                 ∇ˢʸᵐNⱼ = shape_gradient(cellvalues, q_point, j)[1]
@@ -66,20 +64,38 @@ function assemble_cell_Jq!(ke, u, q, cell, cellvalues, material::LinearViscoelas
 end
 
 function assemble_cell!(ke, fe, u, q, cell, cellvalues, material::LinearViscoelasticity1D)
-    assemble_cell_Ju!(ke, u, q, cell, cellvalues, material)
+    q_offset     = getnquadpoints(cellvalues)*(cellid(cell)-1)
+    @unpack E1   = material.viscosity
+    @unpack E0   = material
+    for q_point in 1:getnquadpoints(cellvalues)
+        E  = function_gradient(cv, q_point, u)[1]
+        Eᵥ = q[q_offset+q_point]
+        # Get the integration weight for the quadrature point
+        dΩ = getdetJdV(cellvalues, q_point)
+        for i in 1:getnbasefunctions(cellvalues)
+            # Gradient of the trial function
+            ∇Nᵢ = shape_gradient(cellvalues, q_point, i)[1]
+            T = (E0+E1)*∇Nᵢ
+            for j in 1:getnbasefunctions(cellvalues)
+                # Symmetric gradient of the test function
+                ∇ˢʸᵐNⱼ = shape_gradient(cellvalues, q_point, j)[1]
+                ke[i, j] += (∇ˢʸᵐNⱼ * T) * dΩ
+            end
+            fe[i] += ∇Nᵢ * ((E0+E1)*E - E1*Eᵥ) * dΩ
+        end
+    end
     return nothing
 end
 
 # Standard assembly loop for global problem
-function stress!(du, u, q, cache::ElementCache, t)
+function stress!(residual, u, q, cache::ElementCache, t)
     K = allocate_matrix(cache.dh)
-    f = zeros(ndofs(cache.dh))
     # Allocate the element stiffness matrix
     n_basefuncs = getnbasefunctions(cache.cv)
     ke = zeros(n_basefuncs, n_basefuncs)
     fe = zeros(n_basefuncs)
     # Create an assembler
-    assembler = start_assemble(K, f)
+    assembler = start_assemble(K, residual)
     # Loop over all cells
     for cell in CellIterator(cache.dh)
         # Update the shape function gradients based on the cell coordinates
@@ -111,9 +127,8 @@ function stress!(du, u, q, cache::ElementCache, t)
             end
         end
         # Add the local contributions to the correct indices in the global external force vector
-        assemble!(f, celldofs(face), fe)
+        assemble!(residual, celldofs(face), fe)
     end
-    du .= K*u .- f
 end
 
 function stress_Ju!(K, u, q, cache::ElementCache, t)
@@ -168,7 +183,7 @@ function viscosity_evolution(u, q, p::LinearViscosity1D, t, local_chunk_info)
     @unpack cv, qpᵢ = local_chunk_info
 
     E   = function_gradient(cv, qpᵢ, u)[1]
-    Eᵥ  = q[qpᵢ]
+    Eᵥ  = q[1]
     Tₒᵥ = E1*(E-Eᵥ)
 
     return Tₒᵥ/eta1
@@ -231,10 +246,10 @@ cache = ElementCache(
     fv,
 )
 u₀ = zeros(ndofs(dh))
-q₀ = zeros(getnquadpoints(cv)*getncells(dh.grid)*6)
+q₀ = zeros(getnquadpoints(cv)*getncells(dh.grid))
 
-dt = 0.01
-T  = 0.02
+dt = 1.0
+T  = 2.0
 
 # init
 J = allocate_matrix(dh)
@@ -242,10 +257,10 @@ global_residual = zeros(ndofs(dh))
 u = copy(u₀)
 q = copy(q₀)
 qprev = copy(q₀)
-qmat     = reshape(q,     (getnquadpoints(cv)*getncells(dh.grid), 6)) # This can be relaxed
-qprevmat = reshape(qprev, (getnquadpoints(cv)*getncells(dh.grid), 6)) # This can be relaxed
+qmat     = reshape(q,     (getnquadpoints(cv)*getncells(dh.grid), 1)) # This can be relaxed
+qprevmat = reshape(qprev, (getnquadpoints(cv)*getncells(dh.grid), 1)) # This can be relaxed
 
-max_iter   = 100 # Should be 1
+max_iter   = 3 # Should be 2
 local_tol⁰ = 1e-16
 global_tol = 1e-8
 
@@ -320,10 +335,9 @@ for t ∈ 0.0:dt:T
             assemble!(assembler, celldofs(cell), ke)
         end
         # 2. Residual and Jacobian of global function G(qₙ₊₁, uₙ₊₁) w.r.t. to global vector uₙ₊₁ with qₙ₊₁ frozen
-        @show J
         global_f(global_residual, u, qmat, cache, t+dt)
         global_jacobian_u(J, u, qmat, cache, t+dt)
-        @show J
+        @show J, global_residual
         # 3. Apply boundary conditions
         apply_zero!(J, global_residual, ch)
         # 4. Solve linear system
