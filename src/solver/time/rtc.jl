@@ -87,7 +87,7 @@ end
 end
 
 # Dispatch for outer construction
-function OS.init_cache(prob::OS.OperatorSplittingProblem, alg::ReactionTangentController; dt, kwargs...) # TODO
+function OS.init_cache(prob::OS.OperatorSplittingProblem, alg::ReactionTangentController; dt, kwargs...)
     @unpack f = prob
     @assert f isa GenericSplitFunction
 
