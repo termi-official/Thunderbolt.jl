@@ -23,11 +23,10 @@ mutable struct ReactionTangentControllerCache{T <: Real, LTGCache <: OS.LieTrott
     const ltg_cache::LTGCache
     u::uType
     uprev::uType # True previous solution
-    Rₙ₊₁::T
-    Rₙ::T
-    function ReactionTangentControllerCache(ltg_cache::LTGCache, Rₙ₊₁::T, Rₙ::T) where {T, LTGCache <: OS.LieTrotterGodunovCache}
+    R::T
+    function ReactionTangentControllerCache(ltg_cache::LTGCache, R::T) where {T, LTGCache <: OS.LieTrotterGodunovCache}
         uType = typeof(ltg_cache.u)
-        return new{T, LTGCache, uType}(ltg_cache, ltg_cache.u, ltg_cache.uprev, Rₙ₊₁, Rₙ)
+        return new{T, LTGCache, uType}(ltg_cache, ltg_cache.u, ltg_cache.uprev, R)
     end
 end
 
@@ -65,15 +64,14 @@ end
 end
 
 @inline function OS.stepsize_controller!(integrator::OS.OperatorSplittingIntegrator, alg::ReactionTangentController)
-    integrator.cache.Rₙ = integrator.cache.Rₙ₊₁
-    integrator.cache.Rₙ₊₁ = get_reaction_tangent(integrator)
+    integrator.cache.R = get_reaction_tangent(integrator)
     return nothing
 end
 
 @inline function OS.step_accept_controller!(integrator::OS.OperatorSplittingIntegrator, alg::ReactionTangentController, q)
-    @unpack Rₙ₊₁, Rₙ = integrator.cache
+    @unpack R = integrator.cache
     @unpack σ_s, σ_c, Δt_bounds = alg
-    R = max(Rₙ, Rₙ₊₁)
+
     if isinf(σ_s) && R == σ_c
         # Handle it?
         throw(ErrorException("Δt is undefined for R = σ_c where σ_s = ∞"))
@@ -101,7 +99,7 @@ end
 # Dispatch for recursive construction
 function OS.construct_inner_cache(f::OS.AbstractOperatorSplitFunction, alg::ReactionTangentController, u::AbstractArray{T}, uprev::AbstractArray) where T <: Number
     ltg_cache = OS.construct_inner_cache(f, alg.ltg, u, uprev)
-    return ReactionTangentControllerCache(ltg_cache, zero(T), zero(T))
+    return ReactionTangentControllerCache(ltg_cache, zero(T))
 end
 
 function OS.build_subintegrators_recursive(f::GenericSplitFunction, synchronizers::Tuple, p::Tuple, cache::ReactionTangentControllerCache, u::AbstractArray, uprev::AbstractArray, t, dt, dof_range, uparent, tstops, _tstops, saveat, _saveat)
