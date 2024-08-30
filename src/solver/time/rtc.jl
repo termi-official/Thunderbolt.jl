@@ -72,11 +72,11 @@ end
     @unpack R = integrator.cache
     @unpack σ_s, σ_c, Δt_bounds = alg
 
-    if isinf(σ_s) && R == σ_c
-        # Handle it?
-        throw(ErrorException("Δt is undefined for R = σ_c where σ_s = ∞"))
+    if isinf(σ_s)
+        integrator._dt = R > σ_c ? Δt_bounds[1] : Δt_bounds[2]
+    else
+        integrator._dt = (1 - 1/(1+exp((σ_c - R)*σ_s)))*(Δt_bounds[2] - Δt_bounds[1]) + Δt_bounds[1]
     end
-    integrator._dt = (1 - 1/(1+exp((σ_c - R)*σ_s)))*(Δt_bounds[2] - Δt_bounds[1]) + Δt_bounds[1]
     return nothing
 end
 

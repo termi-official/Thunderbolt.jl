@@ -223,7 +223,8 @@ using UnPack
             @testset "σ_s = Inf, R = σ_c" begin
                 timestepper_stepfunc_adaptive = Thunderbolt.ReactionTangentController(timestepper, Inf, 0.5, adaptive_tstep_range)
                 integrator_stepfunc_adaptive = DiffEqBase.init(prob_force_half, timestepper_stepfunc_adaptive, dt=dt, verbose=true)
-                @test_throws ErrorException("Δt is undefined for R = σ_c where σ_s = ∞") DiffEqBase.solve!(integrator_stepfunc_adaptive)
+                DiffEqBase.solve!(integrator_stepfunc_adaptive)
+                @test integrator_stepfunc_adaptive._dt == timestepper_stepfunc_adaptive.Δt_bounds[2]
             end
         end
     end
