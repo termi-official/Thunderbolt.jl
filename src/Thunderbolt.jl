@@ -22,7 +22,7 @@ solution_size(f::GenericSplitFunction) = OS.function_size(f)
 # include("solver/multilevel.jl")
 
 @reexport using Ferrite
-import Ferrite: AbstractDofHandler, AbstractGrid, AbstractRefShape, AbstractCell, get_grid
+import Ferrite: AbstractDofHandler, AbstractGrid, AbstractRefShape, AbstractCell, get_grid, get_coordinate_eltype
 import Ferrite: vertices, edges, faces, sortedge, sortface
 import Ferrite: get_coordinate_type, getspatialdim
 import Ferrite: reference_shape_value
@@ -117,7 +117,7 @@ export
     # Generic models
     ODEProblem,
     TransientDiffusionModel,
-    TransientDiffusionFunction,
+    AffineODEFunction,
     # Local API
     PointwiseODEProblem,
     PointwiseODEFunction,

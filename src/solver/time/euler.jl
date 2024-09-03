@@ -90,7 +90,7 @@ function implicit_euler_heat_update_source_term!(cache::BackwardEulerAffineStage
     needs_update(cache.source_term, t) && update_operator!(cache.source_term, t)
 end
 
-function setup_solver_cache(f::TransientDiffusionFunction, solver::BackwardEulerSolver, t₀)
+function setup_solver_cache(f::AffineODEFunction, solver::BackwardEulerSolver, t₀)
     @unpack dh = f
     @unpack inner_solver = solver
     @assert length(dh.field_names) == 1 # TODO relax this assumption
@@ -108,17 +108,13 @@ function setup_solver_cache(f::TransientDiffusionFunction, solver::BackwardEuler
 
     # Left hand side ∫dₜu δu dV
     mass_operator = setup_operator(
-        BilinearMassIntegrator(
-            ConstantCoefficient(T(1.0))
-        ),
+        f.mass_term,
         solver, dh, field_name, qr
     )
 
-    # Affine right hand side ∫D grad(u) grad(δu) dV + ...
-    diffusion_operator = setup_operator(
-        BilinearDiffusionIntegrator(
-            f.diffusion_tensor_field,
-        ),
+    # Affine right hand side, e.g. ∫D grad(u) grad(δu) dV + ...
+    bilinear_operator = setup_operator(
+        f.bilinear_term,
         solver, dh, field_name, qr
     )
     # ... + ∫f δu dV
@@ -138,7 +134,7 @@ function setup_solver_cache(f::TransientDiffusionFunction, solver::BackwardEuler
         tmp,
         BackwardEulerAffineStageInfo(
             mass_operator,
-            diffusion_operator,
+            bilinear_operator,
             source_operator,
             inner_cache,
             T(0.0),
@@ -148,7 +144,7 @@ function setup_solver_cache(f::TransientDiffusionFunction, solver::BackwardEuler
 
     @timeit_debug "initial assembly" begin
         update_operator!(mass_operator, t₀)
-        update_operator!(diffusion_operator, t₀)
+        update_operator!(bilinear_operator, t₀)
         update_operator!(source_operator, t₀)
     end
 

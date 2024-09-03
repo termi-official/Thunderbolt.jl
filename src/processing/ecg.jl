@@ -213,7 +213,7 @@ function PoissonECGReconstructionCache(
 end
 
 function PoissonECGReconstructionCache(
-    heart_fun::TransientDiffusionFunction,
+    heart_fun::AffineODEFunction,
     torso_grid::AbstractGrid,
     heart_diffusion_tensor_field, # κᵢ
     torso_diffusion_tensor_field, # κ
@@ -292,8 +292,8 @@ function PoissonECGReconstructionCache(
 end
 
 function PoissonECGReconstructionCache(
-    heart_fun::TransientDiffusionFunction,
-    torso_fun::SteadyDiffusionFunction,
+    heart_fun::AffineODEFunction,
+    torso_fun::AffineSteadyStateFunction,
     heart_op::AssembledBilinearOperator,
     torso_op::AssembledBilinearOperator,
     transfer_op::AbstractTransferOperator,

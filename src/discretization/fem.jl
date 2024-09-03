@@ -39,8 +39,14 @@ function semidiscretize(model::TransientDiffusionModel, discretization::FiniteEl
     end
     close!(dh)
 
-    return TransientDiffusionFunction(
-        model.κ,
+    T = get_coordinate_eltype(get_grid(dh))
+    return AffineODEFunction(
+        BilinearMassIntegrator(
+            ConstantCoefficient(T(1.0))
+        ),
+        BilinearDiffusionIntegrator(
+            model.κ
+        ),
         model.source,
         dh
     )
@@ -61,7 +67,7 @@ function semidiscretize(model::SteadyDiffusionModel, discretization::FiniteEleme
     end
     close!(ch)
 
-    return SteadyDiffusionFunction(
+    return AffineSteadyStateFunction(
         model.κ,
         model.source,
         dh,
