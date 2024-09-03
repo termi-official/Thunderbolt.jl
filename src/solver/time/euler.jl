@@ -1,5 +1,5 @@
 #########################################################
-########################## TIME #########################
+#  This file contains optimized backward Euler solvers  #
 #########################################################
 Base.@kwdef struct BackwardEulerSolver{SolverType, SolutionVectorType, SystemMatrixType} <: AbstractSolver
     inner_solver::SolverType                       = LinearSolve.KrylovJL_CG()
@@ -10,31 +10,71 @@ Base.@kwdef struct BackwardEulerSolver{SolverType, SolutionVectorType, SystemMat
     verbose                                        = true # Temporary helper for benchmarks
 end
 
-# TODO decouple from heat problem via special ODEFunction (AffineODEFunction)
-mutable struct BackwardEulerSolverCache{T, SolutionType <: AbstractVector{T}, MassMatrixType, DiffusionMatrixType, SourceTermType, SolverCacheType} <: AbstractTimeSolverCache
+struct BackwardEulerSolverCache{T, SolutionType <: AbstractVector{T}, StageType} <: AbstractTimeSolverCache
     # Current solution buffer
     uₙ::SolutionType
     # Last solution buffer
     uₙ₋₁::SolutionType
     # Temporary buffer for interpolations and stuff
     tmp::SolutionType
+    # Utility to decide what kind of stage we solve (i.e. linear problem, full DAE or mass-matrix ODE)
+    stage_info::StageType
+end
+
+# Performs a backward Euler step
+function perform_step!(f, cache::BackwardEulerSolverCache, t, Δt)
+    perform_backward_euler_step!(f, cache, cache.stage_info, t, Δt)
+end
+
+#########################################################
+#                   Affine Problems                     #
+#########################################################
+# Mutable to change Δt_last
+mutable struct BackwardEulerAffineStageInfo{T, MassMatrixType, DiffusionMatrixType, SourceTermType, SolverCacheType}
     # Mass matrix
     M::MassMatrixType
     # Diffusion matrix
     K::DiffusionMatrixType
     # Helper for possible source terms
     source_term::SourceTermType
-    # Linear solver for (M - Δtₙ₋₁ K) uₙ = M uₙ₋₁
-    inner_solver::SolverCacheType
+    # Linear solver for (M - Δtₙ₋₁ K) uₙ = M uₙ₋₁ 
+    linear_solver_cache::SolverCacheType
     # Last time step length as a check if we have to update K
     Δt_last::T
     # DO NOT USE THIS (will be replaced by proper logging system)
     verbose::Bool
 end
 
+function perform_backward_euler_step!(f, cache::BackwardEulerSolverCache, stage_info::BackwardEulerAffineStageInfo, t, Δt)
+    @unpack uₙ, uₙ₋₁ = cache
+    @unpack linear_solver_cache, M, Δt_last = stage_info
+
+    # Update matrix if time step length has changed
+    Δt ≈ Δt_last || implicit_euler_heat_solver_update_system_matrix!(stage_info, Δt)
+
+    # Prepare right hand side b = M uₙ₋₁
+    @timeit_debug "b = M uₙ₋₁" mul!(linear_solver_cache.b, M, uₙ₋₁)
+
+    # Update source term
+    @timeit_debug "update source term" begin
+        implicit_euler_heat_update_source_term!(stage_info, t + Δt)
+        add!(linear_solver_cache.b, stage_info.source_term)
+    end
+
+    # Solve linear problem, where sol.u === uₙ
+    @timeit_debug "inner solve" sol = LinearSolve.solve!(linear_solver_cache)
+    solve_failed = !(DiffEqBase.SciMLBase.successful_retcode(sol.retcode) || sol.retcode == DiffEqBase.ReturnCode.Default)
+    if stage_info.verbose || solve_failed # The latter seems off...
+        if linear_solver_cache.cacheval !== nothing
+            @info linear_solver_cache.cacheval.stats
+        end
+    end
+    return !solve_failed
+end
+
 # Helper to get A into the right form
-function implicit_euler_heat_solver_update_system_matrix!(cache::BackwardEulerSolverCache, Δt)
-    _implicit_euler_heat_solver_update_system_matrix!(cache.inner_solver.A, cache.M, cache.K, Δt)
+function implicit_euler_heat_solver_update_system_matrix!(cache::BackwardEulerAffineStageInfo, Δt)
+    _implicit_euler_heat_solver_update_system_matrix!(cache.linear_solver_cache.A, cache.M, cache.K, Δt)
 
     cache.Δt_last = Δt
 end
@@ -46,38 +86,14 @@ function _implicit_euler_heat_solver_update_system_matrix!(A, M, K, Δt)
     nonzeros(A) .+= nonzeros(M.A)
 end
 
-function implicit_euler_heat_update_source_term!(cache::BackwardEulerSolverCache, t)
+function implicit_euler_heat_update_source_term!(cache::BackwardEulerAffineStageInfo, t)
     needs_update(cache.source_term, t) && update_operator!(cache.source_term, t)
-end
-
-# Performs a backward Euler step
-function perform_step!(f::TransientDiffusionFunction, cache::BackwardEulerSolverCache, t, Δt)
-    @unpack Δt_last, M, uₙ, uₙ₋₁, inner_solver = cache
-    # Remember last solution
-    @inbounds uₙ₋₁ .= uₙ
-    # Update matrix if time step length has changed
-    Δt ≈ Δt_last || implicit_euler_heat_solver_update_system_matrix!(cache, Δt)
-    # Prepare right hand side b = M uₙ₋₁
-    @timeit_debug "b = M uₙ₋₁" mul!(inner_solver.b, M, uₙ₋₁)
-    # TODO How to remove these two lines here?
-    # Update source term
-    @timeit_debug "update source term" begin
-        implicit_euler_heat_update_source_term!(cache, t + Δt)
-        add!(inner_solver.b, cache.source_term)
-    end
-    # Solve linear problem
-    @timeit_debug "inner solve" sol = LinearSolve.solve!(inner_solver)
-    solve_failed = !(DiffEqBase.SciMLBase.successful_retcode(sol.retcode) || sol.retcode == DiffEqBase.ReturnCode.Default)
-    if cache.verbose || solve_failed # The latter seems off...
-        @info inner_solver.cacheval.stats
-    end
-    return !solve_failed
 end
 
 function setup_solver_cache(f::TransientDiffusionFunction, solver::BackwardEulerSolver, t₀)
     @unpack dh = f
     @unpack inner_solver = solver
-    @assert length(dh.field_names) == 1 # TODO relax this assumption, maybe.
+    @assert length(dh.field_names) == 1 # TODO relax this assumption
     field_name = dh.field_names[1]
 
     A     = create_system_matrix(solver.system_matrix_type  , f)
@@ -111,8 +127,6 @@ function setup_solver_cache(f::TransientDiffusionFunction, solver::BackwardEuler
         solver, dh, field_name, qr
     )
 
-
-
     inner_prob  = LinearSolve.LinearProblem(
         A, b; u0
     )
@@ -122,12 +136,14 @@ function setup_solver_cache(f::TransientDiffusionFunction, solver::BackwardEuler
         u0, # u
         uprev,
         tmp,
-        mass_operator,
-        diffusion_operator,
-        source_operator,
-        inner_cache,
-        T(0.0),
-        solver.verbose,
+        BackwardEulerAffineStageInfo(
+            mass_operator,
+            diffusion_operator,
+            source_operator,
+            inner_cache,
+            T(0.0),
+            solver.verbose,
+        )
     )
 
     @timeit_debug "initial assembly" begin
@@ -138,6 +154,21 @@ function setup_solver_cache(f::TransientDiffusionFunction, solver::BackwardEuler
 
     return cache
 end
+
+#########################################################
+#                     DAE Problems                     #
+#########################################################
+
+struct BackwardEulerDAEStageInfo{SolverType}
+    nlsolver::SolverType
+end
+
+function perform_backward_euler_step!(f, cache::BackwardEulerSolverCache, stage_info::BackwardEulerDAEStageInfo, t, Δt)
+    # What to do here?
+    @warn "Not implemented yet."
+    return false
+end
+
 
 # Multi-rate version
 Base.@kwdef struct ForwardEulerSolver{SolutionVectorType} <: AbstractSolver
