@@ -278,5 +278,5 @@ function compute_active_tension(model::RDQ20MFModel, state, sarcomere_length)
 end
 
 function compute_active_stiffness(model::RDQ20MFModel, state, sarcomere_length)
-    model.a_XB * (state[17] + state[19]) * fraction_single_overlap(sarcomere_length)
+    model.a_XB * (state[17] + state[19]) * fraction_single_overlap(model, sarcomere_length)
 end
