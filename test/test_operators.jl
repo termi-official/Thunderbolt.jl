@@ -71,6 +71,67 @@ using BlockArrays, SparseArrays
         @test Thunderbolt.getJ(bop_id) ≈ spdiagm(ones(6))
     end
 
+    @testset "Linear" begin
+        # Setup
+        grid = generate_grid(Quadrilateral, (2,2))
+        dh = DofHandler(grid)
+        add!(dh, :u, Lagrange{RefQuadrilateral,1}())
+        close!(dh)
+        qrc = QuadratureRuleCollection{2}()
+
+        @testset "Constant Cartesian" begin
+            cs = CartesianCoordinateSystem(grid)
+            protocol = AnalyticalTransmembraneStimulationProtocol(
+                AnalyticalCoefficient((x,t) -> 1.0, CoordinateSystemCoefficient(cs)),
+                [SVector((0.0, 1.0))]
+            )
+
+            linop = Thunderbolt.LinearOperator(
+                zeros(ndofs(dh)),
+                protocol,
+                qrc,
+                dh,
+            )
+            Thunderbolt.update_operator!(linop,0.0)
+            @test linop.b ≈ [0.25, 0.5, 1.0, 0.5, 0.25, 0.5, 0.5, 0.25, 0.25]
+
+            plinop = Thunderbolt.PEALinearOperator(
+                zeros(ndofs(dh)),
+                qrc,
+                protocol,
+                dh,
+            )
+            Thunderbolt.update_operator!(plinop,0.0)
+            @test linop.b ≈ plinop.b
+        end
+
+        @testset "Quadratic Cartesian" begin
+            cs = CartesianCoordinateSystem(grid)
+            protocol = AnalyticalTransmembraneStimulationProtocol(
+                AnalyticalCoefficient((x,t) -> norm(x)^2+1.0, CoordinateSystemCoefficient(cs)),
+                [SVector((0.0, 1.0))]
+            )
+
+            linop = Thunderbolt.LinearOperator(
+                zeros(ndofs(dh)),
+                protocol,
+                qrc,
+                dh,
+            )
+            Thunderbolt.update_operator!(linop,0.0)
+            @test linop.b ≈ [1.0/2, 5.0/6, 4.0/3, 5.0/6, 1.0/2, 5.0/6, 5.0/6, 1.0/2, 1.0/2]
+
+            plinop = Thunderbolt.PEALinearOperator(
+                zeros(ndofs(dh)),
+                qrc,
+                protocol,
+                dh,
+            )
+            Thunderbolt.update_operator!(plinop,0.0)
+            @test linop.b ≈ plinop.b
+        end
+    end
+
     @testset "Coupled" begin
         # TODO test with faulty blocks
         @testset "Block action" begin

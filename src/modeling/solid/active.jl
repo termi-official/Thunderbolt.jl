@@ -7,14 +7,15 @@ end
 
 """
 """
-function Ψ(F, Fᵃ, f₀, s₀, n₀, adapter::ActiveMaterialAdapter)
-	f̃ = Fᵃ ⋅ f₀ / norm(Fᵃ ⋅ f₀)
+function Ψ(F, Fᵃ, coeff::AbstractOrthotropicMicrostructure, adapter::ActiveMaterialAdapter)
+    f₀, s₀, n₀ = coeff.f, coeff.s, coeff.n
+    f̃ = Fᵃ ⋅ f₀ / norm(Fᵃ ⋅ f₀)
     s̃ = Fᵃ ⋅ s₀ / norm(Fᵃ ⋅ s₀)
     ñ = Fᵃ ⋅ n₀ / norm(Fᵃ ⋅ n₀)
 
-	Fᵉ = F⋅inv(Fᵃ)
-
-	Ψᵃ = Ψ(Fᵉ, f̃, s̃, ñ, adapter.mat)
+    Fᵉ = F⋅inv(Fᵃ)
+    coeff = OrthotropicMicrostructure(f̃, s̃, ñ)
+    Ψᵃ = Ψ(Fᵉ, coeff, adapter.mat)
     return Ψᵃ
 end
 
@@ -27,7 +28,8 @@ See also [OgiBalPer:2023:aeg](@cite) for a further analysis.
 """
 struct GMKActiveDeformationGradientModel end
 
-function compute_Fᵃ(Ca, f₀, s₀, n₀, contraction_model::SSSM, ::GMKActiveDeformationGradientModel) where {SSSM <: SteadyStateSarcomereModel}
+function compute_Fᵃ(Ca, coeff::AbstractTransverselyIsotropicMicrostructure, contraction_model::SSSM, ::GMKActiveDeformationGradientModel) where {SSSM <: SteadyStateSarcomereModel}
+    f₀ = coeff.f
     λᵃ = compute_λᵃ(Ca, contraction_model)
     Fᵃ = Tensors.unsafe_symmetric(one(SymmetricTensor{2, 3}) + (λᵃ - 1.0) * f₀ ⊗ f₀)
     return Fᵃ
@@ -43,7 +45,8 @@ See also [OgiBalPer:2023:aeg](@cite) for a further analysis.
 """
 struct GMKIncompressibleActiveDeformationGradientModel end
 
-function compute_Fᵃ(Ca, f₀, s₀, n₀, contraction_model::SSSM, ::GMKIncompressibleActiveDeformationGradientModel) where {SSSM <: SteadyStateSarcomereModel}
+function compute_Fᵃ(Ca, coeff::AbstractOrthotropicMicrostructure, contraction_model::SSSM, ::GMKIncompressibleActiveDeformationGradientModel) where {SSSM <: SteadyStateSarcomereModel}
+    f₀, s₀, n₀ = coeff.f, coeff.s, coeff.n
     λᵃ = compute_λᵃ(Ca, contraction_model)
     Fᵃ = λᵃ*f₀ ⊗ f₀ + 1.0/sqrt(λᵃ) * s₀ ⊗ s₀ + 1.0/sqrt(λᵃ) * n₀ ⊗ n₀
     return Fᵃ
@@ -62,8 +65,9 @@ struct RLRSQActiveDeformationGradientModel{TD}
     sheetlet_part::TD
 end
 
-function compute_Fᵃ(Ca, f₀, s₀, n₀, contraction_model::SSSM, Fᵃ_model::RLRSQActiveDeformationGradientModel) where {SSSM <: SteadyStateSarcomereModel}
+function compute_Fᵃ(Ca, coeff::AbstractOrthotropicMicrostructure, contraction_model::SSSM, Fᵃ_model::RLRSQActiveDeformationGradientModel) where {SSSM <: SteadyStateSarcomereModel}
     @unpack sheetlet_part = Fᵃ_model
+    f₀, s₀, n₀ = coeff.f, coeff.s, coeff.n
     λᵃ = compute_λᵃ(Ca, contraction_model)
     Fᵃ = λᵃ * f₀⊗f₀ + (1.0+sheetlet_part*(λᵃ-1.0))* s₀⊗s₀ + 1.0/((1.0+sheetlet_part*(λᵃ-1.0))*λᵃ) * n₀⊗n₀
     return Fᵃ
@@ -79,7 +83,7 @@ Base.@kwdef struct SimpleActiveStress{TD}
     Tmax::TD = 1.0
 end
 
-∂(sas::SimpleActiveStress, Caᵢ, F::Tensor{2, dim}, f₀::Vec{dim}, s₀::Vec{dim}, n₀::Vec{dim}) where {dim} = sas.Tmax * Caᵢ * (F ⋅ f₀ ) ⊗ f₀ / norm(F ⋅ f₀)
+∂(sas::SimpleActiveStress, Caᵢ, F::Tensor{2, dim}, coeff::AbstractTransverselyIsotropicMicrostructure) where {dim} = sas.Tmax * Caᵢ * (F ⋅ coeff.f) ⊗ coeff.f / norm(F ⋅ coeff.f)
 
 
 @doc raw"""
@@ -94,7 +98,7 @@ Base.@kwdef struct PiersantiActiveStress{TD}
     pn::TD = 0.0
 end
 
-∂(sas::PiersantiActiveStress, Caᵢ, F::Tensor{2, dim}, f₀::Vec{dim}, s₀::Vec{dim}, n₀::Vec{dim}) where {dim} = sas.Tmax * Caᵢ * (sas.pf*(F ⋅ f₀) ⊗ f₀ / norm(F ⋅ f₀) + sas.ps*(F ⋅ s₀) ⊗ s₀ / norm(F ⋅ s₀) + sas.pn * (F ⋅ n₀) ⊗ n₀ / norm(F ⋅ n₀))
+∂(sas::PiersantiActiveStress, Caᵢ, F::Tensor{2, dim}, coeff::AbstractOrthotropicMicrostructure) where {dim} = sas.Tmax * Caᵢ * (sas.pf*(F ⋅ coeff.f) ⊗ coeff.f / norm(F ⋅ coeff.f) + sas.ps*(F ⋅ coeff.s) ⊗ coeff.s / norm(F ⋅ coeff.s) + sas.pn * (F ⋅ coeff.n) ⊗ coeff.n / norm(F ⋅ coeff.n))
 
 
 @doc raw"""
@@ -104,7 +108,7 @@ $T^{\rm{a}} = T^{\rm{max}} \, [Ca_{\rm{i}}] (F \cdot f_0) \otimes f_0$
 
 """
 Base.@kwdef struct Guccione1993ActiveModel
-    Tₘₐₓ::Float64 = 100.0
+    Tmax::Float64 = 100.0
 end
 
-∂(sas::Guccione1993ActiveModel, Caᵢ, F::Tensor{2, dim}, f₀::Vec{dim}, s₀::Vec{dim}, n₀::Vec{dim}) where {dim} = sas.Tₘₐₓ * Caᵢ * (F ⋅ f₀ ) ⊗ f₀
+∂(sas::Guccione1993ActiveModel, Caᵢ, F::Tensor{2, dim}, coeff::AbstractTransverselyIsotropicMicrostructure) where {dim} = sas.Tmax * Caᵢ * (F ⋅ coeff.f) ⊗ coeff.f

@@ -28,7 +28,7 @@ Installing Thunderbolt can then be done from the Pkg REPL; press `]` at the `jul
 enter `pkg>` mode:
 
 ```
-pkg> add Ferrite#master, https://github.com/termi-official/Thunderbolt.jl#main
+pkg> add Ferrite#b6976d3, https://github.com/termi-official/Thunderbolt.jl#main
 ```
 
 > [!NOTE]

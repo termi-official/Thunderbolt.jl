@@ -1,28 +1,26 @@
-# @doc raw"""
-#     AssembledMassOperator{MT, CV}
+@doc raw"""
+    BilinearMassIntegrator{MT, CV}
 
-# Assembles the matrix associated to the bilinearform ``a(u,v) = -\int v(x) u(x) dx`` for ``u,v`` from the same function space.
-# """
+Represents the integrand of the bilinearform ``a(u,v) = \int \rho(x) v(x) u(x) dx`` for ``u,v`` from the same function space with some given density field $\rho(x)$.
 """
-    Represents the integrand of the bilinear form <ϕ,ψ> = ∫ ρϕ ⋅ ψ dΩ .
-"""
-struct BilinearMassIntegrator{CoefficientType}
+struct BilinearMassIntegrator{CoefficientType} <: AbstractBilinearIntegrator
     ρ::CoefficientType
-    # coordinate_system
 end
 
-struct BilinearMassElementCache{IT <: BilinearMassIntegrator, T, CV}
-    integrator::IT
-    ρq::Vector{T}
+"""
+The cache associated with [`BilinearMassIntegrator`](@ref) to assemble element mass matrices.
+"""
+struct BilinearMassElementCache{IT, CV} <: AbstractVolumetricElementCache
+    ρcache::IT
     cellvalues::CV
 end
 
-function assemble_element!(Mₑ, cell, element_cache::CACHE, time) where {CACHE <: BilinearMassElementCache}
-    @unpack cellvalues = element_cache
+function assemble_element!(Mₑ::AbstractMatrix, cell, element_cache::BilinearMassElementCache, time)
+    @unpack ρcache, cellvalues = element_cache
     reinit!(element_cache.cellvalues, cell)
     n_basefuncs = getnbasefunctions(cellvalues)
     for qp in QuadratureIterator(cellvalues)
-        ρ = evaluate_coefficient(element_cache.integrator.ρ, cell, qp, time)
+        ρ = evaluate_coefficient(ρcache, cell, qp, time)
         dΩ = getdetJdV(cellvalues, qp)
         for i in 1:n_basefuncs
             Nᵢ = shape_value(cellvalues, qp, i)
@@ -32,4 +30,9 @@ function assemble_element!(Mₑ, cell, element_cache::CACHE, time) where {CACHE 
             end
         end
     end
+end
+
+function setup_element_cache(element_model::BilinearMassIntegrator, qr, ip, sdh)
+    ip_geo = geometric_subdomain_interpolation(sdh)
+    return BilinearMassElementCache(setup_coefficient_cache(element_model.ρ, qr, sdh), CellValues(qr, ip, ip_geo))
 end

@@ -1,46 +1,36 @@
-using Thunderbolt, StaticArrays, DelimitedFiles
+using Thunderbolt
+using Thunderbolt.TimerOutputs
 
-######################################################
-mutable struct IOCallback{IO}
-    io::IO
-    counter::Int
-end
+using Thunderbolt.StaticArrays
 
-IOCallback(io) = IOCallback(io, -1)
-
-function (iocb::IOCallback{ParaViewWriter{PVD}})(t, problem::Thunderbolt.SplitProblem, solver_cache) where {PVD}
-    # TODO local activation time
-    iocb.counter += 1
-    (iocb.counter % 10) == 0 || return nothing
-    store_timestep!(iocb.io, t, problem.A.dh.grid)
-    Thunderbolt.store_timestep_field!(iocb.io, t, problem.A.dh, solver_cache.A_solver_cache.uₙ, :φₘ)
-    Thunderbolt.store_timestep_field!(iocb.io, t, problem.A.dh, solver_cache.B_solver_cache.sₙ[1:length(solver_cache.A_solver_cache.uₙ)], :s)
-    Thunderbolt.finalize_timestep!(iocb.io, t)
-    return nothing
-end
-
-function steady_state_initializer(problem::Thunderbolt.SplitProblem, t₀)
+function steady_state_initializer!(u₀, f::GenericSplitFunction)
     # TODO cleaner implementation. We need to extract this from the types or via dispatch.
-    dh = problem.A.dh
-    ionic_model = problem.B.ode
-    default_values = Thunderbolt.default_initial_state(ionic_model)
-    u₀ = ones(ndofs(dh))*default_values[1]
-    s₀ = zeros(ndofs(dh), Thunderbolt.num_states(ionic_model));
-    for i ∈ 1:Thunderbolt.num_states(ionic_model)
-        s₀[:, i] .= default_values[1+i]
-    end
-    for cell in CellIterator(dh)
-        _celldofs = celldofs(cell)
-        ϕₘ_celldofs = _celldofs[dof_range(dh, :ϕₘ)]
-        coordinates = getcoordinates(cell)
-    end
-    return u₀, s₀
-end
+    heatfun = f.functions[1]
+    heat_dofrange = f.dof_ranges[1]
+    odefun = f.functions[2]
+    ionic_model = odefun.ode
 
-######################################################
+    φ₀ = @view u₀[heat_dofrange];
+    # TODO extraction these via utility functions
+    dh = heatfun.dh
+    s₀flat = @view u₀[(ndofs(dh)+1):end];
+    # Should not be reshape but some array of arrays fun
+    s₀ = reshape(s₀flat, (ndofs(dh), Thunderbolt.num_states(ionic_model)-1));
+    default_values = Thunderbolt.default_initial_state(ionic_model)
+
+    φ₀ .= default_values[1]
+    for i ∈ 1:(Thunderbolt.num_states(ionic_model)-1)
+        s₀[:, i] .= default_values[i+1]
+    end
+end
 
 mesh = generate_mesh(Hexahedron, (80,28,12), Vec((0.0,0.0,0.0)), Vec((20.0,7.0,3.0)))
-cs = Thunderbolt.CoordinateSystemCoefficient(CartesianCoordinateSystem(mesh))
+cs = CoordinateSystemCoefficient(CartesianCoordinateSystem(mesh))
+
+tspan = (0.0, 100.0)
+dtvis = 1.0
+dt₀ = 0.01
+
 
 κ₁ = 0.17 * 0.62 / (0.17 + 0.62)
 κᵣ = 0.019 * 0.24 / (0.019 + 0.24)
@@ -52,33 +42,62 @@ model = MonodomainModel(
            κᵣ, 0,
               κᵣ
     ))),
-    Thunderbolt.AnalyticalTransmembraneStimulationProtocol(
+    AnalyticalTransmembraneStimulationProtocol(
         AnalyticalCoefficient((x,t) -> maximum(x) < 1.5 && t < 2.0 ? 0.5 : 0.0, cs),
         [SVector((0.0, 2.1))]
     ),
-    Thunderbolt.PCG2019()
+    Thunderbolt.PCG2019(),
+    :φₘ, :s
 )
+
 
 ip_collection = LagrangeCollection{1}()
 
-problem = semidiscretize(
+odeform = semidiscretize(
     ReactionDiffusionSplit(model),
-    FiniteElementDiscretization(Dict(:φₘ => ip_collection)),
+    FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}())),
     mesh
 )
+u₀ = zeros(Float64, OS.function_size(odeform))
+steady_state_initializer!(u₀, odeform)
 
-solver = LTGOSSolver(
-    BackwardEulerSolver(),
-    ForwardEulerCellSolver()
+# io = ParaViewWriter("spiral-wave-test")
+
+timestepper = Thunderbolt.ReactionTangentController(
+    OS.LieTrotterGodunov((
+        BackwardEulerSolver(
+            solution_vector_type=Vector{Float32},
+            system_matrix_type=Thunderbolt.ThreadedSparseMatrixCSR{Float32, Int32},
+            inner_solver=LinearSolve.KrylovJL_CG(atol=1.0f-6, rtol=1.0f-5),
+        ),
+        AdaptiveForwardEulerSubstepper(
+            solution_vector_type=Vector{Float32},
+            reaction_threshold=0.1f0,
+        )
+    )),
+    0.5, 1.0, (0.01, 0.3)
 )
 
-# Idea: We want to solve a semidiscrete problem, with a given compatible solver, on a time interval, with a given initial condition
-# TODO iterator syntax
-solve(
-    problem,
-    solver,
-    0.01,
-    (0.0, 50.0),
-    steady_state_initializer,
-    IOCallback(ParaViewWriter("Niederer"))
-)
+problem = OS.OperatorSplittingProblem(odeform, u₀, tspan)
+
+integrator = OS.init(problem, timestepper, dt=dt₀, verbose=true)
+
+step!(integrator) # precompile for benchmark below
+
+# TimerOutputs.enable_debug_timings(Thunderbolt)
+TimerOutputs.reset_timer!()
+for (u, t) in OS.TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
+    # dh = odeform.functions[1].dh
+    # φ = u[odeform.dof_ranges[1]]
+    # @info t,norm(u)
+    # sflat = ....?
+    # store_timestep!(io, t, dh.grid) do file
+    #     Thunderbolt.store_timestep_field!(file, t, dh, φ, :φₘ)
+    #     # s = reshape(sflat, (Thunderbolt.num_states(ionic_model),length(φ)))
+    #     # for sidx in 1:Thunderbolt.num_states(ionic_model)
+    #     #    Thunderbolt.store_timestep_field!(io, t, dh, s[sidx,:], state_symbol(ionic_model, sidx))
+    #     # end
+    # end
+end
+TimerOutputs.print_timer()
+# TimerOutputs.disable_debug_timings(Thunderbolt)

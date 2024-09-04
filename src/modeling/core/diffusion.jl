@@ -1,36 +1,62 @@
-# @doc raw"""
-#     AssembledDiffusionOperator{MT, DT, CV}
+@doc raw"""
+    BilinearDiffusionIntegrator{CoefficientType}
 
-# Assembles the matrix associated to the bilinearform ``a(u,v) = -\int \nabla v(x) \cdot D(x) \nabla u(x) dx`` for a given diffusion tensor ``D(x)`` and ``u,v`` from the same function space.
-# """
+Represents the integrand of the bilinear form ``a(u,v) = -\int \nabla v(x) \cdot D(x) \nabla u(x) dx`` for a given diffusion tensor ``D(x)`` and ``u,v`` from the same function space.
 """
-    Represents the integrand of the bilinear form <ϕ,ψ> = -∫ D∇ϕ ⋅ ∇ψ dΩ .
-"""
-struct BilinearDiffusionIntegrator{CoefficientType}
+struct BilinearDiffusionIntegrator{CoefficientType} <: AbstractBilinearIntegrator
     D::CoefficientType
-    # coordinate_system
 end
 
-struct BilinearDiffusionElementCache{IT <: BilinearDiffusionIntegrator, CV}
-    integrator::IT
+"""
+The cache associated with [`BilinearDiffusionIntegrator`](@ref) to assemble element diffusion matrices.
+"""
+struct BilinearDiffusionElementCache{CoefficientCacheType, CV} <: AbstractVolumetricElementCache
+    Dcache::CoefficientCacheType
     cellvalues::CV
 end
 
-function assemble_element!(Kₑ, cell, element_cache::CACHE, time) where {CACHE <: BilinearDiffusionElementCache}
-    @unpack cellvalues = element_cache
+function assemble_element!(Kₑ::AbstractMatrix, cell, element_cache::BilinearDiffusionElementCache, time)
+    @unpack cellvalues, Dcache = element_cache
     n_basefuncs = getnbasefunctions(cellvalues)
 
     reinit!(cellvalues, cell)
 
     for qp in QuadratureIterator(cellvalues)
-        D_loc = evaluate_coefficient(element_cache.integrator.D, cell, qp, time)
+        D_loc = evaluate_coefficient(Dcache, cell, qp, time)
         dΩ = getdetJdV(cellvalues, qp)
         for i in 1:n_basefuncs
             ∇Nᵢ = shape_gradient(cellvalues, qp, i)
             for j in 1:n_basefuncs
                 ∇Nⱼ = shape_gradient(cellvalues, qp, j)
-                Kₑ[i,j] -= ((D_loc ⋅ ∇Nᵢ) ⋅ ∇Nⱼ) * dΩ
+                Kₑ[i,j] -= _inner_product_helper(∇Nⱼ, D_loc, ∇Nᵢ) * dΩ
             end
         end
     end
+end
+
+function setup_element_cache(element_model::BilinearDiffusionIntegrator, qr, ip, sdh::SubDofHandler)
+    ip_geo = geometric_subdomain_interpolation(sdh)
+    BilinearDiffusionElementCache(setup_coefficient_cache(element_model.D, qr, sdh), CellValues(qr, ip, ip_geo))
+end
+
+@doc raw"""
+    TransientDiffusionModel(conductivity_coefficient, source_term, solution_variable_symbol)
+
+Model formulated as ``\partial_t u = \nabla \cdot \kappa(x) \nabla u + f``
+"""
+struct TransientDiffusionModel{ConductivityCoefficientType, SourceType <: AbstractSourceTerm}
+    κ::ConductivityCoefficientType
+    source::SourceType
+    solution_variable_symbol::Symbol
+end
+
+@doc raw"""
+    SteadyDiffusionModel(conductivity_coefficient, source_term, solution_variable_symbol)
+
+Model formulated as ``\nabla \cdot \kappa(x) \nabla u = f``
+"""
+struct SteadyDiffusionModel{ConductivityCoefficientType, SourceType <: AbstractSourceTerm}
+    κ::ConductivityCoefficientType
+    source::SourceType
+    solution_variable_symbol::Symbol
 end

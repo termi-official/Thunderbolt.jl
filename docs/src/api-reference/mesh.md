@@ -5,8 +5,7 @@ DocTestSetup = :(using Thunderbolt)
 # Mesh
 
 ```@docs
-Thunderbolt.SimpleMesh2D
-Thunderbolt.SimpleMesh3D
+Thunderbolt.SimpleMesh
 Thunderbolt.to_mesh
 Thunderbolt.elementtypes
 ```
@@ -23,7 +22,9 @@ Thunderbolt.LVCoordinateSystem
 ```@docs
 generate_mesh
 generate_ring_mesh
+generate_open_ring_mesh
 generate_quadratic_ring_mesh
+generate_quadratic_open_ring_mesh
 generate_ideal_lv_mesh
 ```
 

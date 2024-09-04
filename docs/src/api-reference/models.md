@@ -42,6 +42,8 @@ StructuralModel
 ExtendedHillModel
 GeneralizedHillModel
 ActiveStressModel
+PK1Model
+PrestressedMechanicalModel
 ```
 
 ### Passive Energies
@@ -94,9 +96,11 @@ HartmannNeffCompressionPenalty3
 ## Electrophysiology
 
 ```@docs
+Thunderbolt.TransientDiffusionModel
+Thunderbolt.SteadyDiffusionModel
 MonodomainModel
-ParabolicParabolicBidomainModel
-ParabolicEllipticBidomainModel
+Thunderbolt.ParabolicParabolicBidomainModel
+Thunderbolt.ParabolicEllipticBidomainModel
 ReactionDiffusionSplit
 ```
 
@@ -122,12 +126,14 @@ Thunderbolt.ParametrizedPCG2019Model
 ### Lumped Models
 
 ```@docs
-ReggazoniSalvadorAfricaLumpedCicuitModel
+Thunderbolt.DummyLumpedCircuitModel
+MTKLumpedCicuitModel
+RSAFDQ2022LumpedCicuitModel
 ```
 
 ## Multiphysics
 
-### Interface
+### Generic Interface
 
 ```@docs
 Thunderbolt.InterfaceCoupler
@@ -141,6 +147,7 @@ CoupledModel
 ```@docs
 LumpedFluidSolidCoupler
 Hirschvogel2017SurrogateVolume
-ReggazoniSalvadorAfrica2022SurrogateVolume
-ReggazoniSalvadorAfricaSplit
+RSAFDQ2022SurrogateVolume
+RSAFDQ2022Split
+RSAFDQ2022Model
 ```

@@ -9,7 +9,7 @@
             cell = getcells(grid, cellid(cc))
             ref_shape = Ferrite.getrefshape(cell)
             ip = getinterpolation(LagrangeCollection{1}(), ref_shape)
-            qr = QuadratureRule{ref_shape, Float64}([1.0], [Vec(ntuple(_->0.1, Ferrite.getdim(cell)))]) # TODO randomize point
+            qr = QuadratureRule{ref_shape}([1.0], [Vec(ntuple(_->0.1, Ferrite.getrefdim(cell)))]) # TODO randomize point
             gv = Ferrite.GeometryMapping{1}(Float64, ip, qr)
             x = getcoordinates(cc)
             mapping = Ferrite.calculate_mapping(gv, 1, x)
@@ -21,16 +21,30 @@
     @testset "Cubioidal $element_type" for element_type ∈ [
         Hexahedron,
         Wedge,
-        # Tetrahedron,
+        Tetrahedron,
         # Quadrilateral,
         # Triangle
     ]
-        dim = Ferrite.getdim(element_type)
+        dim = Ferrite.getrefdim(element_type)
         grid = generate_grid(element_type, ntuple(_ -> 3, dim))
         if dim == 3
             grid_hex = Thunderbolt.hexahedralize(grid)
             @test all(typeof.(getcells(grid_hex)) .== Hexahedron) # Test if we really hit all elements
             test_detJ(grid_hex) # And for messed up elements
+
+            # Check for correct transfer of facesets
+            addfacetset!(grid_hex, "right_new", x -> x[1] ≈ 1.0)
+            @test getfacetset(grid_hex, "right") == getfacetset(grid_hex, "right_new")
+            addfacetset!(grid_hex, "left_new", x -> x[1] ≈ -1.0)
+            @test getfacetset(grid_hex, "left") == getfacetset(grid_hex, "left_new")
+            addfacetset!(grid_hex, "top_new", x -> x[3] ≈ 1.0)
+            @test getfacetset(grid_hex, "top") == getfacetset(grid_hex, "top_new")
+            addfacetset!(grid_hex, "bottom_new", x -> x[3] ≈ -1.0)
+            @test getfacetset(grid_hex, "bottom") == getfacetset(grid_hex, "bottom_new")
+            addfacetset!(grid_hex, "front_new", x -> x[2] ≈ -1.0)
+            @test getfacetset(grid_hex, "front") == getfacetset(grid_hex, "front_new")
+            addfacetset!(grid_hex, "back_new", x -> x[2] ≈ 1.0)
+            @test getfacetset(grid_hex, "back") == getfacetset(grid_hex, "back_new")
         end
 
         if element_type == Hexahedron
@@ -44,11 +58,15 @@
     @testset "Linear Hex Ring" begin
         ring_mesh = generate_ring_mesh(8,3,3)
         test_detJ(ring_mesh)
+        open_ring_mesh = generate_open_ring_mesh(8,3,3,π/4)
+        test_detJ(open_ring_mesh)
     end
 
     @testset "Quadratic Hex Ring" begin
         ring_mesh = generate_quadratic_ring_mesh(5,3,3)
         test_detJ(ring_mesh)
+        open_ring_mesh = generate_quadratic_open_ring_mesh(8,3,3,π/4)
+        test_detJ(open_ring_mesh)
     end
 
     @testset "Linear Hex LV" begin
@@ -62,13 +80,13 @@
         dirname = @__DIR__
 
         @testset "voom2 legacy" begin
-            voom2_mesh = load_voom2_mesh(dirname * "/data/voom2/ex1")
+            voom2_grid = load_voom2_grid(dirname * "/data/voom2/ex1")
 
-            @test length(voom2_mesh.nodes) == 9
-            @test typeof(voom2_mesh.cells[1]) == Line
-            @test typeof(voom2_mesh.cells[2]) == Hexahedron
-            @test length(voom2_mesh.cells) == 2
-            test_detJ(voom2_mesh)
+            @test length(voom2_grid.nodes) == 9
+            @test typeof(voom2_grid.cells[1]) == Line
+            @test typeof(voom2_grid.cells[2]) == Hexahedron
+            @test length(voom2_grid.cells) == 2
+            test_detJ(voom2_grid)
         end
 
         @testset "mfem v1.0 $filename" for (filename, element_type) in [
@@ -80,10 +98,10 @@
             ("ref-prism.mesh", Wedge),
             ("ref-pyramid.mesh", Pyramid),
         ]
-            mfem_mesh = load_mfem_mesh(dirname * "/data/mfem/" * filename)
+            mfem_grid = load_mfem_grid(dirname * "/data/mfem/" * filename)
 
-            @test all(typeof.(mfem_mesh.cells) .== element_type)
-            test_detJ(mfem_mesh)
+            @test all(typeof.(mfem_grid.cells) .== element_type)
+            test_detJ(mfem_grid)
         end
 
         @testset "openCARP $filename" for (filename, element_type) in [
@@ -95,10 +113,10 @@
             ("ref-prism", Wedge),
             # ("ref-pyramid", Pyramid),
         ]
-            carp_mesh = load_carp_mesh(dirname * "/data/openCARP/" * filename)
+            carp_grid = load_carp_grid(dirname * "/data/openCARP/" * filename)
 
-            @test all(typeof.(carp_mesh.cells) .== element_type)
-            test_detJ(carp_mesh)
+            @test all(typeof.(carp_grid.cells) .== element_type)
+            test_detJ(carp_grid)
         end
     end
 end

@@ -16,7 +16,7 @@ LagrangeCollection
 QuadratureRuleCollection
 getquadraturerule
 CellValueCollection
-FaceValueCollection
+FacetValueCollection
 ```
 
 ## Iteration
@@ -42,12 +42,21 @@ finalize_timestep!
 finalize!
 ```
 
+## Transfer Operators
+
+```@docs
+Thunderbolt.NodalIntergridInterpolation
+Thunderbolt.transfer!
+```
+
 ## Postprocessing
 
 
 ### ECG
 
 ```@docs
+Thunderbolt.PoissonECGReconstructionCache
 Thunderbolt.Plonsey1964ECGGaussCache
+Thunderbolt.Geselowitz1989ECGLeadCache
 Thunderbolt.evaluate_ecg
 ```

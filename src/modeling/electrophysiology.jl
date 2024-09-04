@@ -91,7 +91,12 @@ struct OhmicCurrent{T, NChannels}
     channels::SVector{NChannels, HodgkinHuxleyTypeIonChannel}
 end
 
-abstract type AbstractIonicModel end;
+"""
+Supertype for all ionic models in Thunderbolt.
+"""
+abstract type AbstractIonicModel end
+
+state_symbol(ionic_model::AbstractIonicModel, sidx::Int) = Symbol("s$sidx")
 
 """
 Models where all states are described by Hodgkin-Huxley type ion channels.
@@ -121,7 +126,7 @@ struct FitzHughNagumoModel <: HodgkinHuxleyTypeModel end;
 
 abstract type AbstractEPModel end;
 
-abstract type AbstractStimulationProtocol end;
+abstract type AbstractStimulationProtocol <: AbstractSourceTerm end;
 
 @doc raw"""
 Supertype for all stimulation protocols fulfilling $I_{\rm{stim,e}} = I_{\rm{stim,i}}$.
@@ -136,9 +141,18 @@ struct NoStimulationProtocol <: TransmembraneStimulationProtocol end
 """
 Describe the transmembrane stimulation by some analytical function on a given set of time intervals.
 """
-struct AnalyticalTransmembraneStimulationProtocol{F <: AnalyticalCoefficient, T} <: TransmembraneStimulationProtocol
+struct AnalyticalTransmembraneStimulationProtocol{F <: AnalyticalCoefficient, T, VectorType <: AbstractVector{SVector{2,T}}} <: TransmembraneStimulationProtocol
     f::F
-    nonzero_intervals::Vector{SVector{2,T}} # helper to speed up rhs
+    nonzero_intervals::VectorType # Helper for sparsity in time
+end
+
+function setup_element_cache(protocol::AnalyticalTransmembraneStimulationProtocol, qr, ip, sdh::SubDofHandler)
+    ip_geo = geometric_subdomain_interpolation(sdh)
+    AnalyticalCoefficientElementCache(
+        setup_coefficient_cache(protocol.f, qr, sdh),
+        protocol.nonzero_intervals,
+        CellValues(qr, ip, ip_geo), # TODO something more lightweight
+    )
 end
 
 """
@@ -149,7 +163,7 @@ The original model formulation (TODO citation) with the structure
     ∂ₜ𝐬  = g(φₘ,𝐬,x)
  φᵢ - φₑ = φₘ
 
-!!! note 
+!!! warn 
     Not implemented yet.
 """
 struct ParabolicParabolicBidomainModel <: AbstractEPModel
@@ -172,7 +186,7 @@ Transformed bidomain model with the structure
 This formulation is a transformation of the parabolic-parabolic
 form (c.f. TODO citation) and has been derived by (TODO citation) first.
 
-!!! note 
+!!! warn 
     Not implemented yet.
 """
 struct ParabolicEllipticBidomainModel <: AbstractEPModel
@@ -200,7 +214,26 @@ struct MonodomainModel{F1,F2,F3,STIM<:TransmembraneStimulationProtocol,ION<:Abst
     κ::F3
     stim::STIM
     ion::ION
+    # TODO the variables below should be queried from the ionic model
+    transmembrane_solution_symbol::Symbol
+    internal_state_symbol::Symbol
 end
+
+get_field_variable_names(model::MonodomainModel) = (model.transmembrane_solution_symbol, )
+
+"""
+    ReactionDiffusionSplit(model)
+    ReactionDiffusionSplit(model, coeff)
+Annotation for the classical reaction-diffusion split of a given model. The
+second argument is a coefficient describing the input `x` for the reaction model rhs,
+which is usually some generalized coordinate.
+"""
+struct ReactionDiffusionSplit{mType, csType}
+    model::mType
+    cs::csType
+end
+
+ReactionDiffusionSplit(model) = ReactionDiffusionSplit(model, nothing)
 
 include("cells/fhn.jl")
 include("cells/pcg2019.jl")

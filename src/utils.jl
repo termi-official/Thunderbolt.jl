@@ -1,6 +1,16 @@
+# TODO remove these once they are merged
+module FerriteUtils
+include("ferrite-addons/PR883.jl")
+end
 
 include("collections.jl")
 include("quadrature_iterator.jl")
+
+function celldofsview(dh::DofHandler, i::Int)
+    ndofs = ndofs_per_cell(dh, i)
+    offset = dh.cell_dofs_offset[i]
+    return @views dh.cell_dofs[offset:(offset+ndofs-1)]
+end
 
 function calculate_element_volume(cell, cellvalues_u, uₑ)
     reinit!(cellvalues_u, cell)
@@ -74,6 +84,33 @@ Returns a new `v₁` which is orthogonal to `v₂`.
 end
 
 """
+    orthogonalize_normal_system(v₁::Vec{dim,T}, v₂::Vec{dim,T})
+
+Returns new vectors which are orthogonal to each other.
+"""
+@inline function orthogonalize_normal_system(v₁::Vec{2,T}, v₂::Vec{2,T}) where {T}
+    w₁ = v₁
+    w₂ = v₂ - (w₁ ⋅ v₂)*w₁
+    return w₁, w₂
+end
+
+orthogonalize_system(v₁::Vec{2}, v₂::Vec{2}) = orthogonalize_normal_system(v₁/norm(v₁), v₂/norm(v₂))
+
+"""
+    orthogonalize_normal_system(v₁::Vec{3}, v₂::Vec{3}, v₃::Vec{3})
+
+Returns new vectors which are orthogonal to each other.
+"""
+@inline function orthogonalize_normal_system(v₁::Vec{3}, v₂::Vec{3}, v₃::Vec{3})
+    w₁ = v₁
+    w₂ = v₂ - (w₁ ⋅ v₂)*w₁
+    w₃ = v₃ - (w₁ ⋅ v₃)*w₁ - (w₂ ⋅ v₃)*w₂
+    return w₁, w₂, w₃
+end
+
+orthogonalize_system(v₁::Vec{3}, v₂::Vec{3}, v₃::Vec{3}) = orthogonalize_normal_system(v₁/norm(v₁), v₂/norm(v₂), v₃/norm(v₃))
+
+"""
 """
 function generate_nodal_quadrature_rule(ip::Interpolation{ref_shape, order}) where {ref_shape, order}
     n_base = Ferrite.getnbasefunctions(ip)
@@ -99,7 +136,7 @@ function ThreadedSparseMatrixCSR(a::Transpose{Tv,<:SparseMatrixCSC} where Tv)
     ThreadedSparseMatrixCSR(SparseMatrixCSR(a))
 end
 
-function mul!(y::AbstractVector, A_::ThreadedSparseMatrixCSR, x::AbstractVector, alpha::Number, beta::Number)
+function mul!(y::AbstractVector{<:Number}, A_::ThreadedSparseMatrixCSR, x::AbstractVector{<:Number}, alpha::Number, beta::Number)
     A = A_.A
     A.n == size(x, 1) || throw(DimensionMismatch())
     A.m == size(y, 1) || throw(DimensionMismatch())
@@ -118,12 +155,12 @@ function mul!(y::AbstractVector, A_::ThreadedSparseMatrixCSR, x::AbstractVector,
     return y
 end
 
-function mul!(y::AbstractVector, A_::ThreadedSparseMatrixCSR, x::AbstractVector)
+function mul!(y::AbstractVector{<:Number}, A_::ThreadedSparseMatrixCSR, x::AbstractVector{<:Number})
     A = A_.A
     A.n == size(x, 1) || throw(DimensionMismatch())
     A.m == size(y, 1) || throw(DimensionMismatch())
 
-    @batch minbatch = size(y, 1) ÷ Threads.nthreads() for row in 1:size(y, 1)
+    @batch minbatch = max(1, size(y, 1) ÷ Threads.nthreads()) for row in 1:size(y, 1)
         @inbounds begin
             v = zero(eltype(y))
             for nz in nzrange(A, row)
@@ -145,17 +182,281 @@ end
 *(A::ThreadedSparseMatrixCSR, v::BlockArrays.FillArrays.AbstractZeros{<:Any, 1}) = mul(A,v)
 *(A::ThreadedSparseMatrixCSR, v::BlockArrays.ArrayLayouts.LayoutVector) = mul(A,v)
 
-Base.eltype(A::ThreadedSparseMatrixCSR) = Base.eltype(A.A)
-getrowptr(A::ThreadedSparseMatrixCSR) = getrowptr(A.A)
-getnzval(A::ThreadedSparseMatrixCSR) = getnzval(A.A)
-getcolval(A::ThreadedSparseMatrixCSR) = getnzval(A.A)
-issparse(A::ThreadedSparseMatrixCSR) = issparse(A.A)
-nnz(A::ThreadedSparseMatrixCSR) = nnz(A.A)
-nonzeros(A::ThreadedSparseMatrixCSR) = nonzeros(A.A)
-Base.size(A::ThreadedSparseMatrixCSR) = Base.size(A.A)
-Base.size(A::ThreadedSparseMatrixCSR,i) = Base.size(A.A,i)
-IndexStyle(::Type{<:ThreadedSparseMatrixCSR}) = IndexCartesian()
+Base.eltype(A::ThreadedSparseMatrixCSR)            = Base.eltype(A.A)
+Base.size(A::ThreadedSparseMatrixCSR)              = Base.size(A.A)
+Base.size(A::ThreadedSparseMatrixCSR,i)            = Base.size(A.A,i)
+Base.IndexStyle(::Type{<:ThreadedSparseMatrixCSR}) = IndexCartesian()
+
+SparseMatricesCSR.getrowptr(A::ThreadedSparseMatrixCSR) = SparseMatricesCSR.getrowptr(A.A)
+SparseMatricesCSR.getnzval(A::ThreadedSparseMatrixCSR)  = SparseMatricesCSR.getnzval(A.A)
+SparseMatricesCSR.getcolval(A::ThreadedSparseMatrixCSR) = SparseMatricesCSR.getcolval(A.A)
+
+SparseArrays.issparse(A::ThreadedSparseMatrixCSR) = issparse(A.A)
+SparseArrays.nnz(A::ThreadedSparseMatrixCSR)      = nnz(A.A)
+SparseArrays.nonzeros(A::ThreadedSparseMatrixCSR) = nonzeros(A.A)
+
+Base.@propagate_inbounds function SparseArrays.getindex(A::ThreadedSparseMatrixCSR{T}, i0::Integer, i1::Integer) where T
+    getindex(A.A,i0,i1)
+end
+SparseArrays.getindex(A::ThreadedSparseMatrixCSR, ::Colon, ::Colon) = copy(A)
+SparseArrays.getindex(A::ThreadedSparseMatrixCSR, i::Int, ::Colon)       = getindex(A.A, i, 1:size(A, 2))
+SparseArrays.getindex(A::ThreadedSparseMatrixCSR, ::Colon, i::Int)       = getindex(A.A, 1:size(A, 1), i)
+
+Ferrite.apply_zero!(A::ThreadedSparseMatrixCSR, f::AbstractVector, ch::ConstraintHandler) = apply_zero!(A.A, f, ch)
+function Ferrite.apply_zero!(K::SparseMatrixCSR, f::AbstractVector, ch::ConstraintHandler)
+    # m = Ferrite.meandiag(K)
+
+    Ferrite.zero_out_columns!(K, ch.dofmapping)
+    Ferrite.zero_out_rows!(K, ch.prescribed_dofs)
+
+    @inbounds for i in 1:length(ch.inhomogeneities)
+        d = ch.prescribed_dofs[i]
+        K[d, d] = #m
+        if length(f) != 0
+            f[d] = 0.0
+        end
+    end
+end
+
+function Ferrite.zero_out_rows!(K::SparseMatrixCSR, dofs::Vector{Int}) # can be removed in 0.7 with #24711 merged
+    Ferrite.@debug @assert issorted(dofs)
+    for col in dofs
+        r = nzrange(K, col)
+        K.nzval[r] .= 0.0
+    end
+end
+
+function Ferrite.zero_out_columns!(K::SparseMatrixCSR, dofmapping::Dict)
+    colval = K.colval
+    nzval = K.nzval
+    @inbounds for i in eachindex(colval, nzval)
+        if haskey(dofmapping, colval[i])
+            nzval[i] = 0
+        end
+    end
+end
+
+# struct RHSDataCSR{T}
+#     m::T
+#     constrained_rows::SparseMatrixCSR{T, Int}
+# end
+
+# function Ferrite.get_rhs_data(ch::ConstraintHandler, A::ThreadedSparseMatrixCSR)
+#     Ferrite.get_rhs_data(ch, A.A)
+# end
+
+# function Ferrite.get_rhs_data(ch::ConstraintHandler, A::SparseMatrixCSR)
+#     m = Ferrite.meandiag(A)
+#     constrained_rows = A[ch.prescribed_dofs, :]
+#     return RHSDataCSR(m, constrained_rows)
+# end
+
+# function apply_rhs!(data::RHSDataCSR, f::AbstractVector{T}, ch::ConstraintHandler, applyzero::Bool=false) where T
+#     K = data.constrained_rows
+#     @assert length(f) == size(K, 1)
+#     @boundscheck checkbounds(f, ch.prescribed_dofs)
+#     m = data.m
+
+#     # TODO: Can the loops be combined or does the order matter?
+#     @inbounds for i in 1:length(ch.inhomogeneities)
+#         v = ch.inhomogeneities[i]
+#         if !applyzero && v != 0
+#             # for j in nzrange(K, i)
+#             #     f[K.rowval[j]] -= v * K.nzval[j]
+#             # end
+#             error("Imhomogeneous bcs not implemented for CSR.")
+#         end
+#     end
+#     @inbounds for (i, pdof) in pairs(ch.prescribed_dofs)
+#         dofcoef = ch.dofcoefficients[i]
+#         b = ch.inhomogeneities[i]
+#         if dofcoef !== nothing # if affine constraint
+#             # for (d, v) in dofcoef
+#             #     f[d] += f[pdof] * v
+#             # end
+#             error("Affine bcs not implemented for CSR.")
+#         end
+#         bz = applyzero ? zero(T) : b
+#         f[pdof] = bz * m
+#     end
+# end
 
 # Internal helper to throw uniform error messages on problems with multiple subdomains
 @noinline check_subdomains(dh::Ferrite.AbstractDofHandler) = length(dh.subdofhandlers) == 1 || throw(ArgumentError("Using DofHandler with multiple subdomains is not currently supported"))
 @noinline check_subdomains(grid::Ferrite.AbstractGrid) = length(elementtypes(grid)) == 1 || throw(ArgumentError("Using mixed grid is not currently supported"))
+
+@inline function default_quadrature_order(f, fieldname)
+    @unpack dh = f
+    @assert fieldname ∈ dh.field_names "Field $fieldname not found in dof handler. Available fields are: $(dh.field_names)."
+
+    for sdh in dh.subdofhandlers
+        idx = findfirst(s->s==fieldname, sdh.field_names)
+        idx === nothing && continue
+        ip = sdh.field_interpolations[idx]
+        return max(2*Ferrite.getorder(ip)-1, 2)
+    end
+end
+
+
+mtk_parameter_query_filter(discard_me, sym) = false
+mtk_parameter_query_filter(param::ModelingToolkit.BasicSymbolic, sym) = true
+
+function query_mtk_parameter_by_symbol(sys, sym::Symbol)
+    symbol_list = ModelingToolkit.parameter_symbols(sys)
+    idx = findfirst(param->mtk_parameter_query_filter(param,sym), symbol_list)
+    idx === nothing && @error "Symbol $sym not found for system $sys."
+    return symbol_list[idx]
+end
+
+"""
+Examples:
+
+* `DenseDataRange{Vector{Int}, Vector{Int}}` to map dofs (outer index) to elements (inner index)
+* `DenseDataRange{Vector{Vec{3,Float64}}, Vector{Int}}` to store fluxes per quadrature point (inner index) per element (outer index)
+"""
+struct DenseDataRange{DataVectorType, IndexVectorType}
+    data::DataVectorType
+    offsets::IndexVectorType
+end
+
+Base.size(v::DenseDataRange) = size(v.data)
+Base.getindex(v::DenseDataRange, i::Int) = getindex(v.data, i)
+
+Base.eltype(data::DenseDataRange) = eltype(data.data)
+
+@inline function get_data_for_index(r::DenseDataRange, i::Integer)
+    i1 = r.offsets[i]
+    i2 = r.offsets[i+1]-1
+    return @view r.data[i1:i2]
+end
+
+struct ElementDofPair{IndexType}
+    element_index::IndexType
+    local_dof_index::IndexType
+end
+
+"""
+"""
+struct EAVector{T, EADataType <: AbstractVector{T}, IndexType <: AbstractVector{<:Int}, DofMapType <: AbstractVector{<:ElementDofPair}} <: AbstractVector{T}
+    # Buffer for the per element data
+    eadata::DenseDataRange{EADataType, IndexType}
+    # Map from global dof index to element index and local dof index
+    dof_to_element_map::DenseDataRange{DofMapType, IndexType}
+end
+
+Base.size(v::EAVector) = size(v.eadata)
+Base.getindex(v::EAVector, i::Int) = getindex(v.eadata, i)
+
+function Base.show(io::IO, mime::MIME"text/plain", data::EAVector{T, EADataType, IndexType}) where {T, EADataType, IndexType}
+    println(io, "EAVector{T=", T, ", EADataType=", EADataType, ", IndexType=", IndexType, "} with storate for ", size(data.eadata), " entries." )
+end
+
+@inline get_data_for_index(r::EAVector, i::Integer) = get_data_for_index(r.eadata, i)
+
+function EAVector(dh::DofHandler)
+    @assert length(dh.field_names) == 1
+    map  = create_dof_to_element_map(dh)
+    grid = get_grid(dh)
+
+    num_entries = length(dh.cell_dofs)
+    eadata      = zeros(num_entries)
+    eaoffsets   = Int64[]
+    next_offset = 1
+    push!(eaoffsets, next_offset)
+    for i in 1:getncells(grid)
+        next_offset += ndofs_per_cell(dh, i)
+        push!(eaoffsets, next_offset)
+    end
+
+    return EAVector(
+        DenseDataRange(eadata, eaoffsets),
+        map,
+    )
+end
+
+# Transfer the element data into a vector
+function ea_collapse!(b::Vector, bes::EAVector)
+    ndofs = size(b, 1)
+    @batch minbatch=max(1, ndofs÷Threads.nthreads()) for dof ∈ 1:ndofs
+        _ea_collapse_kernel!(b, dof, bes)
+    end
+end
+
+@inline function _ea_collapse_kernel!(b::AbstractVector, dof::Integer, bes::EAVector)
+    for edp ∈ get_data_for_index(bes.dof_to_element_map, dof)
+        be_range = get_data_for_index(bes.eadata, edp.element_index)
+        b[dof] += be_range[edp.local_dof_index]
+    end
+end
+
+struct ChunkLocalAssemblyData{CellCacheType, ElementCacheType}
+    cc::CellCacheType
+    ec::ElementCacheType
+end
+
+create_dof_to_element_map(dh::DofHandler) = create_dof_to_element_map(Int, dh::DofHandler)
+
+function create_dof_to_element_map(::Type{IndexType}, dh::DofHandler) where IndexType
+    # Preallocate storage
+    dof_to_element_vs = [Set{ElementDofPair{IndexType}}() for _ in 1:ndofs(dh)]
+    # Fill set
+    for sdh in dh.subdofhandlers
+        for cc in CellIterator(sdh)
+            eid = Ferrite.cellid(cc)
+            for (ldi,dof) in enumerate(celldofs(cc))
+                s = dof_to_element_vs[dof]
+                push!(s, ElementDofPair(eid, ldi))
+            end
+        end
+    end
+    #
+    dof_to_element_vv = ElementDofPair{IndexType}[]
+    offset = 1
+    offsets = IndexType[]
+    for dof in 1:ndofs(dh)
+        append!(offsets, offset)
+        s = dof_to_element_vs[dof]
+        offset += length(s)
+        append!(dof_to_element_vv, s)
+    end
+    append!(offsets, offset)
+    #
+    return DenseDataRange(
+        dof_to_element_vv,
+        offsets,
+    )
+end
+
+# To handle embedded elements in the same code
+_inner_product_helper(a::Vec, B::Union{Tensor, SymmetricTensor}, c::Vec) = a ⋅ B ⋅ c
+_inner_product_helper(a::SVector, B::Union{Tensor, SymmetricTensor}, c::SVector) = Vec(a.data) ⋅ B ⋅ Vec(c.data)
+
+
+function geometric_subdomain_interpolation(sdh::SubDofHandler)
+    grid      = get_grid(sdh.dh)
+    sdim      = getspatialdim(grid)
+    firstcell = getcells(grid, first(sdh.cellset))
+    ip_geo    = Ferrite.geometric_interpolation(typeof(firstcell))^sdim
+    return ip_geo
+end
+
+function get_first_cell(sdh::SubDofHandler)
+    grid = get_grid(sdh.dh)
+    return getcells(grid, first(sdh.cellset))
+end
+
+function adapt_vector_type(::Type{<:Vector}, v::VT) where VT
+    return v
+end
+
+function _get_vertex(val::Vec, grid::AbstractGrid)
+    for (cell_idx, cell) in enumerate(getcells(grid))
+        for (vertex_idx, vertex) in enumerate(vertices(cell))
+            for node_idx in vertex # ?
+                val ≈ get_node_coordinate(grid, node_idx) && return VertexIndex(cell_idx, vertex_idx)
+            end
+        end
+    end
+    @error "No vertices found with specified coordinates"
+    return nothing
+end

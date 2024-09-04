@@ -10,18 +10,18 @@ end
 
 """
     QuadratureIterator(::QuadratureRule)
-    QuadratureIterator(::FaceQuadratureRule, local_face_idx::Int)
+    QuadratureIterator(::FacetQuadratureRule, local_face_idx::Int)
     QuadratureIterator(::CellValues)
-    QuadratureIterator(::FaceValues)
+    QuadratureIterator(::FacetValues)
 
 A helper to loop over the quadrature points in some rule or cache with type [`QuadraturePoint`](@ref).
 """
 struct QuadratureIterator{QR<:QuadratureRule}
     qr::QR
 end
-QuadratureIterator(fqr::FaceQuadratureRule, local_face_idx::Int) = QuadratureIterator(fqr.face_rules[local_face_idx])
+QuadratureIterator(fqr::FacetQuadratureRule, local_face_idx::Int) = QuadratureIterator(fqr.face_rules[local_face_idx])
 QuadratureIterator(cv::CellValues) = QuadratureIterator(cv.qr)
-QuadratureIterator(fv::FaceValues) = QuadratureIterator(fv.fqr.face_rules[fv.current_face[]])
+QuadratureIterator(fv::FacetValues) = QuadratureIterator(fv.fqr.face_rules[fv.current_facet[]])
 
 function Base.iterate(iterator::QuadratureIterator, i = 1)
     i > getnquadpoints(iterator.qr) && return nothing
@@ -38,9 +38,12 @@ Ferrite.shape_gradient(cv::CellValues, qp::QuadraturePoint, base_fun_idx::Int) =
 Ferrite.function_value(cv::CellValues, qp::QuadraturePoint, ue) = Ferrite.function_value(cv, qp.i, ue)
 Ferrite.function_gradient(cv::CellValues, qp::QuadraturePoint, ue) = Ferrite.function_gradient(cv, qp.i, ue)
 
-Ferrite.getdetJdV(fv::FaceValues, qp::QuadraturePoint) = Ferrite.getdetJdV(fv, qp.i)
-Ferrite.shape_value(fv::FaceValues, qp::QuadraturePoint, base_fun_idx::Int) = Ferrite.shape_value(fv, qp.i, base_fun_idx)
-Ferrite.shape_gradient(fv::FaceValues, qp::QuadraturePoint, base_fun_idx::Int) = Ferrite.shape_gradient(fv, qp.i, base_fun_idx)
-Ferrite.function_value(fv::FaceValues, qp::QuadraturePoint, ue) = Ferrite.function_value(fv, qp.i, ue)
-Ferrite.function_gradient(fv::FaceValues, qp::QuadraturePoint, ue) = Ferrite.function_gradient(fv, qp.i, ue)
-Ferrite.getnormal(fv::FaceValues, qp::QuadraturePoint) = Ferrite.getnormal(fv, qp.i)
+Ferrite.getdetJdV(fv::FacetValues, qp::QuadraturePoint) = Ferrite.getdetJdV(fv, qp.i)
+Ferrite.shape_value(fv::FacetValues, qp::QuadraturePoint, base_fun_idx::Int) = Ferrite.shape_value(fv, qp.i, base_fun_idx)
+Ferrite.shape_gradient(fv::FacetValues, qp::QuadraturePoint, base_fun_idx::Int) = Ferrite.shape_gradient(fv, qp.i, base_fun_idx)
+Ferrite.function_value(fv::FacetValues, qp::QuadraturePoint, ue) = Ferrite.function_value(fv, qp.i, ue)
+Ferrite.function_gradient(fv::FacetValues, qp::QuadraturePoint, ue) = Ferrite.function_gradient(fv, qp.i, ue)
+Ferrite.getnormal(fv::FacetValues, qp::QuadraturePoint) = Ferrite.getnormal(fv, qp.i)
+
+Ferrite.shape_value(cv::FerriteUtils.StaticInterpolationValues, qp::QuadraturePoint, base_fun_idx::Int) = Ferrite.shape_value(cv, qp.i, base_fun_idx)
+Ferrite.function_value(cv::FerriteUtils.StaticInterpolationValues, qp::QuadraturePoint, ue) = Ferrite.function_value(cv, qp.i, ue)
