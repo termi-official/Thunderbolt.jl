@@ -71,6 +71,7 @@ function generate_mixed_dimensional_grid_3D()
 end
 
 include("test_elements.jl")
+include("test_sarcomere.jl")
 include("test_operators.jl")
 
 include("test_solver.jl")
