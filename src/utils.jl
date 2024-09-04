@@ -181,6 +181,8 @@ end
 *(A::ThreadedSparseMatrixCSR, v::AbstractVector) = mul(A,v)
 *(A::ThreadedSparseMatrixCSR, v::BlockArrays.FillArrays.AbstractZeros{<:Any, 1}) = mul(A,v)
 *(A::ThreadedSparseMatrixCSR, v::BlockArrays.ArrayLayouts.LayoutVector) = mul(A,v)
+*(A::ThreadedSparseMatrixCSR, v::ModelingToolkit.DynamicQuantities.QuantityArray{T, 1, D, Q, V}) where {T, D<:ModelingToolkit.DynamicQuantities.AbstractDimensions, Q<:ModelingToolkit.DynamicQuantities.UnionAbstractQuantity{T, D}, V<:AbstractVector{T}} = mul(A,v)
+*(A::ThreadedSparseMatrixCSR, v::ModelingToolkit.DynamicQuantities.QuantityArray{T, 2, D, Q, V}) where {T, D<:ModelingToolkit.DynamicQuantities.AbstractDimensions, Q<:ModelingToolkit.DynamicQuantities.UnionAbstractQuantity{T, D}, V<:AbstractMatrix{T}} = mul(A,v)
 
 Base.eltype(A::ThreadedSparseMatrixCSR)            = Base.eltype(A.A)
 Base.size(A::ThreadedSparseMatrixCSR)              = Base.size(A.A)
@@ -377,7 +379,7 @@ end
 # Transfer the element data into a vector
 function ea_collapse!(b::Vector, bes::EAVector)
     ndofs = size(b, 1)
-    @batch minbatch= max(1, ndofs÷Threads.nthreads()) for dof ∈ 1:ndofs
+    @batch minbatch=max(1, ndofs÷Threads.nthreads()) for dof ∈ 1:ndofs
         _ea_collapse_kernel!(b, dof, bes)
     end
 end
@@ -447,4 +449,16 @@ end
 
 function adapt_vector_type(::Type{<:Vector}, v::VT) where VT
     return v
+end
+
+function _get_vertex(val::Vec, grid::AbstractGrid)
+    for (cell_idx, cell) in enumerate(getcells(grid))
+        for (vertex_idx, vertex) in enumerate(vertices(cell))
+            for node_idx in vertex # ?
+                val ≈ get_node_coordinate(grid, node_idx) && return VertexIndex(cell_idx, vertex_idx)
+            end
+        end
+    end
+    @error "No vertices found with specified coordinates"
+    return nothing
 end

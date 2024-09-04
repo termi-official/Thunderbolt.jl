@@ -21,6 +21,10 @@ end
 TODO citation pelce paper
 
 TODO remove explicit calcium field dependence
+
+!!! warning
+    It should be highlighted that this model directly gives the steady state
+    for the active stretch.
 """
 Base.@kwdef struct PelceSunLangeveld1995Model{TD, CF} <: SteadyStateSarcomereModel
     β::TD = 3.0
@@ -81,30 +85,42 @@ update_contraction_model_cache!(cache::ConstantStretchCache, time, cell, cv) = n
 
 𝓝(Ca, mp::ConstantStretchModel) = Ca
 
-# Human at body temperature
-Base.@kwdef struct RDQ20MFModel{TD, TSL0}
+@doc raw"""
+Mean-field variant of the sarcomere model presented by [RegDedQua:2020:bdm](@citet).
+
+The default parameters for the model are taken from the same paper for human cardiomyocytes at body temperature.
+
+!!! note
+    For this model in combination with active stress framework the assumption is
+    taken that the sarcomere length is exactly $\sqrt{I_4}$.
+
+!!! note
+    In ,,Active contraction of cardiac cells: a reduced model for sarcomere
+    dynamics with cooperative interactions'' there is a proposed evolution law for
+    active stretches.
+"""
+Base.@kwdef struct RDQ20MFModel{TD}
     # Geoemtric parameters
-    LA::TD = 1.25
-    LM::TD = 1.65
-    LB::TD = 0.18
-    #SL₀::TSL0 = ConstantCoefficient(2.2)
-    SL₀::TSL0 = 2.2
+    LA::TD = 1.25 # µm
+    LM::TD = 1.65 # µm
+    LB::TD = 0.18 # µm
+    SL₀::TD = 2.2 # µm
     # RU steady state parameter
-    Q::TD = 2.0
-    Kd₀::TD = 0.381
-    αKd::TD = -0.571
-    μ::TD = 10.0
-    γ::TD = 12.0
+    Q::TD = 2.0 # unitless
+    Kd₀::TD = 0.381 # µm
+    αKd::TD = -0.571 # # µM/µm
+    μ::TD = 10.0 # unitless
+    γ::TD = 12.0 # unitless
     # RU kinetics parameters
-    Koff::TD = 100.0
-    Kbasic::TD = 13.0
+    Koff::TD = 0.1 # 1/ms
+    Kbasic::TD = 0.013 # 1/ms
     # XB cycling paramerters
-    r₀::TD = 134.31
-    α::TD = 25.184
-    μ₀_fP::TD = 32.653
-    μ₁_fP::TD = 0.778
+    r₀::TD = 0.13431 # 1/ms
+    α::TD = 25.184 # unitless
+    μ₀_fP::TD = 0.032653 # 1/ms
+    μ₁_fP::TD = 0.000778 # 1/ms
     # Upscaling parameter
-    a_XB::TD = 22.894e3
+    a_XB::TD = 22.894e3 # kPa
 end
 
 function initial_state!(u::AbstractVector, model::RDQ20MFModel)
@@ -143,7 +159,6 @@ function rhs_fast!(dRU, uRU::AbstractArray{T}, x, λ, Ca, t, p::RDQ20MFModel) wh
     @inbounds for TL ∈ 1:2, TC ∈ 1:2, TR ∈ 1:2, CC ∈ 1:2
         ΦT_C[TL,TC,TR,CC] = uRU[TL,TC,TR,CC] * dT[TL,TC,TR,CC]
         ΦC_C[TL,TC,TR,CC] = uRU[TL,TC,TR,CC] * dC[CC,TC]
-        #@show TL,TC,TR,CC,dT[TL,TC,TR,CC], dC[CC,TC], ΦC_C[TL,TC,TR,CC], ΦT_C[TL,TC,TR,CC]
     end
 
     ## Compute rates associated with left unit
@@ -176,28 +191,23 @@ function rhs_fast!(dRU, uRU::AbstractArray{T}, x, λ, Ca, t, p::RDQ20MFModel) wh
         end
     end
 
-    #@show "External"
     ## Compute fluxes associated with external units
     @inbounds for TL ∈ 1:2, TC ∈ 1:2, TR ∈ 1:2, CC ∈ 1:2
         ΦT_L[TL,TC,TR,CC] = uRU[TL,TC,TR,CC] * dT_L[TC,TL]
         ΦT_R[TL,TC,TR,CC] = uRU[TL,TC,TR,CC] * dT_R[TC,TR]
-        #@show TL,TC,TR,CC,ΦT_R[TL,TC,TR,CC],ΦT_L[TL,TC,TR,CC]
     end
 
     # Store RU rates
-    #@show "RU"
     @inbounds for TL ∈ 1:2, TC ∈ 1:2, TR ∈ 1:2, CC ∈ 1:2
         dRU[TL,TC,TR,CC] = 
             -ΦT_L[TL,TC,TR,CC] + ΦT_L[3 - TL,TC,TR,CC] -
             ΦT_C[TL,TC,TR,CC] + ΦT_C[TL,3 - TC,TR,CC] -
             ΦT_R[TL,TC,TR,CC] + ΦT_R[TL,TC,3 - TR,CC] -
             ΦC_C[TL,TC,TR,CC] + ΦC_C[TL,TC,TR,3 - CC]
-        #@show TL,TC,TR,CC,dRU[TL,TC,TR,CC]
     end
-    # error("bla")
 end
 
-function rhs!(du, u::AbstractArray{T}, x, λ, dλdt, Ca, t, p::RDQ20MFModel) where T
+function rhs!(du, u, x, t, p::RDQ20MFModel)
     # Direct translation from https://github.com/FrancescoRegazzoni/cardiac-activation/blob/master/models_cpp/model_RDQ20_MF.cpp
     uRU_flat = @view u[1:16]
     uRU = reshape(uRU_flat, (2,2,2,2))
@@ -250,24 +260,14 @@ function rhs!(du, u::AbstractArray{T}, x, λ, dλdt, Ca, t, p::RDQ20MFModel) whe
            k_PN      0.0  -diag_N      0.0
             0.0     k_PN    -dλdt  -diag_N
     ];
-    # XB_A = @MMatrix zeros(4,4)
-    # XB_A[0+1,1+0] = -diag_P;
-    # XB_A[1+1,1+1] = -diag_P;
-    # XB_A[2+1,1+2] = -diag_N;
-    # XB_A[3+1,1+3] = -diag_N;
-    # XB_A[0+1,1+2] = k_NP;
-    # XB_A[1+1,1+3] = k_NP;
-    # XB_A[2+1,1+0] = k_PN;
-    # XB_A[3+1,1+1] = k_PN;
-    # XB_A[1+1,1+0] = -dλdt;
-    # XB_A[3+1,1+2] = -dλdt;
 
     dXB .= XB_A*uXB
     dXB[1] += p.μ₀_fP * permissivity
     dXB[2] += p.μ₁_fP * permissivity
 end
 
-function fraction_single_overlap(model::RDQ20MFModel, SL)
+function fraction_single_overlap(model::RDQ20MFModel, λ)
+    SL = λ*model.SL₀
     LMh = (model.LM - model.LB) * 0.5;
     if (SL > model.LA && SL <= model.LM)
       return (SL - model.LA) / LMh;
@@ -282,14 +282,10 @@ function fraction_single_overlap(model::RDQ20MFModel, SL)
     end
 end
 
-function compute_active_tension(model::RDQ20MFModel, state, sarcomere_length)
-    model.a_XB * (state[18] + state[20]) * fraction_single_overlap(model, sarcomere_length)
+function compute_active_tension(model::RDQ20MFModel, state, sarcomere_stretch)
+    model.a_XB * (state[18] + state[20]) * fraction_single_overlap(model, sarcomere_stretch)
 end
 
-function compute_active_stiffness(model::RDQ20MFModel, state, sarcomere_length)
-    model.a_XB * (state[17] + state[19]) * fraction_single_overlap(sarcomere_length)
+function compute_active_stiffness(model::RDQ20MFModel, state, sarcomere_stretch)
+    model.a_XB * (state[17] + state[19]) * fraction_single_overlap(model, sarcomere_stretch)
 end
-
-# NOTE:In ,,Active contraction of cardiac cells: a reduced model for sarcomere
-# dynamics with cooperative interactions'' there is a proposed evolution law for
-# active stretches

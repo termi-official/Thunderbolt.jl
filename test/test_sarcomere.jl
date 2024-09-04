@@ -1,57 +1,83 @@
-model = Thunderbolt.RDQ20MFModel()
-du = zeros(Thunderbolt.num_states(model))
-u = zeros(Thunderbolt.num_states(model))
-Thunderbolt.initial_state!(u, model)
-# u .= [0.0007975034186979656, 0.0006243448053976429, 1.10736687557628e-6, 0.00012484286758916483, 0.0006243448053976429, 0.0004887917564196871, 0.00012484286758916483, 0.014076353941490436, 0.00537736424408801, 0.004209652025338546, 7.466699041003822e-5, 0.00841784078555284, 0.004209652025338546, 0.00329566942327174, 0.00841784078555284, 0.949135181890976, 0.23422179001163454, 0.005575929820039651, 0.004000763869507678, 9.523042316664843e-5]
+using Thunderbolt, DelimitedFiles, Test
 
-dt = 1e-5
-Tmax = 0.5
+@testset "RDQ20MFModel" begin
+    @testset "Active value trajectories" begin
+        datapath = joinpath(@__DIR__, "data", "trajectories", "RDQ20-MF", "transient-test.csv")
+        (reference_solution_data, header) = readdlm(datapath, ',', Float64, '\n'; header=true)
+        header = header[:]
+        tidx = findfirst(i->i=="t", header)
+        CAidx = findfirst(i->i=="Ca", header)
+        SLidx = findfirst(i->i=="SL", header)
+        dSLidx = findfirst(i->i=="dSL_dt", header)
+        Taidx = findfirst(i->i=="Ta", header)
+        Asidx = findfirst(i->i=="As", header)
 
-# Calcium transient
-const c0 = 0.1
-const cmax = 0.9
-const τ1 = .02; # [s]
-const τ2 = .05; # [s]
-const t0 = 0.01;  # [s]
-const β = (τ1 / τ2)^(-1 / (τ1 / τ2 - 1)) - (τ1 / τ2)^( -1 / (1 - τ2 / τ1))
+        # 1000x to translate from s to ms
+        ts_data = 1000.0*reference_solution_data[:,tidx]
 
-function Ca(tin)
-    t = tin % 0.5
-    t < t0 ? c0 : c0 + ((cmax - c0) / β * (exp(-(t - t0) / τ1) - exp(-(t - t0) / τ2)))
-    # 0.1
+        model = Thunderbolt.RDQ20MFModel(;
+            calcium_field = ConstantCoefficient(0.0),
+            sarcomere_stretch = ConstantCoefficient(.10),
+            sarcomere_velocity = ConstantCoefficient(0.0)
+        )
+        du = zeros(Thunderbolt.num_states(model))
+        u  = zeros(Thunderbolt.num_states(model))
+        u[1] = 1.0
+
+        dt = 1e-2
+        Tmax = 600.0
+
+        # Calcium transient
+        c0 = 0.1
+        cmax = 0.9
+        τ1 = 20.0; # ms
+        τ2 = 50.0; # ms
+        t0 = 10.0;  # ms
+        β = (τ1 / τ2)^(-1 / (τ1 / τ2 - 1)) - (τ1 / τ2)^( -1 / (1 - τ2 / τ1))
+
+        Ca(t) = t < t0 ? c0 : c0 + ((cmax - c0) / β * (exp(-(t - t0) / τ1) - exp(-(t - t0) / τ2)))
+
+        # SL transient
+        SL0 = 2.2;       # µm
+        SL1 = SL0 * .97; # µm
+        SLt0 = 50.0;      # ms
+        SLt1 = 350.0;      # ms
+        SLτ0 = 50.0;    # ms
+        SLτ1 = 20.0;    # ms
+
+        Sl(t) = (SL0 + (SL1 - SL0) * (max(0.0, 1.0 - exp((SLt0 - t) / SLτ0)) - max(0.0, 1.0 - exp((SLt1 - t) / SLτ1))))/SL0;
+
+        τ = 0.0:dt:Tmax
+        for (i,t) ∈ enumerate(τ)
+            calcium = Ca(t)
+            sarcomere_stretch = Sl(t)
+            sarcomere_velocity = (sarcomere_stretch - Sl(t-dt))/dt
+            Thunderbolt.rhs!(du, u, Vec((0.0,)), 0.0, Thunderbolt.RDQ20MFModel(;
+                calcium_field = ConstantCoefficient(calcium),
+                sarcomere_stretch = ConstantCoefficient(sarcomere_stretch),
+                sarcomere_velocity = ConstantCoefficient(sarcomere_velocity)
+            ))
+            u .+= dt*du
+
+            closest_sol_idx = findfirst(tref -> t-dt/2 ≤ tref < t+dt/2, ts_data)
+            if closest_sol_idx !== nothing
+                @test calcium ≈ reference_solution_data[closest_sol_idx, CAidx] rtol=1e-3
+                # 1000x for ms -> s
+                @test 1000.0*sarcomere_velocity*model.SL₀ ≈ reference_solution_data[closest_sol_idx, dSLidx] rtol=1e-3
+                @test sarcomere_stretch*model.SL₀ ≈ reference_solution_data[closest_sol_idx, SLidx] rtol=1e-3
+                Ta = Thunderbolt.compute_active_tension(model, u, sarcomere_stretch)
+                @test Ta ≈ reference_solution_data[closest_sol_idx, Taidx] rtol=1e-3
+                As = Thunderbolt.compute_active_stiffness(model, u, sarcomere_stretch)
+                @test As ≈ reference_solution_data[closest_sol_idx, Asidx] rtol=1e-3
+            end
+        end
+
+        # Reference steady state solution up to a permutation of the indices
+        # Tmax = 500.0
+        # Ca=0.1
+        # SL=2.2
+        # SLdT=0.0
+        # uref = [0.74533,0.211469,0.00750457,0.00212916,0.00103517,0.00293704,0.00150072,0.00425779,0.00750457,0.00212916,7.55578e-05,2.14334e-05,0.00150072,0.00425779,0.00217549,0.00617217,0.00155623,3.70791e-05,0.00423817,0.0001009]
+        # @test uref[16:20] ≈ u[16:20] atol=1e-6
+    end
 end
-
-# SL transient
-const SL0 = 2.2;       # [micro m]
-const SL1 = SL0 * .9; # [micro m]
-const SLt0 = .05;      # [s]
-const SLt1 = .35;      # [s]
-const SLτ0 = .05;    # [s]
-const SLτ1 = .02;    # [s]
-
-function Sl(tin)
-    t = tin % 0.5
-    (SL0 + (SL1 - SL0) * (max(0.0, 1.0 - exp((SLt0 - t) / SLτ0)) - max(0.0, 1.0 - exp((SLt1 - t) / SLτ1))))/SL0
-    # 1.0
-end
-
-τ = 0.0:dt:Tmax
-us = zeros(Thunderbolt.num_states(model), length(τ))
-Tas = zeros(length(τ))
-for (i,t) ∈ enumerate(τ)
-    calcium = Ca(t)
-    sarcomere_length = Sl(t)
-    sarcomere_velocity = 0.0# (Sl(t+1e-8) - sarcomere_length)/1e-8 # TODO via AD
-    Thunderbolt.rhs!(du, u, nothing, sarcomere_length, sarcomere_velocity, calcium, t, model)
-    u .+= dt*du
-    us[:,i] .= u
-
-    Tas[i] = Thunderbolt.compute_active_tension(model, u, SL0*sarcomere_length)
-end
-
-# Reference solution up to a permutation of the indices
-# Ca=0.1
-# SL=2.2
-# SLdT=0.0
-uref = [0.74533,0.211469,0.00750457,0.00212916,0.00103517,0.00293704,0.00150072,0.00425779,0.00750457,0.00212916,7.55578e-05,2.14334e-05,0.00150072,0.00425779,0.00217549,0.00617217,0.00155623,3.70791e-05,0.00423817,0.0001009]
-@test uref[16:20] ≈ u[16:20] atol=1e-6

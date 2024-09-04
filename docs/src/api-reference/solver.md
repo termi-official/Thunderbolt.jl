@@ -34,3 +34,9 @@ Thunderbolt.OS.LieTrotterGodunov
 Thunderbolt.OS.GenericSplitFunction
 Thunderbolt.OS.OperatorSplittingIntegrator
 ```
+
+## Operator Splitting Adaptivity
+
+```@docs
+Thunderbolt.ReactionTangentController
+```
