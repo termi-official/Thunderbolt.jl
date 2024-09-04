@@ -12,7 +12,8 @@ using Thunderbolt, DelimitedFiles, Test
         Taidx = findfirst(i->i=="Ta", header)
         Asidx = findfirst(i->i=="As", header)
 
-        ts_data = reference_solution_data[:,tidx]
+        # 1000x to translate from s to ms
+        ts_data = 1000.0*reference_solution_data[:,tidx]
 
         model = Thunderbolt.RDQ20MFModel(;
             calcium_field = ConstantCoefficient(0.0),
@@ -23,26 +24,26 @@ using Thunderbolt, DelimitedFiles, Test
         u  = zeros(Thunderbolt.num_states(model))
         u[1] = 1.0
 
-        dt = 1e-5
-        Tmax = 0.6
+        dt = 1e-2
+        Tmax = 600.0
 
         # Calcium transient
         c0 = 0.1
         cmax = 0.9
-        τ1 = .02; # [s]
-        τ2 = .05; # [s]
-        t0 = 0.01;  # [s]
+        τ1 = 20.0; # ms
+        τ2 = 50.0; # ms
+        t0 = 10.0;  # ms
         β = (τ1 / τ2)^(-1 / (τ1 / τ2 - 1)) - (τ1 / τ2)^( -1 / (1 - τ2 / τ1))
 
         Ca(t) = t < t0 ? c0 : c0 + ((cmax - c0) / β * (exp(-(t - t0) / τ1) - exp(-(t - t0) / τ2)))
 
         # SL transient
-        SL0 = 2.2;       # [micro m]
-        SL1 = SL0 * .97; # [micro m]
-        SLt0 = .05;      # [s]
-        SLt1 = .35;      # [s]
-        SLτ0 = .05;    # [s]
-        SLτ1 = .02;    # [s]
+        SL0 = 2.2;       # µm
+        SL1 = SL0 * .97; # µm
+        SLt0 = 50.0;      # ms
+        SLt1 = 350.0;      # ms
+        SLτ0 = 50.0;    # ms
+        SLτ1 = 20.0;    # ms
 
         Sl(t) = SL0 + (SL1 - SL0) * (max(0.0, 1.0 - exp((SLt0 - t) / SLτ0)) - max(0.0, 1.0 - exp((SLt1 - t) / SLτ1)));
 
