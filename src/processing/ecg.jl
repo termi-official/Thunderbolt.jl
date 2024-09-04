@@ -479,7 +479,7 @@ function Geselowitz1989ECGLeadCache(
 end
 
 function Geselowitz1989ECGLeadCache(
-    lead_fun::SteadyDiffusionFunction,
+    lead_fun::AffineSteadyStateFunction,
     lead_op::AssembledBilinearOperator,
     ϕₘ_op::AssembledBilinearOperator,
     electrode_positions::AbstractVector{Pair{VertexIndex, VertexIndex}};
@@ -505,7 +505,7 @@ function Geselowitz1989ECGLeadCache(
         LinearSolve.solve!(lincache)
 
     end
-    
+
     return Geselowitz1989ECGLeadCache(lead_op, ϕₘ_op, ϕₑ, Z, ∇Njκ∇φₘ, electrode_positions)
 end
 
