@@ -17,7 +17,7 @@ using Thunderbolt, DelimitedFiles, Test
 
         model = Thunderbolt.RDQ20MFModel(;
             calcium_field = ConstantCoefficient(0.0),
-            sarcomere_length = ConstantCoefficient(2.2),
+            sarcomere_stretch = ConstantCoefficient(.10),
             sarcomere_velocity = ConstantCoefficient(0.0)
         )
         du = zeros(Thunderbolt.num_states(model))
@@ -45,16 +45,16 @@ using Thunderbolt, DelimitedFiles, Test
         SLτ0 = 50.0;    # ms
         SLτ1 = 20.0;    # ms
 
-        Sl(t) = SL0 + (SL1 - SL0) * (max(0.0, 1.0 - exp((SLt0 - t) / SLτ0)) - max(0.0, 1.0 - exp((SLt1 - t) / SLτ1)));
+        Sl(t) = (SL0 + (SL1 - SL0) * (max(0.0, 1.0 - exp((SLt0 - t) / SLτ0)) - max(0.0, 1.0 - exp((SLt1 - t) / SLτ1))))/SL0;
 
         τ = 0.0:dt:Tmax
         for (i,t) ∈ enumerate(τ)
             calcium = Ca(t)
-            sarcomere_length = Sl(t)
-            sarcomere_velocity = (sarcomere_length - Sl(t-1e-5))/1e-5 # TODO via AD
+            sarcomere_stretch = Sl(t)
+            sarcomere_velocity = (sarcomere_stretch - Sl(t-dt))/dt
             Thunderbolt.rhs!(du, u, Vec((0.0,)), 0.0, Thunderbolt.RDQ20MFModel(;
                 calcium_field = ConstantCoefficient(calcium),
-                sarcomere_length = ConstantCoefficient(sarcomere_length),
+                sarcomere_stretch = ConstantCoefficient(sarcomere_stretch),
                 sarcomere_velocity = ConstantCoefficient(sarcomere_velocity)
             ))
             u .+= dt*du
@@ -62,11 +62,12 @@ using Thunderbolt, DelimitedFiles, Test
             closest_sol_idx = findfirst(tref -> t-dt/2 ≤ tref < t+dt/2, ts_data)
             if closest_sol_idx !== nothing
                 @test calcium ≈ reference_solution_data[closest_sol_idx, CAidx] rtol=1e-3
-                @test sarcomere_velocity ≈ reference_solution_data[closest_sol_idx, dSLidx] rtol=1e-3
-                @test sarcomere_length ≈ reference_solution_data[closest_sol_idx, SLidx] rtol=1e-3
-                Ta = Thunderbolt.compute_active_tension(model, u, sarcomere_length)
+                # 1000x for ms -> s
+                @test 1000.0*sarcomere_velocity*model.SL₀ ≈ reference_solution_data[closest_sol_idx, dSLidx] rtol=1e-3
+                @test sarcomere_stretch*model.SL₀ ≈ reference_solution_data[closest_sol_idx, SLidx] rtol=1e-3
+                Ta = Thunderbolt.compute_active_tension(model, u, sarcomere_stretch)
                 @test Ta ≈ reference_solution_data[closest_sol_idx, Taidx] rtol=1e-3
-                As = Thunderbolt.compute_active_stiffness(model, u, sarcomere_length)
+                As = Thunderbolt.compute_active_stiffness(model, u, sarcomere_stretch)
                 @test As ≈ reference_solution_data[closest_sol_idx, Asidx] rtol=1e-3
             end
         end

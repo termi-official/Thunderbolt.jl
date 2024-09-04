@@ -81,28 +81,28 @@ The default parameters for the model are taken from the same paper for human car
 """
 Base.@kwdef struct RDQ20MFModel{TD, TSL0, TCF, TSL, TSV}
     # Geoemtric parameters
-    LA::TD = 1.25
-    LM::TD = 1.65
-    LB::TD = 0.18
-    SL₀::TSL0 = ConstantCoefficient(2.2)
+    LA::TD = 1.25 # µm
+    LM::TD = 1.65 # µm
+    LB::TD = 0.18 # µm
+    SL₀::TSL0 = 2.2 # µm
     # RU steady state parameter
-    Q::TD = 2.0
-    Kd₀::TD = 0.381
-    αKd::TD = -0.571
-    μ::TD = 10.0
-    γ::TD = 12.0
+    Q::TD = 2.0 # unitless
+    Kd₀::TD = 0.381 # µm
+    αKd::TD = -0.571 # # µM/µm
+    μ::TD = 10.0 # unitless
+    γ::TD = 12.0 # unitless
     # RU kinetics parameters
-    Koff::TD = 100.0
-    Kbasic::TD = 13.0
+    Koff::TD = 0.1 # 1/ms
+    Kbasic::TD = 0.013 # 1/ms
     # XB cycling paramerters
-    r₀::TD = 134.31
-    α::TD = 25.184
-    μ₀_fP::TD = 32.653
-    μ₁_fP::TD = 0.778
+    r₀::TD = 0.13431 # 1/ms
+    α::TD = 25.184 # unitless
+    μ₀_fP::TD = 0.032653 # 1/ms
+    μ₁_fP::TD = 0.000778 # 1/ms
     # Upscaling parameter
-    a_XB::TD = 22.894e3
+    a_XB::TD = 22.894e3 # kPa
     calcium_field::TCF
-    sarcomere_length::TSL
+    sarcomere_stretch::TSL
     sarcomere_velocity::TSV
 end
 
@@ -123,12 +123,12 @@ function rhs_fast!(dRU, uRU, x, t, p::RDQ20MFModel)
     dC = @MMatrix zeros(2,2)
     dT = @MArray zeros(2,2,2,2)
 
-    sarcomere_length = evaluate_coefficient(p.sarcomere_length, nothing, QuadraturePoint(1, x), t)
-    calcium = evaluate_coefficient(p.calcium_field, nothing, QuadraturePoint(1, x), t)
+    λ = evaluate_coefficient(p.sarcomere_stretch, nothing, QuadraturePoint(1, x), t)
+    Ca = evaluate_coefficient(p.calcium_field, nothing, QuadraturePoint(1, x), t)
 
     # Initialize helper rates
-    dC[1,1] = p.Koff / (p.Kd₀ - p.αKd * (2.15 - sarcomere_length)) * calcium
-    dC[1,2] = p.Koff / (p.Kd₀ - p.αKd * (2.15 - sarcomere_length)) * calcium
+    dC[1,1] = p.Koff / (p.Kd₀ - p.αKd * (2.15 - p.SL₀*λ)) * Ca
+    dC[1,2] = p.Koff / (p.Kd₀ - p.αKd * (2.15 - p.SL₀*λ)) * Ca
     dC[2,1] = p.Koff
     dC[2,2] = p.Koff / p.μ
     @inbounds for TL ∈ 1:2, TR ∈ 1:2
@@ -205,8 +205,7 @@ function rhs!(du, u, x, t, p::RDQ20MFModel)
     rhs_fast!(dRU, uRU, x, t, p)
 
     # Velocity
-    dSL_dt = evaluate_coefficient(p.sarcomere_velocity, nothing, QuadraturePoint(1, x), t)
-    v = -dSL_dt / evaluate_coefficient(p.SL₀, nothing, QuadraturePoint(1, x), t)
+    v = -evaluate_coefficient(p.sarcomere_velocity, nothing, QuadraturePoint(1, x), t)
 
     permissivity = 0.0
     flux_PN = 0.0
@@ -258,7 +257,8 @@ function rhs!(du, u, x, t, p::RDQ20MFModel)
     dXB[2] += p.μ₁_fP * permissivity
 end
 
-function fraction_single_overlap(model::RDQ20MFModel, SL)
+function fraction_single_overlap(model::RDQ20MFModel, λ)
+    SL = λ*model.SL₀
     LMh = (model.LM - model.LB) * 0.5;
     if (SL > model.LA && SL <= model.LM)
       return (SL - model.LA) / LMh;
@@ -273,10 +273,10 @@ function fraction_single_overlap(model::RDQ20MFModel, SL)
     end
 end
 
-function compute_active_tension(model::RDQ20MFModel, state, sarcomere_length)
-    model.a_XB * (state[18] + state[20]) * fraction_single_overlap(model, sarcomere_length)
+function compute_active_tension(model::RDQ20MFModel, state, sarcomere_stretch)
+    model.a_XB * (state[18] + state[20]) * fraction_single_overlap(model, sarcomere_stretch)
 end
 
-function compute_active_stiffness(model::RDQ20MFModel, state, sarcomere_length)
-    model.a_XB * (state[17] + state[19]) * fraction_single_overlap(model, sarcomere_length)
+function compute_active_stiffness(model::RDQ20MFModel, state, sarcomere_stretch)
+    model.a_XB * (state[17] + state[19]) * fraction_single_overlap(model, sarcomere_stretch)
 end
