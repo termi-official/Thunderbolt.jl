@@ -127,6 +127,9 @@ end
 @testset "Idealized LV" begin
     grid = generate_ideal_lv_mesh(4,1,1)
     cs = compute_lv_coordinate_system(grid)
+    VTKGridFile("ideal-lv-cs-test-output.vtu", grid.grid) do vtk
+        vtk_coordinate_system(vtk, cs)
+    end
     microstructure_model = create_simple_microstructure_model(cs, LagrangeCollection{1}()^3)
 
     test_solve_contractile_ideal_lv(grid, ExtendedHillModel(
