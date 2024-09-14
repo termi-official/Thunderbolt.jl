@@ -71,11 +71,11 @@ and a nodeset
 !!! warning
     The circumferential coordinate is not yet implemented and is guaranteed to evaluate to NaN.
 """
-function compute_lv_coordinate_system(mesh::SimpleMesh{3}, subdomains::Vector{String} = [""])
+function compute_lv_coordinate_system(mesh::SimpleMesh{3}, subdomains::Vector{String} = [""]; up = Vec((0.0,0.0,1.0)))
+    @assert up ≈ Vec((0.0,0.0,1.0)) "Custom up vector not yet supported."
     ip_collection = LagrangeCollection{1}()
     qr_collection = QuadratureRuleCollection(2)
     cv_collection = CellValueCollection(qr_collection, ip_collection)
-    cellvalues = getcellvalues(cv_collection, getcells(mesh, 1))
 
     dh = DofHandler(mesh)
     for name in subdomains
@@ -158,6 +158,28 @@ function compute_lv_coordinate_system(mesh::SimpleMesh{3}, subdomains::Vector{St
     circumferential = zeros(ndofs(dh))
     circumferential .= NaN
 
+    qrn  = NodalQuadratureRuleCollection(ip_collection) # FIXME ip_collection from grid
+    cvcn = CellValueCollection(qrn, ip_collection)
+    for sdh in dh.subdofhandlers
+        cellvalues = getcellvalues(cvcn, getcells(mesh, first(sdh.cellset)))
+        @inbounds for cell in CellIterator(sdh)
+            reinit!(cellvalues, cell)
+            coords = getcoordinates(cell)
+            dofs = celldofs(cell)
+
+            for qp in QuadratureIterator(cellvalues)
+                dΩ = getdetJdV(cellvalues, qp)
+
+                x_dof = spatial_coordinate(cellvalues, qp, coords)
+
+                x_planar = x_dof - (x_dof ⋅ up) * up # Project into plane
+                x = x_planar / norm(x_planar)
+
+                circumferential[dofs[qp.i]] = atan(x[1], x[2]) # TODO tilted coordinate system
+            end
+        end
+    end
+
     return LVCoordinateSystem(dh, ip_collection, transmural, apicobasal, circumferential)
 end
 
@@ -170,7 +192,8 @@ Requires a mesh with facetsets
     * Endocardium
     * Myocardium
 """
-function compute_midmyocardial_section_coordinate_system(mesh::SimpleMesh{3}, subdomains::Vector{String} = [""])
+function compute_midmyocardial_section_coordinate_system(mesh::SimpleMesh{3}, subdomains::Vector{String} = [""]; up = Vec((0.0,0.0,1.0)))
+    @assert up ≈ Vec((0.0,0.0,1.0)) "Custom up vector not yet supported."
     ip_collection = LagrangeCollection{1}()
     qr_collection = QuadratureRuleCollection(2)
     cv_collection = CellValueCollection(qr_collection, ip_collection)
@@ -242,6 +265,27 @@ function compute_midmyocardial_section_coordinate_system(mesh::SimpleMesh{3}, su
 
     circumferential = zeros(ndofs(dh))
     circumferential .= NaN
+
+    qrn  = NodalQuadratureRuleCollection(ip_collection) # FIXME ip_collection from grid
+    cvcn = CellValueCollection(qrn, ip_collection)
+    for sdh in dh.subdofhandlers
+        cellvalues = getcellvalues(cvcn, getcells(mesh, first(sdh.cellset)))
+        @inbounds for cell in CellIterator(sdh)
+            reinit!(cellvalues, cell)
+            coords = getcoordinates(cell)
+            dofs = celldofs(cell)
+            for qp in QuadratureIterator(cellvalues)
+                dΩ = getdetJdV(cellvalues, qp)
+
+                x_dof = spatial_coordinate(cellvalues, qp, coords)
+
+                x_planar = x_dof - (x_dof ⋅ up) * up # Project into plane
+                x = x_planar / norm(x_planar)
+
+                circumferential[dofs[qp.i]] = atan(x[1], x[2]) # TODO tilted coordinate system
+            end
+        end
+    end
 
     return LVCoordinateSystem(dh, ip_collection, transmural, apicobasal, circumferential)
 end
