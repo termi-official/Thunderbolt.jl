@@ -2,7 +2,9 @@ using Thunderbolt, UnPack
 
 import Thunderbolt.WriteVTK: paraview_collection 
 
-struct LinearViscosity1D{T}
+abstract type LocalODEModel end
+
+struct LinearViscosity1D{T} <: LocalODEModel
     E₁::T
     η₁::T
 end
@@ -23,27 +25,40 @@ end
 
 abstract type AbstractStageCache end
 
-struct BackwardEulerCache{T, QT} <: AbstractStageCache
+struct QuasiStaticSolutionState
+    u::UT
+    q::QT
+end
+
+struct DynamicSolutionState
+    u::UT
+    v::VT
+    q::QT
+end
+
+struct LocalBackwardEulerCache{T, QT, QT2, UT, UT2}
     t::T
     dt::T
-    qprev::QT
+    sol::ST
+    solprev::ST2
     tol::T
+    max_iter::Int
 end
 
-struct LocalInfoCache
-    qp::Int
+struct QuadraturePointStageInfo{CID, QID}
+    celli::CID
+    qpi::QID
 end
 
-function solve_local_problem(u, q, model, solver_cache::BackwardEulerCache, info::LocalInfoCache)
-    @unpack t, dt, tol = solver_cache
-    # TODO how to handle this correctly? Should be somehow part of the local solver cache?
-    @unpack qp = info
-    qprev = @view solver_cache.qprev[qp]
+function solve_local_problem(cache::LocalBackwardEulerCache, model::LocalODEModel)
+    @unpack t, dt, tol = cache
+    @unpack u, uprev, q, qprev = cache
+    # du = (u - uprev)/dt
     # solve local problem
     for inner_iter in 1:max_iter
         # setup system for local backward Euler solve L(qₙ₊₁, uₙ₊₁) = (qₙ₊₁ - qₙ) - Δt*rhs(qₙ₊₁, uₙ₊₁) = 0 w.r.t. qₙ₊₁ with uₙ₊₁ frozen
         J        = jacobian_q(u, q, model, t+dt)
-        dq       = f(u, q, cache.material.viscosity, t+dt)
+        dq       = f(u, q, model, t+dt)
         residual = (q .- qprev) .- dt .* dq # = L(u,q)
         # solve linear sytem and update local solution
         ∂L∂q     = one(J) - (dt .* J)
@@ -53,12 +68,12 @@ function solve_local_problem(u, q, model, solver_cache::BackwardEulerCache, info
         resnorm  = norm(residual)
         (resnorm ≤ tol || norm(Δq) ≤ tol) && break
         # inner_iter == max_iter && error("Newton diverged for cell=$(cellid(cell))|qp=$qp at t=$t resnorm=$resnorm")
-        inner_iter == max_iter && error("qp=$qp at t=$t resnorm=$resnorm")
+        inner_iter == max_iter && error("t=$t resnorm=$resnorm")
     end
-    return q
+    return nothing
 end
 
-function solve_corrector_problem(E, Eᵥ, model, solver_cache::BackwardEulerCache)
+function solve_corrector_problem(E, Eᵥ, model, solver_cache::LocalBackwardEulerCache)
     @unpack t, dt = solver_cache
     J    = jacobian_q(E, Eᵥ, model, t+dt)
     ∂L∂Q = (one(J) - (dt .* J))
@@ -247,7 +262,7 @@ for t ∈ 0.0:dt:T
         # Done in 2.
         # 2. Residual and Jacobian of global function G(qₙ₊₁, uₙ₊₁) w.r.t. to global vector uₙ₊₁ with qₙ₊₁ frozen
         local_tol = outer_iter == 1 ? local_tol⁰ : min(local_tol⁰, norm(Δu)^2)
-        local_solver = BackwardEulerCache(t, dt, qprev, local_tol)
+        local_solver = LocalBackwardEulerCache(t, dt, qprev, local_tol)
         global_fJu(J, global_residual, u, q, cache, local_solver)
         @show J, global_residual
         # 3. Apply boundary conditions
