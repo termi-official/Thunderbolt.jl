@@ -175,7 +175,7 @@ function compute_lv_coordinate_system(mesh::SimpleMesh{3}, subdomains::Vector{St
                 x_planar = x_dof - (x_dof ⋅ up) * up # Project into plane
                 x = x_planar / norm(x_planar)
 
-                circumferential[dofs[qp.i]] = atan(x[1], x[2]) # TODO tilted coordinate system
+                circumferential[dofs[qp.i]] = (π + atan(x[1], x[2]))/2 # TODO tilted coordinate system
             end
         end
     end
@@ -282,7 +282,7 @@ function compute_midmyocardial_section_coordinate_system(mesh::SimpleMesh{3}, su
                 x_planar = x_dof - (x_dof ⋅ up) * up # Project into plane
                 x = x_planar / norm(x_planar)
 
-                circumferential[dofs[qp.i]] = atan(x[1], x[2]) # TODO tilted coordinate system
+                circumferential[dofs[qp.i]] = (π + atan(x[1], x[2]))/2 # TODO tilted coordinate system
             end
         end
     end
@@ -296,8 +296,9 @@ end
 Store the LV coordinate system in a vtk file.
 """
 function vtk_coordinate_system(vtk, cs::LVCoordinateSystem)
-    vtk_point_data(vtk, cs.dh, cs.u_apicobasal, "apicobasal_")
-    vtk_point_data(vtk, cs.dh, cs.u_transmural, "transmural_")
+    Ferrite.write_solution(vtk, cs.dh, cs.u_apicobasal, "apicobasal_")
+    Ferrite.write_solution(vtk, cs.dh, cs.u_circumferential, "circumferential_")
+    Ferrite.write_solution(vtk, cs.dh, cs.u_transmural, "transmural_")
 end
 
 """
@@ -336,9 +337,9 @@ value_type(::BiVCoordinateSystem) = BiVCoordinate
 getcoordinateinterpolation(cs::BiVCoordinateSystem, cell::Ferrite.AbstractCell) = Ferrite.getfieldinterpolation(cs.dh, (1,1))
 
 function vtk_coordinate_system(vtk, cs::BiVCoordinateSystem)
-    vtk_point_data(vtk, bivcs.dh, bivcs.u_transmural, "_transmural")
-    vtk_point_data(vtk, bivcs.dh, bivcs.u_apicobasal, "_apicobasal")
-    vtk_point_data(vtk, bivcs.dh, bivcs.u_rotational, "_rotational")
-    vtk_point_data(vtk, bivcs.dh, bivcs.u_transventricular, "_transventricular")
+    Ferrite.write_solution(vtk, bivcs.dh, bivcs.u_transmural, "_transmural")
+    Ferrite.write_solution(vtk, bivcs.dh, bivcs.u_apicobasal, "_apicobasal")
+    Ferrite.write_solution(vtk, bivcs.dh, bivcs.u_rotational, "_rotational")
+    Ferrite.write_solution(vtk, bivcs.dh, bivcs.u_transventricular, "_transventricular")
 end
 
