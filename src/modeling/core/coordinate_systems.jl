@@ -22,14 +22,14 @@ getcoordinateinterpolation(cs::CartesianCoordinateSystem{sdim}, cell::CellType) 
     LVCoordinateSystem(dh, u_transmural, u_apicobasal)
 
 Simplified universal ventricular coordinate on LV only, containing the transmural, apicobasal and
-circumferential coordinates. See [`compute_lv_coordinate_system`](@ref) to construct it.
+rotational coordinates. See [`compute_lv_coordinate_system`](@ref) to construct it.
 """
 struct LVCoordinateSystem{DH <: AbstractDofHandler, IPC}
     dh::DH
     ip_collection::IPC # TODO special dof handler with type stable interpolation
     u_transmural::Vector{Float64}
     u_apicobasal::Vector{Float64}
-    u_circumferential::Vector{Float64}
+    u_rotational::Vector{Float64}
 end
 
 
@@ -39,12 +39,12 @@ end
 LV only part of the universal ventricular coordinate, containing
     * transmural
     * apicobasal
-    * circumferential
+    * rotational
 """
 struct LVCoordinate{T}
     transmural::T
     apicaobasal::T
-    circumferential::T
+    rotational::T
 end
 
 value_type(::LVCoordinateSystem) = LVCoordinate{Float32}
@@ -67,9 +67,6 @@ Requires a mesh with facetsets
     * Endocardium
 and a nodeset
     * Apex
-
-!!! warning
-    The circumferential coordinate is not yet implemented and is guaranteed to evaluate to NaN.
 """
 function compute_lv_coordinate_system(mesh::SimpleMesh{3}, subdomains::Vector{String} = [""]; up = Vec((0.0,0.0,1.0)))
     @assert up ≈ Vec((0.0,0.0,1.0)) "Custom up vector not yet supported."
@@ -155,8 +152,8 @@ function compute_lv_coordinate_system(mesh::SimpleMesh{3}, subdomains::Vector{St
     apply!(K_apicobasal, f, ch)
     apicobasal = K_apicobasal \ f;
 
-    circumferential = zeros(ndofs(dh))
-    circumferential .= NaN
+    rotational = zeros(ndofs(dh))
+    rotational .= NaN
 
     qrn  = NodalQuadratureRuleCollection(ip_collection) # FIXME ip_collection from grid
     cvcn = CellValueCollection(qrn, ip_collection)
@@ -173,14 +170,18 @@ function compute_lv_coordinate_system(mesh::SimpleMesh{3}, subdomains::Vector{St
                 x_dof = spatial_coordinate(cellvalues, qp, coords)
 
                 x_planar = x_dof - (x_dof ⋅ up) * up # Project into plane
-                x = x_planar / norm(x_planar)
-
-                circumferential[dofs[qp.i]] = (π + atan(x[1], x[2]))/2 # TODO tilted coordinate system
+                xlen = norm(x_planar)
+                if xlen < 1e-8
+                    rotational[dofs[qp.i]] = 0.0
+                else
+                    x = x_planar / xlen
+                    rotational[dofs[qp.i]] = (π + atan(x[1], x[2]))/2 # TODO tilted coordinate system
+                end
             end
         end
     end
 
-    return LVCoordinateSystem(dh, ip_collection, transmural, apicobasal, circumferential)
+    return LVCoordinateSystem(dh, ip_collection, transmural, apicobasal, rotational)
 end
 
 """
@@ -263,8 +264,8 @@ function compute_midmyocardial_section_coordinate_system(mesh::SimpleMesh{3}, su
     apply!(K_apicobasal, f, ch)
     apicobasal = K_apicobasal \ f;
 
-    circumferential = zeros(ndofs(dh))
-    circumferential .= NaN
+    rotational = zeros(ndofs(dh))
+    rotational .= NaN
 
     qrn  = NodalQuadratureRuleCollection(ip_collection) # FIXME ip_collection from grid
     cvcn = CellValueCollection(qrn, ip_collection)
@@ -282,12 +283,12 @@ function compute_midmyocardial_section_coordinate_system(mesh::SimpleMesh{3}, su
                 x_planar = x_dof - (x_dof ⋅ up) * up # Project into plane
                 x = x_planar / norm(x_planar)
 
-                circumferential[dofs[qp.i]] = (π + atan(x[1], x[2]))/2 # TODO tilted coordinate system
+                rotational[dofs[qp.i]] = (π + atan(x[1], x[2]))/2 # TODO tilted coordinate system
             end
         end
     end
 
-    return LVCoordinateSystem(dh, ip_collection, transmural, apicobasal, circumferential)
+    return LVCoordinateSystem(dh, ip_collection, transmural, apicobasal, rotational)
 end
 
 """
@@ -297,14 +298,14 @@ Store the LV coordinate system in a vtk file.
 """
 function vtk_coordinate_system(vtk, cs::LVCoordinateSystem)
     Ferrite.write_solution(vtk, cs.dh, cs.u_apicobasal, "apicobasal_")
-    Ferrite.write_solution(vtk, cs.dh, cs.u_circumferential, "circumferential_")
+    Ferrite.write_solution(vtk, cs.dh, cs.u_rotational, "rotational_")
     Ferrite.write_solution(vtk, cs.dh, cs.u_transmural, "transmural_")
 end
 
 """
     BiVCoordinateSystem(dh, u_transmural, u_apicobasal, u_rotational, u_transventricular)
 
-Universal ventricular coordinate, containing the transmural, apicobasal, circumferential 
+Universal ventricular coordinate, containing the transmural, apicobasal, rotational 
 and transventricular coordinates.
 """
 struct BiVCoordinateSystem{DH <: Ferrite.AbstractDofHandler}

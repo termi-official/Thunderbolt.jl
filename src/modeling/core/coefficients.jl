@@ -190,7 +190,7 @@ function evaluate_coefficient(coeff::LVCoordinateSystemCache, geometry_cache::Ce
         val = shape_value(cv, qp, i)::T
         x1 += val * cs.u_transmural[dofs[i]]
         x2 += val * cs.u_apicobasal[dofs[i]]
-        x3 += val * cs.u_circumferential[dofs[i]]
+        x3 += val * cs.u_rotational[dofs[i]]
     end
     return LVCoordinate(x1, x2, x3)
 end
