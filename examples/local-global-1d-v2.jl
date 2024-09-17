@@ -25,12 +25,12 @@ end
 
 abstract type AbstractStageCache end
 
-struct QuasiStaticSolutionState
+struct QuasiStaticSolutionState{UT, QT}
     u::UT
     q::QT
 end
 
-struct DynamicSolutionState
+struct DynamicSolutionState{UT, VT, QT}
     u::UT
     v::VT
     q::QT
@@ -50,17 +50,22 @@ struct QuadraturePointStageInfo{CID, QID}
     qpi::QID
 end
 
-function solve_local_problem(cache::LocalBackwardEulerCache, model::LocalODEModel)
-    @unpack t, dt, tol = cache
-    @unpack u, uprev, q, qprev = cache
+function local_problem_residual(cache::LocalBackwardEulerCache, model::LocalODEModel)
+    dq       = f(u, q, model, t+dt)
+    residual = (q .- qprev) .- dt .* dq # = L(u,q)
+    return residual
+end
+
+function solve_local_problem(solver_cache::LocalBackwardEulerCache, model::LocalODEModel)
+    @unpack t, dt, tol = solver_cache
+    @unpack u, uprev, q, qprev = solver_cache
     # du = (u - uprev)/dt
     # solve local problem
     for inner_iter in 1:max_iter
         # setup system for local backward Euler solve L(qₙ₊₁, uₙ₊₁) = (qₙ₊₁ - qₙ) - Δt*rhs(qₙ₊₁, uₙ₊₁) = 0 w.r.t. qₙ₊₁ with uₙ₊₁ frozen
-        J        = jacobian_q(u, q, model, t+dt)
-        dq       = f(u, q, model, t+dt)
-        residual = (q .- qprev) .- dt .* dq # = L(u,q)
+        dq       = local_problem_residual(solver_cache, model) # = L(u,q)
         # solve linear sytem and update local solution
+        J        = jacobian_q(u, q, model, t+dt)
         ∂L∂q     = one(J) - (dt .* J)
         Δq       = ∂L∂q \ residual
         q       -= Δq
@@ -70,29 +75,30 @@ function solve_local_problem(cache::LocalBackwardEulerCache, model::LocalODEMode
         # inner_iter == max_iter && error("Newton diverged for cell=$(cellid(cell))|qp=$qp at t=$t resnorm=$resnorm")
         inner_iter == max_iter && error("t=$t resnorm=$resnorm")
     end
-    return nothing
+    return q
 end
 
-function solve_corrector_problem(E, Eᵥ, model, solver_cache::LocalBackwardEulerCache)
+function solve_corrector_problem(solver_cache::LocalBackwardEulerCache, model::LocalODEModel)
     @unpack t, dt = solver_cache
-    J    = jacobian_q(E, Eᵥ, model, t+dt)
+    @unpack u, q  = solver_cache
+    J    = jacobian_q(u, q, model, t+dt)
     ∂L∂Q = (one(J) - (dt .* J))
-    ∂L∂U = -dt * jacobian_u(E, Eᵥ, model, t+dt)
-    dQdU = zeros(length(∂L∂U))
-    return dQdU = ∂L∂Q \ -∂L∂U
+    ∂L∂U = -dt * jacobian_u(u, q, model, t+dt)
+    return ∂L∂Q \ -∂L∂U # = dQdU
 end
 
-function assemble_cell!(ke, fe, u, q, cell, cellvalues, material::LinearViscoelasticity1D, solver_cache::AbstractStageCache)
+function assemble_cell!(ke, fe, sol::QuasiStaticSolutionState, cell, cellvalues, material::LinearViscoelasticity1D, solver_cache::AbstractStageCache)
+    @unpack u, q = sol
     q_offset     = getnquadpoints(cellvalues)*(cellid(cell)-1)
     @unpack E₁   = material.viscosity
     @unpack E₀   = material
-    ke2 = zeros(2,2)
     for q_point in 1:getnquadpoints(cellvalues)
         # 1. Solve for Qₙ₊₁
-        E  = function_gradient(cellvalues, q_point, u)[1]
-        Eᵥ = q[q_offset+q_point] # Current guess
-        Eᵥ = solve_local_problem(E, Eᵥ, material.viscosity, solver_cache, LocalInfoCache(q_offset+q_point))
-        q[q_offset+q_point] = Eᵥ # Update guess
+        E  = function_gradient(cellvalues, q_point, u)[1] # Frozen u for inner function
+        Eᵥ = q[q_offset+q_point] # Current initial guess q
+        # 
+        Eᵥ = solve_local_problem(E, Eᵥ, material.viscosity, solver_cache) # Updated q
+        q[q_offset+q_point] = Eᵥ # Current guess
         # 2. Contribution to corrector part ,,dQdU`` by solving the linear system
         dQdU = solve_corrector_problem(E, Eᵥ, material.viscosity, solver_cache)
         # 3. ∂G∂Q
@@ -110,7 +116,6 @@ function assemble_cell!(ke, fe, u, q, cell, cellvalues, material::LinearViscoela
                 ke[i, j] += (∇ˢʸᵐNⱼ * T) * dΩ
                 # Corrector part
                 ke[i, j] += ∇ˢʸᵐNⱼ * ∂G∂Q * dQdU * ∇Nᵢ * dΩ
-                ke2[i, j] += ∇ˢʸᵐNⱼ * ∂G∂Q * dQdU * ∇Nᵢ * dΩ
             end
         end
     end
