@@ -24,7 +24,7 @@ Supertype for all functions coming from PDE discretizations with blocked structu
 """
 abstract type AbstractSemidiscreteBlockedFunction <: AbstractSemidiscreteFunction end
 solution_size(f::AbstractSemidiscreteBlockedFunction) = sum(blocksizes(f))
-num_blocks(::AbstractSemidiscreteBlockedFunction) = length(blocksizes)
+num_blocks(f::AbstractSemidiscreteBlockedFunction) = length(blocksizes(f))
 
 
 """
@@ -93,19 +93,20 @@ end
 
 solution_size(f::QuasiStaticNonlinearFunction) = ndofs(f.dh)
 
-# """
-#     QuasiStaticODEFunction{M <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler}
+"""
+    QuasiStaticODEFunction{M <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler}
 
-# A problem with time dependent terms and time derivatives only w.r.t. internal solution variable.
+A problem with time dependent terms and time derivatives only w.r.t. internal solution variable.
+"""
+struct QuasiStaticODEFunction{CM <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler, QH, FACE <: Tuple, CH <: ConstraintHandler} <: AbstractQuasiStaticFunction #<: AbstractSemidiscreteODEFunction
+    dh::DH
+    qh::QH
+    ch::CH
+    constitutive_model::CM
+    face_models::FACE
+end
 
-# TODO implement.
-# """
-# struct QuasiStaticODEFunction{CM <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler, FACE <: Tuple, CH <: ConstraintHandler} <: AbstractSemidiscreteODEFunction
-#     dh::DH
-#     ch::CH
-#     constitutive_model::CM
-#     face_models::FACE
-# end
+solution_size(f::QuasiStaticODEFunction) = ndofs(f.dh)+ndofs(f.qh)
 
 # """
 #     QuasiStaticDAEFunction{M <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler}

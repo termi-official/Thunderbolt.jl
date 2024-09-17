@@ -2,169 +2,13 @@ using Thunderbolt, UnPack
 
 import Thunderbolt.WriteVTK: paraview_collection 
 
+# Local out-of-place functions of pure ODE form dq = f(u,q,p,t)
 abstract type LocalODEModel end
 
+# -----------vvv HERE WE DEFINE THE LOCAL MODEL vvv----------------
 struct LinearViscosity1D{T} <: LocalODEModel
     E₁::T
     η₁::T
-end
-
-struct LinearViscoelasticity1D{T,TV,FT}
-    E₀::T
-    viscosity::TV
-    traction::FT
-end
-
-# Ferrite-specific
-struct ElementCache{M, DH, CV, FV}
-    material::M
-    dh::DH
-    cv::CV
-    fv::FV
-end
-
-abstract type AbstractStageCache end
-
-struct QuasiStaticSolutionState{UT, QT}
-    u::UT
-    q::QT
-end
-
-struct DynamicSolutionState{UT, VT, QT}
-    u::UT
-    v::VT
-    q::QT
-end
-
-struct LocalBackwardEulerCache{T, QT, QT2, UT, UT2}
-    t::T
-    dt::T
-    sol::ST
-    solprev::ST2
-    tol::T
-    max_iter::Int
-end
-
-struct QuadraturePointStageInfo{CID, QID}
-    celli::CID
-    qpi::QID
-end
-
-function local_problem_residual(cache::LocalBackwardEulerCache, model::LocalODEModel)
-    dq       = f(u, q, model, t+dt)
-    residual = (q .- qprev) .- dt .* dq # = L(u,q)
-    return residual
-end
-
-function solve_local_problem(solver_cache::LocalBackwardEulerCache, model::LocalODEModel)
-    @unpack t, dt, tol = solver_cache
-    @unpack u, uprev, q, qprev = solver_cache
-    # du = (u - uprev)/dt
-    # solve local problem
-    for inner_iter in 1:max_iter
-        # setup system for local backward Euler solve L(qₙ₊₁, uₙ₊₁) = (qₙ₊₁ - qₙ) - Δt*rhs(qₙ₊₁, uₙ₊₁) = 0 w.r.t. qₙ₊₁ with uₙ₊₁ frozen
-        dq       = local_problem_residual(solver_cache, model) # = L(u,q)
-        # solve linear sytem and update local solution
-        J        = jacobian_q(u, q, model, t+dt)
-        ∂L∂q     = one(J) - (dt .* J)
-        Δq       = ∂L∂q \ residual
-        q       -= Δq
-        # check convergence
-        resnorm  = norm(residual)
-        (resnorm ≤ tol || norm(Δq) ≤ tol) && break
-        # inner_iter == max_iter && error("Newton diverged for cell=$(cellid(cell))|qp=$qp at t=$t resnorm=$resnorm")
-        inner_iter == max_iter && error("t=$t resnorm=$resnorm")
-    end
-    return q
-end
-
-function solve_corrector_problem(solver_cache::LocalBackwardEulerCache, model::LocalODEModel)
-    @unpack t, dt = solver_cache
-    @unpack u, q  = solver_cache
-    J    = jacobian_q(u, q, model, t+dt)
-    ∂L∂Q = (one(J) - (dt .* J))
-    ∂L∂U = -dt * jacobian_u(u, q, model, t+dt)
-    return ∂L∂Q \ -∂L∂U # = dQdU
-end
-
-function assemble_cell!(ke, fe, sol::QuasiStaticSolutionState, cell, cellvalues, material::LinearViscoelasticity1D, solver_cache::AbstractStageCache)
-    @unpack u, q = sol
-    q_offset     = getnquadpoints(cellvalues)*(cellid(cell)-1)
-    @unpack E₁   = material.viscosity
-    @unpack E₀   = material
-    for q_point in 1:getnquadpoints(cellvalues)
-        # 1. Solve for Qₙ₊₁
-        E  = function_gradient(cellvalues, q_point, u)[1] # Frozen u for inner function
-        Eᵥ = q[q_offset+q_point] # Current initial guess q
-        # 
-        Eᵥ = solve_local_problem(E, Eᵥ, material.viscosity, solver_cache) # Updated q
-        q[q_offset+q_point] = Eᵥ # Current guess
-        # 2. Contribution to corrector part ,,dQdU`` by solving the linear system
-        dQdU = solve_corrector_problem(E, Eᵥ, material.viscosity, solver_cache)
-        # 3. ∂G∂Q
-        ∂G∂Q = -E₁
-        # Get the integration weight for the quadrature point
-        dΩ = getdetJdV(cellvalues, q_point)
-        for i in 1:getnbasefunctions(cellvalues)
-            # Gradient of the trial function
-            ∇Nᵢ = shape_gradient(cellvalues, q_point, i)[1]
-            # T = E₀*∇Nᵢ + E₁*(∇Nᵢ-Eᵥ)
-            T = (E₀ + E₁)*∇Nᵢ
-            for j in 1:getnbasefunctions(cellvalues)
-                # Symmetric gradient of the test function
-                ∇ˢʸᵐNⱼ = shape_gradient(cellvalues, q_point, j)[1]
-                ke[i, j] += (∇ˢʸᵐNⱼ * T) * dΩ
-                # Corrector part
-                ke[i, j] += ∇ˢʸᵐNⱼ * ∂G∂Q * dQdU * ∇Nᵢ * dΩ
-            end
-        end
-    end
-    return nothing
-end
-
-# Standard assembly loop for global problem
-function stress!(J, residual, u, q, cache::ElementCache, solver_cache::AbstractStageCache)
-    f = zeros(ndofs(cache.dh))
-    # Allocate the element stiffness matrix
-    n_basefuncs = getnbasefunctions(cache.cv)
-    ke = zeros(n_basefuncs, n_basefuncs)
-    fe = zeros(n_basefuncs)
-    # Create an assembler
-    assembler = start_assemble(J, residual)
-    # Loop over all cells
-    for cell in CellIterator(cache.dh)
-        # Update the shape function gradients based on the cell coordinates
-        reinit!(cache.cv, cell)
-        # Reset the element stiffness matrix
-        fill!(ke, 0.0)
-        fill!(fe, 0.0)
-        # Compute element contribution
-        assemble_cell!(ke, fe, u, q, cell, cache.cv, cache.material, solver_cache)
-        # Assemble ke into K
-        assemble!(assembler, celldofs(cell), ke, fe)
-    end
-    for face in FacetIterator(cache.dh, getfacetset(cache.dh.grid,"right"))
-        # Update the facetvalues to the correct facet number
-        reinit!(cache.fv, face)
-        # Reset the temporary array for the next facet
-        fill!(fe, 0.0)
-        # Access the cell's coordinates
-        cell_coordinates = getcoordinates(face)
-        for qp in 1:getnquadpoints(cache.fv)
-            # Calculate the global coordinate of the quadrature point.
-            x = spatial_coordinate(cache.fv, qp, cell_coordinates)
-            tₚ = cache.material.traction(x, solver_cache.t+solver_cache.dt)
-            # Get the integration weight for the current quadrature point.
-            dΓ = getdetJdV(cache.fv, qp)
-            for i in 1:getnbasefunctions(cache.fv)
-                Nᵢ = shape_value(cache.fv, qp, i)
-                fe[i] += tₚ * Nᵢ * dΓ
-            end
-        end
-        # Add the local contributions to the correct indices in the global external force vector
-        assemble!(f, celldofs(face), fe)
-    end
-    residual .= J*u .- f
 end
 
 function viscosity_evolution(E, Eᵥ, p::LinearViscosity1D, t)
@@ -182,9 +26,243 @@ function viscosity_evolution_Ju(E, Eᵥ, p::LinearViscosity1D, t)
     return E₁/η₁
 end
 
-f          = viscosity_evolution
-jacobian_u = viscosity_evolution_Ju
-jacobian_q = viscosity_evolution_Jq
+# Transformation from vector to tensor form
+function q_to_local_form(q, model::LinearViscosity1D)
+    return q[1]
+end
+
+# Transformation from tensor form to vector
+function store_local_form_q_to!(qstorage, qform, model::LinearViscosity1D)
+    return qstorage[1] = qform
+end
+# -----------^^^ HERE WE DEFINE THE LOCAL MODEL ^^^----------------
+
+# -----------vvv HERE WE DEFINE THE GLOBAL MODEL vvv----------------
+struct LinearViscoelasticity1D{T,TV,FT}
+    E₀::T
+    viscosity::TV
+    traction::FT
+end
+# -----------vvv HERE WE DEFINE THE GLOBAL MODEL vvv----------------
+
+# Ferrite-specific variables
+struct StructuralElementCache{M, DH, CV, FV}
+    material::M
+    dh::DH
+    cv::CV
+    fv::FV
+end
+
+struct QuasiStaticSolutionState{UT, QT}
+    u::UT
+    q::QT
+end
+
+# struct DynamicSolutionState{UT, VT, QT}
+#     u::UT
+#     v::VT
+#     q::QT
+# end
+
+abstract type AbstractStageCache end
+
+struct BackwardEulerStage{T, ST} <: AbstractStageCache
+    t::T   # Integrator
+    dt::T  # Integrator
+    solprev::ST
+    # Multilevel solver info
+    tol::T
+    max_iter::Int
+end
+
+struct LocalBackwardEulerCache{T, ST, ST2}
+    t::T   # Integrator
+    dt::T  # Integrator
+    sol::ST
+    solprev::ST2
+    # NLSolver
+    tol::T
+    max_iter::Int
+end
+
+struct QuadraturePointStageInfo{iType, CV}
+    qpi::iType
+    cellvalues::CV
+    # TODO QuadratureHandler
+end
+
+# MUST NO ALLOCATE (to support GPU)
+function build_local_cache(sol::QuasiStaticSolutionState, cell::CellCache, info::QuadraturePointStageInfo, stage::BackwardEulerStage)
+    @unpack cellvalues = info
+    udofs = celldofs(cell)
+    uprev = @view stage.solprev.u[udofs]
+    Eprev = function_gradient(cellvalues, info.qpi, uprev)[1]
+
+    # qdofs = @view quadraturedofs(...) # TODO implement and use this instead of the manual extration below
+    sol_size_local = length(sol.q)
+    nqp            = getnquadpoints(cellvalues)*getncells(cell.grid)
+    qprev_t3 = reshape(stage.solprev.q, (sol_size_local, nqp))
+    qoffset  = getnquadpoints(cellvalues)*(cellid(cell)-1)
+    qprev    = @view qprev_t3[:, qoffset + info.qpi]
+
+    # Wrap into correct solution type
+    solprev = QuasiStaticSolutionState(
+        Eprev,
+        qprev,
+    )
+
+    # Construct local cache object to control the dispatches
+    return LocalBackwardEulerCache(
+        stage.t,
+        stage.dt,
+        sol,
+        solprev,
+        stage.tol,
+        stage.max_iter,
+    )
+end
+
+function local_problem_residual(cache::LocalBackwardEulerCache, model::LocalODEModel)
+    @unpack t, dt = cache
+    u     = cache.sol.u
+    uprev = cache.solprev.u
+    q     = q_to_local_form(cache.sol.q, model)
+    qprev = q_to_local_form(cache.solprev.q, model)
+    dq       = local_rhs(u, q, model, t+dt)
+    residual = (q .- qprev) .- dt .* dq # = L(u,q)
+    return residual # FIXME
+end
+
+function solve_local_problem(cache::LocalBackwardEulerCache, model::LocalODEModel)
+    @unpack t, dt, tol = cache
+    u     = cache.sol.u
+    uprev = cache.solprev.u
+    q     = q_to_local_form(cache.sol.q, model)
+    qprev = q_to_local_form(cache.solprev.q, model)
+    # du = (u - uprev)/dt
+    # solve local problem with Newton-Raphson
+    for inner_iter in 1:max_iter
+        # setup system for local backward Euler solve L(qₙ₊₁, uₙ₊₁) = (qₙ₊₁ - qₙ) - Δt*rhs(qₙ₊₁, uₙ₊₁) = 0 w.r.t. qₙ₊₁ with uₙ₊₁ frozen
+        residual = local_problem_residual(cache, model) # = L(u,q)
+        # solve linear sytem and update local solution
+        J        = local_∂q(u, q, model, t+dt)
+        ∂L∂q     = one(J) - (dt .* J)
+        Δq       = ∂L∂q \ residual
+        q       -= Δq
+        # Update cache
+        store_local_form_q_to!(cache.sol.q, q, model)
+        # check convergence
+        resnorm  = norm(residual)
+        (resnorm ≤ tol || norm(Δq) ≤ tol) && break
+        # inner_iter == max_iter && error("Newton diverged for cell=$(cellid(cell))|qp=$qp at t=$t resnorm=$resnorm")
+        inner_iter == max_iter && error("t=$t resnorm=$resnorm")
+    end
+    return q
+end
+
+function solve_corrector_problem(cache::LocalBackwardEulerCache, model::LocalODEModel)
+    @unpack t, dt = cache
+    u     = cache.sol.u
+    q     = q_to_local_form(cache.sol.q, model)
+
+    J    = local_∂q(u, q, model, t+dt)
+    ∂L∂Q = (one(J) - (dt .* J))
+    ∂L∂U = -dt * local_∂u(u, q, model, t+dt)
+    return ∂L∂Q \ -∂L∂U # = dQdU
+end
+
+function assemble_cell!(ke, fe, sol::QuasiStaticSolutionState, cell, cellvalues, material::LinearViscoelasticity1D, stage_cache::AbstractStageCache)
+    # @unpack cellvalues = stage_cache
+    @unpack u, q = sol
+    q_offset     = getnquadpoints(cellvalues)*(cellid(cell)-1)
+    @unpack E₁   = material.viscosity
+    @unpack E₀   = material
+    # Iterator info
+    for q_point in 1:getnquadpoints(cellvalues)
+        # Still iterator info
+        info      = QuadraturePointStageInfo(q_point, cellvalues)
+        # Common information
+        E  = function_gradient(cellvalues, q_point, u)[1] # Frozen u for inner function - dereference here because of 1D function
+        # 1. Solve for Qₙ₊₁
+        Eᵥref     = q[(q_offset+q_point):(q_offset+q_point+1-1)] # Get current guess for Qₙ₊₁
+        local_sol = QuasiStaticSolutionState(E, Eᵥref) # ,,u and q'' for the local problem after another chain rule application
+        cache     = build_local_cache(local_sol, cell, info, stage_cache)
+        Eᵥ        = solve_local_problem(cache, material.viscosity)
+        # 2. Contribution to corrector part ,,dQdU`` by solving the linear system
+        dQdE = solve_corrector_problem(cache, material.viscosity)
+        # 3. ∂G∂Q
+        ∂G∂Q = global_∂q(E, Eᵥ, material, cache)
+        # Get the integration weight for the quadrature point
+        dΩ = getdetJdV(cellvalues, q_point)
+        for i in 1:getnbasefunctions(cellvalues)
+            # Gradient of the trial function
+            ∇Nᵢ = shape_gradient(cellvalues, q_point, i)[1]
+            Tₑ = (E₀ + E₁) * ∇Nᵢ
+            Tᵥ = ∂G∂Q * dQdE * ∇Nᵢ
+            for j in 1:getnbasefunctions(cellvalues)
+                # Symmetric gradient of the test function
+                ∇ˢʸᵐNⱼ = shape_gradient(cellvalues, q_point, j)[1]
+                ke[i, j] += (∇ˢʸᵐNⱼ * T) * dΩ
+                # Corrector part
+                ke[i, j] += (∇ˢʸᵐNⱼ * Tᵥ) * dΩ
+            end
+        end
+    end
+    return nothing
+end
+
+# Standard assembly loop for global problem
+function stress!(J, residual, u, q, cache::ElementCache, stage_cache::AbstractStageCache)
+    f = zeros(ndofs(cache.dh))
+    # Allocate the element stiffness matrix
+    n_basefuncs = getnbasefunctions(cache.cv)
+    ke = zeros(n_basefuncs, n_basefuncs)
+    fe = zeros(n_basefuncs)
+    # Create an assembler
+    assembler = start_assemble(J, residual)
+    # Loop over all cells
+    for cell in CellIterator(cache.dh)
+        # Update the shape function gradients based on the cell coordinates
+        reinit!(cache.cv, cell)
+        # Reset the element stiffness matrix
+        fill!(ke, 0.0)
+        fill!(fe, 0.0)
+        # Compute element contribution
+        assemble_cell!(ke, fe, QuasiStaticSolutionState(u, q), cell, cache.cv, cache.material, stage_cache)
+        # Assemble ke into K
+        assemble!(assembler, celldofs(cell), ke, fe)
+    end
+    for face in FacetIterator(cache.dh, getfacetset(cache.dh.grid,"right"))
+        # Update the facetvalues to the correct facet number
+        reinit!(cache.fv, face)
+        # Reset the temporary array for the next facet
+        fill!(fe, 0.0)
+        # Access the cell's coordinates
+        cell_coordinates = getcoordinates(face)
+        for qp in 1:getnquadpoints(cache.fv)
+            # Calculate the global coordinate of the quadrature point.
+            x = spatial_coordinate(cache.fv, qp, cell_coordinates)
+            tₚ = cache.material.traction(x, stage_cache.t+stage_cache.dt)
+            # Get the integration weight for the current quadrature point.
+            dΓ = getdetJdV(cache.fv, qp)
+            for i in 1:getnbasefunctions(cache.fv)
+                Nᵢ = shape_value(cache.fv, qp, i)
+                fe[i] += tₚ * Nᵢ * dΓ
+            end
+        end
+        # Add the local contributions to the correct indices in the global external force vector
+        assemble!(f, celldofs(face), fe)
+    end
+    residual .= J*u .- f
+end
+
+local_rhs = viscosity_evolution
+local_∂u  = viscosity_evolution_Ju
+local_∂q  = viscosity_evolution_Jq
+
+# Smart unpacking of the materials
+global_∂q(E,Eᵥ,model::LinearViscoelasticity1D,cache) = global_∂q(u,q,model.viscosity,cache)
+global_∂q(E,Eᵥ,model::LinearViscosity1D,cache) = -model.E₁
 
 function traction(x, t)
     return 0.1
@@ -241,6 +319,7 @@ T  = 2.0
 J = allocate_matrix(dh)
 global_residual = zeros(ndofs(dh))
 u = copy(u₀)
+uprev = copy(u₀)
 q = copy(q₀)
 qprev = copy(q₀)
 
@@ -262,12 +341,9 @@ for t ∈ 0.0:dt:T
         # Apply constraints to solution
         apply!(u, ch)
 
-        #Setup Jacobian
-        # 1. Local solves and Jacobian corrections (normally these are done IN global_jacobian_u for efficiency reasons)
-        # Done in 2.
-        # 2. Residual and Jacobian of global function G(qₙ₊₁, uₙ₊₁) w.r.t. to global vector uₙ₊₁ with qₙ₊₁ frozen
+        #Setup Jacobian for global problem
         local_tol = outer_iter == 1 ? local_tol⁰ : min(local_tol⁰, norm(Δu)^2)
-        local_solver = LocalBackwardEulerCache(t, dt, qprev, local_tol)
+        local_solver = BackwardEulerStage(t, dt, QuasiStaticSolutionState(uprev,qprev), local_tol, max_iter)
         global_fJu(J, global_residual, u, q, cache, local_solver)
         @show J, global_residual
         # 3. Apply boundary conditions
@@ -290,6 +366,7 @@ for t ∈ 0.0:dt:T
     end
     @show q
     qprev .= q
+    uprev .= u
 
     VTKGridFile("linear-viscoelasticity-$t.vtu", dh) do vtk
         write_solution(vtk, dh, u)
