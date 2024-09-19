@@ -307,7 +307,7 @@ function PoissonECGReconstructionCache(
     transfer_op::AbstractTransferOperator,
     ph::PointEvalHandler;
     linear_solver        = LinearSolve.KrylovJL_CG(),
-    solution_vector_type = Vector,
+    solution_vector_type = Vector{Float64},
 )
     torso_dh = torso_op.dh
     torso_ch = torso_fun.ch
@@ -349,7 +349,7 @@ function evaluate_ecg(cache::PoissonECGReconstructionCache)
 end
 
 """
-    Geselowitz1989ECGLeadCache(problem, κ, κᵢ, electordes, electrode_pairs, [ground, linear_solver, solution_vector_type, system_matrix_type])
+    Geselowitz1989ECGLeadCache(problem, κ, κᵢ, electordes, electrode_sets, [ground, linear_solver, solution_vector_type, system_matrix_type])
 
 Here the lead field, `Z`, is computed using the discretization of `problem`.
 The lead field is computed as the solution of
@@ -382,7 +382,7 @@ function Geselowitz1989ECGLeadCache(
     grid::AbstractGrid,
     heart_diffusion_tensor_field, # κᵢ
     bulk_diffusion_tensor_field, # κ
-    electrode_positions::AbstractVector{<:Pair{<:Vec, <:Vec}};
+    electrode_positions::AbstractVector{<:Vector{<:Vec}};
     ipc                  = LagrangeCollection{1}(),
     qrc                  = QuadratureRuleCollection(2),
     ground               = OrderedSet([VertexIndex(1, 1)]),
@@ -390,27 +390,25 @@ function Geselowitz1989ECGLeadCache(
     solution_vector_type = Vector{Float64},
     system_matrix_type   = ThreadedSparseMatrixCSR{Float64,Int64},
 )
-
-return Geselowitz1989ECGLeadCache(
-    grid,
-    heart_diffusion_tensor_field, # κᵢ
-    bulk_diffusion_tensor_field, # κ
-    [_get_vertex(electrode_positions[i][1], grid) => _get_vertex(electrode_positions[i][2], grid) for i in eachindex(electrode_positions)];
-    ipc                  ,
-    qrc                  ,
-    ground               ,
-    linear_solver       ,
-    solution_vector_type,
-    system_matrix_type,
-)
-
+    return Geselowitz1989ECGLeadCache(
+        grid,
+        heart_diffusion_tensor_field, # κᵢ
+        bulk_diffusion_tensor_field, # κ
+        [[_get_vertex(position, grid) for position in positions] for positions in electrode_positions];
+        ipc                  ,
+        qrc                  ,
+        ground               ,
+        linear_solver       ,
+        solution_vector_type,
+        system_matrix_type,
+    )
 end
 
 function Geselowitz1989ECGLeadCache(
     grid::AbstractGrid,
     heart_diffusion_tensor_field, # κᵢ
     bulk_diffusion_tensor_field, # κ
-    electrode_positions::AbstractVector{Pair{VertexIndex, VertexIndex}};
+    electrode_positions::AbstractVector{Vector{VertexIndex}};
     ipc                  = LagrangeCollection{1}(),
     qrc                  = QuadratureRuleCollection(2),
     ground               = OrderedSet([VertexIndex(1, 1)]),
@@ -418,7 +416,6 @@ function Geselowitz1989ECGLeadCache(
     solution_vector_type = Vector{Float64},
     system_matrix_type   = ThreadedSparseMatrixCSR{Float64,Int64},
 )
-
     lead_field_model = SteadyDiffusionModel(
         bulk_diffusion_tensor_field,
         NoStimulationProtocol(), #ConstantCoefficient(NaN), # FIXME Poisoning to detecte if we accidentally touch these
@@ -482,9 +479,9 @@ function Geselowitz1989ECGLeadCache(
     lead_fun::SteadyDiffusionFunction,
     lead_op::AssembledBilinearOperator,
     ϕₘ_op::AssembledBilinearOperator,
-    electrode_positions::AbstractVector{Pair{VertexIndex, VertexIndex}};
+    electrode_positions::AbstractVector{Vector{VertexIndex}};
     linear_solver        = LinearSolve.KrylovJL_CG(),
-    solution_vector_type = Vector,
+    solution_vector_type = Vector{Float64},
 )
     lead_dh = lead_op.dh
     length(lead_dh.field_names) == 1 || @warn "Multiple fields detected. Setup might be broken..."
@@ -495,11 +492,15 @@ function Geselowitz1989ECGLeadCache(
 
     lead_rhs = zeros(eltype(∇Njκ∇φₘ), nelectrodes, length(∇Njκ∇φₘ))
 
-    @views for (i, electrode_pair) in enumerate(electrode_positions)
-        _add_electrode!(lead_rhs[i,:], lead_dh, electrode_pair[1], true)
-        _add_electrode!(lead_rhs[i,:], lead_dh, electrode_pair[2], false)
+    @views for (i, electrode_set) in enumerate(electrode_positions)
+        @assert length(electrode_set) ≥ 2 "Electrode set $i has too few electrodes ($(length(electrode_set))<2)"
+        current_rhs = lead_rhs[i,:]
+        _add_electrode!(current_rhs, lead_dh, electrode_set[1], 1.0)
+        for j in 2:length(electrode_set)
+            _add_electrode!(current_rhs, lead_dh, electrode_set[j], -1.0/(length(electrode_set)-1))
+        end
         leadprob = LinearSolve.LinearProblem(
-            lead_op.A, lead_rhs[i,:]; u0= Z[i,:]
+            lead_op.A, current_rhs; u0=Z[i,:]
         )
         lincache = init(leadprob, linear_solver)
         LinearSolve.solve!(lincache)
@@ -508,12 +509,12 @@ function Geselowitz1989ECGLeadCache(
     return Geselowitz1989ECGLeadCache(lead_op, ϕₘ_op, ϕₑ, Z, ∇Njκ∇φₘ, electrode_positions)
 end
 
-function _add_electrode!(f::AbstractVector{T}, dh::DofHandler, electrode::VertexIndex, is_positive::Bool) where {T<:Number}
+function _add_electrode!(f::AbstractVector{T}, dh::DofHandler, electrode::VertexIndex, weight) where {T<:Number}
     grid = dh.grid
     # haskey(grid.vertexsets, "$electrode") || addvertexset!(grid, "$electrode", x -> x ≈ electrode)
     local_dof = Ferrite.vertexdof_indices(Ferrite.getfieldinterpolation(dh.subdofhandlers[1], :Z))[electrode[2]][1]::Int
     global_dof = celldofs(dh, electrode[1])[local_dof]::Int
-    f[global_dof] = is_positive ? -1 : 1
+    f[global_dof] = -weight
     return nothing
 end
 
