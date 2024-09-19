@@ -46,6 +46,32 @@ end
 
 # Local storage determinator
 q_size(model::LinearViscosity1D) = 1
+
+
+# # -------------------------- 3D ------------------------------------
+# struct LinearViscosity3D{T} <: LocalODEModel
+#     E₁::T
+#     η₁::T
+# end
+
+# # this is "g" in "dq = g(u,q,p,t)"
+# function viscosity_evolution(E, Eᵥ, p::LinearViscosity3D, t)
+#     @unpack E₁, η₁ = p
+#     return E₁/η₁*(E-Eᵥ)
+# end
+
+# # Transformation from vector to tensor form
+# function q_to_local_form(q::AbstractArray, model::LinearViscosity3D)
+#     return SymmetricTensor{2,3}(ntuple(i->q[i],6))
+# end
+
+# # Transformation from tensor form to vector
+# function store_local_form_q_to!(qstorage::AbstractArray, qform::Tensor{2}, model::LinearViscosity3D)
+#     qstorage .= qform.data
+# end
+
+# # Local storage determinator
+# q_size(model::LinearViscosity3D) = 6
 # -----------^^^ HERE WE DEFINE THE LOCAL MODEL ^^^----------------
 # ------------------------------------------------------------------
 
@@ -102,7 +128,7 @@ end
 # end
 
 function generate_linear_viscoelasticity_function(material::LinearViscoelasticity1D)
-    grid = generate_grid(Line, (2,));
+    grid = generate_grid(Line, (1,));
 
     order = 1 # linear interpolation
     ip = Lagrange{RefLine, order}()^1 # vector valued interpolation
@@ -269,11 +295,12 @@ function solve_corrector_problem(cache::LocalBackwardEulerCache, model::LocalODE
 end
 
 function element_routine!(ke, fe, sol::QuasiStaticSolutionState, cell, cellvalues, material::LinearViscoelasticity1D, stage_cache::AbstractMultiLevelStageCache)
+    ke2 = zero(ke)
     # Unpack local vectors
     ue = sol.u
     qe = sol.q
+    # Easy access
     qemat = reshape(qe, (q_size(material), getnquadpoints(cellvalues)))
-    q_offset     = getnquadpoints(cellvalues)*(cellid(cell)-1)
     # Iterator info
     for q_point in 1:getnquadpoints(cellvalues)
         # Still iterator info
@@ -289,12 +316,11 @@ function element_routine!(ke, fe, sol::QuasiStaticSolutionState, cell, cellvalue
         dQdE = solve_corrector_problem(cache, material) # Order 2 tensor
         # 3. ∂G∂Q
         ∂G∂Q = global_∂q(E, Eᵥ, material, cache)        # Order 2 tensor
-        # 4. Evaluate weak form for all test functions on the element
+        # 4. Evaluate weak form at quadrature point
+        σ, ∂σ∂E = structural_weak_form_integrand(local_sol, material)
+        # 5. Assemble element matrix
         # Get the integration weight for the quadrature point
         dΩ = getdetJdV(cellvalues, q_point)
-
-        σ, ∂σ∂E = structural_weak_form_integrand(local_sol, material)
-
         for i in 1:getnbasefunctions(cellvalues)
             # Gradient of the trial function
             ∇Nᵢ = shape_gradient(cellvalues, q_point, i)
@@ -304,9 +330,11 @@ function element_routine!(ke, fe, sol::QuasiStaticSolutionState, cell, cellvalue
                 # Symmetric gradient of the test function
                 ∇ˢʸᵐNⱼ = shape_gradient(cellvalues, q_point, j)
                 ke[i, j] += (∇ˢʸᵐNⱼ ⊡ σδE) * dΩ
+                ke2[i, j] += (∇ˢʸᵐNⱼ ⊡ ∂σ∂E ⊡ ∇Nᵢ) * dΩ
             end
         end
     end
+    @show ke2
     return nothing
 end
 
