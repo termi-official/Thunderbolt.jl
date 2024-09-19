@@ -65,7 +65,7 @@ end
 """
     Plonsey1964ECGGaussCache(op::AbstractBilinearOperator, φₘ::AbstractVector)
 
-Here φₘ is the solution vector containing the transmembranepotential, op is the associated diffusion opeartor and 
+Here φₘ is the solution vector containing the transmembranepotential, op is the associated diffusion opeartor and
 κₜ is the torso's conductivity.
 
 Returns a cache to compute the lead field with the form proposed in [Plo:1964:vcf](@cite)
@@ -174,7 +174,7 @@ Sets up a cache for calculating ``\\varphi_\\mathrm{e}`` by solving the Poisson 
 ```math
 \\nabla \\cdot (\\boldsymbol{\\kappa}_{\\mathrm{i}} + \\boldsymbol{\\kappa}_{\\mathrm{e}}) \\nabla \\varphi_{\\mathrm{e}}=-\\nabla \\cdot\\left(\\boldsymbol{\\kappa}_{\\mathrm{i}} \\nabla \\varphi_\\mathrm{m}\\right)
 ```
-as for example proposed in [PotDubRicVinGul:2006:cmb](@cite) and investigated in [OgiBalPer:2021:ema](@cite) (as well as other studies). Here κₑ is the extracellular conductivity tensor and κᵢ is the intracellular conductivity tensor. The cache includes the assembled 
+as for example proposed in [PotDubRicVinGul:2006:cmb](@cite) and investigated in [OgiBalPer:2021:ema](@cite) (as well as other studies). Here κₑ is the extracellular conductivity tensor and κᵢ is the intracellular conductivity tensor. The cache includes the assembled
 stiffness matrix with applied homogeneous Dirichlet boundary condition at the first vertex of the mesh. As the problem is solved for each timestep with only the right hand side changing.
 
 ## Keyword Arguments
@@ -265,7 +265,7 @@ function PoissonECGReconstructionCache(
 
     heart_op = setup_assembled_operator(
         BilinearDiffusionIntegrator(heart_diffusion_tensor_field),
-        system_matrix_type, 
+        system_matrix_type,
         heart_dh,
         extracellular_potential_symbol,
         qrc
@@ -274,7 +274,7 @@ function PoissonECGReconstructionCache(
 
     torso_op = setup_assembled_operator(
         BilinearDiffusionIntegrator(torso_diffusion_tensor_field),
-        system_matrix_type, 
+        system_matrix_type,
         torso_dh,
         extracellular_potential_symbol,
         qrc
@@ -352,7 +352,7 @@ end
     Geselowitz1989ECGLeadCache(problem, κ, κᵢ, electordes, electrode_pairs, [ground, linear_solver, solution_vector_type, system_matrix_type])
 
 Here the lead field, `Z`, is computed using the discretization of `problem`.
-The lead field is computed as the solution of 
+The lead field is computed as the solution of
 ```math
 \\nabla \\cdot(\\mathbf{\\kappa} \\nabla Z)=\\left\\{\\begin{array}{cl}
 -1 & \\text { at the positive electrode } \\\\
@@ -452,7 +452,7 @@ function Geselowitz1989ECGLeadCache(
 
     ϕₘ_op = setup_assembled_operator(
         BilinearDiffusionIntegrator(heart_diffusion_tensor_field),
-        system_matrix_type, 
+        system_matrix_type,
         ϕₘ_fun.dh,
         :ϕₘ,
         qrc
@@ -461,7 +461,7 @@ function Geselowitz1989ECGLeadCache(
 
     lead_op = setup_assembled_operator(
         BilinearDiffusionIntegrator(bulk_diffusion_tensor_field),
-        system_matrix_type, 
+        system_matrix_type,
         lead_field_fun.dh,
         :Z,
         qrc
@@ -503,9 +503,8 @@ function Geselowitz1989ECGLeadCache(
         )
         lincache = init(leadprob, linear_solver)
         LinearSolve.solve!(lincache)
-
     end
-    
+
     return Geselowitz1989ECGLeadCache(lead_op, ϕₘ_op, ϕₑ, Z, ∇Njκ∇φₘ, electrode_positions)
 end
 
