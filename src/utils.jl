@@ -451,14 +451,21 @@ function adapt_vector_type(::Type{<:Vector}, v::VT) where VT
     return v
 end
 
-function _get_vertex(val::Vec, grid::AbstractGrid)
+function get_closest_vertex(val::Vec, grid::AbstractGrid)
+    distance = Inf
+    closest_vertex = VertexIndex(1, 1)
+    snap_size = 1e-8
     for (cell_idx, cell) in enumerate(getcells(grid))
         for (vertex_idx, vertex) in enumerate(vertices(cell))
-            for node_idx in vertex # ?
-                val ≈ get_node_coordinate(grid, node_idx) && return VertexIndex(cell_idx, vertex_idx)
+            distance2 = norm(val - get_node_coordinate(grid, vertex))
+            if distance2 < distance
+                distance = distance2
+                closest_vertex = VertexIndex(cell_idx, vertex_idx)
+                if distance ≤ snap_size
+                    return closest_vertex
+                end
             end
         end
     end
-    @error "No vertices found with specified coordinates"
-    return nothing
+    return closest_vertex
 end

@@ -394,13 +394,13 @@ function Geselowitz1989ECGLeadCache(
         grid,
         heart_diffusion_tensor_field, # κᵢ
         bulk_diffusion_tensor_field, # κ
-        [[_get_vertex(position, grid) for position in positions] for positions in electrode_positions];
-        ipc                  ,
-        qrc                  ,
-        ground               ,
+        [[get_closest_vertex(position, grid) for position in positions] for positions in electrode_positions];
+        ipc                 ,
+        qrc                 ,
+        ground              ,
         linear_solver       ,
         solution_vector_type,
-        system_matrix_type,
+        system_matrix_type  ,
     )
 end
 
