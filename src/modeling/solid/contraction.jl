@@ -1,6 +1,21 @@
 """
+TODO wrap the existing models into this one
 """
 abstract type SteadyStateSarcomereModel <: SteadyStateInternalVariable end
+
+struct RateIntependentSarcomereModel{ModelType, TCF, TSL, TSV}
+    model::ModelType
+    calcium_field::TCF
+    sarcomere_length::TSL
+    sarcomere_velocity::TSV
+end
+
+struct RateDependentSarcomereModel{ModelType, TCF, TSL, TSV}
+    model::ModelType
+    calcium_field::TCF
+    sarcomere_length::TSL
+    sarcomere_velocity::TSV
+end
 
 """
 TODO citation pelce paper
@@ -78,13 +93,18 @@ The default parameters for the model are taken from the same paper for human car
 !!! note
     For this model in combination with active stress framework the assumption is
     taken that the sarcomere length is exactly $\sqrt{I_4}$.
+
+!!! note
+    In ,,Active contraction of cardiac cells: a reduced model for sarcomere
+    dynamics with cooperative interactions'' there is a proposed evolution law for
+    active stretches.
 """
-Base.@kwdef struct RDQ20MFModel{TD, TSL0, TCF, TSL, TSV}
+Base.@kwdef struct RDQ20MFModel{TD}
     # Geoemtric parameters
     LA::TD = 1.25 # µm
     LM::TD = 1.65 # µm
     LB::TD = 0.18 # µm
-    SL₀::TSL0 = 2.2 # µm
+    SL₀::TD = 2.2 # µm
     # RU steady state parameter
     Q::TD = 2.0 # unitless
     Kd₀::TD = 0.381 # µm
@@ -101,9 +121,6 @@ Base.@kwdef struct RDQ20MFModel{TD, TSL0, TCF, TSL, TSV}
     μ₁_fP::TD = 0.000778 # 1/ms
     # Upscaling parameter
     a_XB::TD = 22.894e3 # kPa
-    calcium_field::TCF
-    sarcomere_stretch::TSL
-    sarcomere_velocity::TSV
 end
 
 function initial_state!(u::AbstractVector, model::RDQ20MFModel)
@@ -113,22 +130,20 @@ end
 
 num_states(model::RDQ20MFModel) = 20
 
-function rhs_fast!(dRU, uRU, x, t, p::RDQ20MFModel)
-    dT_L = @MMatrix zeros(2,2)
-    dT_R = @MMatrix zeros(2,2)
-    ΦT_L = @MArray zeros(2,2,2,2)
-    ΦT_C = @MArray zeros(2,2,2,2)
-    ΦT_R = @MArray zeros(2,2,2,2)
-    ΦC_C = @MArray zeros(2,2,2,2)
-    dC = @MMatrix zeros(2,2)
-    dT = @MArray zeros(2,2,2,2)
-
-    λ = evaluate_coefficient(p.sarcomere_stretch, nothing, QuadraturePoint(1, x), t)
-    Ca = evaluate_coefficient(p.calcium_field, nothing, QuadraturePoint(1, x), t)
+function rhs_fast!(dRU, uRU::AbstractArray{T}, x, λ, Ca, t, p::RDQ20MFModel) where T
+    dT_L = @MMatrix zeros(T,2,2)
+    dT_R = @MMatrix zeros(T,2,2)
+    ΦT_L = @MArray zeros(T,2,2,2,2)
+    ΦT_C = @MArray zeros(T,2,2,2,2)
+    ΦT_R = @MArray zeros(T,2,2,2,2)
+    ΦC_C = @MArray zeros(T,2,2,2,2)
+    dC = @MMatrix zeros(T,2,2)
+    dT = @MArray zeros(T,2,2,2,2)
 
     # Initialize helper rates
-    dC[1,1] = p.Koff / (p.Kd₀ - p.αKd * (2.15 - p.SL₀*λ)) * Ca
-    dC[1,2] = p.Koff / (p.Kd₀ - p.αKd * (2.15 - p.SL₀*λ)) * Ca
+    sarcomere_length = p.SL₀*λ
+    dC[1,1] = p.Koff / (p.Kd₀ - p.αKd * (2.15 - sarcomere_length)) * Ca
+    dC[1,2] = p.Koff / (p.Kd₀ - p.αKd * (2.15 - sarcomere_length)) * Ca
     dC[2,1] = p.Koff
     dC[2,2] = p.Koff / p.μ
     @inbounds for TL ∈ 1:2, TR ∈ 1:2
@@ -202,14 +217,9 @@ function rhs!(du, u, x, t, p::RDQ20MFModel)
     dRU = reshape(dRU_flat, (2,2,2,2))
     dXB = @view du[17:20]
 
-    rhs_fast!(dRU, uRU, x, t, p)
-
-    # Velocity
-    v = -evaluate_coefficient(p.sarcomere_velocity, nothing, QuadraturePoint(1, x), t)
+    rhs_fast!(dRU, uRU, x, λ, Ca,  t, p)
 
     permissivity = 0.0
-    flux_PN = 0.0
-    flux_NP = 0.0
 
     dT = @MArray zeros(2,2,2,2)
     @inbounds for TL ∈ 1:2, TR ∈ 1:2
@@ -220,37 +230,36 @@ function rhs!(du, u, x, t, p::RDQ20MFModel)
         dT[TL,1,TR,2] = p.Q * p.Kbasic * p.γ^permissive_neighbors;
     end
 
-    XB_A = @MMatrix zeros(4,4)
-
+    flux_PN = 0.0
+    flux_NP = 0.0
     @inbounds for TL ∈ 1:2, TR ∈ 1:2, CC ∈ 1:2
         permissivity += uRU[TL,2,TR,CC]
         flux_PN += uRU[TL,2,TR,CC] * dT[TL,2,TR,CC]
         flux_NP += uRU[TL,1,TR,CC] * dT[TL,1,TR,CC]
     end
 
-    k_PN = 0.0
-    k_NP = 0.0
-    if permissivity >= 1e-12
-        k_PN = flux_PN / permissivity
+    k_PN = if permissivity >= 1e-12
+        flux_PN / permissivity
+    else
+        0.0
     end
-    if 1.0 - permissivity >= 1e-12
-        k_NP = flux_NP / (1.0 - permissivity)
+    k_NP = if 1.0 - permissivity >= 1e-12
+        flux_NP / (1.0 - permissivity)
+    else
+        0.0
     end
 
-    r = p.r₀ + p.α*abs(v)
+    #           q(v) = α|v|
+    r = p.r₀ + p.α*abs(dλdt)
     diag_P = r + k_PN
     diag_N = r + k_NP
 
-    XB_A[0+1,1+0] = -diag_P;
-    XB_A[1+1,1+1] = -diag_P;
-    XB_A[2+1,1+2] = -diag_N;
-    XB_A[3+1,1+3] = -diag_N;
-    XB_A[0+1,1+2] = k_NP;
-    XB_A[1+1,1+3] = k_NP;
-    XB_A[2+1,1+0] = k_PN;
-    XB_A[3+1,1+1] = k_PN;
-    XB_A[1+1,1+0] = -v;
-    XB_A[3+1,1+2] = -v;
+    XB_A = @SMatrix [
+        -diag_P      0.0     k_NP      0.0
+          -dλdt  -diag_P      0.0     k_NP
+           k_PN      0.0  -diag_N      0.0
+            0.0     k_PN    -dλdt  -diag_N
+    ];
 
     dXB .= XB_A*uXB
     dXB[1] += p.μ₀_fP * permissivity

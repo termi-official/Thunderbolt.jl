@@ -24,7 +24,7 @@ Supertype for all functions coming from PDE discretizations with blocked structu
 """
 abstract type AbstractSemidiscreteBlockedFunction <: AbstractSemidiscreteFunction end
 solution_size(f::AbstractSemidiscreteBlockedFunction) = sum(blocksizes(f))
-num_blocks(::AbstractSemidiscreteBlockedFunction) = length(blocksizes)
+num_blocks(f::AbstractSemidiscreteBlockedFunction) = length(blocksizes(f))
 
 
 """
@@ -58,23 +58,23 @@ Adapt.@adapt_structure PointwiseODEFunction
 
 solution_size(f::PointwiseODEFunction) = f.npoints*num_states(f.ode)
 
-# TODO translate into AffineODEFunction and use ODEFunction
-struct TransientDiffusionFunction{DTF, ST, DH} <: AbstractSemidiscreteFunction
-    diffusion_tensor_field::DTF
+struct AffineODEFunction{MI, BI, ST, DH} <: AbstractSemidiscreteFunction
+    mass_term::MI
+    bilinear_term::BI
     source_term::ST
     dh::DH
 end
 
-solution_size(f::TransientDiffusionFunction) = ndofs(f.dh)
+solution_size(f::AffineODEFunction) = ndofs(f.dh)
 
-struct SteadyDiffusionFunction{DTF, ST, DH, CH} <: AbstractSemidiscreteFunction
-    diffusion_tensor_field::DTF
+struct AffineSteadyStateFunction{BI, ST, DH, CH} <: AbstractSemidiscreteFunction
+    bilinear_term::BI
     source_term::ST
     dh::DH
     ch::CH
 end
 
-solution_size(f::SteadyDiffusionFunction) = ndofs(f.dh)
+solution_size(f::AffineSteadyStateFunction) = ndofs(f.dh)
 
 abstract type AbstractQuasiStaticFunction <: AbstractSemidiscreteFunction end
 
@@ -93,19 +93,20 @@ end
 
 solution_size(f::QuasiStaticNonlinearFunction) = ndofs(f.dh)
 
-# """
-#     QuasiStaticODEFunction{M <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler}
+"""
+    QuasiStaticODEFunction{M <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler}
 
-# A problem with time dependent terms and time derivatives only w.r.t. internal solution variable.
+A problem with time dependent terms and time derivatives only w.r.t. internal solution variable.
+"""
+struct QuasiStaticODEFunction{CM <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler, QH, FACE <: Tuple, CH <: ConstraintHandler} <: AbstractQuasiStaticFunction #<: AbstractSemidiscreteODEFunction
+    dh::DH
+    qh::QH
+    ch::CH
+    constitutive_model::CM
+    face_models::FACE
+end
 
-# TODO implement.
-# """
-# struct QuasiStaticODEFunction{CM <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler, FACE <: Tuple, CH <: ConstraintHandler} <: AbstractSemidiscreteODEFunction
-#     dh::DH
-#     ch::CH
-#     constitutive_model::CM
-#     face_models::FACE
-# end
+solution_size(f::QuasiStaticODEFunction) = ndofs(f.dh)+ndofs(f.qh)
 
 # """
 #     QuasiStaticDAEFunction{M <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler}

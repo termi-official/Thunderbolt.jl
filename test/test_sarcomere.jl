@@ -71,5 +71,13 @@ using Thunderbolt, DelimitedFiles, Test
                 @test As ≈ reference_solution_data[closest_sol_idx, Asidx] rtol=1e-3
             end
         end
+
+        # Reference steady state solution up to a permutation of the indices
+        # Tmax = 500.0
+        # Ca=0.1
+        # SL=2.2
+        # SLdT=0.0
+        # uref = [0.74533,0.211469,0.00750457,0.00212916,0.00103517,0.00293704,0.00150072,0.00425779,0.00750457,0.00212916,7.55578e-05,2.14334e-05,0.00150072,0.00425779,0.00217549,0.00617217,0.00155623,3.70791e-05,0.00423817,0.0001009]
+        # @test uref[16:20] ≈ u[16:20] atol=1e-6
     end
 end
