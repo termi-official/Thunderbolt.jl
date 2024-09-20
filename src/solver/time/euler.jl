@@ -74,6 +74,10 @@ function perform_step!(f::TransientDiffusionFunction, cache::BackwardEulerSolver
     return !solve_failed
 end
 
+function init_cache(prob, alg::BackwardEulerSolver; t0)
+    return setup_solver_cache(prob.f, alg, t0)
+end
+
 function setup_solver_cache(f::TransientDiffusionFunction, solver::BackwardEulerSolver, t₀)
     @unpack dh = f
     @unpack inner_solver = solver
@@ -86,7 +90,7 @@ function setup_solver_cache(f::TransientDiffusionFunction, solver::BackwardEuler
     uprev = create_system_vector(solver.solution_vector_type, f)
     tmp   = create_system_vector(solver.solution_vector_type, f)
 
-    T = eltype(A)
+    T = eltype(u0)
 
     qr = create_quadrature_rule(f, solver, field_name)
 

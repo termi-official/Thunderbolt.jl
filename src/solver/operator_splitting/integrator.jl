@@ -72,18 +72,15 @@ function DiffEqBase.__init(
 
     callback = DiffEqBase.CallbackSet(callback)
 
-    cache = init_cache(prob, alg; dt, kwargs...)
-    
-    u = cache.u
-    uprev = cache.uprev
+    cache = init_cache(prob, alg; u0, t0, dt, kwargs...)
 
-    subintegrators = build_subintegrators_recursive(prob.f, prob.f.synchronizers, p, cache, u, uprev, t0, dt, 1:length(u0), u, tstops, _tstops, saveat, _saveat)
+    subintegrators = build_subintegrators_recursive(prob.f, prob.f.synchronizers, p, cache, t0, dt, 1:length(u0), cache.u, tstops, _tstops, saveat, _saveat)
 
     integrator = OperatorSplittingIntegrator(
         prob.f,
         alg,
-        u,
-        uprev,
+        cache.u,
+        cache.uprev,
         p,
         t0,
         copy(t0),
@@ -342,7 +339,7 @@ end
 advance_solution_to!(integrator::OperatorSplittingIntegrator, cache::AbstractOperatorSplittingCache, tnext::Number) = advance_solution_to!(integrator.subintegrators, cache, tnext)
 
 # Dispatch for tree node construction
-function build_subintegrators_recursive(f::GenericSplitFunction, synchronizers::Tuple, p::Tuple, cache::AbstractOperatorSplittingCache, u::AbstractArray, uprev::AbstractArray, t, dt, dof_range, uparent, tstops, _tstops, saveat, _saveat)
+function build_subintegrators_recursive(f::GenericSplitFunction, synchronizers::Tuple, p::Tuple, cache::AbstractOperatorSplittingCache, t, dt, dof_range, uparent, tstops, _tstops, saveat, _saveat)
     return ntuple(i ->
         build_subintegrators_recursive(
             get_operator(f, i),
@@ -350,10 +347,6 @@ function build_subintegrators_recursive(f::GenericSplitFunction, synchronizers::
             p[i],
             cache.inner_caches[i],
             # TODO recover this
-            # cache.inner_caches[i].u,
-            # cache.inner_caches[i].uprev,
-            similar(u, length(f.dof_ranges[i])),
-            similar(uprev, length(f.dof_ranges[i])),
             t, dt, f.dof_ranges[i],
             # We pass the full solution, because some parameters might require
             # access to solution variables which are not part of the local solution range
@@ -362,7 +355,7 @@ function build_subintegrators_recursive(f::GenericSplitFunction, synchronizers::
         ), length(f.functions)
     )
 end
-function build_subintegrators_recursive(f::GenericSplitFunction, synchronizers::NoExternalSynchronization, p::Tuple, cache::AbstractOperatorSplittingCache, u::AbstractArray, uprev::AbstractArray, t, dt, dof_range, uparent, tstops, _tstops, saveat, _saveat)
+function build_subintegrators_recursive(f::GenericSplitFunction, synchronizers::NoExternalSynchronization, p::Tuple, cache::AbstractOperatorSplittingCache, t, dt, dof_range, uparent, tstops, _tstops, saveat, _saveat)
     return ntuple(i ->
         build_subintegrators_recursive(
             get_operator(f, i),
@@ -370,10 +363,6 @@ function build_subintegrators_recursive(f::GenericSplitFunction, synchronizers::
             p[i],
             cache.inner_caches[i],
             # TODO recover this
-            # cache.inner_caches[i].u,
-            # cache.inner_caches[i].uprev,
-            similar(u, length(f.dof_ranges[i])),
-            similar(uprev, length(f.dof_ranges[i])),
             t, dt, f.dof_ranges[i],
             # We pass the full solution, because some parameters might require
             # access to solution variables which are not part of the local solution range

@@ -84,11 +84,10 @@ end
     # Copy solution into subproblem
     uparentview      = @view subintegrator.uparent[subintegrator.indexset]
     subintegrator.u .= uparentview
-    # for (i,imain) in enumerate(subintegrator.indexset)
-    #     subintegrator.u[i] = subintegrator.uparent[imain]
-    # end
-    # Mark previous solution
-    subintegrator.uprev .= subintegrator.u
+    # Mark previous solution, if necessary
+    if subintegrator.uprev !== nothing && length(subintegrator.uprev) > 0
+        subintegrator.uprev .= subintegrator.u
+    end
     syncronize_parameters!(subintegrator, subintegrator.f, subintegrator.synchronizer)
 end
 @inline function OS.finalize_local_step!(subintegrator::ThunderboltTimeIntegrator)
@@ -96,12 +95,9 @@ end
     #
     uparentview = @view subintegrator.uparent[subintegrator.indexset]
     uparentview .= subintegrator.u
-    # for (i,imain) in enumerate(subintegrator.indexset)
-    #     subintegrator.uparent[imain] = subintegrator.u[i]
-    # end
 end
 # Glue code
-function OS.build_subintegrators_recursive(f, synchronizer, p::Any, cache::AbstractTimeSolverCache, u::AbstractArray, uprev::AbstractArray, t, dt, dof_range, uparent, tstops, _tstops, saveat, _saveat)
+function OS.build_subintegrators_recursive(f, synchronizer, p::Any, cache::AbstractTimeSolverCache, t, dt, dof_range, uparent, tstops, _tstops, saveat, _saveat)
     integrator = Thunderbolt.ThunderboltTimeIntegrator(
         f,
         cache.uₙ,
@@ -125,8 +121,8 @@ function OS.build_subintegrators_recursive(f, synchronizer, p::Any, cache::Abstr
     syncronize_parameters!(integrator, f, synchronizer)
     return integrator
 end
-function OS.construct_inner_cache(f, alg::AbstractSolver, u::AbstractArray, uprev::AbstractArray)
-    return Thunderbolt.setup_solver_cache(f, alg, 0.0)
+function OS.construct_inner_cache(f, alg::AbstractSolver; u0, t0, kwargs...)
+    return Thunderbolt.setup_solver_cache(f, alg, t0)
 end
 OS.recursive_null_parameters(stuff::Union{AbstractSemidiscreteProblem, AbstractSemidiscreteFunction}) = OS.DiffEqBase.NullParameters()
 syncronize_parameters!(integ, f, ::OS.NoExternalSynchronization) = nothing
@@ -162,10 +158,9 @@ function DiffEqBase.__init(
 
     callback = DiffEqBase.CallbackSet(callback)
 
-    cache = setup_solver_cache(f, alg, t0)
+    cache = init_cache(prob, alg; t0)
 
-    cache.uₙ .= u0
-    cache.uₙ₋₁ .= u0
+    cache.uₙ   .= u0
 
     integrator = ThunderboltTimeIntegrator(
         f,
