@@ -68,8 +68,8 @@ Requires a mesh with facetsets
 and a nodeset
     * Apex
 """
-function compute_lv_coordinate_system(mesh::SimpleMesh{3}, subdomains::Vector{String} = [""]; up = Vec((0.0,0.0,1.0)))
-    @assert up ≈ Vec((0.0,0.0,1.0)) "Custom up vector not yet supported."
+function compute_lv_coordinate_system(mesh::SimpleMesh{3}, subdomains::Vector{String} = [""]; up = Vec((0.0,0.0,-1.0)))
+    @assert abs.(up) ≈ Vec((0.0,0.0,1.0)) "Custom up vector not yet supported."
     ip_collection = LagrangeCollection{1}()
     qr_collection = QuadratureRuleCollection(2)
     cv_collection = CellValueCollection(qr_collection, ip_collection)
@@ -119,38 +119,18 @@ function compute_lv_coordinate_system(mesh::SimpleMesh{3}, subdomains::Vector{St
     close!(ch)
     update!(ch, 0.0);
 
-    K_transmural = copy(K)
+    K_transmural = K
     f = zeros(ndofs(dh))
 
     apply!(K_transmural, f, ch)
-    transmural = K_transmural \ f;
+    transmural = solve(LinearSolve.LinearProblem(K_transmural, f)).u
 
     # Apicobasal coordinate
-    #TODO refactor check for node set existence
-    if !haskey(mesh.grid.nodesets, "Apex") #TODO this is just a hotfix, assuming that z points towards the apex
-        apex_node_index = 1
-        nodes = getnodes(mesh)
-        for (i,node) ∈ enumerate(nodes)
-            if nodes[i].x[3] > nodes[apex_node_index].x[3]
-                apex_node_index = i
-            end
-        end
-        addnodeset!(mesh, "Apex", OrderedSet{Int}((apex_node_index)))
-    end
-
-    ch = ConstraintHandler(dh);
-    dbc = Dirichlet(:coordinates, getfacetset(mesh, "Base"), (x, t) -> 0)
-    Ferrite.add!(ch, dbc);
-    dbc = Dirichlet(:coordinates, getnodeset(mesh, "Apex"), (x, t) -> 1)
-    Ferrite.add!(ch, dbc);
-    close!(ch)
-    update!(ch, 0.0);
-
-    K_apicobasal = copy(K)
-    f = zeros(ndofs(dh))
-
-    apply!(K_apicobasal, f, ch)
-    apicobasal = K_apicobasal \ f;
+    apicobasal = zeros(ndofs(dh))
+    apply_analytical!(apicobasal, dh, :coordinates, x->x ⋅ up)
+    apicobasal .-= minimum(apicobasal)
+    apicobasal = abs.(apicobasal)
+    apicobasal ./= maximum(apicobasal)
 
     rotational = zeros(ndofs(dh))
     rotational .= NaN
@@ -175,7 +155,7 @@ function compute_lv_coordinate_system(mesh::SimpleMesh{3}, subdomains::Vector{St
                     rotational[dofs[qp.i]] = 0.0
                 else
                     x = x_planar / xlen
-                    rotational[dofs[qp.i]] = (π + atan(x[1], x[2]))/2 # TODO tilted coordinate system
+                    rotational[dofs[qp.i]] = 1 + atan(x[1], x[2])/π # TODO tilted coordinate system
                 end
             end
         end
@@ -194,7 +174,7 @@ Requires a mesh with facetsets
     * Myocardium
 """
 function compute_midmyocardial_section_coordinate_system(mesh::SimpleMesh{3}, subdomains::Vector{String} = [""]; up = Vec((0.0,0.0,1.0)))
-    @assert up ≈ Vec((0.0,0.0,1.0)) "Custom up vector not yet supported."
+    @assert abs.(up) ≈ Vec((0.0,0.0,1.0)) "Custom up vector not yet supported."
     ip_collection = LagrangeCollection{1}()
     qr_collection = QuadratureRuleCollection(2)
     cv_collection = CellValueCollection(qr_collection, ip_collection)
@@ -244,26 +224,21 @@ function compute_midmyocardial_section_coordinate_system(mesh::SimpleMesh{3}, su
     close!(ch)
     update!(ch, 0.0);
 
-    K_transmural = copy(K)
+    K_transmural = K
     f = zeros(ndofs(dh))
 
     apply!(K_transmural, f, ch)
-    transmural = K_transmural \ f;
+    transmural = solve(LinearSolve.LinearProblem(K_transmural, f)).u
 
-    ch = ConstraintHandler(dh);
-    dbc = Dirichlet(:coordinates, getfacetset(mesh, "Base"), (x, t) -> 0)
-    Ferrite.add!(ch, dbc);
-    dbc = Dirichlet(:coordinates, getfacetset(mesh, "Myocardium"), (x, t) -> 0.15)
-    Ferrite.add!(ch, dbc);
-    close!(ch)
-    update!(ch, 0.0);
+    # Apicobasal coordinate
+    apicobasal = zeros(ndofs(dh))
+    apply_analytical!(apicobasal, dh, :coordinates, x->x ⋅ up)
+    apicobasal .-= minimum(apicobasal)
+    apicobasal = abs.(apicobasal)
+    apicobasal ./= maximum(apicobasal)
+    apicobasal .*= 0.15
 
-    K_apicobasal = copy(K)
-    f = zeros(ndofs(dh))
-
-    apply!(K_apicobasal, f, ch)
-    apicobasal = K_apicobasal \ f;
-
+    # Rotational coordinate
     rotational = zeros(ndofs(dh))
     rotational .= NaN
 
@@ -283,7 +258,7 @@ function compute_midmyocardial_section_coordinate_system(mesh::SimpleMesh{3}, su
                 x_planar = x_dof - (x_dof ⋅ up) * up # Project into plane
                 x = x_planar / norm(x_planar)
 
-                rotational[dofs[qp.i]] = (π + atan(x[1], x[2]))/2 # TODO tilted coordinate system
+                rotational[dofs[qp.i]] = 1 + atan(x[1], x[2])/π # TODO tilted coordinate system
             end
         end
     end

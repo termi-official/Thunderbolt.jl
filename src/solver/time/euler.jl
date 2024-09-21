@@ -74,10 +74,6 @@ function perform_step!(f::TransientDiffusionFunction, cache::BackwardEulerSolver
     return !solve_failed
 end
 
-function init_cache(prob, alg::BackwardEulerSolver; t0)
-    return setup_solver_cache(prob.f, alg, t0)
-end
-
 function setup_solver_cache(f::TransientDiffusionFunction, solver::BackwardEulerSolver, t₀)
     @unpack dh = f
     @unpack inner_solver = solver

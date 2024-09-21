@@ -205,3 +205,7 @@ function perform_step!(integ::ThunderboltTimeIntegrator, cache::AbstractTimeSolv
     end
     return true
 end
+
+function init_cache(prob, alg; t0, kwargs...)
+    return setup_solver_cache(prob.f, alg, t0)
+end
