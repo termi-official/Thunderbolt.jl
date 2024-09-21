@@ -212,9 +212,9 @@ function create_simple_microstructure_model(coordinate_system, ip_collection::Ve
                 transversal_angle = (1-transmural) * endo_transversal_angle + (transmural) * epi_transversal_angle
 
                 coeff = streeter_type_fsn(transmural_direction, circumferential_direction, apicobasal_direction, helix_angle, transversal_angle, sheetlet_pseudo_angle, make_orthogonal)
-                f_buf[qp.i, cellindex] = coeff.f
-                s_buf[qp.i, cellindex] = coeff.s
-                n_buf[qp.i, cellindex] = coeff.n
+                f_buf[qp.i, cellindex] = Tv(coeff.f)
+                s_buf[qp.i, cellindex] = Tv(coeff.s)
+                n_buf[qp.i, cellindex] = Tv(coeff.n)
             end
         end
     end
