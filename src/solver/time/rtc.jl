@@ -32,8 +32,8 @@ end
 
 @inline DiffEqBase.get_tmp_cache(integrator::OS.OperatorSplittingIntegrator, alg::OS.AbstractOperatorSplittingAlgorithm, cache::ReactionTangentControllerCache) = DiffEqBase.get_tmp_cache(integrator, alg, cache.ltg_cache)
 
-@inline function OS.advance_solution_to!(subintegrators::Tuple, cache::ReactionTangentControllerCache, tnext) 
-    OS.advance_solution_to!(subintegrators, cache.ltg_cache, tnext)
+@inline function OS.advance_solution_to!(subintegrators::Tuple, cache::ReactionTangentControllerCache, tnext; kwargs...) 
+    OS.advance_solution_to!(subintegrators, cache.ltg_cache, tnext; kwargs...)
 end
 
 @inline DiffEqBase.isadaptive(::ReactionTangentController) = true
@@ -85,23 +85,20 @@ end
 end
 
 # Dispatch for outer construction
-function OS.init_cache(prob::OS.OperatorSplittingProblem, alg::ReactionTangentController; dt, kwargs...)
+function OS.init_cache(prob::OS.OperatorSplittingProblem, alg::ReactionTangentController; u0, kwargs...)
     @unpack f = prob
     @assert f isa GenericSplitFunction
 
-    u          = copy(prob.u0)
-    uprev      = copy(prob.u0)
-
     # Build inner integrator
-    return OS.construct_inner_cache(f, alg, u, uprev)
+    return OS.construct_inner_cache(f, alg; uparent=u0, u0, kwargs...)
 end
 
 # Dispatch for recursive construction
-function OS.construct_inner_cache(f::OS.AbstractOperatorSplitFunction, alg::ReactionTangentController, u::AbstractArray{T}, uprev::AbstractArray) where T <: Number
-    ltg_cache = OS.construct_inner_cache(f, alg.ltg, u, uprev)
-    return ReactionTangentControllerCache(ltg_cache, zero(T))
+function OS.construct_inner_cache(f::OS.AbstractOperatorSplitFunction, alg::ReactionTangentController; u0, kwargs...)
+    ltg_cache = OS.construct_inner_cache(f, alg.ltg; u0, kwargs...)
+    return ReactionTangentControllerCache(ltg_cache, zero(eltype(u0)))
 end
 
-function OS.build_subintegrators_recursive(f::GenericSplitFunction, synchronizers::Tuple, p::Tuple, cache::ReactionTangentControllerCache, u::AbstractArray, uprev::AbstractArray, t, dt, dof_range, uparent, tstops, _tstops, saveat, _saveat)
-    OS.build_subintegrators_recursive(f, synchronizers, p, cache.ltg_cache, u, uprev, t, dt, dof_range, uparent, tstops, _tstops, saveat, _saveat)
+function OS.build_subintegrators_recursive(f::GenericSplitFunction, synchronizers::Tuple, p::Tuple, cache::ReactionTangentControllerCache, t, dt, dof_range, uparent, tstops, _tstops, saveat, _saveat)
+    OS.build_subintegrators_recursive(f, synchronizers, p, cache.ltg_cache, t, dt, dof_range, uparent, tstops, _tstops, saveat, _saveat)
 end

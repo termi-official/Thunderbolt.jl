@@ -23,21 +23,21 @@ function init_cache(prob::OperatorSplittingProblem, alg::LieTrotterGodunov; u0, 
     @assert f isa GenericSplitFunction
 
     # Build inner integrator
-    return construct_inner_cache(f, alg; u0, kwargs...)
+    return construct_inner_cache(f, alg; uparent=u0, u0, kwargs...)
 end
 
 # Dispatch for recursive construction
-function construct_inner_cache(f::AbstractOperatorSplitFunction, alg::LieTrotterGodunov; u0, kwargs...)
+function construct_inner_cache(f::AbstractOperatorSplitFunction, alg::LieTrotterGodunov; uparent, u0, kwargs...)
     dof_ranges = f.dof_ranges
 
     u          = copy(u0)
     uprev      = copy(u0)
     tmp        = similar(u)
-    inner_caches = ntuple(i->construct_inner_cache(get_operator(f, i), alg.inner_algs[i]; u0, kwargs...), length(f.functions))
+    inner_caches = ntuple(i->construct_inner_cache(get_operator(f, i), alg.inner_algs[i]; uparent, u0=view(uparent,dof_ranges[i]), kwargs...), length(f.functions))
     LieTrotterGodunovCache(u, uprev, tmp, inner_caches)
 end
 
-@inline @unroll function advance_solution_to!(subintegrators::Tuple, cache::LieTrotterGodunovCache, tnext)
+@inline @unroll function advance_solution_to!(subintegrators::Tuple, cache::LieTrotterGodunovCache, tnext; uparent)
     # We assume that the integrators are already synced
     @unpack u, uprev, inner_caches = cache
 
@@ -48,8 +48,8 @@ end
     i = 0
     @unroll for subinteg in subintegrators
         i += 1
-        prepare_local_step!(subinteg)
-        advance_solution_to!(subinteg, inner_caches[i], tnext)
-        finalize_local_step!(subinteg)
+        prepare_local_step!(uparent, subinteg)
+        advance_solution_to!(subinteg, inner_caches[i], tnext; uparent)
+        finalize_local_step!(uparent, subinteg)
     end
 end 

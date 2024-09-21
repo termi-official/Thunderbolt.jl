@@ -277,8 +277,8 @@ function __step!(integrator)
     synchronize_subintegrators!(integrator)
     tnext = integrator.t + integrator.dt
 
-     # Solve inner problems
-    advance_solution_to!(integrator, tnext)
+    # Solve inner problems
+    advance_solution_to!(integrator, tnext; uparent=integrator.u)
     stepsize_controller!(integrator)
 
     # Update integrator
@@ -299,8 +299,8 @@ function __step!(integrator)
 end
 
 # solvers need to define this interface
-function advance_solution_to!(integrator, tnext)
-    advance_solution_to!(integrator, integrator.cache, tnext)
+function advance_solution_to!(integrator, tnext; uparent)
+    advance_solution_to!(integrator, integrator.cache, tnext; uparent)
 end
 
 DiffEqBase.get_dt(integrator::OperatorSplittingIntegrator) = integrator._dt
@@ -336,7 +336,9 @@ end
     end
 end
 
-advance_solution_to!(integrator::OperatorSplittingIntegrator, cache::AbstractOperatorSplittingCache, tnext::Number) = advance_solution_to!(integrator.subintegrators, cache, tnext)
+function advance_solution_to!(integrator::OperatorSplittingIntegrator, cache::AbstractOperatorSplittingCache, tnext::Number; uparent)
+    advance_solution_to!(integrator.subintegrators, cache, tnext; uparent)
+end
 
 # Dispatch for tree node construction
 function build_subintegrators_recursive(f::GenericSplitFunction, synchronizers::Tuple, p::Tuple, cache::AbstractOperatorSplittingCache, t, dt, dof_range, uparent, tstops, _tstops, saveat, _saveat)
@@ -372,14 +374,14 @@ function build_subintegrators_recursive(f::GenericSplitFunction, synchronizers::
     )
 end
 
-@unroll function prepare_local_step!(subintegrators::Tuple)
+@unroll function prepare_local_step!(uparent, subintegrators::Tuple)
     @unroll for subintegrator in subintegrators
-        prepare_local_step!(subintegrator)
+        prepare_local_step!(uparent, subintegrator)
     end
 end
 
-@unroll function finalize_local_step!(subintegrators::Tuple)
+@unroll function finalize_local_step!(uparent, subintegrators::Tuple)
     @unroll for subintegrator in subintegrators
-        finalize_local_step!(subintegrator)
+        finalize_local_step!(uparent, subintegrator)
     end
 end
