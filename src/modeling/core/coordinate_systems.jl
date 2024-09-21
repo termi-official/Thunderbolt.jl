@@ -155,7 +155,7 @@ function compute_lv_coordinate_system(mesh::SimpleMesh{3}, subdomains::Vector{St
                     rotational[dofs[qp.i]] = 0.0
                 else
                     x = x_planar / xlen
-                    rotational[dofs[qp.i]] = 1 + atan(x[1], x[2])/π # TODO tilted coordinate system
+                    rotational[dofs[qp.i]] = 1/2 + atan(x[1], x[2])/(2π) # TODO tilted coordinate system
                 end
             end
         end
@@ -258,7 +258,7 @@ function compute_midmyocardial_section_coordinate_system(mesh::SimpleMesh{3}, su
                 x_planar = x_dof - (x_dof ⋅ up) * up # Project into plane
                 x = x_planar / norm(x_planar)
 
-                rotational[dofs[qp.i]] = 1 + atan(x[1], x[2])/π # TODO tilted coordinate system
+                rotational[dofs[qp.i]] = 1/2 + atan(x[1], x[2])/(2π) # TODO tilted coordinate system
             end
         end
     end
