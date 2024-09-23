@@ -55,16 +55,14 @@
             torso_grid
         )
         u = zeros(Thunderbolt.solution_size(heart_fun))
-        u_g = zeros(Thunderbolt.solution_size(torso_fun))
         plonsey_ecg = Thunderbolt.Plonsey1964ECGGaussCache(op, u)
         poisson_ecg = Thunderbolt.PoissonECGReconstructionCache(heart_fun, torso_grid, ConstantCoefficient(κᵢ), ConstantCoefficient(κ), electrodes; ground = OrderedSet([Thunderbolt.get_closest_vertex(ground_vertex, torso_grid)]))
 
         geselowitz_electrodes = [[electrodes[1], electrodes[i]] for i in 2:length(electrodes)]
-        geselowitz_ecg = Thunderbolt.Geselowitz1989ECGLeadCache(torso_grid, ConstantCoefficient(κᵢ), ConstantCoefficient(κ), geselowitz_electrodes; ground = OrderedSet([Thunderbolt.get_closest_vertex(ground_vertex, torso_grid)]))
+        geselowitz_ecg = Thunderbolt.Geselowitz1989ECGLeadCache(heart_fun, torso_grid, ConstantCoefficient(κᵢ), ConstantCoefficient(κ), geselowitz_electrodes; ground = OrderedSet([Thunderbolt.get_closest_vertex(ground_vertex, torso_grid)]))
 
         @testset "Equilibrium" begin
             u .= 0.0
-            u_g .= 0.0
 
             @testset "Plonsey1964" begin
                 Thunderbolt.update_ecg!(plonsey_ecg, u)
@@ -79,7 +77,7 @@
             end
 
             @testset "Geselowitz" begin
-                Thunderbolt.update_ecg!(geselowitz_ecg, u_g)
+                Thunderbolt.update_ecg!(geselowitz_ecg, u)
                 ecg_vals = Thunderbolt.evaluate_ecg(geselowitz_ecg)
                 @test length(ecg_vals) == length(geselowitz_electrodes)
                 @test all(ecg_vals .≈ 0.0)
@@ -88,7 +86,6 @@
 
         @testset "Idempotence" begin
             u .= randn(length(u))
-            u_g .= randn(length(u_g))
 
             @testset "Plonsey1964" begin
                 Thunderbolt.update_ecg!(plonsey_ecg, u)
@@ -105,16 +102,15 @@
             end
 
             @testset "Geselowitz" begin
-                Thunderbolt.update_ecg!(geselowitz_ecg, u_g)
+                Thunderbolt.update_ecg!(geselowitz_ecg, u)
                 val_1_init = Thunderbolt.evaluate_ecg(geselowitz_ecg)
-                Thunderbolt.update_ecg!(geselowitz_ecg, u_g)
+                Thunderbolt.update_ecg!(geselowitz_ecg, u)
                 @test Thunderbolt.evaluate_ecg(geselowitz_ecg) == val_1_init
             end
         end
 
         @testset "Planar wave dim=$dim" for dim in 1:3
             Ferrite.apply_analytical!(u, heart_fun.dh, :φₘ, x->x[dim]^3 )
-            Ferrite.apply_analytical!(u_g, torso_fun.dh, :φₘ, x->x[dim]^3 )
 
             @testset "Plonsey1964 xᵢ³" begin
                 Thunderbolt.update_ecg!(plonsey_ecg, u)
@@ -141,7 +137,7 @@
             end
 
             @testset "Geselowitz xᵢ³" begin
-                Thunderbolt.update_ecg!(geselowitz_ecg, u_g)
+                Thunderbolt.update_ecg!(geselowitz_ecg, u)
                 ecg_vals = Thunderbolt.evaluate_ecg(geselowitz_ecg)
                 for dim2 in 1:3
                     if dim2 == dim
@@ -153,7 +149,6 @@
             end
 
             Ferrite.apply_analytical!(u, heart_fun.dh, :φₘ, x->-x[dim]^3 )
-            Ferrite.apply_analytical!(u_g, torso_fun.dh, :φₘ, x->-x[dim]^3 )
 
             @testset "Plonsey1964 -xᵢ³" begin
                 Thunderbolt.update_ecg!(plonsey_ecg, u)
@@ -182,7 +177,7 @@
             end
 
             @testset "Geselowitz -xᵢ³" begin
-                Thunderbolt.update_ecg!(geselowitz_ecg, u_g)
+                Thunderbolt.update_ecg!(geselowitz_ecg, u)
                 ecg_vals = Thunderbolt.evaluate_ecg(geselowitz_ecg) 
                 for i in 1:3
                     ecg_vals = Thunderbolt.evaluate_ecg(geselowitz_ecg) 
@@ -198,7 +193,6 @@
 
         @testset "Symmetric stimuli" begin
             Ferrite.apply_analytical!(u, heart_fun.dh, :φₘ, x->sqrt(3)-norm(x) )
-            Ferrite.apply_analytical!(u_g, torso_fun.dh, :φₘ, x->sqrt(3)-norm(x) )
 
             @testset "Plonsey1964 √3-||x||" begin
                 Thunderbolt.update_ecg!(plonsey_ecg, u)
@@ -219,7 +213,7 @@
             end
 
             @testset "Geselowitz √3-||x||" begin
-                Thunderbolt.update_ecg!(geselowitz_ecg, u_g)
+                Thunderbolt.update_ecg!(geselowitz_ecg, u)
                 ecg_vals = Thunderbolt.evaluate_ecg(geselowitz_ecg)
                 for i in 3:length(ecg_vals)
                     @test ecg_vals[2] ≈ ecg_vals[i] atol=1e-1
@@ -227,7 +221,6 @@
             end
 
             Ferrite.apply_analytical!(u, heart_fun.dh, :φₘ, x->x[1]^2 )
-            Ferrite.apply_analytical!(u_g, torso_fun.dh, :φₘ, x->x[1]^2 )
 
             @testset "Plonsey1964 x₁²" begin
                 Thunderbolt.update_ecg!(plonsey_ecg, u)
@@ -247,7 +240,7 @@
             end
 
             @testset "Geselowitz x₁²" begin
-                Thunderbolt.update_ecg!(geselowitz_ecg, u_g)
+                Thunderbolt.update_ecg!(geselowitz_ecg, u)
                 ecg_vals = Thunderbolt.evaluate_ecg(geselowitz_ecg)
                 for dim in 1:3
                     @test ecg_vals[2dim] ≈ ecg_vals[2dim-1] atol=1e-1
