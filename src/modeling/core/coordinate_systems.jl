@@ -122,7 +122,7 @@ function compute_lv_coordinate_system(mesh::SimpleMesh{3}, subdomains::Vector{St
     f = zeros(ndofs(dh))
 
     apply!(K_transmural, f, ch)
-    sol = solve(LinearSolve.LinearProblem(K_transmural, f), KrylovJL_CG())
+    sol = solve(LinearSolve.LinearProblem(K_transmural, f), LinearSolve.KrylovJL_CG())
     transmural = sol.u
 
     # Apicobasal coordinate
@@ -228,7 +228,7 @@ function compute_midmyocardial_section_coordinate_system(mesh::SimpleMesh{3}, su
     f = zeros(ndofs(dh))
 
     apply!(K_transmural, f, ch)
-    sol = solve(LinearSolve.LinearProblem(K_transmural, f), KrylovJL_CG())
+    sol = solve(LinearSolve.LinearProblem(K_transmural, f), LinearSolve.KrylovJL_CG())
     transmural = sol.u
 
     # Apicobasal coordinate
