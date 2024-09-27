@@ -83,7 +83,6 @@ function compute_lv_coordinate_system(mesh::SimpleMesh{3}, subdomains::Vector{St
     # Assemble Laplacian
     # TODO use bilinear operator for performance
     K = allocate_matrix(dh)
-
     assembler = start_assemble(K)
     for sdh in dh.subdofhandlers
         cellvalues = getcellvalues(cv_collection, getcells(mesh, first(sdh.cellset)))
@@ -123,7 +122,8 @@ function compute_lv_coordinate_system(mesh::SimpleMesh{3}, subdomains::Vector{St
     f = zeros(ndofs(dh))
 
     apply!(K_transmural, f, ch)
-    transmural = solve(LinearSolve.LinearProblem(K_transmural, f)).u
+    sol = solve(LinearSolve.LinearProblem(K_transmural, f), KrylovJL_CG())
+    transmural = sol.u
 
     # Apicobasal coordinate
     apicobasal = zeros(ndofs(dh))
@@ -228,7 +228,8 @@ function compute_midmyocardial_section_coordinate_system(mesh::SimpleMesh{3}, su
     f = zeros(ndofs(dh))
 
     apply!(K_transmural, f, ch)
-    transmural = solve(LinearSolve.LinearProblem(K_transmural, f)).u
+    sol = solve(LinearSolve.LinearProblem(K_transmural, f), KrylovJL_CG())
+    transmural = sol.u
 
     # Apicobasal coordinate
     apicobasal = zeros(ndofs(dh))
