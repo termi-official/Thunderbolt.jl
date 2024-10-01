@@ -242,7 +242,7 @@ function reached_tstop(integrator, tstop, stop_at_tstop = integrator.dtchangeabl
     if stop_at_tstop
         return integrator.t == tstop # Check for exact hit
     else #!stop_at_tstop
-        return is_past_t(integrator, tstop))
+        return is_past_t(integrator, tstop)
     end
 end
 
