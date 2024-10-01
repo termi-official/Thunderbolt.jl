@@ -692,11 +692,9 @@ version = "2.0.4"
 
 [[deps.Ferrite]]
 deps = ["EnumX", "ForwardDiff", "LinearAlgebra", "NearestNeighbors", "OrderedCollections", "Preferences", "Reexport", "SparseArrays", "StaticArrays", "Tensors", "WriteVTK"]
-git-tree-sha1 = "25167c55b7681d131cc45e3c8d097274bf67bb34"
-repo-rev = "b6976d3"
-repo-url = "https://github.com/Ferrite-FEM/Ferrite.jl"
+git-tree-sha1 = "1ad6e7eab1803998ad16360b1f86c7723d361cb0"
 uuid = "c061ca5d-56c9-439f-9c0e-210fe06d3992"
-version = "0.3.14"
+version = "1.0.0"
 
     [deps.Ferrite.extensions]
     FerriteBlockArrays = "BlockArrays"
@@ -2410,7 +2408,7 @@ uuid = "8290d209-cae3-49c0-8002-c8c24d57dab5"
 version = "0.5.2"
 
 [[deps.Thunderbolt]]
-deps = ["Adapt", "BlockArrays", "CirculatorySystemModels", "CommonSolve", "DataStructures", "DiffEqBase", "Ferrite", "FerriteGmsh", "GPUArraysCore", "JLD2", "LinearAlgebra", "LinearSolve", "ModelingToolkit", "OrderedCollections", "Polyester", "ReadVTK", "Reexport", "SparseArrays", "SparseMatricesCSR", "StaticArrays", "SymbolicIndexingInterface", "Tensors", "TimerOutputs", "UnPack", "Unrolled", "WriteVTK"]
+deps = ["Adapt", "BlockArrays", "CommonSolve", "DataStructures", "DiffEqBase", "Ferrite", "FerriteGmsh", "GPUArraysCore", "JLD2", "LinearAlgebra", "LinearSolve", "ModelingToolkit", "OrderedCollections", "Polyester", "ReadVTK", "Reexport", "SparseArrays", "SparseMatricesCSR", "StaticArrays", "SymbolicIndexingInterface", "Tensors", "TimerOutputs", "UnPack", "Unrolled", "WriteVTK"]
 path = ".."
 uuid = "909927c2-98d5-4a67-bba9-79f03a9ad49b"
 version = "0.0.1-DEV"
