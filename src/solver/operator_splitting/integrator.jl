@@ -237,9 +237,14 @@ end
 # helper functions for dealing with time-reversed integrators in the same way
 # that OrdinaryDiffEq.jl does
 tdir(integrator) = integrator.tstops.ordering isa DataStructures.FasterForward ? 1 : -1
-is_past_t(integrator, t) = tdir(integrator) * (t - integrator.t) < zero(integrator.t)
-reached_tstop(integrator, tstop, stop_at_tstop = integrator.dtchangeable) =
-    integrator.t ≈ tstop || (!stop_at_tstop && is_past_t(integrator, tstop))
+is_past_t(integrator, t) = tdir(integrator) * (t - integrator.t) ≤ zero(integrator.t)
+function reached_tstop(integrator, tstop, stop_at_tstop = integrator.dtchangeable)
+    if stop_at_tstop
+        return integrator.t == tstop # Check for exact hit
+    else #!stop_at_tstop
+        return is_past_t(integrator, tstop)
+    end
+end
 
 
 
