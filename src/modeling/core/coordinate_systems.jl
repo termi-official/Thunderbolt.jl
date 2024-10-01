@@ -3,10 +3,13 @@
 
 Standard cartesian coordinate system.
 """
-struct CartesianCoordinateSystem{sdim}
+struct CartesianCoordinateSystem{sdim,T}
+    function CartesianCoordinateSystem{sdim}() where sdim
+        return new{sdim,Float32}()
+    end
 end
 
-value_type(::CartesianCoordinateSystem{sdim}) where sdim = Vec{sdim, Float32}
+value_type(::CartesianCoordinateSystem{sdim, T}) where {sdim, T} = Vec{sdim, T}
 
 CartesianCoordinateSystem(mesh::AbstractGrid{sdim}) where sdim = CartesianCoordinateSystem{sdim}()
 
@@ -47,7 +50,9 @@ struct LVCoordinate{T}
     rotational::T
 end
 
-value_type(::LVCoordinateSystem) = LVCoordinate{Float32}
+Base.eltype(::Type{LVCoordinate{T}}) where T = T
+Base.eltype(::LVCoordinate{T}) where T = T
+value_type(::LVCoordinateSystem{T}) where T = LVCoordinate{T}
 
 
 """
@@ -309,6 +314,8 @@ struct BiVCoordinate{T}
     transventricular::T
 end
 
+Base.eltype(::Type{BiVCoordinate{T}}) where T = T
+Base.eltype(::BiVCoordinate{T}) where T = T
 value_type(::BiVCoordinateSystem) = BiVCoordinate
 
 getcoordinateinterpolation(cs::BiVCoordinateSystem, cell::Ferrite.AbstractCell) = Ferrite.getfieldinterpolation(cs.dh, (1,1))

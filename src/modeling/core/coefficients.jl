@@ -115,13 +115,15 @@ struct CoordinateSystemCoefficient{CS}
 end
 
 function compute_nodal_values(csc::CoordinateSystemCoefficient, dh::DofHandler, field_name::Symbol)
-    nodal_values = Vector{value_type(csc.cs)}(UndefInitializer(), ndofs(dh))
+    Tv = value_type(csc.cs)
+    nodal_values = Vector{Tv}(UndefInitializer(), ndofs(dh))
+    T = eltype(Tv)
     for sdh in dh.subdofhandlers
         field_name ∈ sdh.field_names || continue
-        ip = Ferrite.getfieldinterpolation(sdh, field_name)
-        positions = Ferrite.reference_coordinates(ip)
+        ip   = Ferrite.getfieldinterpolation(sdh, field_name)
+        rdim = Ferrite.getrefdim(ip)
+        positions = Vec{rdim,T}.(Ferrite.reference_coordinates(ip))
         # This little trick uses the delta property of interpolations
-        T = eltype(first(positions))
         qr = QuadratureRule{Ferrite.getrefshape(ip)}([T(1.0) for _ in 1:length(positions)], positions)
         cc = setup_coefficient_cache(csc, qr, sdh)
         _compute_nodal_values!(nodal_values, qr, cc, sdh)
