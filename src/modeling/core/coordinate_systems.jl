@@ -46,7 +46,7 @@ LV only part of the universal ventricular coordinate, containing
 """
 struct LVCoordinate{T}
     transmural::T
-    apicaobasal::T
+    apicobasal::T
     rotational::T
 end
 
@@ -309,7 +309,7 @@ Biventricular universal coordinate, containing
 """
 struct BiVCoordinate{T}
     transmural::T
-    apicaobasal::T
+    apicobasal::T
     rotational::T
     transventricular::T
 end
