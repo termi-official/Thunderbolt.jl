@@ -24,12 +24,12 @@ getcoordinateinterpolation(cs::CartesianCoordinateSystem{sdim}, cell::CellType) 
 Simplified universal ventricular coordinate on LV only, containing the transmural, apicobasal and
 rotational coordinates. See [`compute_lv_coordinate_system`](@ref) to construct it.
 """
-struct LVCoordinateSystem{DH <: AbstractDofHandler, IPC}
+struct LVCoordinateSystem{T, DH <: AbstractDofHandler, IPC}
     dh::DH
     ip_collection::IPC # TODO special dof handler with type stable interpolation
-    u_transmural::Vector{Float64}
-    u_apicobasal::Vector{Float64}
-    u_rotational::Vector{Float64}
+    u_transmural::Vector{T}
+    u_apicobasal::Vector{T}
+    u_rotational::Vector{T}
 end
 
 
@@ -68,8 +68,8 @@ Requires a mesh with facetsets
 and a nodeset
     * Apex
 """
-function compute_lv_coordinate_system(mesh::SimpleMesh{3}, subdomains::Vector{String} = [""]; up = Vec((0.0,0.0,1.0)))
-    @assert up ≈ Vec((0.0,0.0,1.0)) "Custom up vector not yet supported."
+function compute_lv_coordinate_system(mesh::SimpleMesh{3,<:Any,T}, subdomains::Vector{String} = [""]; up = Vec((T(0.0),T(0.0),T(1.0)))) where T
+    @assert up ≈ Vec((T(0.0),T(0.0),T(1.0))) "Custom up vector not yet supported."
     ip_collection = LagrangeCollection{1}()
     qr_collection = QuadratureRuleCollection(2)
     cv_collection = CellValueCollection(qr_collection, ip_collection)
@@ -181,7 +181,7 @@ function compute_lv_coordinate_system(mesh::SimpleMesh{3}, subdomains::Vector{St
         end
     end
 
-    return LVCoordinateSystem(dh, ip_collection, transmural, apicobasal, rotational)
+    return LVCoordinateSystem(dh, ip_collection, T.(transmural), T.(apicobasal), T.(rotational))
 end
 
 """
@@ -193,8 +193,8 @@ Requires a mesh with facetsets
     * Endocardium
     * Myocardium
 """
-function compute_midmyocardial_section_coordinate_system(mesh::SimpleMesh{3}, subdomains::Vector{String} = [""]; up = Vec((0.0,0.0,1.0)))
-    @assert up ≈ Vec((0.0,0.0,1.0)) "Custom up vector not yet supported."
+function compute_midmyocardial_section_coordinate_system(mesh::SimpleMesh{3,<:Any,T}, subdomains::Vector{String} = [""]; up = Vec((T(0.0),T(0.0),T(1.0)))) where T
+    @assert up ≈ Vec((T(0.0),T(0.0),T(1.0))) "Custom up vector not yet supported."
     ip_collection = LagrangeCollection{1}()
     qr_collection = QuadratureRuleCollection(2)
     cv_collection = CellValueCollection(qr_collection, ip_collection)
@@ -288,7 +288,7 @@ function compute_midmyocardial_section_coordinate_system(mesh::SimpleMesh{3}, su
         end
     end
 
-    return LVCoordinateSystem(dh, ip_collection, transmural, apicobasal, rotational)
+    return LVCoordinateSystem(dh, ip_collection, T.(transmural), T.(apicobasal), T.(rotational))
 end
 
 """
@@ -308,12 +308,12 @@ end
 Universal ventricular coordinate, containing the transmural, apicobasal, rotational 
 and transventricular coordinates.
 """
-struct BiVCoordinateSystem{DH <: Ferrite.AbstractDofHandler}
+struct BiVCoordinateSystem{T, DH <: Ferrite.AbstractDofHandler}
     dh::DH
-    u_transmural::Vector{Float32}
-    u_apicobasal::Vector{Float32}
-    u_rotational::Vector{Float32}
-    u_transventricular::Vector{Float32}
+    u_transmural::Vector{T}
+    u_apicobasal::Vector{T}
+    u_rotational::Vector{T}
+    u_transventricular::Vector{T}
 end
 
 
