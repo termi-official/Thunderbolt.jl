@@ -5,7 +5,6 @@ over some time interval.
 mutable struct ThunderboltTimeIntegrator{
     fType,
     uType,
-    uType2,
     uprevType,
     indexSetType,
     tType,
@@ -19,7 +18,6 @@ mutable struct ThunderboltTimeIntegrator{
 }  <: DiffEqBase.SciMLBase.DEIntegrator{#=alg_type=#Nothing, true, uType, tType} # FIXME alg
     f::fType # Right hand side
     u::uType # Current local solution
-    uparent::uType2 # Real solution injected by OperatorSplittingIntegrator
     uprev::uprevType
     indexset::indexSetType
     p::pType
@@ -75,37 +73,32 @@ end
 OS.tdir(::ThunderboltTimeIntegrator) = 1
 
 # TODO Any -> cache supertype
-function OS.advance_solution_to!(integrator::ThunderboltTimeIntegrator, cache::Any, tend)
+function OS.advance_solution_to!(integrator::ThunderboltTimeIntegrator, cache::Any, tend; kwargs...)
     @unpack f, t = integrator
     dt = tend-t
     dt ≈ 0.0 || DiffEqBase.step!(integrator, dt, true)
 end
-@inline function OS.prepare_local_step!(subintegrator::ThunderboltTimeIntegrator)
+@inline function OS.prepare_local_step!(uparent, subintegrator::ThunderboltTimeIntegrator)
     # Copy solution into subproblem
-    uparentview      = @view subintegrator.uparent[subintegrator.indexset]
+    uparentview      = @view uparent[subintegrator.indexset]
     subintegrator.u .= uparentview
-    # for (i,imain) in enumerate(subintegrator.indexset)
-    #     subintegrator.u[i] = subintegrator.uparent[imain]
-    # end
-    # Mark previous solution
-    subintegrator.uprev .= subintegrator.u
+    # Mark previous solution, if necessary
+    if subintegrator.uprev !== nothing && length(subintegrator.uprev) > 0
+        subintegrator.uprev .= subintegrator.u
+    end
     syncronize_parameters!(subintegrator, subintegrator.f, subintegrator.synchronizer)
 end
-@inline function OS.finalize_local_step!(subintegrator::ThunderboltTimeIntegrator)
+@inline function OS.finalize_local_step!(uparent, subintegrator::ThunderboltTimeIntegrator)
     # Copy solution out of subproblem
     #
-    uparentview = @view subintegrator.uparent[subintegrator.indexset]
+    uparentview = @view uparent[subintegrator.indexset]
     uparentview .= subintegrator.u
-    # for (i,imain) in enumerate(subintegrator.indexset)
-    #     subintegrator.uparent[imain] = subintegrator.u[i]
-    # end
 end
 # Glue code
-function OS.build_subintegrators_recursive(f, synchronizer, p::Any, cache::AbstractTimeSolverCache, u::AbstractArray, uprev::AbstractArray, t, dt, dof_range, uparent, tstops, _tstops, saveat, _saveat)
+function OS.build_subintegrators_recursive(f, synchronizer, p::Any, cache::AbstractTimeSolverCache, t, dt, dof_range, uparent, tstops, _tstops, saveat, _saveat)
     integrator = Thunderbolt.ThunderboltTimeIntegrator(
         f,
         cache.uₙ,
-        uparent,
         cache.uₙ₋₁,
         dof_range,
         p,
@@ -125,8 +118,8 @@ function OS.build_subintegrators_recursive(f, synchronizer, p::Any, cache::Abstr
     syncronize_parameters!(integrator, f, synchronizer)
     return integrator
 end
-function OS.construct_inner_cache(f, alg::AbstractSolver, u::AbstractArray, uprev::AbstractArray)
-    return Thunderbolt.setup_solver_cache(f, alg, 0.0)
+function OS.construct_inner_cache(f, alg::AbstractSolver; u0, t0, kwargs...)
+    return Thunderbolt.setup_solver_cache(f, alg, t0)
 end
 OS.recursive_null_parameters(stuff::Union{AbstractSemidiscreteProblem, AbstractSemidiscreteFunction}) = OS.DiffEqBase.NullParameters()
 syncronize_parameters!(integ, f, ::OS.NoExternalSynchronization) = nothing
@@ -143,7 +136,6 @@ function DiffEqBase.__init(
     advance_to_tstop = false,
     save_func = (u, t) -> copy(u),                  # custom kwarg
     dtchangeable = true,                            # custom kwarg
-    uparent = nothing,                              # custom kwarg
     syncronizer = OS.NoExternalSynchronization(),   # custom kwarg
     kwargs...,
 )
@@ -162,15 +154,13 @@ function DiffEqBase.__init(
 
     callback = DiffEqBase.CallbackSet(callback)
 
-    cache = setup_solver_cache(f, alg, t0)
+    cache = init_cache(prob, alg; t0)
 
-    cache.uₙ .= u0
-    cache.uₙ₋₁ .= u0
+    cache.uₙ   .= u0
 
     integrator = ThunderboltTimeIntegrator(
         f,
         cache.uₙ,
-        uparent,
         cache.uₙ₋₁,
         1:length(u0),
         p,
@@ -205,8 +195,6 @@ end
 @inline get_parent_index(integ::ThunderboltTimeIntegrator, local_idx::Int, range::AbstractUnitRange) = first(range) + local_idx - 1
 @inline get_parent_index(integ::ThunderboltTimeIntegrator, local_idx::Int, range::StepRange) = first(range) + range.step*(local_idx - 1)
 
-@inline get_parent_value(integ::ThunderboltTimeIntegrator, local_idx::Int) = integ.uparent[get_parent_index(integ, local_idx)]
-
 # Compat with OrdinaryDiffEq
 function perform_step!(integ::ThunderboltTimeIntegrator, cache::AbstractTimeSolverCache)
     if !perform_step!(integ.f, cache, integ.t, integ.dt)
@@ -216,4 +204,8 @@ function perform_step!(integ::ThunderboltTimeIntegrator, cache::AbstractTimeSolv
         return false
     end
     return true
+end
+
+function init_cache(prob, alg; t0, kwargs...)
+    return setup_solver_cache(prob.f, alg, t0)
 end

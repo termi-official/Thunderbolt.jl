@@ -36,7 +36,6 @@ struct ForwardEulerCellSolverCache{duType, uType, dumType, umType, xType} <: Abs
     # These vectors hold the data
     uₙ::uType
     uₙ₋₁::uType
-    tmp::uType
     # These array view the data above to give easy indices of the form [ode index, local state index]
     dumat::dumType
     uₙmat::umType
@@ -62,6 +61,12 @@ Adapt.@adapt_structure ForwardEulerCellSolverCache
     return true
 end
 
+function init_cache(prob, alg::ForwardEulerCellSolver; t0)
+    cache = setup_solver_cache(prob.f, alg, t0)
+    resize(cache.uₙ₋₁, size(cache.uₙ))
+    return cache
+end
+
 function setup_solver_cache(f::PointwiseODEFunction, solver::ForwardEulerCellSolver, t₀)
     @unpack npoints, ode = f
     ndofs_local = num_states(ode)
@@ -69,12 +74,12 @@ function setup_solver_cache(f::PointwiseODEFunction, solver::ForwardEulerCellSol
     du      = create_system_vector(solver.solution_vector_type, f)
     dumat   = reshape(du, (npoints,ndofs_local))
     uₙ      = create_system_vector(solver.solution_vector_type, f)
-    uₙ₋₁    = create_system_vector(solver.solution_vector_type, f)
-    tmp     = create_system_vector(solver.solution_vector_type, f)
+    # uₙ₋₁    = create_system_vector(solver.solution_vector_type, f)
+    uₙ₋₁    = similar(uₙ, 0)
     uₙmat   = reshape(uₙ, (npoints,ndofs_local))
     xs      = f.x === nothing ? nothing : Adapt.adapt(solver.solution_vector_type, f.x)
 
-    return ForwardEulerCellSolverCache(du, uₙ, uₙ₋₁, tmp, dumat, uₙmat, solver.batch_size_hint, xs)
+    return ForwardEulerCellSolverCache(du, uₙ, uₙ₋₁, dumat, uₙmat, solver.batch_size_hint, xs)
 end
 
 Base.@kwdef struct AdaptiveForwardEulerSubstepper{T, SolutionVectorType <: AbstractVector{T}} <: AbstractPointwiseSolver
@@ -135,6 +140,13 @@ Adapt.@adapt_structure AdaptiveForwardEulerSubstepperCache
     return true
 end
 
+
+function init_cache(prob, alg::AdaptiveForwardEulerSubstepper; t0)
+    cache = setup_solver_cache(prob.f, alg, t0)
+    resize(cache.uₙ₋₁, size(cache.uₙ))
+    return cache
+end
+
 function setup_solver_cache(f::PointwiseODEFunction, solver::AdaptiveForwardEulerSubstepper, t₀)
     @unpack npoints, ode = f
     ndofs_local = num_states(ode)
@@ -142,7 +154,7 @@ function setup_solver_cache(f::PointwiseODEFunction, solver::AdaptiveForwardEule
     du      = create_system_vector(solver.solution_vector_type, f)
     dumat   = reshape(du, (npoints,ndofs_local))
     uₙ      = create_system_vector(solver.solution_vector_type, f)
-    uₙ₋₁    = create_system_vector(solver.solution_vector_type, f)
+    uₙ₋₁    = similar(uₙ, 0)
     uₙmat   = reshape(uₙ, (npoints,ndofs_local))
     xs      = if f.x === nothing
         nothing

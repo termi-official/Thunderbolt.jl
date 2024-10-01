@@ -206,7 +206,6 @@ export
     AdaptiveForwardEulerSubstepper,
     # Integrator
     get_parent_index,
-    get_parent_value,
     # Utils
     calculate_volume_deformed_mesh,
     elementtypes,

@@ -13,36 +13,33 @@ end
 struct LieTrotterGodunovCache{uType, tmpType, iiType} <: AbstractOperatorSplittingCache
     u::uType
     uprev::uType # True previous solution
-    uprev2::tmpType # Previous solution used during time marching
     tmp::tmpType # Scratch
     inner_caches::iiType
 end
 
 # Dispatch for outer construction
-function init_cache(prob::OperatorSplittingProblem, alg::LieTrotterGodunov; dt, kwargs...) # TODO
+function init_cache(prob::OperatorSplittingProblem, alg::LieTrotterGodunov; u0, kwargs...) # TODO
     @unpack f = prob
     @assert f isa GenericSplitFunction
 
-    u          = copy(prob.u0)
-    uprev      = copy(prob.u0)
-
     # Build inner integrator
-    return construct_inner_cache(f, alg, u, uprev)
+    return construct_inner_cache(f, alg; uparent=u0, u0, kwargs...)
 end
 
 # Dispatch for recursive construction
-function construct_inner_cache(f::AbstractOperatorSplitFunction, alg::LieTrotterGodunov, u::AbstractArray, uprev::AbstractArray)
+function construct_inner_cache(f::AbstractOperatorSplitFunction, alg::LieTrotterGodunov; uparent, u0, kwargs...)
     dof_ranges = f.dof_ranges
 
-    uprev2     = similar(uprev)
+    u          = copy(u0)
+    uprev      = copy(u0)
     tmp        = similar(u)
-    inner_caches = ntuple(i->construct_inner_cache(get_operator(f, i), alg.inner_algs[i], similar(u, length(dof_ranges[i])), similar(u, length(dof_ranges[i]))), length(f.functions))
-    LieTrotterGodunovCache(u, uprev, uprev2, tmp, inner_caches)
+    inner_caches = ntuple(i->construct_inner_cache(get_operator(f, i), alg.inner_algs[i]; uparent, u0=view(uparent,dof_ranges[i]), kwargs...), length(f.functions))
+    LieTrotterGodunovCache(u, uprev, tmp, inner_caches)
 end
 
-@inline @unroll function advance_solution_to!(subintegrators::Tuple, cache::LieTrotterGodunovCache, tnext)
+@inline @unroll function advance_solution_to!(subintegrators::Tuple, cache::LieTrotterGodunovCache, tnext; uparent)
     # We assume that the integrators are already synced
-    @unpack u, uprev2, uprev, inner_caches = cache
+    @unpack u, uprev, inner_caches = cache
 
     # Store current solution
     uprev .= u
@@ -51,8 +48,8 @@ end
     i = 0
     @unroll for subinteg in subintegrators
         i += 1
-        prepare_local_step!(subinteg)
-        advance_solution_to!(subinteg, inner_caches[i], tnext)
-        finalize_local_step!(subinteg)
+        prepare_local_step!(uparent, subinteg)
+        advance_solution_to!(subinteg, inner_caches[i], tnext; uparent)
+        finalize_local_step!(uparent, subinteg)
     end
 end 

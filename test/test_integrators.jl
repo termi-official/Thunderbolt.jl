@@ -2,7 +2,7 @@ import Thunderbolt: OS, ThunderboltTimeIntegrator
 # using BenchmarkTools
 using UnPack
 
-@testset "Operator Splitting API" begin
+# @testset "Operator Splitting API" begin
 
     ODEFunction = Thunderbolt.DiffEqBase.ODEFunction
 
@@ -18,12 +18,15 @@ using UnPack
     end
 
     # Dispatch for leaf construction
-    function OS.construct_inner_cache(f::ODEFunction, alg::DummyForwardEuler, u::AbstractArray, uprev::AbstractArray)
+    function OS.construct_inner_cache(f::ODEFunction, alg::DummyForwardEuler; u0, kwargs...)
+        du      = copy(u0)
+        u       = copy(u0)
+        uprev   = copy(u0)
         dumat = reshape(uprev, (:,1))
-        DummyForwardEulerCache(copy(uprev), dumat, copy(uprev), copy(uprev))
+        DummyForwardEulerCache(du, dumat, u, uprev)
     end
-    Thunderbolt.num_states(::Any) = 2
-    Thunderbolt.transmembranepotential_index(::Any) = 1
+    Thunderbolt.num_states(::ODEFunction) = 2                   # FIXME
+    Thunderbolt.transmembranepotential_index(::ODEFunction) = 1 # FIXME
 
     function Thunderbolt.setup_solver_cache(f::PointwiseODEFunction, solver::DummyForwardEuler, t₀)
         @unpack npoints, ode = f
@@ -37,13 +40,15 @@ using UnPack
     end
 
     # Dispatch innermost solve
-    function OS.advance_solution_to!(integ::ThunderboltTimeIntegrator, cache::DummyForwardEulerCache, tend)
+    function Thunderbolt.perform_step!(integ::ThunderboltTimeIntegrator, cache::DummyForwardEulerCache)
         @unpack f, dt, u, p, t = integ
         @unpack du = cache
 
         f isa Thunderbolt.PointwiseODEFunction ? f.ode(du, u, p, t) : f(du, u, p, t)
         @. u += dt * du
         cache.dumat[:,1] .= du
+        
+        return true
     end
 
     # Operator splitting
@@ -228,15 +233,4 @@ using UnPack
             end
         end
     end
-
-# tnext = tspan[1]+0.01
-# @btime OS.advance_solution_to!($integrator, $tnext) setup=(DiffEqBase.reinit!(integrator, u0; tspan))
-#   326.743 ns (8 allocations: 416 bytes) for 1 (OUTDATED
-#   89.949 ns (0 allocations: 0 bytes) for 2 (OUTDATED
-#   31.418 ns (0 allocations: 0 bytes) for 3
-# @btime DiffEqBase.solve!($integrator) setup=(DiffEqBase.reinit!(integrator, u0; tspan));
-#   431.632 μs (10000 allocations: 507.81 KiB) for 1 (OUTDATED
-#   105.712 μs (0 allocations: 0 bytes) for 2 (OUTDATED)
-#   1.852 μs (0 allocations: 0 bytes) for 3
-
-end
+# end

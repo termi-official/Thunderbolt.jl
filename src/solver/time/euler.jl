@@ -86,7 +86,7 @@ function setup_solver_cache(f::TransientDiffusionFunction, solver::BackwardEuler
     uprev = create_system_vector(solver.solution_vector_type, f)
     tmp   = create_system_vector(solver.solution_vector_type, f)
 
-    T = eltype(A)
+    T = eltype(u0)
 
     qr = create_quadrature_rule(f, solver, field_name)
 
