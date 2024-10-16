@@ -51,17 +51,18 @@ model = MonodomainModel(
 )
 
 
-ip_collection = LagrangeCollection{1}()
+# ip_collection = LagrangeCollection{1}()
+ip_collection = DiscontinuousLagrangeCollection{1}()
 
 odeform = semidiscretize(
     ReactionDiffusionSplit(model),
-    FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}())),
+    FiniteElementDiscretization(Dict(:φₘ => ip_collection)),
     mesh
 )
 u₀ = zeros(Float64, OS.function_size(odeform))
 steady_state_initializer!(u₀, odeform)
 
-# io = ParaViewWriter("spiral-wave-test")
+io = ParaViewWriter("spiral-wave-test")
 
 timestepper = Thunderbolt.ReactionTangentController(
     OS.LieTrotterGodunov((
@@ -75,7 +76,7 @@ timestepper = Thunderbolt.ReactionTangentController(
             reaction_threshold=0.1f0,
         )
     )),
-    0.5, 1.0, (0.01, 0.3)
+    0.5, 1.0, (0.01, 0.011)
 )
 
 problem = OS.OperatorSplittingProblem(odeform, u₀, tspan)
@@ -87,17 +88,17 @@ step!(integrator) # precompile for benchmark below
 # TimerOutputs.enable_debug_timings(Thunderbolt)
 TimerOutputs.reset_timer!()
 for (u, t) in OS.TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
-    # dh = odeform.functions[1].dh
-    # φ = u[odeform.dof_ranges[1]]
-    # @info t,norm(u)
+    dh = odeform.functions[1].dh
+    φ = u[odeform.dof_ranges[1]]
+    @info t,norm(u)
     # sflat = ....?
-    # store_timestep!(io, t, dh.grid) do file
-    #     Thunderbolt.store_timestep_field!(file, t, dh, φ, :φₘ)
-    #     # s = reshape(sflat, (Thunderbolt.num_states(ionic_model),length(φ)))
-    #     # for sidx in 1:Thunderbolt.num_states(ionic_model)
-    #     #    Thunderbolt.store_timestep_field!(io, t, dh, s[sidx,:], state_symbol(ionic_model, sidx))
-    #     # end
-    # end
+    store_timestep!(io, t, dh.grid) do file
+        Thunderbolt.store_timestep_field!(file, t, dh, φ, :φₘ)
+        # s = reshape(sflat, (Thunderbolt.num_states(ionic_model),length(φ)))
+        # for sidx in 1:Thunderbolt.num_states(ionic_model)
+        #    Thunderbolt.store_timestep_field!(io, t, dh, s[sidx,:], state_symbol(ionic_model, sidx))
+        # end
+    end
 end
 TimerOutputs.print_timer()
 # TimerOutputs.disable_debug_timings(Thunderbolt)
