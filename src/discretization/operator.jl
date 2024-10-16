@@ -340,9 +340,15 @@ function update_operator!(op::AssembledBilinearOperator, time)
 
         # Build evaluation caches
         element_cache  = setup_element_cache(integrator, element_qr, ip, sdh)
-
-        # Function barrier
+        if !isnothing(qrc[2]) 
+            interface_qr  = getquadraturerule(qrc[2], sdh)
+            interface_cache  = setup_interface_cache(integrator, interface_qr, ip, sdh)
+            _update_bilinear_operator_on_subdomain!(assembler, sdh, interface_cache, time)
+            _update_bilinear_operator_on_subdomain!(assembler, sdh, element_cache, time)
+        else
+            element_cache  = setup_element_cache(integrator, element_qr, Lagrange{RefHexahedron,1}(), sdh)
         _update_bilinear_operator_on_subdomain!(assembler, sdh, element_cache, time)
+    end
     end
 
     #finish_assemble(assembler)
@@ -361,6 +367,20 @@ function _update_bilinear_operator_on_subdomain!(assembler, sdh, element_cache, 
         assemble!(assembler, celldofs(cell), Aₑ)
     end
 end
+
+function _update_bilinear_operator_on_subdomain!(assembler, sdh, interface_cache::BilinearDiffusionInterfaceCache, time)
+    ndofs = ndofs_per_cell(sdh)
+    Aₑ = zeros(2*ndofs, 2*ndofs)
+
+    @inbounds for interface in InterfaceIterator(sdh.dh)
+        fill!(Aₑ, 0)
+        # TODO instead of "cell" pass object with geometry information only
+        @timeit_debug "assemble interface" assemble_interface!(Aₑ, interface, interface_cache, time)
+        # display(assembler.A)
+        assemble!(assembler, interfacedofs(interface), Aₑ)
+    end
+end
+
 
 update_linearization!(op::AbstractBilinearOperator, residual::AbstractVector, u::AbstractVector, time) = update_operator!(op, time)
 update_linearization!(op::AbstractBilinearOperator, u::AbstractVector, time) = update_operator!(op, time)
