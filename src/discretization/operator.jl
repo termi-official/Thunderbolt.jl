@@ -347,8 +347,8 @@ function update_operator!(op::AssembledBilinearOperator, time)
             _update_bilinear_operator_on_subdomain!(assembler, sdh, element_cache, time)
         else
             element_cache  = setup_element_cache(integrator, element_qr, Lagrange{RefHexahedron,1}(), sdh)
-        _update_bilinear_operator_on_subdomain!(assembler, sdh, element_cache, time)
-    end
+            _update_bilinear_operator_on_subdomain!(assembler, sdh, element_cache, time)
+        end
     end
 
     #finish_assemble(assembler)
