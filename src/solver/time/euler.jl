@@ -89,6 +89,7 @@ function setup_solver_cache(f::TransientDiffusionFunction, solver::BackwardEuler
     T = eltype(u0)
 
     qr = create_quadrature_rule(f, solver, field_name)
+    fqr = create_facetquadrature_rule(f, solver, field_name)
 
     # Left hand side ∫dₜu δu dV
     mass_operator = setup_operator(
@@ -103,7 +104,7 @@ function setup_solver_cache(f::TransientDiffusionFunction, solver::BackwardEuler
         BilinearDiffusionIntegrator(
             f.diffusion_tensor_field,
         ),
-        solver, dh, field_name, qr
+        solver, dh, field_name, qr, fqr
     )
     # ... + ∫f δu dV
     source_operator    = setup_operator(

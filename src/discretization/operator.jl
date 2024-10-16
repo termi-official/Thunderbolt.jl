@@ -318,12 +318,12 @@ struct AssembledBilinearOperator{MatrixType, MatrixType2, IntegratorType, DHType
     A::MatrixType
     A_::MatrixType2 # FIXME we need this if we assemble on a different device type than we solve on (e.g. CPU and GPU)
     integrator::IntegratorType
-    element_qrc::QuadratureRuleCollection
+    qrc::Tuple{QuadratureRuleCollection, Union{Nothing, FacetQuadratureRuleCollection}}
     dh::DHType
 end
 
 function update_operator!(op::AssembledBilinearOperator, time)
-    @unpack A, A_, element_qrc, integrator, dh  = op
+    @unpack A, A_, qrc, integrator, dh  = op
 
     @assert length(dh.field_names) == 1 "Please use block operators for problems with multiple fields."
     field_name = first(dh.field_names)
@@ -336,7 +336,7 @@ function update_operator!(op::AssembledBilinearOperator, time)
         # Prepare evaluation caches
         ip          = Ferrite.getfieldinterpolation(sdh, field_name)
 
-        element_qr  = getquadraturerule(element_qrc, sdh)
+        element_qr  = getquadraturerule(qrc[1], sdh)
 
         # Build evaluation caches
         element_cache  = setup_element_cache(integrator, element_qr, ip, sdh)

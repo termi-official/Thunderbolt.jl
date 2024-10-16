@@ -43,7 +43,7 @@ function setup_assembled_operator(integrator::AbstractBilinearIntegrator, system
     A_ = allocate_matrix(dh) #  TODO how to query this?
     return AssembledBilinearOperator(
         A, A_,
-        integrator, qrc,
+        integrator, (qrc, nothing),
         dh,
     )
 end

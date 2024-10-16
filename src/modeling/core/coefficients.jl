@@ -16,11 +16,11 @@ end
 
 duplicate_for_parallel(cache::FieldCoefficientCache) = cache
 
-@inline function setup_coefficient_cache(coefficient::FieldCoefficient, qr::QuadratureRule, sdh::SubDofHandler)
+@inline function setup_coefficient_cache(coefficient::FieldCoefficient, qr::Union{QuadratureRule, FacetQuadratureRule}, sdh::SubDofHandler)
     return _create_field_coefficient_cache(coefficient, coefficient.ip_collection, qr, sdh)
 end
 
-function _create_field_coefficient_cache(coefficient::FieldCoefficient{T}, ipc::ScalarInterpolationCollection, qr::QuadratureRule, sdh::SubDofHandler) where T
+function _create_field_coefficient_cache(coefficient::FieldCoefficient{T}, ipc::ScalarInterpolationCollection, qr::Union{QuadratureRule, FacetQuadratureRule}, sdh::SubDofHandler) where T
     cell = get_first_cell(sdh)
     ip     = getinterpolation(coefficient.ip_collection, cell)
     fv     = Ferrite.FunctionValues{0}(T, ip, qr, ip^3)
@@ -28,7 +28,7 @@ function _create_field_coefficient_cache(coefficient::FieldCoefficient{T}, ipc::
     return FieldCoefficientCache(coefficient.elementwise_data, FerriteUtils.StaticInterpolationValues(fv.ip, SMatrix{Nξs[1], Nξs[2]}(fv.Nξ), nothing))
 end
 
-function _create_field_coefficient_cache(coefficient::FieldCoefficient{<:Vec{<:Any, T}}, ipc::VectorizedInterpolationCollection, qr::QuadratureRule, sdh::SubDofHandler) where T
+function _create_field_coefficient_cache(coefficient::FieldCoefficient{<:Vec{<:Any, T}}, ipc::VectorizedInterpolationCollection, qr::Union{QuadratureRule, FacetQuadratureRule}, sdh::SubDofHandler) where T
     cell = get_first_cell(sdh)
     ip     = getinterpolation(coefficient.ip_collection, cell)
     fv     = Ferrite.FunctionValues{0}(T, ip.ip, qr, ip)
@@ -58,7 +58,7 @@ end
 
 duplicate_for_parallel(cache::ConstantCoefficient) = cache
 
-function setup_coefficient_cache(coefficient::ConstantCoefficient, qr::QuadratureRule, sdh::SubDofHandler)
+function setup_coefficient_cache(coefficient::ConstantCoefficient, qr::Union{QuadratureRule, FacetQuadratureRule}, sdh::SubDofHandler)
     return coefficient
 end
 
@@ -82,7 +82,7 @@ struct ConductivityToDiffusivityCoefficientCache{DTC, CC, STVC}
     χ_cache::STVC
 end
 
-function setup_coefficient_cache(coefficient::ConductivityToDiffusivityCoefficient, qr::QuadratureRule, sdh::SubDofHandler)
+function setup_coefficient_cache(coefficient::ConductivityToDiffusivityCoefficient, qr::Union{QuadratureRule, FacetQuadratureRule}, sdh::SubDofHandler)
     return ConductivityToDiffusivityCoefficientCache(
         setup_coefficient_cache(coefficient.conductivity_tensor_coefficient, qr, sdh),
         setup_coefficient_cache(coefficient.capacitance_coefficient, qr, sdh),
@@ -147,7 +147,7 @@ end
 
 duplicate_for_parallel(cache::CartesianCoordinateSystemCache) = cache
 
-function setup_coefficient_cache(coefficient::CoordinateSystemCoefficient{<:CartesianCoordinateSystem}, qr::QuadratureRule{<:Any, <:AbstractArray{T}}, sdh::SubDofHandler) where T
+function setup_coefficient_cache(coefficient::CoordinateSystemCoefficient{<:CartesianCoordinateSystem}, qr::Union{QuadratureRule{<:Any, <:AbstractArray{T}}, FacetQuadratureRule{<:Any, <:AbstractArray{T}}}, sdh::SubDofHandler) where T
     cell = get_first_cell(sdh)
     ip = getcoordinateinterpolation(coefficient.cs, cell)
     fv = Ferrite.FunctionValues{0}(T, ip.ip, qr, ip) # We scalarize the interpolation again as an optimization step
@@ -172,7 +172,7 @@ end
 
 duplicate_for_parallel(cache::LVCoordinateSystemCache) = cache
 
-function setup_coefficient_cache(coefficient::CoordinateSystemCoefficient{<:LVCoordinateSystem}, qr::QuadratureRule{<:Any, <:AbstractArray{T}}, sdh::SubDofHandler) where T
+function setup_coefficient_cache(coefficient::CoordinateSystemCoefficient{<:LVCoordinateSystem}, qr::Union{QuadratureRule{<:Any, <:AbstractArray{T}}, FacetQuadratureRule{<:Any, <:AbstractArray{T}}}, sdh::SubDofHandler) where T
     cell = get_first_cell(sdh)
     ip = getcoordinateinterpolation(coefficient.cs, cell)
     ip_geo = ip^3
@@ -204,7 +204,7 @@ end
 
 duplicate_for_parallel(cache::BiVCoordinateSystemCache) = cache
 
-function setup_coefficient_cache(coefficient::CoordinateSystemCoefficient{<:BiVCoordinateSystem}, qr::QuadratureRule{<:Any,<:AbstractArray{T}}, sdh::SubDofHandler) where T
+function setup_coefficient_cache(coefficient::CoordinateSystemCoefficient{<:BiVCoordinateSystem}, qr::Union{QuadratureRule{<:Any, <:AbstractArray{T}}, FacetQuadratureRule{<:Any, <:AbstractArray{T}}}, sdh::SubDofHandler) where T
     cell = get_first_cell(sdh)
     ip = getcoordinateinterpolation(coefficient.cs, cell)
     ip_geo = ip^3
@@ -253,7 +253,7 @@ function duplicate_for_parallel(cache::SpectralTensorCoefficientCache)
     )
 end
 
-function setup_coefficient_cache(coefficient::SpectralTensorCoefficient, qr::QuadratureRule, sdh::SubDofHandler)
+function setup_coefficient_cache(coefficient::SpectralTensorCoefficient, qr::Union{QuadratureRule, FacetQuadratureRule}, sdh::SubDofHandler)
     return SpectralTensorCoefficientCache(
         setup_coefficient_cache(coefficient.eigenvectors, qr, sdh),
         setup_coefficient_cache(coefficient.eigenvalues, qr, sdh),
@@ -282,7 +282,7 @@ end
 
 duplicate_for_parallel(cache::SpatiallyHomogeneousDataField) = cache
 
-function setup_coefficient_cache(coefficient::SpatiallyHomogeneousDataField, qr::QuadratureRule, sdh::SubDofHandler)
+function setup_coefficient_cache(coefficient::SpatiallyHomogeneousDataField, qr::Union{QuadratureRule, FacetQuadratureRule}, sdh::SubDofHandler)
     return coefficient
 end
 
