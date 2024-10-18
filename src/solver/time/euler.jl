@@ -112,8 +112,6 @@ function setup_solver_cache(f::TransientDiffusionFunction, solver::BackwardEuler
         solver, dh, field_name, qr
     )
 
-
-
     inner_prob  = LinearSolve.LinearProblem(
         A, b; u0
     )
