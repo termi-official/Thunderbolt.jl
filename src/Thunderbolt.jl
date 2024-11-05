@@ -67,6 +67,7 @@ include("modeling/problems.jl") # Utility for compat against DiffEqBase
 include("discretization/interface.jl")
 include("discretization/fem.jl")
 include("discretization/operator.jl")
+include("discretization/new-operator.jl")
 
 include("solver/interface.jl")
 include("solver/linear.jl")

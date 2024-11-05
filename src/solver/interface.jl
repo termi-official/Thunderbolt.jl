@@ -11,16 +11,19 @@ end
 
 function setup_operator(f::AbstractQuasiStaticFunction, solver::AbstractNonlinearSolver)
     @unpack dh, constitutive_model, face_models = f
-    @assert length(dh.field_names) == 1 "Multiple fields not yet supported in the nonlinear solver."
+    # @assert length(dh.field_names) == 1 "Multiple fields not yet supported in the nonlinear solver."
 
-    displacement_symbol = first(dh.field_names)
+    displacement_symbol = first(dh.field_names) # TODO FIXME
 
     intorder = default_quadrature_order(f, displacement_symbol)::Int
     qr = QuadratureRuleCollection(intorder)
     qr_face = FacetQuadratureRuleCollection(intorder)
 
-    return AssembledNonlinearOperator(
-        dh, displacement_symbol, constitutive_model, qr, face_models, qr_face
+    # return AssembledNonlinearOperator(
+    #     dh, displacement_symbol, constitutive_model, qr, face_models, qr_face
+    # )
+    return AssembledNonlinearOperator2(
+        dh, constitutive_model, qr, face_models, qr_face
     )
 end
 
