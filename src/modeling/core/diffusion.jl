@@ -48,7 +48,7 @@ struct BilinearDiffusionInterfaceCache{CoefficientCacheType, IV} <: AbstractInte
     interfacevalues::IV
 end
 
-function assemble_interface!(Ki::AbstractMatrix, interface_cache, interface_diffusion_cache::BilinearDiffusionInterfaceCache, time, γ = 1000.0)
+function assemble_interface!(Ki::AbstractMatrix, interface_cache::InterfaceCache, interface_diffusion_cache::BilinearDiffusionInterfaceCache, time, γ = 1000.0)
     @unpack interfacevalues, Dcache_here, Dcache_there = interface_diffusion_cache
     reinit!(interfacevalues, interface_cache)
     h = 5

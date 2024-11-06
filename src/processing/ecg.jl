@@ -85,12 +85,12 @@ struct Plonsey1964ECGGaussCache{BufferType, OperatorType}
 end
 
 function Plonsey1964ECGGaussCache(op::AssembledBilinearOperator, φₘ::AbstractVector{T}) where T
-    @unpack element_qrc, dh, integrator = op
+    @unpack qrc, dh, integrator = op
     @assert length(dh.field_names) == 1 "Multiple fields detected. Problem setup might be broken..."
     grid = get_grid(dh)
     sdim = Ferrite.getspatialdim(grid)
-    κ∇φₘ = construct_qvector(Vector{Vec{sdim,T}}, Vector{Int64}, grid, op.element_qrc)
-    compute_quadrature_fluxes!(κ∇φₘ, element_qrc, dh, φₘ, dh.field_names[1], integrator)
+    κ∇φₘ = construct_qvector(Vector{Vec{sdim,T}}, Vector{Int64}, grid, qrc)
+    compute_quadrature_fluxes!(κ∇φₘ, qrc, dh, φₘ, dh.field_names[1], integrator)
     Plonsey1964ECGGaussCache(κ∇φₘ, op)
 end
 
@@ -114,7 +114,7 @@ function evaluate_ecg(method::Plonsey1964ECGGaussCache, x::Vec, κₜ::Real)
         ip          = Ferrite.getfieldinterpolation(sdh, first(dh.field_names))
         firstcell   = getcells(grid, first(sdh.cellset))
         ip_geo      = Ferrite.geometric_interpolation(typeof(firstcell))^sdim
-        element_qr  = getquadraturerule(op.element_qrc, firstcell)
+        element_qr  = getquadraturerule(op.qrc, firstcell)
         cv = CellValues(element_qr, ip, ip_geo)
         # Function barrier
         φₑ += _evaluate_ecg_inner!(κ∇φₘ, method, x, κₜ, sdh, cv)
@@ -160,11 +160,11 @@ end
 
 function update_ecg!(cache::Plonsey1964ECGGaussCache, φₘ::AbstractVector{T}) where T
     @unpack op = cache
-    @unpack element_qrc, dh, integrator = op
+    @unpack qrc, dh, integrator = op
     grid = get_grid(dh)
     sdim = Ferrite.getspatialdim(grid)
     fill!(cache.κ∇φₘ.data, zero(eltype(cache.κ∇φₘ)))
-    compute_quadrature_fluxes!(cache.κ∇φₘ, element_qrc, dh, φₘ, dh.field_names[1], integrator)
+    compute_quadrature_fluxes!(cache.κ∇φₘ, qrc, dh, φₘ, dh.field_names[1], integrator)
 end
 
 """

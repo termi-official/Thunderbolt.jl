@@ -104,30 +104,30 @@ struct CompositeInterfaceElementCache{CacheTupleType <: Tuple} <: AbstractInterf
     inner_caches::CacheTupleType
 end
 # Main entry point for bilinear operators
-assemble_interface!(Kₑ::AbstractMatrix, interface, interface_cache::CompositeInterfaceElementCache, time) = assemble_interface!(Kₑ, interface, interface_cache.inner_caches, time)
-@unroll function assemble_interface!(Kₑ::AbstractMatrix, interface, inner_caches::CacheTupleType, time) where CacheTupleType <: Tuple
+assemble_interface!(Kᵢ::AbstractMatrix, interface, interface_cache::CompositeInterfaceElementCache, time) = assemble_interface!(Kᵢ, interface, interface_cache.inner_caches, time)
+@unroll function assemble_interface!(Kᵢ::AbstractMatrix, interface, inner_caches::CacheTupleType, time) where CacheTupleType <: Tuple
     @unroll for inner_cache ∈ inner_caches
-        assemble_interface!(Kₑ, interface, inner_cache, time)
+        assemble_interface!(Kᵢ, interface, inner_cache, time)
     end
 end
 # Update element matrix in nonlinear operators
-assemble_interface!(Kₑ::AbstractMatrix, uₑ::AbstractVector, interface, interface_cache::CompositeInterfaceElementCache, time) = assemble_interface!(Kₑ, uₑ, interface, interface_cache.inner_caches, time)
-@unroll function assemble_interface!(Kₑ::AbstractMatrix, uₑ::AbstractVector, interface, inner_caches::CacheTupleType, local_facet_index::Int,  time) where CacheTupleType <: Tuple
+assemble_interface!(Kᵢ::AbstractMatrix, uᵢ::AbstractVector, interface, interface_cache::CompositeInterfaceElementCache, time) = assemble_interface!(Kᵢ, uᵢ, interface, interface_cache.inner_caches, time)
+@unroll function assemble_interface!(Kᵢ::AbstractMatrix, uᵢ::AbstractVector, interface, inner_caches::CacheTupleType, local_facet_index::Int,  time) where CacheTupleType <: Tuple
     @unroll for inner_cache ∈ inner_caches
-        assemble_interface!(Kₑ, uₑ, interface, inner_cache, local_facet_index, time)
+        assemble_interface!(Kᵢ, uᵢ, interface, inner_cache, local_facet_index, time)
     end
 end
 # Update element matrix and residual in nonlinear operators
-assemble_interface!(Kₑ::AbstractMatrix, residualₑ::AbstractVector, uₑ::AbstractVector, interface, interface_cache::CompositeInterfaceElementCache, time) = assemble_interface!(Kₑ, residualₑ, uₑ, interface, interface_cache.inner_caches, time)
-@unroll function assemble_interface!(Kₑ::AbstractMatrix, residualₑ::AbstractVector, uₑ::AbstractVector, interface, inner_caches::CacheTupleType, local_facet_index::Int,  time) where CacheTupleType <: Tuple
+assemble_interface!(Kᵢ::AbstractMatrix, residualₑ::AbstractVector, uᵢ::AbstractVector, interface, interface_cache::CompositeInterfaceElementCache, time) = assemble_interface!(Kᵢ, residualₑ, uᵢ, interface, interface_cache.inner_caches, time)
+@unroll function assemble_interface!(Kᵢ::AbstractMatrix, residualₑ::AbstractVector, uᵢ::AbstractVector, interface, inner_caches::CacheTupleType, local_facet_index::Int,  time) where CacheTupleType <: Tuple
     @unroll for inner_cache ∈ inner_caches
-        assemble_interface!(Kₑ, residualₑ, uₑ, interface, inner_cache, local_facet_index, time)
+        assemble_interface!(Kᵢ, residualₑ, uᵢ, interface, inner_cache, local_facet_index, time)
     end
 end
 # Update residual in nonlinear operators
-assemble_interface!(residualₑ::AbstractVector, uₑ::AbstractVector, interface, interface_cache::CompositeInterfaceElementCache, time) = assemble_interface!(Kₑ, interface, interface_cache.inner_caches, time)
-@unroll function assemble_interface!(residualₑ::AbstractVector, uₑ::AbstractVector, interface, inner_caches::CacheTupleType, local_facet_index::Int,  time) where CacheTupleType <: Tuple
+assemble_interface!(residualₑ::AbstractVector, uᵢ::AbstractVector, interface, interface_cache::CompositeInterfaceElementCache, time) = assemble_interface!(Kᵢ, interface, interface_cache.inner_caches, time)
+@unroll function assemble_interface!(residualₑ::AbstractVector, uᵢ::AbstractVector, interface, inner_caches::CacheTupleType, local_facet_index::Int,  time) where CacheTupleType <: Tuple
     @unroll for inner_cache ∈ inner_caches
-        assemble_interface!(residualₑ, uₑ, interface, inner_cache, local_facet_index, time)
+        assemble_interface!(residualₑ, uᵢ, interface, inner_cache, local_facet_index, time)
     end
 end
