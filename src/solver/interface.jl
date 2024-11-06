@@ -38,12 +38,12 @@ function setup_operator(protocol::AnalyticalTransmembraneStimulationProtocol, so
     )
 end
 
-function setup_assembled_operator(integrator::AbstractBilinearIntegrator, system_matrix_type::Type, dh::AbstractDofHandler, field_name::Symbol, qrc::QuadratureRuleCollection, fqrc::FacetQuadratureRuleCollection)
+function setup_assembled_operator(integrator::AbstractBilinearIntegrator, system_matrix_type::Type, dh::AbstractDofHandler, field_name::Symbol, qrc::QuadratureRuleCollection, qrc_face::FacetQuadratureRuleCollection)
     A  = create_system_matrix(system_matrix_type, dh)
     A_ = allocate_matrix(dh, topology =ExclusiveTopology(dh.grid) , interface_coupling = trues(1,1)) #  TODO how to query this?
     return AssembledBilinearOperator(
         A, A_,
-        integrator, (qrc, fqrc),
+        integrator, qrc, qrc_face,
         dh,
     )
 end
@@ -53,13 +53,13 @@ function setup_assembled_operator(integrator::AbstractBilinearIntegrator, system
     A_ = allocate_matrix(dh, topology =ExclusiveTopology(dh.grid) , interface_coupling = trues(1,1) ) #  TODO how to query this?
     return AssembledBilinearOperator(
         A, A_,
-        integrator, (qrc, nothing),
+        integrator, qrc, nothing,
         dh,
     )
 end
 
-function setup_operator(integrator::AbstractBilinearIntegrator, solver::AbstractSolver, dh::AbstractDofHandler, field_name::Symbol, qrc, fqrc)
-    setup_assembled_operator(integrator, solver.system_matrix_type, dh, field_name, qrc, fqrc)
+function setup_operator(integrator::AbstractBilinearIntegrator, solver::AbstractSolver, dh::AbstractDofHandler, field_name::Symbol, qrc, qrc_face)
+    setup_assembled_operator(integrator, solver.system_matrix_type, dh, field_name, qrc, qrc_face)
 end
 
 function setup_operator(integrator::AbstractBilinearIntegrator, solver::AbstractSolver, dh::AbstractDofHandler, field_name::Symbol, qrc)

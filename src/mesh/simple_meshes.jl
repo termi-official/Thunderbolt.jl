@@ -221,5 +221,23 @@ end
 @inline Ferrite.CellIterator(mesh::SimpleMesh) = CellIterator(mesh.grid)
 @inline Ferrite.CellIterator(mesh::SimpleMesh, set::Union{Nothing, AbstractSet{<:Integer}, AbstractVector{<:Integer}}, flags::UpdateFlags) = CellIterator(mesh.grid, set, flags)
 
+function Base.iterate(ii::InterfaceIterator{<:Any, <:SimpleMesh{sdim}}, state...) where {sdim}
+    neighborhood = Ferrite.get_facet_facet_neighborhood(ii.topology, ii.grid) # TODO: This could be moved to InterfaceIterator constructor (potentially type-instable for non-union or mixed grids)
+    while true
+        it = iterate(facetskeleton(ii.topology, ii.grid), state...)
+        it === nothing && return nothing
+        facet_a, state = it
+        if isempty(neighborhood[facet_a[1], facet_a[2]])
+            continue
+        end
+        neighbors = neighborhood[facet_a[1], facet_a[2]]
+        length(neighbors) > 1 && error("multiple neighboring faces not supported yet")
+        facet_b = neighbors[1]
+        reinit!(ii.cache, facet_a, facet_b)
+        return (ii.cache, state)
+    end
+    return
+end
+
 # https://github.com/Ferrite-FEM/Ferrite.jl/pull/987
 Ferrite.nfacets(cc::CellCache{<:Any, <:SimpleMesh}) = nfacets(cc.grid.grid.cells[cc.cellid[]])

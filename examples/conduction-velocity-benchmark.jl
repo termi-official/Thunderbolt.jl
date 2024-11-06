@@ -1,7 +1,7 @@
 using Thunderbolt
 using Thunderbolt.TimerOutputs
 
-using Thunderbolt.StaticArrays
+using Thunderbolt.StaticArrays, UnPack
 
 function steady_state_initializer!(u₀, f::GenericSplitFunction)
     # TODO cleaner implementation. We need to extract this from the types or via dispatch.
@@ -91,12 +91,12 @@ for (u, t) in OS.TimeChoiceIterator(_integrator, tspan[1]:dtvis:tspan[2])
     dh = odeform.functions[1].dh
     φ = @view u[odeform.dof_ranges[1]]
     @info t,norm(u)
-    @unpack qrc, integrator = _integrator.cache.ltg_cache.inner_caches[1].K
+    @unpack qrc, qrc_face, integrator = _integrator.cache.ltg_cache.inner_caches[1].K
     field_name = first(dh.field_names)
     u = zeros(getncells(dh.grid))
     for interface_cache in InterfaceIterator(dh)
         ip          = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], field_name)
-        interface_qr  = getquadraturerule(qrc[2], dh.subdofhandlers[1])
+        interface_qr  = getquadraturerule(qrc_face, dh.subdofhandlers[1])
         interface_int_cache  = Thunderbolt.setup_interface_cache(integrator, interface_qr, ip, dh.subdofhandlers[1])
         Thunderbolt.estimate_kelly_interface!(Float64, u, (@view φ[Ferrite.interfacedofs(interface_cache)]), interface_cache, interface_int_cache)
     end
