@@ -38,9 +38,9 @@ function setup_operator(protocol::AnalyticalTransmembraneStimulationProtocol, so
     )
 end
 
-function setup_assembled_operator(integrator::AbstractBilinearIntegrator, system_matrix_type::Type, dh::AbstractDofHandler, field_name::Symbol, qrc::QuadratureRuleCollection, qrc_face::FacetQuadratureRuleCollection)
-    A  = create_system_matrix(system_matrix_type, dh)
-    A_ = allocate_matrix(dh, topology =ExclusiveTopology(dh.grid) , interface_coupling = trues(1,1)) #  TODO how to query this?
+function setup_assembled_operator(integrator::AbstractBilinearIntegrator, system_matrix_type::Type, dh::AbstractDofHandler, field_name::Symbol, qrc::QuadratureRuleCollection, qrc_face::Union{Nothing, FacetQuadratureRuleCollection} = nothing, topology = nothing, interface_coupling = nothing)
+    A  = create_system_matrix(system_matrix_type, dh, topology = topology, interface_coupling = interface_coupling)
+    A_ = allocate_matrix(dh, topology = topology, interface_coupling = interface_coupling) #  TODO how to query this?
     return AssembledBilinearOperator(
         A, A_,
         integrator, qrc, qrc_face,
@@ -48,22 +48,8 @@ function setup_assembled_operator(integrator::AbstractBilinearIntegrator, system
     )
 end
 
-function setup_assembled_operator(integrator::AbstractBilinearIntegrator, system_matrix_type::Type, dh::AbstractDofHandler, field_name::Symbol, qrc::QuadratureRuleCollection)
-    A  = create_system_matrix(system_matrix_type, dh)
-    A_ = allocate_matrix(dh, topology =ExclusiveTopology(dh.grid) , interface_coupling = trues(1,1) ) #  TODO how to query this?
-    return AssembledBilinearOperator(
-        A, A_,
-        integrator, qrc, nothing,
-        dh,
-    )
-end
-
-function setup_operator(integrator::AbstractBilinearIntegrator, solver::AbstractSolver, dh::AbstractDofHandler, field_name::Symbol, qrc, qrc_face)
-    setup_assembled_operator(integrator, solver.system_matrix_type, dh, field_name, qrc, qrc_face)
-end
-
-function setup_operator(integrator::AbstractBilinearIntegrator, solver::AbstractSolver, dh::AbstractDofHandler, field_name::Symbol, qrc)
-    setup_assembled_operator(integrator, solver.system_matrix_type, dh, field_name, qrc)
+function setup_operator(integrator::AbstractBilinearIntegrator, solver::AbstractSolver, dh::AbstractDofHandler, field_name::Symbol, qrc, qrc_face::Union{Nothing, FacetQuadratureRuleCollection} = nothing, topology = nothing, interface_coupling = nothing)
+    setup_assembled_operator(integrator, solver.system_matrix_type, dh, field_name, qrc, qrc_face, topology, interface_coupling)
 end
 
 # function setup_operator(problem::QuasiStaticProblem, relevant_coupler, solver::AbstractNonlinearSolver)
@@ -114,15 +100,15 @@ update_constraints_block!(f::DiffEqBase.AbstractDiffEqFunction, i::Block, solver
 update_constraints_block!(f::NullFunction, i::Block, solver_cache::AbstractTimeSolverCache, t) = nothing
 
 
-create_system_matrix(T::Type{<:AbstractMatrix}, f::AbstractSemidiscreteFunction) = create_system_matrix(T, f.dh)
+create_system_matrix(T::Type{<:AbstractMatrix}, f::AbstractSemidiscreteFunction; args...) = create_system_matrix(T, f.dh; args...)
 
-function create_system_matrix(::Type{<:ThreadedSparseMatrixCSR{Tv,Ti}}, dh::AbstractDofHandler) where {Tv,Ti}
-    Acsct = transpose(convert(SparseMatrixCSC{Tv,Ti}, allocate_matrix(dh, topology =ExclusiveTopology(dh.grid) , interface_coupling = trues(1,1))))
+function create_system_matrix(::Type{<:ThreadedSparseMatrixCSR{Tv,Ti}}, dh::AbstractDofHandler; args...) where {Tv,Ti}
+    Acsct = transpose(convert(SparseMatrixCSC{Tv,Ti}, allocate_matrix(dh; args...)))
     return ThreadedSparseMatrixCSR(Acsct)
 end
 
-function create_system_matrix(SpMatType::Type{<:SparseMatrixCSC}, dh::AbstractDofHandler)
-    A = convert(SpMatType, allocate_matrix(dh, topology =ExclusiveTopology(dh.grid) , interface_coupling = trues(1,1)))
+function create_system_matrix(SpMatType::Type{<:SparseMatrixCSC}, dh::AbstractDofHandler; args...)
+    A = convert(SpMatType, allocate_matrix(dh; args...))
     return A
 end
 

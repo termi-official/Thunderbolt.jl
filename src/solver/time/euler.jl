@@ -79,8 +79,10 @@ function setup_solver_cache(f::TransientDiffusionFunction, solver::BackwardEuler
     @unpack inner_solver = solver
     @assert length(dh.field_names) == 1 # TODO relax this assumption, maybe.
     field_name = dh.field_names[1]
+    field_ip = dh.subdofhandlers[1].field_interpolations[1]
+    qr = create_quadrature_rule(f, solver, field_name)
+    qr_face = create_facetquadrature_rule(f, solver, field_name)
 
-    A     = create_system_matrix(solver.system_matrix_type  , f)
     b     = create_system_vector(solver.solution_vector_type, f)
     u0    = create_system_vector(solver.solution_vector_type, f)
     uprev = create_system_vector(solver.solution_vector_type, f)
@@ -88,24 +90,47 @@ function setup_solver_cache(f::TransientDiffusionFunction, solver::BackwardEuler
 
     T = eltype(u0)
 
-    qr = create_quadrature_rule(f, solver, field_name)
-    qr_face = create_facetquadrature_rule(f, solver, field_name)
+    if Ferrite.is_discontinuous(field_ip)
+        topology = ExclusiveTopology(get_grid(dh))
+        A     = create_system_matrix(solver.system_matrix_type  , f; topology = topology, interface_coupling = trues(1,1))
+        # Left hand side ∫dₜu δu dV
+        mass_operator = setup_operator(
+            BilinearMassIntegrator(
+                ConstantCoefficient(T(1.0))
+            ),
+            solver, dh, field_name, qr, nothing,
+            topology,
+            trues(1,1)
+        )
 
-    # Left hand side ∫dₜu δu dV
-    mass_operator = setup_operator(
-        BilinearMassIntegrator(
-            ConstantCoefficient(T(1.0))
-        ),
-        solver, dh, field_name, qr
-    )
+        # Affine right hand side ∫D grad(u) grad(δu) dV + ...
+        diffusion_operator = setup_operator(
+            BilinearDiffusionIntegrator(
+                f.diffusion_tensor_field,
+            ),
+            solver, dh, field_name, qr, qr_face,
+            topology,
+            trues(1,1)
+        )
+    else
+        A     = create_system_matrix(solver.system_matrix_type  , f)
+        # Left hand side ∫dₜu δu dV
+        mass_operator = setup_operator(
+            BilinearMassIntegrator(
+                ConstantCoefficient(T(1.0))
+            ),
+            solver, dh, field_name, qr
+        )
 
-    # Affine right hand side ∫D grad(u) grad(δu) dV + ...
-    diffusion_operator = setup_operator(
-        BilinearDiffusionIntegrator(
-            f.diffusion_tensor_field,
-        ),
-        solver, dh, field_name, qr, qr_face
-    )
+        # Affine right hand side ∫D grad(u) grad(δu) dV + ...
+        diffusion_operator = setup_operator(
+            BilinearDiffusionIntegrator(
+                f.diffusion_tensor_field,
+            ),
+            solver, dh, field_name, qr
+        )
+    end
+
     # ... + ∫f δu dV
     source_operator    = setup_operator(
         f.source_term,

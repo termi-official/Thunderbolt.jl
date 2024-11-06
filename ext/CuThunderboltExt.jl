@@ -105,9 +105,9 @@ _allocate_matrix(dh::GPUDofHandler, A::SparseMatrixCSC, ::CuVector) = CuSparseMa
 Thunderbolt.create_system_vector(::Type{<:CuVector{T}}, f::AbstractSemidiscreteFunction) where T = CUDA.zeros(T, solution_size(f))
 Thunderbolt.create_system_vector(::Type{<:CuVector{T}}, dh::DofHandler) where T                  = CUDA.zeros(T, ndofs(dh))
 
-function Thunderbolt.create_system_matrix(SpMatType::Type{<:Union{CUSPARSE.CuSparseMatrixCSC, CUSPARSE.CuSparseMatrixCSR}}, dh::AbstractDofHandler)
+function Thunderbolt.create_system_matrix(SpMatType::Type{<:Union{CUSPARSE.CuSparseMatrixCSC, CUSPARSE.CuSparseMatrixCSR}}, dh::AbstractDofHandler; args...)
     # FIXME in general the pattern is not symmetric
-    Acpu      = allocate_matrix(dh)
+    Acpu      = allocate_matrix(dh; args...)
     colptrgpu = CuArray(Acpu.colptr)
     rowvalgpu = CuArray(Acpu.rowval)
     nzvalgpu  = CuArray(Acpu.nzval)
