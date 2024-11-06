@@ -108,7 +108,19 @@ $T^{\rm{a}} = T^{\rm{max}} \, [Ca_{\rm{i}}] (F \cdot f_0) \otimes f_0$
 
 """
 Base.@kwdef struct Guccione1993ActiveModel
-    Tmax::Float64 = 100.0
+    # Default values from Marina Kampers PhD thesis
+    Tmax::Float64   = 135.0 #kPa
+    l₀::Float64     = 1.45  #µm
+    lR::Float64     = 1.8   #µm
+    Ca₀::Float64    = 4.35  #µM
+    Ca₀max::Float64 = 4.35  #µM
+    B::Float64      = 3.8   #1/µm
 end
 
-∂(sas::Guccione1993ActiveModel, Caᵢ, F::Tensor{2, dim}, coeff::AbstractTransverselyIsotropicMicrostructure) where {dim} = sas.Tmax * Caᵢ * (F ⋅ coeff.f) ⊗ coeff.f
+function ∂(sas::Guccione1993ActiveModel, Caᵢ, F::Tensor{2, dim}, coeff::AbstractTransverselyIsotropicMicrostructure) where {dim}
+    @unpack l₀, Ca₀, Ca₀max, Tmax = sas
+    l = √(coeff.f ⋅ F ⋅ coeff.f)
+    ECa₅₀² = Ca₀max^2/(exp(B*(l - l₀)) - 1.0)
+    T₀ = Tmax * Ca₀^2 / (Ca₀^2 + ECa₅₀²) * Caᵢ
+    return  T₀ * (F ⋅ coeff.f) ⊗ coeff.f
+end
