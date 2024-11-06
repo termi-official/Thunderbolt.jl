@@ -61,7 +61,7 @@ odeform = semidiscretize(
 u₀ = zeros(Float64, OS.function_size(odeform))
 steady_state_initializer!(u₀, odeform)
 
-io = ParaViewWriter("spiral-wave-test")
+# io = ParaViewWriter("spiral-wave-test")
 
 timestepper = Thunderbolt.ReactionTangentController(
     OS.LieTrotterGodunov((
@@ -75,7 +75,7 @@ timestepper = Thunderbolt.ReactionTangentController(
             reaction_threshold=0.1f0,
         )
     )),
-    0.5, 1.0, (0.01, 0.011)
+    0.5, 1.0, (0.01, 0.3)
 )
 
 problem = OS.OperatorSplittingProblem(odeform, u₀, tspan)
@@ -86,7 +86,7 @@ step!(integrator) # precompile for benchmark below
 
 # TimerOutputs.enable_debug_timings(Thunderbolt)
 TimerOutputs.reset_timer!()
-for (u, t) in OS.TimeChoiceIterator(_integrator, tspan[1]:dtvis:tspan[2])
+for (u, t) in OS.TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
     # dh = odeform.functions[1].dh
     # φ = @view u[odeform.dof_ranges[1]]
     # @info t,norm(u)
