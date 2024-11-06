@@ -1,7 +1,7 @@
 using Thunderbolt
 using Thunderbolt.TimerOutputs
 
-using Thunderbolt.StaticArrays, UnPack
+using Thunderbolt.StaticArrays
 
 function steady_state_initializer!(u₀, f::GenericSplitFunction)
     # TODO cleaner implementation. We need to extract this from the types or via dispatch.
@@ -51,7 +51,6 @@ model = MonodomainModel(
 )
 
 
-# ip_collection = LagrangeCollection{1}()
 ip_collection = LagrangeCollection{1}()
 
 odeform = semidiscretize(
@@ -81,36 +80,36 @@ timestepper = Thunderbolt.ReactionTangentController(
 
 problem = OS.OperatorSplittingProblem(odeform, u₀, tspan)
 
-_integrator = OS.init(problem, timestepper, dt=dt₀, verbose=true)
+integrator = OS.init(problem, timestepper, dt=dt₀, verbose=true)
 
-step!(_integrator) # precompile for benchmark below
+step!(integrator) # precompile for benchmark below
 
 # TimerOutputs.enable_debug_timings(Thunderbolt)
 TimerOutputs.reset_timer!()
 for (u, t) in OS.TimeChoiceIterator(_integrator, tspan[1]:dtvis:tspan[2])
-    dh = odeform.functions[1].dh
-    φ = @view u[odeform.dof_ranges[1]]
-    @info t,norm(u)
-    # @unpack qrc, qrc_face, integrator = _integrator.cache.ltg_cache.inner_caches[1].K
-    # field_name = first(dh.field_names)
-    # u = zeros(getncells(dh.grid))
-    # for interface_cache in InterfaceIterator(dh)
-    #     ip          = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], field_name)
-    #     interface_qr  = getquadraturerule(qrc_face, dh.subdofhandlers[1])
-    #     interface_int_cache  = Thunderbolt.setup_interface_cache(integrator, interface_qr, ip, dh.subdofhandlers[1])
-    #     Thunderbolt.estimate_kelly_interface!(Float64, u, (@view φ[Ferrite.interfacedofs(interface_cache)]), interface_cache, interface_int_cache)
+    # dh = odeform.functions[1].dh
+    # φ = @view u[odeform.dof_ranges[1]]
+    # @info t,norm(u)
+    # # @unpack qrc, qrc_face, integrator = _integrator.cache.ltg_cache.inner_caches[1].K
+    # # field_name = first(dh.field_names)
+    # # u = zeros(getncells(dh.grid))
+    # # for interface_cache in InterfaceIterator(dh)
+    # #     ip          = Ferrite.getfieldinterpolation(dh.subdofhandlers[1], field_name)
+    # #     interface_qr  = getquadraturerule(qrc_face, dh.subdofhandlers[1])
+    # #     interface_int_cache  = Thunderbolt.setup_interface_cache(integrator, interface_qr, ip, dh.subdofhandlers[1])
+    # #     Thunderbolt.estimate_kelly_interface!(Float64, u, (@view φ[Ferrite.interfacedofs(interface_cache)]), interface_cache, interface_int_cache)
+    # # end
+    # # u .= sqrt.(u)
+    # # @info maximum(u)
+    # # sflat = ....?
+    # store_timestep!(io, t, dh.grid) do file
+    #     Thunderbolt.store_timestep_field!(file, t, dh, φ, :φₘ)
+    #     # Thunderbolt.store_timestep_celldata!(file, t, u, "error ind")
+    #     # s = reshape(sflat, (Thunderbolt.num_states(ionic_model),length(φ)))
+    #     # for sidx in 1:Thunderbolt.num_states(ionic_model)
+    #     #    Thunderbolt.store_timestep_field!(io, t, dh, s[sidx,:], state_symbol(ionic_model, sidx))
+    #     # end
     # end
-    # u .= sqrt.(u)
-    # @info maximum(u)
-    # sflat = ....?
-    store_timestep!(io, t, dh.grid) do file
-        Thunderbolt.store_timestep_field!(file, t, dh, φ, :φₘ)
-        # Thunderbolt.store_timestep_celldata!(file, t, u, "error ind")
-        # s = reshape(sflat, (Thunderbolt.num_states(ionic_model),length(φ)))
-        # for sidx in 1:Thunderbolt.num_states(ionic_model)
-        #    Thunderbolt.store_timestep_field!(io, t, dh, s[sidx,:], state_symbol(ionic_model, sidx))
-        # end
-    end
 end
 TimerOutputs.print_timer()
 # TimerOutputs.disable_debug_timings(Thunderbolt)
