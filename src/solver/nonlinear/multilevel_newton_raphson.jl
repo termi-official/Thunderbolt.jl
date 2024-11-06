@@ -5,9 +5,10 @@ Multilevel Newton-Raphson solver [RabSanHsu:1979:mna](@ref) for nonlinear proble
 To use the Multilevel solver you have to dispatch on
 * [update_linearization!](@ref)
 """
-Base.@kwdef struct MultiLevelNewtonRaphsonSolver{gSolverType <: NewtonRaphsonSolver, lSolverType <: NewtonRaphsonSolver} <: AbstractNonlinearSolver
+Base.@kwdef struct MultiLevelNewtonRaphsonSolver{gSolverType <: NewtonRaphsonSolver, lSolverType <: NewtonRaphsonSolver, ChunkInfoType} <: AbstractNonlinearSolver
     global_newton::gSolverType
     local_newton::lSolverType
+    local_chunk_info::ChunkInfoType
 end
 
 mutable struct MultiLevelNewtonRaphsonSolverCache{OpType, ResidualType, T, InnerSolverCacheType} <: AbstractNonlinearSolverCache
@@ -15,13 +16,13 @@ mutable struct MultiLevelNewtonRaphsonSolverCache{OpType, ResidualType, T, Inner
     local_solver_cache::lCacheType
 end
 
-function setup_solver_cache(f::AbstractSemidiscreteBlockedFunction, solver::NewtonRaphsonSolver{T}) where {T}
+function setup_solver_cache(f::AbstractSemidiscreteBlockedFunction, solver::MultiLevelNewtonRaphsonSolver{T}) where {T}
     MultiLevelNewtonRaphsonSolverCache(
         
     )
 end
 
-function setup_solver_cache(f::AbstractSemidiscreteBlockedFunction, solver::NewtonRaphsonSolver{T}) where {T}
+function setup_solver_cache(f::AbstractSemidiscreteBlockedFunction, solver::MultiLevelNewtonRaphsonSolver{T}) where {T}
     @unpack inner_solver = solver
     op = setup_operator(f, solver)
     sizeu = solution_size(f)
@@ -38,7 +39,7 @@ function setup_solver_cache(f::AbstractSemidiscreteBlockedFunction, solver::Newt
     NewtonRaphsonSolverCache(op, residual, solver, inner_cache)
 end
 
-function nlsolve!(u::AbstractVector, f::AbstractSemidiscreteFunction, cache::NewtonRaphsonSolverCache, t)
+function nlsolve!(u::AbstractVector, f::AbstractSemidiscreteFunction, cache::MultiLevelNewtonRaphsonSolver, t)
     @unpack op, residual, linear_solver_cache = cache
     newton_itr = -1
     Δu = linear_solver_cache.u
