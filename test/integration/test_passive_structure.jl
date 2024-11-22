@@ -12,6 +12,8 @@ function test_solve_passive_structure(constitutive_model)
         Dirichlet(:d, getfacetset(mesh, "bottom"), (x,t) -> [0.0], [3])
         Dirichlet(:d, Set([1]), (x,t) -> [0.0, 0.0, 0.0], [1, 2, 3])
         Dirichlet(:d, getfacetset(mesh, "right"), (x,t) -> [0.01t], [1])
+        Dirichlet(:d, getfacetset(mesh, "top"), (x,t) -> [0.02t], [2])
+        Dirichlet(:d, getfacetset(mesh, "back"), (x,t) -> [0.03t], [3])
     ]
 
     quasistaticform = semidiscretize(

@@ -10,6 +10,11 @@ end
 
 @doc raw"""
     PrestressedMechanicalModel(inner_model, prestress_field)
+
+Models the stress formulated in the 1st Piola-Kirchhoff stress tensor based on a multiplicative split
+of the deformation gradient $$F = F_{\textrm{e}} F_{0}$$ where we compute $$P(F_{\textrm{e}}) = P(F F^{-1}_{0})$$.
+
+Please note that it is assumed that $$F^{-1}_{0}$$ is the quantity computed by `prestress_field`.
 """
 struct PrestressedMechanicalModel{MM, FF} <: QuasiStaticModel
     inner_model::MM
@@ -29,8 +34,17 @@ function setup_coefficient_cache(m::PrestressedMechanicalModel, qr::QuadratureRu
 end
 
 function material_routine(constitutive_model::PrestressedMechanicalModel, coefficient_cache::PrestressedMechanicalModelCoefficientCache, F, internal_state, geometry_cache::Ferrite.CellCache, qp::QuadraturePoint, time)
-    F₀ = evaluate_coefficient(coefficient_cache.prestress_cache, geometry_cache, qp, time)
-    return material_routine(constitutive_model.inner_model, coefficient_cache.inner_cache, F ⋅ F₀, internal_state, geometry_cache, qp, time)
+    F₀inv = evaluate_coefficient(coefficient_cache.prestress_cache, geometry_cache, qp, time)
+    Fᵉ = F ⋅ F₀inv
+    ∂Ψᵉ∂Fᵉ, ∂²Ψᵉ∂Fᵉ² = material_routine(constitutive_model.inner_model, coefficient_cache.inner_cache, Fᵉ, internal_state, geometry_cache, qp, time)
+    Pᵉ = ∂Ψᵉ∂Fᵉ # Elastic PK1
+    P  = Pᵉ ⋅ transpose(F₀inv) # Obtained by Coleman-Noll procedure
+    Aᵉ = ∂²Ψᵉ∂Fᵉ² # Elastic mixed modulus
+    # TODO condense these steps into a single operation "A_imkn F_jm F_ln"
+    # Pull elastic modulus from intermediate to reference configuration
+    ∂Pᵉ∂F = Aᵉ ⋅ transpose(F₀inv)
+    ∂P∂F = dot_2_1t(∂Pᵉ∂F, F₀inv)
+    return P, ∂P∂F
 end
 
 setup_internal_model_cache(constitutive_model::PrestressedMechanicalModel, qr::QuadratureRule, sdh::SubDofHandler) = setup_internal_model_cache(constitutive_model.inner_model, qr, sdh)
@@ -58,7 +72,7 @@ end
 function material_routine(model::PK1Model, cc, F, internal_state, geometry_cache::Ferrite.CellCache, qp::QuadraturePoint, time)
     coefficients = evaluate_coefficient(cc, geometry_cache, qp, time)
     ∂²Ψ∂F², ∂Ψ∂F = Tensors.hessian(
-            F_ad -> Ψ(F_ad,     coefficients, model.material),
+            F_ad -> Ψ(F_ad, coefficients, model.material),
         F, :all
     )
 
@@ -67,11 +81,10 @@ end
 
 setup_internal_model_cache(constitutive_model::PK1Model, qr::QuadratureRule, sdh::SubDofHandler) = setup_internal_model_cache(constitutive_model.internal_model, qr, sdh)
 
-function material_routine(F::Tensor, coefficients, ::EmptyInternalVariable, model::PK1Model)
+function material_routine(F::Tensor{2}, coefficients, ::EmptyInternalVariable, model::PK1Model)
     ∂²Ψ∂F², ∂Ψ∂F = Tensors.hessian(
         F_ad ->
-              Ψ(F_ad,     coefficients, model.material)
-            + Ψ(F_ad, Fᵃ, coefficients, model.material),
+              Ψ(F_ad, coefficients, model.material),
         F, :all)
 
     return ∂Ψ∂F, ∂²Ψ∂F²
@@ -101,7 +114,7 @@ function setup_coefficient_cache(m::GeneralizedHillModel, qr::QuadratureRule, sd
     return setup_coefficient_cache(m.microstructure_model, qr, sdh)
 end
 
-function material_routine(F::Tensor{2,dim}, coefficients, internal_state, model::GeneralizedHillModel) where {dim}
+function material_routine(F::Tensor{2}, coefficients, internal_state, model::GeneralizedHillModel)
     # TODO what is a good abstraction here?
     Fᵃ = compute_Fᵃ(internal_state, coefficients, model.contraction_model, model.active_deformation_gradient_model)
 
