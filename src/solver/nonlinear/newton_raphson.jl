@@ -12,7 +12,7 @@ end
 function newton_monitor_inner_callback(monitor::VTKNewtonMonitor, time, newton_itr, f, u, sol, linear_cache)
     @info "Linear solver stats: $(sol.stats) - norm(Δu) = $(norm(sol.u))"
 
-    VTKGridFile(joinpath(monitor.outdir, "newton-monitor-t=$time-i=$newton_itr"), f.dh) do vtk
+    VTKGridFile(joinpath(monitor.outdir, "newton-monitor-t=$time-i=$newton_itr.vtu"), f.dh) do vtk
         write_solution(vtk, f.dh, u)
         write_solution(vtk, f.dh, linear_cache.b, "_residual")
         write_solution(vtk, f.dh, linear_cache.u, "_increment")
