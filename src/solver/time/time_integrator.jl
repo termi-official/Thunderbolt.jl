@@ -1,3 +1,11 @@
+mutable struct IntegratorStats
+    iter::Int64
+    nsuccess::Int64
+    nreject::Int64
+end
+
+IntegratorStats() = IntegratorStats(0,0,0)
+
 """
 Internal helper to integrate a single inner operator
 over some time interval.
@@ -15,8 +23,9 @@ mutable struct ThunderboltTimeIntegrator{
     heapType,
     tstopsType,
     saveatType,
+    controllerType,
 }  <: DiffEqBase.SciMLBase.DEIntegrator{#=alg_type=#Nothing, true, uType, tType} # FIXME alg
-    f::fType # Right hand side
+    const f::fType # Right hand side
     u::uType # Current local solution
     uprev::uprevType
     indexset::indexSetType
@@ -27,11 +36,13 @@ mutable struct ThunderboltTimeIntegrator{
     cache::cacheType
     synchronizer::syncType
     sol::solType
-    dtchangeable::Bool
+    const dtchangeable::Bool
     tstops::heapType
     _tstops::tstopsType # argument to __init used as default argument to reinit!
     saveat::heapType
     _saveat::saveatType # argument to __init used as default argument to reinit!
+    controller::controllerType
+    stats::IntegratorStats
 end
 
 # TimeChoiceIterator API
@@ -48,21 +59,105 @@ function (integrator::ThunderboltTimeIntegrator)(tmp, t)
     OS.linear_interpolation!(tmp, t, integrator.uprev, integrator.u, integrator.t-integrator.dt, integrator.t)
 end
 
-function DiffEqBase.step!(integrator::ThunderboltTimeIntegrator, dt, stop_at_tdt = false)
-    (; tstops) = integrator
-    dt <= zero(dt) && error("dt must be positive")
-    tnext = integrator.t + dt
-    while !OS.reached_tstop(integrator, tnext, stop_at_tdt)
-        # Solve inner problem
-        perform_step!(integrator, integrator.cache) || error("Time integration failed at t=$(integrator.t).") # remove this
-        # Update integrator
+function DiffEqBase.isadaptive(integrator::ThunderboltTimeIntegrator)
+    !integrator.adaptive && return false
+    if !DiffEqBase.isadaptive(integrator.alg)
+        error("Algorithm $(integrator.alg) is not adaptive, but the integrator is trying to adapt. Aborting.")
+    end
+    return true
+end
+
+
+# Solution interface
+should_accept_step(integrator::ThunderboltTimeIntegrator) = should_accept_step(integrator, integrator.cache, integrator.controller)
+function should_accept_step(integrator::ThunderboltTimeIntegrator, cache, ::Nothing)
+    return true
+end
+
+
+# Controller interface
+function reject_step!(integrator::ThunderboltTimeIntegrator)
+    integrator.stats.nreject += 1
+    reject_step!(integrator, integrator.cache, integrator.controller)
+end
+function reject_step!(integrator::ThunderboltTimeIntegrator, cache, controller)
+    integrator.u .= integrator.uprev
+end
+function reject_step!(integrator::ThunderboltTimeIntegrator, cache, ::Nothing)
+    if length(integrator.uprev) == 0
+        error("Cannot roll back integrator. Aborting time integration step at $(integrator.t).")
+    end
+end
+
+adapt_dt!(integrator::ThunderboltTimeIntegrator) = adapt_dt!(integrator, integrator.cache, integrator.controller)
+function adapt_dt!(integrator::ThunderboltTimeIntegrator, cache, controller)
+    error("Step size control not implemented for $(alg).")
+end
+adapt_dt!(integrator::ThunderboltTimeIntegrator, cache, ::Nothing) = nothing
+
+function accept_step!(integrator::ThunderboltTimeIntegrator)
+    integrator.stats.nsuccess += 1
+    accept_step!(integrator, integrator.cache, integrator.controller)
+end
+function accept_step!(integrator::ThunderboltTimeIntegrator, cache, controller)
+    store_previous_info!(integrator)
+end
+
+function store_previous_info!(integrator::ThunderboltTimeIntegrator)
+    if length(integrator.uprev) > 0 # Integrator can rollback
+        update_uprev!(integrator)
+    end
+end
+
+# Accept or reject the step
+function step_header!(integrator::ThunderboltTimeIntegrator)
+    if integrator.stats.iter > 0
+        if should_accept_step(integrator)
+            accept_step!(integrator)
+        else # Step should be rejected and hence repeated
+            reject_step!(integrator)
+        end
+    end
+    integrator.stats.iter += 1
+end
+
+function update_uprev!(integrator::ThunderboltTimeIntegrator)
+    integrator.uprev .= integrator.u
+end
+
+function step_footer!(integrator::ThunderboltTimeIntegrator)
+    if should_accept_step(integrator)
         integrator.tprev = integrator.t
-        integrator.t = integrator.t + integrator.dt
+        integrator.t += integrator.dt
+        adapt_dt!(integrator) # Noop for non-adaptive algorithms
     end
 
+    dtmin = 1e-12
+    if integrator.dt < DiffEqBase.timedepentdtmin(integrator.t, dtmin)
+        error("dt too small ($(integrator.dt)). Aborting.")
+    end
+end
+
+function handle_tstop!(integrator::ThunderboltTimeIntegrator)
+    (; tstops) = integrator
     while !isempty(tstops) && OS.reached_tstop(integrator, first(tstops))
         pop!(tstops)
     end
+end
+
+function DiffEqBase.step!(integrator::ThunderboltTimeIntegrator, dt, stop_at_tdt = false)
+    dt <= zero(dt) && error("dt must be positive")
+    tnext = integrator.t + dt
+    while !OS.reached_tstop(integrator, tnext, stop_at_tdt)
+        step_header!(integrator)
+        perform_step!(integrator, integrator.cache) #|| error("Time integration failed at t=$(integrator.t).") # remove this
+        step_footer!(integrator)
+        if stop_at_tdt && integrator.t + integrator.dt > tnext
+            integrator.dt = tnext - integrator.t
+        end
+    end
+
+    handle_tstop!(integrator)
 end
 function OS.synchronize_subintegrator!(subintegrator::ThunderboltTimeIntegrator, integrator::OS.OperatorSplittingIntegrator)
     @unpack t, dt = integrator
@@ -113,6 +208,8 @@ function OS.build_subintegrators_recursive(f, synchronizer, p::Any, cache::Abstr
         _tstops,
         saveat,
         _saveat,
+        nothing, # FIXME controller
+        IntegratorStats(),
     )
     # This makes sure that the parameters are set correctly for the first time step
     syncronize_parameters!(integrator, f, synchronizer)
@@ -134,6 +231,8 @@ function DiffEqBase.__init(
     save_everystep = false,
     callback = nothing,
     advance_to_tstop = false,
+    adaptive = false,
+    controller = nothing,
     save_func = (u, t) -> copy(u),                  # custom kwarg
     dtchangeable = true,                            # custom kwarg
     syncronizer = OS.NoExternalSynchronization(),   # custom kwarg
@@ -158,6 +257,10 @@ function DiffEqBase.__init(
 
     cache.uₙ   .= u0
 
+    if controller === nothing && adaptive
+        controller = default_controller(alg, cache)
+    end
+
     integrator = ThunderboltTimeIntegrator(
         f,
         cache.uₙ,
@@ -175,6 +278,8 @@ function DiffEqBase.__init(
         _tstops,
         saveat,
         _saveat,
+        adaptive ? controller : nothing,
+        IntegratorStats(),
     )
     # DiffEqBase.initialize!(callback, u0, t0, integrator) # Do I need this?
     return integrator
