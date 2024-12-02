@@ -25,12 +25,12 @@ with $a,b \geq 1$.
 Entry 1 from table 3 in [HarNef:2003:pgp](@cite).
 """
 @Base.kwdef struct HartmannNeffCompressionPenalty1{TD1, TD2}
-    a::TD1  = 1.0
-    b::TD1  = 2.0
+    a::TD1  = 1
+    b::TD1  = 2
     β::TD2  = 1.0
 end
 function U(I₃, mp::HartmannNeffCompressionPenalty1)
-    mp.β * (I₃^mp.b + I₃^(-mp.b) - 2)^mp.a
+    mp.β * (I₃^mp.b + 1/(I₃^mp.b) - 2)^mp.a
 end
 
 
