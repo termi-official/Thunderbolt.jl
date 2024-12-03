@@ -77,10 +77,6 @@ struct Deuflhard2004DiscreteContinuationController
     p::Int64
 end
 
-default_controller(::LoadDrivenSolver, cache) = Deuflhard2004DiscreteContinuationController(1/10, 1)
-DiffEqBase.isadaptive(::LoadDrivenSolver) = true
-
-
 function should_accept_step(integrator::ThunderboltTimeIntegrator, cache::LoadDrivenSolverCache, controller::Deuflhard2004DiscreteContinuationController)
     (; Θks) = cache.inner_solver_cache
     result = all(Θks .≤ 1/2)
@@ -124,10 +120,6 @@ struct ExperimentalDiscreteContinuationController
     p::Int64
 end
 
-default_controller(::LoadDrivenSolver, cache) = ExperimentalDiscreteContinuationController(1/10, 1)
-DiffEqBase.isadaptive(::LoadDrivenSolver) = true
-
-
 function should_accept_step(integrator::ThunderboltTimeIntegrator, cache::LoadDrivenSolverCache, controller::ExperimentalDiscreteContinuationController)
     (; Θks) = cache.inner_solver_cache
     result = all(Θks .≤ 1/2)
@@ -158,3 +150,7 @@ function adapt_dt!(integrator::ThunderboltTimeIntegrator, cache::LoadDrivenSolve
     integrator.dt = (g(Θbar)/(2Θ₀))^(1/p) * integrator.dt
 end
 
+
+
+default_controller(::LoadDrivenSolver, cache) = ExperimentalDiscreteContinuationController(1/10, 1)
+DiffEqBase.isadaptive(::LoadDrivenSolver) = true
