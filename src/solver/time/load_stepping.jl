@@ -75,8 +75,8 @@ The retry criterion for the time step is $\Theta}_k > \frac{1}{2}$.
 Base.@kwdef struct Deuflhard2004DiscreteContinuationController
     Θmin::Float64
     p::Int64
-    Θreject::Float64 = 0.9
-    Θbar::Float64 = 1/4
+    Θreject::Float64 = 0.95
+    Θbar::Float64 = 0.5
     γ::Float64    = 0.95
     qmin::Float64 = 1/5
     qmax::Float64 = 5.0
@@ -165,6 +165,6 @@ end
 
 
 
-default_controller(::LoadDrivenSolver, cache) = ExperimentalDiscreteContinuationController(; Θmin=1/8, p=1)
-# default_controller(::LoadDrivenSolver, cache) = Deuflhard2004DiscreteContinuationController(; Θmin=1/8, p=1)
+# default_controller(::LoadDrivenSolver, cache) = ExperimentalDiscreteContinuationController(; Θmin=1/8, p=1)
+default_controller(::LoadDrivenSolver, cache) = Deuflhard2004DiscreteContinuationController(; Θmin=1/8, p=1)
 DiffEqBase.isadaptive(::LoadDrivenSolver) = true
