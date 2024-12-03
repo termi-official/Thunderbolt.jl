@@ -44,7 +44,7 @@ mutable struct NewtonRaphsonSolverCache{OpType, ResidualType, T, NewtonType <: N
     #
     const parameters::NewtonType
     linear_solver_cache::InnerSolverCacheType
-    Θks::Vector{T}
+    Θks::Vector{T} # TODO modularize this
     Δuprev::Vector{T}
 end
 
@@ -97,7 +97,7 @@ function nlsolve!(u::AbstractVector, f::AbstractSemidiscreteFunction, cache::New
 
         residualnorm = residual_norm(cache, f)
         @info "Newton itr $newton_itr: ||r||=$residualnorm"
-        if residualnorm < cache.parameters.tol #|| (newton_itr > 0 && norm(Δu) < cache.parameters.tol)
+        if residualnorm < cache.parameters.tol && newton_itr > 0 # Do at least two iterations to get a sane convergence estimate
             break
         elseif newton_itr > cache.parameters.max_iter
             @warn "Reached maximum Newton iterations. Aborting. ||r|| = $residualnorm"
@@ -117,7 +117,12 @@ function nlsolve!(u::AbstractVector, f::AbstractSemidiscreteFunction, cache::New
         u .-= Δu # Current guess
 
         if newton_itr > 0
-            push!(Θks, norm(Δu)/norm(Δuprev))
+            Θk = norm(Δu)/norm(Δuprev)
+            push!(Θks, Θk)
+            if Θk ≥ 1.0
+                @warn "Newton-Raphson diverged. Aborting. ||r|| = $residualnorm"
+                return false
+            end
         end
     end
     return true

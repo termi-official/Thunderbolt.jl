@@ -237,6 +237,7 @@ tdir(integrator) = integrator.tstops.ordering isa DataStructures.FasterForward ?
 is_past_t(integrator, t) = tdir(integrator) * (t - integrator.t) ≤ zero(integrator.t)
 function reached_tstop(integrator, tstop, stop_at_tstop = integrator.dtchangeable)
     if stop_at_tstop
+        integrator.t > tstop && error("Integrator missed stop at $tstop (current time=$(integrator.t)). Aborting.")
         return integrator.t == tstop # Check for exact hit
     else #!stop_at_tstop
         return is_past_t(integrator, tstop)

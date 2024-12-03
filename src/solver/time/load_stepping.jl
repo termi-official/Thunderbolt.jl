@@ -72,14 +72,20 @@ Here $g(x) = \sqrt{1+4\Theta}-1$ and $\Theta_0 \geq \Theta_{\textrm{min}}$
 
 The retry criterion for the time step is $\Theta}_k > \frac{1}{2}$.
 """
-struct Deuflhard2004DiscreteContinuationController
+Base.@kwdef struct Deuflhard2004DiscreteContinuationController
     Θmin::Float64
     p::Int64
+    Θreject::Float64 = 0.9
+    Θbar::Float64 = 1/4
+    γ::Float64    = 0.95
+    qmin::Float64 = 1/5
+    qmax::Float64 = 5.0
 end
 
 function should_accept_step(integrator::ThunderboltTimeIntegrator, cache::LoadDrivenSolverCache, controller::Deuflhard2004DiscreteContinuationController)
     (; Θks) = cache.inner_solver_cache
-    result = all(Θks .≤ 1/2)
+    (; Θreject) = controller
+    result = all(Θks .≤ Θreject)
     return result
 end
 function reject_step!(integrator::ThunderboltTimeIntegrator, cache::LoadDrivenSolverCache, controller::Deuflhard2004DiscreteContinuationController)
@@ -88,13 +94,13 @@ function reject_step!(integrator::ThunderboltTimeIntegrator, cache::LoadDrivenSo
 
     @inline g(x) = √(1+4x) - 1
 
-    # Shorten dt accordint to (Eq. 5.24)
+    # Shorten dt according to (Eq. 5.24)
     (; Θks) = cache.inner_solver_cache
-    (; p) = controller
-    Θbar = 1/4 # TODO what exactly is this quantity?
+    (; Θbar, Θreject, γ, Θmin, qmin, qmax, p) = controller
     for Θk in Θks
-        if Θk > 1/2
-            integrator.dt = (g(Θbar)/g(Θk))^(1/p) * integrator.dt
+        if Θk > Θreject
+            q = clamp(γ * (g(Θbar)/g(Θk))^(1/p), qmin, qmax)
+            integrator.dt = q * integrator.dt
             return
         end
     end
@@ -103,26 +109,33 @@ end
 function adapt_dt!(integrator::ThunderboltTimeIntegrator, cache::LoadDrivenSolverCache, controller::Deuflhard2004DiscreteContinuationController)
     @inline g(x) = √(1+4x) - 1
 
-    # Shorten dt accordint to (Eq. 5.24)
+    # Adapt dt with a priori estimate (Eq. 5.24)
     (; Θks) = cache.inner_solver_cache
-    (; Θmin, p) = controller
-    Θbar = 1/4 # TODO what exactly is this quantity?
+    (; Θbar, γ, Θmin, qmin, qmax, p) = controller
 
     Θ₀ = length(Θks) > 0 ? max(first(Θks), Θmin) : Θmin
+    q = clamp(γ * (g(Θbar)/(2Θ₀))^(1/p), qmin, qmax)
+    integrator.dt = q * integrator.dt
 end
 
 
 @doc raw"""
     ExperimentalDiscreteContinuationController(Θbar, p)
 """
-struct ExperimentalDiscreteContinuationController
+Base.@kwdef struct ExperimentalDiscreteContinuationController
     Θmin::Float64
     p::Int64
+    Θreject::Float64 = 0.9
+    Θbar::Float64 = 0.75
+    γ::Float64    = 0.95
+    qmin::Float64 = 1/5
+    qmax::Float64 = 5.0
 end
 
 function should_accept_step(integrator::ThunderboltTimeIntegrator, cache::LoadDrivenSolverCache, controller::ExperimentalDiscreteContinuationController)
     (; Θks) = cache.inner_solver_cache
-    result = all(Θks .≤ 1/2)
+    (; Θreject) = controller
+    result = all(Θks .≤ Θreject)
     return result
 end
 function reject_step!(integrator::ThunderboltTimeIntegrator, cache::LoadDrivenSolverCache, controller::ExperimentalDiscreteContinuationController)
@@ -131,26 +144,27 @@ function reject_step!(integrator::ThunderboltTimeIntegrator, cache::LoadDrivenSo
 
     @inline g(x) = √(1+4x) - 1
 
-    # Shorten dt accordint to (Eq. 5.24)
+    # Shorten dt according to (Eq. 5.24)
     (; Θks) = cache.inner_solver_cache
-    (; p) = controller
-    Θbar = 1/4 # TODO what exactly is this quantity?
+    (; Θbar, γ, Θmin, qmin, qmax, p) = controller
     Θk = maximum(Θks)
-    integrator.dt = (g(Θbar)/g(Θk))^(1/p) * integrator.dt
+    q = clamp(γ *(g(Θbar)/g(Θk))^(1/p), qmin, qmax)
+    integrator.dt = q * integrator.dt
 end
 
 function adapt_dt!(integrator::ThunderboltTimeIntegrator, cache::LoadDrivenSolverCache, controller::ExperimentalDiscreteContinuationController)
     @inline g(x) = √(1+4x) - 1
 
-    # Shorten dt accordint to (Eq. 5.24)
+    # Adapt dt with a priori estimate (Eq. 5.24)
     (; Θks) = cache.inner_solver_cache
-    (; Θmin, p) = controller
-    Θbar = 1/4 # TODO what exactly is this quantity?
+    (; Θbar, γ, Θmin, qmin, qmax, p) = controller
     Θ₀ = length(Θks) > 0 ? max(mean(Θks), Θmin) : Θmin
-    integrator.dt = (g(Θbar)/(2Θ₀))^(1/p) * integrator.dt
+    q = clamp(γ * (g(Θbar)/(2Θ₀))^(1/p), qmin, qmax)
+    integrator.dt = q * integrator.dt
 end
 
 
 
-default_controller(::LoadDrivenSolver, cache) = ExperimentalDiscreteContinuationController(1/10, 1)
+default_controller(::LoadDrivenSolver, cache) = ExperimentalDiscreteContinuationController(; Θmin=1/8, p=1)
+# default_controller(::LoadDrivenSolver, cache) = Deuflhard2004DiscreteContinuationController(; Θmin=1/8, p=1)
 DiffEqBase.isadaptive(::LoadDrivenSolver) = true

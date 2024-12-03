@@ -7,8 +7,8 @@ end
 IntegratorStats() = IntegratorStats(0,0,0)
 
 Base.@kwdef struct IntegratorOptions{tType}
-    dtmin::tType = eps(Float64)
-    dtmax::tType = tend-t0
+    dtmin::tType = eps(tType)
+    dtmax::tType = tType(Inf)
 end
 
 """
@@ -16,6 +16,7 @@ Internal helper to integrate a single inner operator
 over some time interval.
 """
 mutable struct ThunderboltTimeIntegrator{
+    algType,
     fType,
     uType,
     uprevType,
@@ -29,7 +30,8 @@ mutable struct ThunderboltTimeIntegrator{
     tstopsType,
     saveatType,
     controllerType,
-}  <: DiffEqBase.SciMLBase.DEIntegrator{#=alg_type=#Nothing, true, uType, tType} # FIXME alg
+}  <: DiffEqBase.SciMLBase.DEIntegrator{algType, true, uType, tType} # FIXME alg
+    alg::algType
     const f::fType # Right hand side
     u::uType # Current local solution
     uprev::uprevType
@@ -51,6 +53,8 @@ mutable struct ThunderboltTimeIntegrator{
     stats::IntegratorStats
     const opts::IntegratorOptions{tType}
 end
+
+
 
 # TimeChoiceIterator API
 @inline function DiffEqBase.get_tmp_cache(integrator::ThunderboltTimeIntegrator)
@@ -127,7 +131,7 @@ function step_header!(integrator::ThunderboltTimeIntegrator)
     end
     # Before stepping we might need to adjust the dt
     fix_dt_at_bounds!(integrator)
-    fix_dt_at_tstops!(integrator)
+    modify_dt_for_tstops!(integrator)
     integrator.stats.iter += 1
 end
 
@@ -170,9 +174,28 @@ function fix_dt_at_bounds!(integrator::ThunderboltTimeIntegrator)
     return nothing
 end
 
+function modify_dt_for_tstops!(integrator::ThunderboltTimeIntegrator)
+    if DiffEqBase.has_tstop(integrator)
+        tdir_t = integrator.tdir * integrator.t
+        tdir_tstop = DiffEqBase.first_tstop(integrator)
+        if DiffEqBase.isadaptive(integrator)
+            integrator.dt = integrator.tdir *
+                            min(abs(integrator.dt), abs(tdir_tstop - tdir_t)) # step! to the end
+        elseif iszero(integrator.dtcache) && integrator.dtchangeable
+            integrator.dt = integrator.tdir * abs(tdir_tstop - tdir_t)
+        elseif integrator.dtchangeable #&& !integrator.force_stepfail
+            # always try to step! with dtcache, but lower if a tstop
+            # however, if force_stepfail then don't set to dtcache, and no tstop worry
+            integrator.dt = integrator.tdir *
+                            min(abs(integrator.dtcache), abs(tdir_tstop - tdir_t)) # step! to the end
+        end
+    end
+end
+
 function DiffEqBase.step!(integrator::ThunderboltTimeIntegrator, dt, stop_at_tdt = false)
     dt <= zero(dt) && error("dt must be positive")
-    while !OS.reached_tstop(integrator,  integrator.t, stop_at_tdt)
+    tstop = integrator.t + dt
+    while !OS.reached_tstop(integrator, tstop, stop_at_tdt)
         step_header!(integrator)
         perform_step!(integrator, integrator.cache) #|| error("Time integration failed at t=$(integrator.t).") # remove this
         step_footer!(integrator)
@@ -213,6 +236,7 @@ end
 # Glue code
 function OS.build_subintegrators_recursive(f, synchronizer, p::Any, cache::AbstractTimeSolverCache, t::tType, dt::tType, dof_range, uparent, tstops, _tstops, saveat, _saveat) where tType
     integrator = Thunderbolt.ThunderboltTimeIntegrator(
+        nothing, # FIXME
         f,
         cache.uₙ,
         cache.uₙ₋₁,
@@ -233,8 +257,8 @@ function OS.build_subintegrators_recursive(f, synchronizer, p::Any, cache::Abstr
         nothing, # FIXME controller
         IntegratorStats(),
         IntegratorOptions(
-            dtmin = eps(tType)
-            dtmax = tType(Inf)
+            dtmin = eps(tType),
+            dtmax = tType(Inf),
         ),
     )
     # This makes sure that the parameters are set correctly for the first time step
@@ -270,6 +294,7 @@ function DiffEqBase.__init(
     dt > zero(dt) || error("dt must be positive")
     _dt = dt
     dt = tf > t0 ? dt : -dt
+    tType = typeof(dt)
 
     _tstops = tstops
     _saveat = saveat
@@ -288,6 +313,7 @@ function DiffEqBase.__init(
     end
 
     integrator = ThunderboltTimeIntegrator(
+        alg,
         f,
         cache.uₙ,
         cache.uₙ₋₁,
@@ -308,12 +334,20 @@ function DiffEqBase.__init(
         adaptive ? controller : nothing,
         IntegratorStats(),
         IntegratorOptions(
-            dtmin = eps(tType)
-            dtmax = tType(tf-t0)
+            dtmin = eps(tType),
+            dtmax = tType(tf-t0),
         )
     )
     # DiffEqBase.initialize!(callback, u0, t0, integrator) # Do I need this?
     return integrator
+end
+
+function DiffEqBase.first_tstop(integrator::ThunderboltTimeIntegrator)
+    return first(integrator.tstops)
+end
+
+function DiffEqBase.has_tstop(integrator::ThunderboltTimeIntegrator)
+    return length(integrator.tstops) > 0
 end
 
 function DiffEqBase.solve!(integrator::ThunderboltTimeIntegrator)
