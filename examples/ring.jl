@@ -72,7 +72,7 @@ timestepper = LoadDrivenSolver(
     )
 )
 
-integrator = OS.init(problem, timestepper, dt=dt₀, verbose=true)
+integrator = OS.init(problem, timestepper, dt=dt₀, verbose=true, adaptive=true)
 
 io = ParaViewWriter(name);
 
@@ -92,12 +92,12 @@ for (u, t) in OS.TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
 
     Jdata = zeros(getncells(grid))
 
-    frefdata = zero(Vector{Ferrite.Vec{3}}(undef, getncells(grid)))
-    srefdata = zero(Vector{Ferrite.Vec{3}}(undef, getncells(grid)))
-    fdata = zero(Vector{Ferrite.Vec{3}}(undef, getncells(grid)))
-    sdata = zero(Vector{Ferrite.Vec{3}}(undef, getncells(grid)))
-    helixangledata = zero(Vector{Float64}(undef, getncells(grid)))
-    helixanglerefdata = zero(Vector{Float64}(undef, getncells(grid)))
+    frefdata = zeros(Ferrite.Vec{3,Float64}, getncells(grid))
+    srefdata = zeros(Ferrite.Vec{3,Float64}, getncells(grid))
+    fdata = zeros(Ferrite.Vec{3,Float64}, getncells(grid))
+    sdata = zeros(Ferrite.Vec{3,Float64}, getncells(grid))
+    helixangledata = zeros(Float64, getncells(grid))
+    helixanglerefdata = zeros(Float64, getncells(grid))
 
     # Compute some elementwise measures
     for sdh ∈ dh.subdofhandlers
