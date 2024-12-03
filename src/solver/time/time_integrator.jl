@@ -6,6 +6,11 @@ end
 
 IntegratorStats() = IntegratorStats(0,0,0)
 
+Base.@kwdef struct IntegratorOptions{tType}
+    dtmin::tType = eps(Float64)
+    dtmax::tType = tend-t0
+end
+
 """
 Internal helper to integrate a single inner operator
 over some time interval.
@@ -33,6 +38,7 @@ mutable struct ThunderboltTimeIntegrator{
     t::tType
     tprev::tType
     dt::tType
+    tdir::tType
     cache::cacheType
     synchronizer::syncType
     sol::solType
@@ -43,6 +49,7 @@ mutable struct ThunderboltTimeIntegrator{
     _saveat::saveatType # argument to __init used as default argument to reinit!
     controller::controllerType
     stats::IntegratorStats
+    const opts::IntegratorOptions{tType}
 end
 
 # TimeChoiceIterator API
@@ -60,7 +67,7 @@ function (integrator::ThunderboltTimeIntegrator)(tmp, t)
 end
 
 function DiffEqBase.isadaptive(integrator::ThunderboltTimeIntegrator)
-    !integrator.adaptive && return false
+    integrator.controller === nothing && return false
     if !DiffEqBase.isadaptive(integrator.alg)
         error("Algorithm $(integrator.alg) is not adaptive, but the integrator is trying to adapt. Aborting.")
     end
@@ -109,8 +116,8 @@ function store_previous_info!(integrator::ThunderboltTimeIntegrator)
     end
 end
 
-# Accept or reject the step
 function step_header!(integrator::ThunderboltTimeIntegrator)
+    # Accept or reject the step
     if integrator.stats.iter > 0
         if should_accept_step(integrator)
             accept_step!(integrator)
@@ -118,6 +125,9 @@ function step_header!(integrator::ThunderboltTimeIntegrator)
             reject_step!(integrator)
         end
     end
+    # Before stepping we might need to adjust the dt
+    fix_dt_at_bounds!(integrator)
+    fix_dt_at_tstops!(integrator)
     integrator.stats.iter += 1
 end
 
@@ -133,7 +143,7 @@ function step_footer!(integrator::ThunderboltTimeIntegrator)
     end
 
     dtmin = 1e-12
-    if integrator.dt < DiffEqBase.timedepentdtmin(integrator.t, dtmin)
+    if integrator.dt < DiffEqBase.timedepentdtmin(integrator.t, integrator.opts.dtmin)
         error("dt too small ($(integrator.dt)). Aborting.")
     end
 end
@@ -145,16 +155,27 @@ function handle_tstop!(integrator::ThunderboltTimeIntegrator)
     end
 end
 
+function fix_dt_at_bounds!(integrator::ThunderboltTimeIntegrator)
+    if integrator.tdir > 0
+        integrator.dt = min(integrator.opts.dtmax, integrator.dt)
+    else
+        integrator.dt = max(integrator.opts.dtmax, integrator.dt)
+    end
+    dtmin = DiffEqBase.timedepentdtmin(integrator.t, integrator.opts.dtmin)
+    if integrator.tdir > 0
+        integrator.dt = max(integrator.dt, dtmin)
+    else
+        integrator.dt = min(integrator.dt, dtmin)
+    end
+    return nothing
+end
+
 function DiffEqBase.step!(integrator::ThunderboltTimeIntegrator, dt, stop_at_tdt = false)
     dt <= zero(dt) && error("dt must be positive")
-    tnext = integrator.t + dt
-    while !OS.reached_tstop(integrator, tnext, stop_at_tdt)
+    while !OS.reached_tstop(integrator,  integrator.t, stop_at_tdt)
         step_header!(integrator)
         perform_step!(integrator, integrator.cache) #|| error("Time integration failed at t=$(integrator.t).") # remove this
         step_footer!(integrator)
-        if stop_at_tdt && integrator.t + integrator.dt > tnext
-            integrator.dt = tnext - integrator.t
-        end
     end
 
     handle_tstop!(integrator)
@@ -190,7 +211,7 @@ end
     uparentview .= subintegrator.u
 end
 # Glue code
-function OS.build_subintegrators_recursive(f, synchronizer, p::Any, cache::AbstractTimeSolverCache, t, dt, dof_range, uparent, tstops, _tstops, saveat, _saveat)
+function OS.build_subintegrators_recursive(f, synchronizer, p::Any, cache::AbstractTimeSolverCache, t::tType, dt::tType, dof_range, uparent, tstops, _tstops, saveat, _saveat) where tType
     integrator = Thunderbolt.ThunderboltTimeIntegrator(
         f,
         cache.uₙ,
@@ -200,6 +221,7 @@ function OS.build_subintegrators_recursive(f, synchronizer, p::Any, cache::Abstr
         t,
         t,
         dt,
+        tType(sign(dt)), #tdir,
         cache,
         synchronizer,
         nothing, # FIXME sol
@@ -210,6 +232,10 @@ function OS.build_subintegrators_recursive(f, synchronizer, p::Any, cache::Abstr
         _saveat,
         nothing, # FIXME controller
         IntegratorStats(),
+        IntegratorOptions(
+            dtmin = eps(tType)
+            dtmax = tType(Inf)
+        ),
     )
     # This makes sure that the parameters are set correctly for the first time step
     syncronize_parameters!(integrator, f, synchronizer)
@@ -270,6 +296,7 @@ function DiffEqBase.__init(
         t0,
         t0,
         dt,
+        tType(sign(dt)), #tdir,
         cache,
         syncronizer,
         sol,
@@ -280,6 +307,10 @@ function DiffEqBase.__init(
         _saveat,
         adaptive ? controller : nothing,
         IntegratorStats(),
+        IntegratorOptions(
+            dtmin = eps(tType)
+            dtmax = tType(tf-t0)
+        )
     )
     # DiffEqBase.initialize!(callback, u0, t0, integrator) # Do I need this?
     return integrator
