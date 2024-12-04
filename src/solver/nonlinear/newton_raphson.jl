@@ -45,7 +45,6 @@ mutable struct NewtonRaphsonSolverCache{OpType, ResidualType, T, NewtonType <: N
     const parameters::NewtonType
     linear_solver_cache::InnerSolverCacheType
     Θks::Vector{T} # TODO modularize this
-    Δuprev::Vector{T}
 end
 
 function setup_solver_cache(f::AbstractSemidiscreteFunction, solver::NewtonRaphsonSolver{T}) where {T}
@@ -62,7 +61,7 @@ function setup_solver_cache(f::AbstractSemidiscreteFunction, solver::NewtonRaphs
     @assert inner_cache.b === residual
     @assert inner_cache.A === getJ(op)
 
-    NewtonRaphsonSolverCache(op, residual, solver, inner_cache, T[], copy(Δu))
+    NewtonRaphsonSolverCache(op, residual, solver, inner_cache, T[])
 end
 
 function setup_solver_cache(f::AbstractSemidiscreteBlockedFunction, solver::NewtonRaphsonSolver{T}) where {T}
@@ -83,14 +82,13 @@ function setup_solver_cache(f::AbstractSemidiscreteBlockedFunction, solver::Newt
 end
 
 function nlsolve!(u::AbstractVector, f::AbstractSemidiscreteFunction, cache::NewtonRaphsonSolverCache, t)
-    @unpack op, residual, linear_solver_cache, Θks, Δuprev = cache
+    @unpack op, residual, linear_solver_cache, Θks = cache
     newton_itr = -1
     Δu = linear_solver_cache.u
     residualnormprev = 0.0
     resize!(Θks, 0)
     while true
         newton_itr += 1
-        # Δuprev .= Δu
         residual .= 0.0
         @timeit_debug "update operator" update_linearization!(op, residual, u, t)
         @timeit_debug "elimination" eliminate_constraints_from_linearization!(cache, f)
@@ -118,7 +116,6 @@ function nlsolve!(u::AbstractVector, f::AbstractSemidiscreteFunction, cache::New
         u .-= Δu # Current guess
 
         if newton_itr > 0
-            # Θk = norm(Δu)/norm(Δuprev)
             Θk =residualnorm/residualnormprev
             push!(Θks, isnan(Θk) ? Inf : Θk)
             if Θk ≥ 1.0
