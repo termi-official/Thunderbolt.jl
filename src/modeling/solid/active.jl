@@ -118,9 +118,11 @@ Base.@kwdef struct Guccione1993ActiveModel
 end
 
 function ∂(sas::Guccione1993ActiveModel, Caᵢ, F::Tensor{2, dim}, coeff::AbstractTransverselyIsotropicMicrostructure) where {dim}
-    @unpack l₀, Ca₀, Ca₀max, Tmax = sas
-    l = √(coeff.f ⋅ F ⋅ coeff.f)
+    @unpack l₀, Ca₀, lR, Ca₀max, Tmax, B = sas
+    f = F ⋅ coeff.f
+    λf = norm(f)
+    l = lR*λf
     ECa₅₀² = Ca₀max^2/(exp(B*(l - l₀)) - 1.0)
     T₀ = Tmax * Ca₀^2 / (Ca₀^2 + ECa₅₀²) * Caᵢ
-    return  T₀ * (F ⋅ coeff.f) ⊗ coeff.f
+    return  T₀ * (f / λf) ⊗ coeff.f # We normalize here the fiber direction, as T₀ should contain all the active stress associated with the direction
 end
