@@ -195,7 +195,6 @@ function material_routine(F::Tensor{2,dim}, coefficients, cell_state, model::Act
               Ψ(F_ad, coefficients, model.material_model),
         F, :all)
 
-    λᵃ = compute_λᵃ(cell_state, model.contraction_model)
     ∂2 = Tensors.gradient(
         F_ad -> ∂(model.active_stress_model, cell_state, F_ad, coefficients),
     F)
