@@ -118,6 +118,51 @@ function adapt_dt!(integrator::ThunderboltTimeIntegrator, cache::LoadDrivenSolve
     integrator.dt = q * integrator.dt
 end
 
+Base.@kwdef struct Deuflhard2004_B_DiscreteContinuationControllerVariant
+    Θmin::Float64
+    p::Int64
+    Θreject::Float64 = 0.95
+    Θbar::Float64 = 0.5
+    γ::Float64    = 0.95
+    qmin::Float64 = 1/5
+    qmax::Float64 = 5.0
+end
+
+function should_accept_step(integrator::ThunderboltTimeIntegrator, cache::LoadDrivenSolverCache, controller::Deuflhard2004_B_DiscreteContinuationControllerVariant)
+    (; Θks) = cache.inner_solver_cache
+    (; Θreject) = controller
+    result = all(Θks .≤ Θreject)
+    return result
+end
+function reject_step!(integrator::ThunderboltTimeIntegrator, cache::LoadDrivenSolverCache, controller::Deuflhard2004_B_DiscreteContinuationControllerVariant)
+    # Reset solution
+    integrator.u .= integrator.uprev
+
+    @inline g(x) = √(1+4x) - 1
+
+    # Shorten dt according to (Eq. 5.24)
+    (; Θks) = cache.inner_solver_cache
+    (; Θbar, Θreject, γ, Θmin, qmin, qmax, p) = controller
+    for Θk in Θks
+        if Θk > Θreject
+            q = clamp(γ * (g(Θbar)/g(Θk))^(1/p), qmin, qmax)
+            integrator.dt = q * integrator.dt
+            return
+        end
+    end
+end
+
+function adapt_dt!(integrator::ThunderboltTimeIntegrator, cache::LoadDrivenSolverCache, controller::Deuflhard2004_B_DiscreteContinuationControllerVariant)
+    @inline g(x) = √(1+4x) - 1
+
+    # Adapt dt with a priori estimate (Eq. 5.24)
+    (; Θks) = cache.inner_solver_cache
+    (; Θbar, γ, Θmin, qmin, qmax, p) = controller
+
+    Θ₀ = length(Θks) > 0 ? max(first(Θks), Θmin) : Θmin
+    q = clamp(γ * (g(Θbar)/(g(Θ₀)))^(1/p), qmin, qmax)
+    integrator.dt = q * integrator.dt
+end
 
 @doc raw"""
     ExperimentalDiscreteContinuationController(Θbar, p)
@@ -166,5 +211,5 @@ end
 
 
 # default_controller(::LoadDrivenSolver, cache) = ExperimentalDiscreteContinuationController(; Θmin=1/8, p=1)
-default_controller(::LoadDrivenSolver, cache) = Deuflhard2004DiscreteContinuationController(; Θmin=1/8, p=1)
+default_controller(::LoadDrivenSolver, cache) = Deuflhard2004_B_DiscreteContinuationControllerVariant(; Θmin=1/8, p=1)
 DiffEqBase.isadaptive(::LoadDrivenSolver) = true
