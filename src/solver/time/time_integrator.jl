@@ -8,7 +8,8 @@ IntegratorStats() = IntegratorStats(0,0,0)
 
 Base.@kwdef struct IntegratorOptions{tType}
     dtmin::tType = eps(tType)
-    dtmax::tType = tType(Inf)
+    dtmax::tType = Inf
+    failfactor::tType = 0.25
 end
 
 """
@@ -52,6 +53,7 @@ mutable struct ThunderboltTimeIntegrator{
     controller::controllerType
     stats::IntegratorStats
     const opts::IntegratorOptions{tType}
+    force_stepfail::Bool
 end
 
 
@@ -82,7 +84,7 @@ end
 # Solution interface
 should_accept_step(integrator::ThunderboltTimeIntegrator) = should_accept_step(integrator, integrator.cache, integrator.controller)
 function should_accept_step(integrator::ThunderboltTimeIntegrator, cache, ::Nothing)
-    return true
+    return !(integrator.force_stepfail)
 end
 
 
@@ -133,6 +135,7 @@ function step_header!(integrator::ThunderboltTimeIntegrator)
     fix_dt_at_bounds!(integrator)
     modify_dt_for_tstops!(integrator)
     integrator.stats.iter += 1
+    integrator.force_stepfail = false
 end
 
 function update_uprev!(integrator::ThunderboltTimeIntegrator)
@@ -144,9 +147,14 @@ function step_footer!(integrator::ThunderboltTimeIntegrator)
         integrator.tprev = integrator.t
         integrator.t += integrator.dt
         adapt_dt!(integrator) # Noop for non-adaptive algorithms
+    else
+        if integrator.dtchangeable
+            integrator.dt *= integrator.opts.failfactor
+        else
+            error("Integration over [$(integrator.t), $(integrator.t+integrator.dt)] failed and cannot change dt to recover. Aborting.")
+        end
     end
 
-    dtmin = 1e-12
     if integrator.dt < DiffEqBase.timedepentdtmin(integrator.t, integrator.opts.dtmin)
         error("dt too small ($(integrator.dt)). Aborting.")
     end
@@ -183,7 +191,7 @@ function modify_dt_for_tstops!(integrator::ThunderboltTimeIntegrator)
                             min(abs(integrator.dt), abs(tdir_tstop - tdir_t)) # step! to the end
         elseif iszero(integrator.dtcache) && integrator.dtchangeable
             integrator.dt = integrator.tdir * abs(tdir_tstop - tdir_t)
-        elseif integrator.dtchangeable #&& !integrator.force_stepfail
+        elseif integrator.dtchangeable && !integrator.force_stepfail
             # always try to step! with dtcache, but lower if a tstop
             # however, if force_stepfail then don't set to dtcache, and no tstop worry
             integrator.dt = integrator.tdir *
@@ -197,7 +205,9 @@ function DiffEqBase.step!(integrator::ThunderboltTimeIntegrator, dt, stop_at_tdt
     tstop = integrator.t + dt
     while !OS.reached_tstop(integrator, tstop, stop_at_tdt)
         step_header!(integrator)
-        perform_step!(integrator, integrator.cache) #|| error("Time integration failed at t=$(integrator.t).") # remove this
+        if !perform_step!(integrator, integrator.cache)
+            integrator.force_stepfail = true
+        end
         step_footer!(integrator)
     end
 
@@ -260,6 +270,7 @@ function OS.build_subintegrators_recursive(f, synchronizer, p::Any, cache::Abstr
             dtmin = eps(tType),
             dtmax = tType(Inf),
         ),
+        false,
     )
     # This makes sure that the parameters are set correctly for the first time step
     syncronize_parameters!(integrator, f, synchronizer)
@@ -336,7 +347,8 @@ function DiffEqBase.__init(
         IntegratorOptions(
             dtmin = eps(tType),
             dtmax = tType(tf-t0),
-        )
+        ),
+        false
     )
     # DiffEqBase.initialize!(callback, u0, t0, integrator) # Do I need this?
     return integrator

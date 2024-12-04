@@ -118,7 +118,7 @@ function nlsolve!(u::AbstractVector, f::AbstractSemidiscreteFunction, cache::New
 
         if newton_itr > 0
             Θk = norm(Δu)/norm(Δuprev)
-            push!(Θks, Θk)
+            push!(Θks, isnan(Θk) ? Inf : Θk)
             if Θk ≥ 1.0
                 @warn "Newton-Raphson diverged. Aborting. ||r|| = $residualnorm"
                 return false
