@@ -195,13 +195,8 @@ function modify_dt_for_tstops!(integrator::ThunderboltTimeIntegrator)
         if DiffEqBase.isadaptive(integrator)
             integrator.dt = integrator.tdir *
                             min(abs(integrator.dt), abs(tdir_tstop - tdir_t)) # step! to the end
-        elseif iszero(integrator.dtcache) && integrator.dtchangeable
-            integrator.dt = integrator.tdir * abs(tdir_tstop - tdir_t)
         elseif integrator.dtchangeable && !integrator.force_stepfail
-            # always try to step! with dtcache, but lower if a tstop
-            # however, if force_stepfail then don't set to dtcache, and no tstop worry
-            integrator.dt = integrator.tdir *
-                            min(abs(integrator.dtcache), abs(tdir_tstop - tdir_t)) # step! to the end
+            integrator.dt = integrator.tdir * abs(tdir_tstop - tdir_t)
         end
     end
 end
