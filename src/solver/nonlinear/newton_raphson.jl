@@ -86,10 +86,11 @@ function nlsolve!(u::AbstractVector, f::AbstractSemidiscreteFunction, cache::New
     @unpack op, residual, linear_solver_cache, Θks, Δuprev = cache
     newton_itr = -1
     Δu = linear_solver_cache.u
+    residualnormprev = 0.0
     resize!(Θks, 0)
     while true
         newton_itr += 1
-        Δuprev .= Δu
+        # Δuprev .= Δu
         residual .= 0.0
         @timeit_debug "update operator" update_linearization!(op, residual, u, t)
         @timeit_debug "elimination" eliminate_constraints_from_linearization!(cache, f)
@@ -117,7 +118,8 @@ function nlsolve!(u::AbstractVector, f::AbstractSemidiscreteFunction, cache::New
         u .-= Δu # Current guess
 
         if newton_itr > 0
-            Θk = norm(Δu)/norm(Δuprev)
+            # Θk = norm(Δu)/norm(Δuprev)
+            Θk =residualnorm/residualnormprev
             push!(Θks, isnan(Θk) ? Inf : Θk)
             if Θk ≥ 1.0
                 @warn "Newton-Raphson diverged. Aborting. ||r|| = $residualnorm"
@@ -129,6 +131,8 @@ function nlsolve!(u::AbstractVector, f::AbstractSemidiscreteFunction, cache::New
                 break
             end
         end
+
+        residualnormprev = residualnorm
     end
     return true
 end

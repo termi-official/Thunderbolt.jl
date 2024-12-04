@@ -10,6 +10,7 @@ Base.@kwdef struct IntegratorOptions{tType}
     dtmin::tType = eps(tType)
     dtmax::tType = Inf
     failfactor::tType = 0.25
+    verbose::Bool = false
 end
 
 """
@@ -82,7 +83,12 @@ end
 
 
 # Solution interface
-should_accept_step(integrator::ThunderboltTimeIntegrator) = should_accept_step(integrator, integrator.cache, integrator.controller)
+function should_accept_step(integrator::ThunderboltTimeIntegrator)
+    if integrator.force_stepfail
+        return false
+    end
+    return should_accept_step(integrator, integrator.cache, integrator.controller)
+end
 function should_accept_step(integrator::ThunderboltTimeIntegrator, cache, ::Nothing)
     return !(integrator.force_stepfail)
 end
@@ -147,7 +153,7 @@ function step_footer!(integrator::ThunderboltTimeIntegrator)
         integrator.tprev = integrator.t
         integrator.t += integrator.dt
         adapt_dt!(integrator) # Noop for non-adaptive algorithms
-    else
+    elseif integrator.force_stepfail
         if integrator.dtchangeable
             integrator.dt *= integrator.opts.failfactor
         else
@@ -293,6 +299,7 @@ function DiffEqBase.__init(
     callback = nothing,
     advance_to_tstop = false,
     adaptive = false,
+    verbose = false,
     controller = nothing,
     save_func = (u, t) -> copy(u),                  # custom kwarg
     dtchangeable = true,                            # custom kwarg
@@ -347,6 +354,7 @@ function DiffEqBase.__init(
         IntegratorOptions(
             dtmin = eps(tType),
             dtmax = tType(tf-t0),
+            verbose = verbose,
         ),
         false
     )
@@ -379,6 +387,7 @@ end
 
 # Compat with OrdinaryDiffEq
 function perform_step!(integ::ThunderboltTimeIntegrator, cache::AbstractTimeSolverCache)
+    integ.opts.verbose && @info "Time integration on [$(integ.t), $(integ.t+integ.dt)] (Δt=$(integ.dt))"
     if !perform_step!(integ.f, cache, integ.t, integ.dt)
         if integ.sol !== nothing # FIXME
             integ.sol = DiffEqBase.solution_new_retcode(integ.sol, DiffEqBase.ReturnCode.Failure)
