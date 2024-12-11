@@ -335,6 +335,15 @@ end
     uparentview = @view uparent[subintegrator.indexset]
     uparentview .= subintegrator.u
 end
+
+struct DummyODESolution <: DiffEqBase.AbstractODESolution{Float64, 2, Vector{Float64}}
+    retcode::DiffEqBase.ReturnCode.T
+end
+DummyODESolution() = DummyODESolution(DiffEqBase.ReturnCode.Default)
+function DiffEqBase.solution_new_retcode(sol::DummyODESolution, retcode)
+    return DiffEqBase.@set sol.retcode = retcode
+end
+
 # Glue code
 function OS.build_subintegrators_recursive(f, synchronizer, p::Any, cache::AbstractTimeSolverCache, t::tType, dt::tType, dof_range, uparent, tstops, _tstops, saveat, _saveat) where tType
     integrator = Thunderbolt.ThunderboltTimeIntegrator(
@@ -351,7 +360,7 @@ function OS.build_subintegrators_recursive(f, synchronizer, p::Any, cache::Abstr
         cache,
         nothing,
         synchronizer,
-        nothing, # FIXME sol
+        DummyODESolution(),
         true, #dtchangeable
         tstops,
         _tstops,
@@ -401,7 +410,8 @@ function DiffEqBase.__init(
     advance_to_tstop = false,
     adaptive = false,
     verbose = false,
-    alias_u0 = false,
+    alias_u0 = true,
+    alias_du0 = false,
     controller = nothing,
     maxiters = 1000000,
     dense = save_everystep &&
@@ -427,25 +437,23 @@ function DiffEqBase.__init(
         tstops = ()
     end
 
+    # Setup tstop logic
     tstops_internal = OrdinaryDiffEqCore.initialize_tstops(tType, tstops, d_discontinuities, prob.tspan)
     saveat_internal = OrdinaryDiffEqCore.initialize_saveat(tType, saveat, prob.tspan)
     d_discontinuities_internal = OrdinaryDiffEqCore.initialize_d_discontinuities(tType, d_discontinuities, prob.tspan)
 
-    # if alias_u0
-    #     u = prob.u0
-    # else
-    #     u = recursivecopy(prob.u0)
-    # end
+    cache = init_cache(prob, alg)
 
-    cache = init_cache(prob, alg; t0)
-    cache.uₙ .= u0
-
-    u = cache.uₙ
-
+    # Setup solution buffers
+    u  = setup_u(prob, alg, alias_u0)
     uType                = typeof(u)
     uBottomEltype        = OrdinaryDiffEqCore.recursive_bottom_eltype(u)
     uBottomEltypeNoUnits = OrdinaryDiffEqCore.recursive_unitless_bottom_eltype(u)
 
+    rate_prototype = compute_rate_prototype(prob, alias_du0)
+    rateType = typeof(rate_prototype)
+
+    # Setup callbacks
     callbacks_internal = DiffEqBase.CallbackSet(callback)
     max_len_cb = DiffEqBase.max_vector_callback_length_int(callbacks_internal)
     if max_len_cb !== nothing
@@ -461,10 +469,8 @@ function DiffEqBase.__init(
         callback_cache = nothing
     end
 
+    # Setup solution
     save_idxs, saved_subsystem = DiffEqBase.SciMLBase.get_save_idxs_and_saved_subsystem(prob, save_idxs)
-
-    rate_prototype = compute_rate_prototype(prob)
-    rateType = typeof(rate_prototype)
 
     if save_idxs === nothing
         ksEltype = Vector{rateType}
@@ -477,7 +483,7 @@ function DiffEqBase.__init(
     ks = ks_init === () ? ksEltype[] : convert(Vector{ksEltype}, ks_init)
 
     sol = DiffEqBase.build_solution(
-        prob, alg, typeof(t0)[], typeof(save_func(u0, t0))[],
+        prob, alg, ts, uType[],
         dense = dense, k = ks, saved_subsystem = saved_subsystem,
         calculate_error = false
     )
@@ -488,6 +494,7 @@ function DiffEqBase.__init(
 
     save_end = save_end === nothing ? save_everystep || isempty(saveat) || saveat isa Number || tf in saveat : save_end
 
+    # Setup the actual integrator object
     integrator = ThunderboltTimeIntegrator(
         alg,
         f,
@@ -534,7 +541,7 @@ function DiffEqBase.__init(
         0,
     )
     OrdinaryDiffEqCore.initialize_callbacks!(integrator)
-    # DiffEqBase.initialize!(integrator, integrator.cache)
+    DiffEqBase.initialize!(integrator, integrator.cache)
 
     if _tstops !== nothing
         tstops = _tstops(parameter_values(integrator), prob.tspan)
@@ -627,8 +634,16 @@ function OrdinaryDiffEqCore.perform_step!(integ::ThunderboltTimeIntegrator, cach
     # return true
 end
 
-function init_cache(prob, alg; t0, kwargs...)
-    return setup_solver_cache(prob.f, alg, t0)
+function init_cache(prob, alg; dt, kwargs...)
+    return setup_solver_cache(prob.f, alg, prob.tspan[1])
+end
+
+function setup_u(prob::AbstractSemidiscreteProblem, solver, alias_u0)
+    if alias_u0
+        return prob.u0
+    else
+        return recursivecopy(prob.u0)
+    end
 end
 
 OrdinaryDiffEqCore.choose_algorithm!(integrator, cache::AbstractTimeSolverCache) = nothing
