@@ -202,7 +202,7 @@ export
     # Solver
     SchurComplementLinearSolver,
     NewtonRaphsonSolver,
-    LoadDrivenSolver,
+    HomotopyPathSolver,
     ForwardEulerSolver,
     BackwardEulerSolver,
     ForwardEulerCellSolver,

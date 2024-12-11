@@ -1,25 +1,25 @@
 """
-    LoadDrivenSolver{IS, T, PFUN}
+    HomotopyPathSolver{IS, T, PFUN}
 
 Solve the nonlinear problem `F(u,t)=0` with given time increments `Δt`on some interval `[t_begin, t_end]`
 where `t` is some pseudo-time parameter.
 """
-mutable struct LoadDrivenSolver{IS} <: AbstractSolver
+mutable struct HomotopyPathSolver{IS} <: AbstractSolver
     inner_solver::IS
 end
 
-mutable struct LoadDrivenSolverCache{ISC, T, VT <: AbstractVector{T}} <: AbstractTimeSolverCache
+mutable struct HomotopyPathSolverCache{ISC, T, VT <: AbstractVector{T}} <: AbstractTimeSolverCache
     inner_solver_cache::ISC
     uₙ::VT
     uₙ₋₁::VT
     tmp::VT
 end
 
-function setup_solver_cache(f::AbstractSemidiscreteFunction, solver::LoadDrivenSolver, t₀)
+function setup_solver_cache(f::AbstractSemidiscreteFunction, solver::HomotopyPathSolver, t₀)
     inner_solver_cache = setup_solver_cache(f, solver.inner_solver)
     T = Float64 # TODO query
     vtype = Vector{T}
-    LoadDrivenSolverCache(
+    HomotopyPathSolverCache(
         inner_solver_cache,
         vtype(undef, solution_size(f)),
         vtype(undef, solution_size(f)),
@@ -27,11 +27,11 @@ function setup_solver_cache(f::AbstractSemidiscreteFunction, solver::LoadDrivenS
     )
 end
 
-function setup_solver_cache(f::AbstractSemidiscreteBlockedFunction, solver::LoadDrivenSolver, t₀)
+function setup_solver_cache(f::AbstractSemidiscreteBlockedFunction, solver::HomotopyPathSolver, t₀)
     inner_solver_cache = setup_solver_cache(f, solver.inner_solver)
     T = Float64 # TODO query
     vtype = Vector{T}
-    LoadDrivenSolverCache(
+    HomotopyPathSolverCache(
         inner_solver_cache,
         mortar([
             vtype(undef, solution_size(fi)) for fi ∈ blocks(f)
@@ -45,7 +45,7 @@ function setup_solver_cache(f::AbstractSemidiscreteBlockedFunction, solver::Load
     )
 end
 
-function perform_step!(f::AbstractSemidiscreteFunction, solver_cache::LoadDrivenSolverCache, t, Δt)
+function perform_step!(f::AbstractSemidiscreteFunction, solver_cache::HomotopyPathSolverCache, t, Δt)
     solver_cache.uₙ₋₁ .= solver_cache.uₙ
     update_constraints!(f, solver_cache, t + Δt)
     if !nlsolve!(solver_cache.uₙ, f, solver_cache.inner_solver_cache, t + Δt) # TODO remove ,,t'' here. But how?
@@ -81,13 +81,13 @@ Base.@kwdef struct Deuflhard2004DiscreteContinuationController
     qmax::Float64 = 5.0
 end
 
-function should_accept_step(integrator::ThunderboltTimeIntegrator, cache::LoadDrivenSolverCache, controller::Deuflhard2004DiscreteContinuationController)
+function should_accept_step(integrator::ThunderboltTimeIntegrator, cache::HomotopyPathSolverCache, controller::Deuflhard2004DiscreteContinuationController)
     (; Θks) = cache.inner_solver_cache
     (; Θreject) = controller
     result = all(Θks .≤ Θreject)
     return result
 end
-function reject_step!(integrator::ThunderboltTimeIntegrator, cache::LoadDrivenSolverCache, controller::Deuflhard2004DiscreteContinuationController)
+function reject_step!(integrator::ThunderboltTimeIntegrator, cache::HomotopyPathSolverCache, controller::Deuflhard2004DiscreteContinuationController)
     # Reset solution
     integrator.u .= integrator.uprev
 
@@ -105,7 +105,7 @@ function reject_step!(integrator::ThunderboltTimeIntegrator, cache::LoadDrivenSo
     end
 end
 
-function adapt_dt!(integrator::ThunderboltTimeIntegrator, cache::LoadDrivenSolverCache, controller::Deuflhard2004DiscreteContinuationController)
+function adapt_dt!(integrator::ThunderboltTimeIntegrator, cache::HomotopyPathSolverCache, controller::Deuflhard2004DiscreteContinuationController)
     @inline g(x) = √(1+4x) - 1
 
     # Adapt dt with a priori estimate (Eq. 5.24)
@@ -127,13 +127,13 @@ Base.@kwdef struct Deuflhard2004_B_DiscreteContinuationControllerVariant
     qmax::Float64 = 5.0
 end
 
-function should_accept_step(integrator::ThunderboltTimeIntegrator, cache::LoadDrivenSolverCache, controller::Deuflhard2004_B_DiscreteContinuationControllerVariant)
+function should_accept_step(integrator::ThunderboltTimeIntegrator, cache::HomotopyPathSolverCache, controller::Deuflhard2004_B_DiscreteContinuationControllerVariant)
     (; Θks) = cache.inner_solver_cache
     (; Θreject) = controller
     result = all(Θks .≤ Θreject)
     return result
 end
-function reject_step!(integrator::ThunderboltTimeIntegrator, cache::LoadDrivenSolverCache, controller::Deuflhard2004_B_DiscreteContinuationControllerVariant)
+function reject_step!(integrator::ThunderboltTimeIntegrator, cache::HomotopyPathSolverCache, controller::Deuflhard2004_B_DiscreteContinuationControllerVariant)
     # Reset solution
     integrator.u .= integrator.uprev
 
@@ -151,7 +151,7 @@ function reject_step!(integrator::ThunderboltTimeIntegrator, cache::LoadDrivenSo
     end
 end
 
-function adapt_dt!(integrator::ThunderboltTimeIntegrator, cache::LoadDrivenSolverCache, controller::Deuflhard2004_B_DiscreteContinuationControllerVariant)
+function adapt_dt!(integrator::ThunderboltTimeIntegrator, cache::HomotopyPathSolverCache, controller::Deuflhard2004_B_DiscreteContinuationControllerVariant)
     @inline g(x) = √(1+4x) - 1
 
     # Adapt dt with a priori estimate (Eq. 5.24)
@@ -176,13 +176,13 @@ Base.@kwdef struct ExperimentalDiscreteContinuationController
     qmax::Float64 = 5.0
 end
 
-function should_accept_step(integrator::ThunderboltTimeIntegrator, cache::LoadDrivenSolverCache, controller::ExperimentalDiscreteContinuationController)
+function should_accept_step(integrator::ThunderboltTimeIntegrator, cache::HomotopyPathSolverCache, controller::ExperimentalDiscreteContinuationController)
     (; Θks) = cache.inner_solver_cache
     (; Θreject) = controller
     result = all(Θks .≤ Θreject)
     return result
 end
-function reject_step!(integrator::ThunderboltTimeIntegrator, cache::LoadDrivenSolverCache, controller::ExperimentalDiscreteContinuationController)
+function reject_step!(integrator::ThunderboltTimeIntegrator, cache::HomotopyPathSolverCache, controller::ExperimentalDiscreteContinuationController)
     # Reset solution
     integrator.u .= integrator.uprev
 
@@ -196,7 +196,7 @@ function reject_step!(integrator::ThunderboltTimeIntegrator, cache::LoadDrivenSo
     integrator.dt = q * integrator.dt
 end
 
-function adapt_dt!(integrator::ThunderboltTimeIntegrator, cache::LoadDrivenSolverCache, controller::ExperimentalDiscreteContinuationController)
+function adapt_dt!(integrator::ThunderboltTimeIntegrator, cache::HomotopyPathSolverCache, controller::ExperimentalDiscreteContinuationController)
     @inline g(x) = √(1+4x) - 1
 
     # Adapt dt with a priori estimate (Eq. 5.24)
@@ -209,6 +209,6 @@ end
 
 
 
-# default_controller(::LoadDrivenSolver, cache) = ExperimentalDiscreteContinuationController(; Θmin=1/8, p=1)
-default_controller(::LoadDrivenSolver, cache) = Deuflhard2004_B_DiscreteContinuationControllerVariant(; Θmin=1/8, p=1)
-DiffEqBase.isadaptive(::LoadDrivenSolver) = true
+# default_controller(::HomotopyPathSolver, cache) = ExperimentalDiscreteContinuationController(; Θmin=1/8, p=1)
+default_controller(::HomotopyPathSolver, cache) = Deuflhard2004_B_DiscreteContinuationControllerVariant(; Θmin=1/8, p=1)
+DiffEqBase.isadaptive(::HomotopyPathSolver) = true

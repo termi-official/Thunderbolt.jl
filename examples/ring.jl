@@ -36,7 +36,8 @@ ring_cs = compute_midmyocardial_section_coordinate_system(ring_grid)
 
 constitutive_model = ActiveStressModel(
     Guccione1991PassiveModel(),
-    PiersantiActiveStress(;Tmax=10.0),
+    # PiersantiActiveStress(;Tmax=10.0),
+    Guccione1993ActiveModel(;Tmax=100.0),
     PelceSunLangeveld1995Model(;calcium_field=AnalyticalCoefficient(
         calcium_profile_function,
         CoordinateSystemCoefficient(ring_cs)
@@ -65,14 +66,14 @@ quasistaticform = semidiscretize(
 )
 
 problem = QuasiStaticProblem(quasistaticform, tspan)
-timestepper = LoadDrivenSolver(
+timestepper = HomotopyPathSolver(
     NewtonRaphsonSolver(
         max_iter=10,
         inner_solver=LinearSolve.UMFPACKFactorization(),
     )
 )
 
-integrator = OS.init(problem, timestepper, dt=dt₀, verbose=true, adaptive=true)
+integrator = OS.init(problem, timestepper, dt=dt₀, verbose=true, adaptive=true, dtmax=25.0)
 
 io = ParaViewWriter(name);
 
