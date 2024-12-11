@@ -27,7 +27,10 @@ import Ferrite: vertices, edges, faces, sortedge, sortface
 import Ferrite: get_coordinate_type, getspatialdim
 import Ferrite: reference_shape_value
 
+import Logging: @logmsg
+
 import DiffEqBase#: AbstractDiffEqFunction, AbstractDEProblem
+import OrdinaryDiffEqCore#: OrdinaryDiffEqCore
 @reexport import LinearSolve
 
 import Base: *, +, -
