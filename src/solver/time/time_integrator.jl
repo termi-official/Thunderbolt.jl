@@ -53,9 +53,6 @@ mutable struct ThunderboltTimeIntegrator{
     callbackcacheType,
     syncType,
     solType,
-    heapType,
-    tstopsType,
-    saveatType,
     controllerType,
 }  <: SciMLBase.DEIntegrator{algType, true, uType, tType} # FIXME alg
     alg::algType
@@ -73,10 +70,6 @@ mutable struct ThunderboltTimeIntegrator{
     synchronizer::syncType
     sol::solType
     const dtchangeable::Bool
-    tstops_internal::heapType
-    tstops::tstopsType # argument to __init used as default argument to reinit!
-    saveat::heapType
-    saveat_internal::saveatType # argument to __init used as default argument to reinit!
     controller::controllerType
     stats::IntegratorStats
     const opts::IntegratorOptions{tType}
@@ -547,10 +540,6 @@ function SciMLBase.__init(
         syncronizer,
         sol,
         true,
-        tstops_internal,
-        tstops,
-        saveat_internal,
-        saveat,
         adaptive ? controller : nothing,
         IntegratorStats(),
         IntegratorOptions(
@@ -716,10 +705,6 @@ function OS.build_subintegrators_recursive(f, synchronizer, p::Any, cache::Abstr
         synchronizer,
         DummyODESolution(),
         true, #dtchangeable
-        tstops,
-        _tstops,
-        saveat,
-        _saveat,
         nothing, # FIXME controller
         IntegratorStats(),
         IntegratorOptions(; # TODO pass from outside
