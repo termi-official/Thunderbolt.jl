@@ -28,7 +28,7 @@ function test_solve_passive_structure(constitutive_model)
     problem = QuasiStaticProblem(quasistaticform, tspan)
 
     # Create sparse matrix and residual vector
-    timestepper = LoadDrivenSolver(
+    timestepper = HomotopyPathSolver(
         NewtonRaphsonSolver(;max_iter=10)
     )
     integrator = init(problem, timestepper, dt=Δt, verbose=true)

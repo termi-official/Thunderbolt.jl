@@ -18,8 +18,6 @@ import ReadVTK
 include("solver/operator_splitting.jl")
 @reexport using .OS
 solution_size(f::GenericSplitFunction) = OS.function_size(f)
-# include("solver/local_time_stepping.jl")
-# include("solver/multilevel.jl")
 
 @reexport using Ferrite
 import Ferrite: AbstractDofHandler, AbstractGrid, AbstractRefShape, AbstractCell, get_grid
@@ -29,13 +27,13 @@ import Ferrite: reference_shape_value
 
 import Logging: @logmsg
 
+import SciMLBase
+@reexport import SciMLBase: init, solve, solve!, step!
 import DiffEqBase#: AbstractDiffEqFunction, AbstractDEProblem
 import OrdinaryDiffEqCore#: OrdinaryDiffEqCore
-@reexport import LinearSolve
+import LinearSolve
 
 import Base: *, +, -
-
-@reexport import CommonSolve: init, solve, solve!, step!
 
 import ModelingToolkit
 import ModelingToolkit: @variables, @parameters, @component, @named,
@@ -65,7 +63,7 @@ include("modeling/fluid_mechanics.jl")
 include("modeling/multiphysics.jl")
 
 include("modeling/functions.jl")
-include("modeling/problems.jl") # Utility for compat against DiffEqBase
+include("modeling/problems.jl")
 
 include("discretization/interface.jl")
 include("discretization/fem.jl")

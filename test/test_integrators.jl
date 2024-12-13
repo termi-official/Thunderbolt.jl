@@ -40,7 +40,7 @@ using UnPack
     end
 
     # Dispatch innermost solve
-    function Thunderbolt.DiffEqBase.perform_step!(integ::ThunderboltTimeIntegrator, cache::DummyForwardEulerCache)
+    function Thunderbolt.OrdinaryDiffEqCore.perform_step!(integ::ThunderboltTimeIntegrator, cache::DummyForwardEulerCache)
         @unpack f, dt, u, p, t = integ
         @unpack du = cache
 

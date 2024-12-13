@@ -49,7 +49,7 @@ function DiffEqBase.__init(
     args...;
     dt,
     tstops = (),
-    saveat = nothing,
+    saveat = (),
     save_everystep = false,
     callback = nothing,
     advance_to_tstop = false,
