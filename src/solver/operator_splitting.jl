@@ -4,6 +4,8 @@ import Unrolled: @unroll
 
 import DiffEqBase, DataStructures
 
+import OrdinaryDiffEqCore
+
 import UnPack: @unpack
 import DiffEqBase: init, TimeChoiceIterator
 

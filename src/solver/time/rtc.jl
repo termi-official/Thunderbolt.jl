@@ -84,21 +84,21 @@ end
     return nothing # Do nothing
 end
 
-# Dispatch for outer construction
-function OS.init_cache(prob::OS.OperatorSplittingProblem, alg::ReactionTangentController; u0, kwargs...)
-    @unpack f = prob
-    @assert f isa GenericSplitFunction
+# # Dispatch for outer construction
+# function OS.init_cache(prob::OS.OperatorSplittingProblem, alg::ReactionTangentController; u0, kwargs...)
+#     @unpack f = prob
+#     @assert f isa GenericSplitFunction
 
-    # Build inner integrator
-    return OS.construct_inner_cache(f, alg; uparent=u0, u0, kwargs...)
-end
+#     # Build inner integrator
+#     return OS.construct_inner_cache(f, alg; uparent=u0, u0, kwargs...)
+# end
 
-# Dispatch for recursive construction
-function OS.construct_inner_cache(f::OS.AbstractOperatorSplitFunction, alg::ReactionTangentController; u0, kwargs...)
-    ltg_cache = OS.construct_inner_cache(f, alg.ltg; u0, kwargs...)
-    return ReactionTangentControllerCache(ltg_cache, zero(eltype(u0)))
-end
+# # Dispatch for recursive construction
+# function OS.construct_inner_cache(f::OS.AbstractOperatorSplitFunction, alg::ReactionTangentController; u0, kwargs...)
+#     ltg_cache = OS.construct_inner_cache(f, alg.ltg; u0, kwargs...)
+#     return ReactionTangentControllerCache(ltg_cache, zero(eltype(u0)))
+# end
 
-function OS.build_subintegrators_recursive(f::GenericSplitFunction, synchronizers::Tuple, p::Tuple, cache::ReactionTangentControllerCache, t, dt, dof_range, uparent, tstops, _tstops, saveat, _saveat)
-    OS.build_subintegrators_recursive(f, synchronizers, p, cache.ltg_cache, t, dt, dof_range, uparent, tstops, _tstops, saveat, _saveat)
-end
+# function OS.build_subintegrators_recursive(f::GenericSplitFunction, synchronizers::Tuple, p::Tuple, cache::ReactionTangentControllerCache, t, dt, dof_range, uparent, tstops, _tstops, saveat, _saveat)
+#     OS.build_subintegrators_recursive(f, synchronizers, p, cache.ltg_cache, t, dt, dof_range, uparent, tstops, _tstops, saveat, _saveat)
+# end

@@ -54,7 +54,7 @@ mutable struct ThunderboltTimeIntegrator{
     syncType,
     solType,
     controllerType,
-}  <: SciMLBase.DEIntegrator{algType, true, uType, tType} # FIXME alg
+}  <: SciMLBase.DEIntegrator{algType, true, uType, tType}
     alg::algType
     const f::fType # Right hand side
     u::uType # Current local solution
@@ -82,6 +82,7 @@ mutable struct ThunderboltTimeIntegrator{
     last_step_failed::Bool
     saveiter::Int
     saveiter_dense::Int
+    just_hit_tstop::Bool
 end
 
 # ----------------------------------- SciMLBase.jl Interface ------------------------------------
@@ -206,7 +207,7 @@ function update_uprev!(integrator::ThunderboltTimeIntegrator)
     # # OrdinaryDiffEqCore.update_uprev!(integrator) # FIXME recover
     # if alg_extrapolates(integrator.alg)
     #     if isinplace(integrator.sol.prob)
-    #         recursivecopy!(integrator.uprev2, integrator.uprev)
+    #         SciMLBase.recursivecopy!(integrator.uprev2, integrator.uprev)
     #     else
     #         integrator.uprev2 = integrator.uprev
     #     end
@@ -309,7 +310,7 @@ function compute_rate_prototype(prob)
     )
     if !isdae && isinplace(prob) && u isa AbstractArray && eltype(u) <: Number &&
         uBottomEltypeNoUnits == uBottomEltype && tType == tTypeNoUnits # Could this be more efficient for other arrays?
-        return recursivecopy(u)
+        return SciMLBase.recursivecopy(u)
     else
         _compute_rate_prototype_mass_matrix_form(prob)
     end
@@ -446,8 +447,6 @@ function SciMLBase.__init(
     dense = save_everystep &&
                     !(alg isa DAEAlgorithm) && !(prob isa DiscreteProblem) &&
                     isempty(saveat),
-    save_func = (u, t) -> copy(u),                  # custom kwarg
-    dtchangeable = true,                            # custom kwarg
     syncronizer = OS.NoExternalSynchronization(),   # custom kwarg
     kwargs...,
 )
@@ -471,16 +470,13 @@ function SciMLBase.__init(
     saveat_internal = OrdinaryDiffEqCore.initialize_saveat(tType, saveat, prob.tspan)
     d_discontinuities_internal = OrdinaryDiffEqCore.initialize_d_discontinuities(tType, d_discontinuities, prob.tspan)
 
-    cache = init_cache(prob, alg; dt = dt)
+    save_end = save_end === nothing ? save_everystep || isempty(saveat) || saveat isa Number || tf in saveat : save_end
 
     # Setup solution buffers
     u  = setup_u(prob, alg, alias_u0)
     uType                = typeof(u)
     uBottomEltype        = OrdinaryDiffEqCore.recursive_bottom_eltype(u)
     uBottomEltypeNoUnits = OrdinaryDiffEqCore.recursive_unitless_bottom_eltype(u)
-
-    rate_prototype = compute_rate_prototype(prob)
-    rateType = typeof(rate_prototype)
 
     # Setup callbacks
     callbacks_internal = SciMLBase.CallbackSet(callback)
@@ -501,6 +497,8 @@ function SciMLBase.__init(
     # Setup solution
     save_idxs, saved_subsystem = SciMLBase.get_save_idxs_and_saved_subsystem(prob, save_idxs)
 
+    rate_prototype = compute_rate_prototype(prob)
+    rateType = typeof(rate_prototype)
     if save_idxs === nothing
         ksEltype = Vector{rateType}
     else
@@ -517,11 +515,13 @@ function SciMLBase.__init(
         calculate_error = false
     )
 
+    # Setup algorithm cache
+    cache = init_cache(prob, alg; dt = dt, u = u)
+
+    # Setup controller
     if controller === nothing && adaptive
         controller = default_controller(alg, cache)
     end
-
-    save_end = save_end === nothing ? save_everystep || isempty(saveat) || saveat isa Number || tf in saveat : save_end
 
     # Setup the actual integrator object
     integrator = ThunderboltTimeIntegrator(
@@ -565,6 +565,7 @@ function SciMLBase.__init(
         false,
         0,
         0,
+        false,
     )
     OrdinaryDiffEqCore.initialize_callbacks!(integrator)
     DiffEqBase.initialize!(integrator, integrator.cache)
@@ -626,7 +627,7 @@ function setup_u(prob::AbstractSemidiscreteProblem, solver, alias_u0)
     if alias_u0
         return prob.u0
     else
-        return recursivecopy(prob.u0)
+        return SciMLBase.recursivecopy(prob.u0)
     end
 end
 
@@ -647,6 +648,8 @@ function OS.advance_solution_to!(integrator::ThunderboltTimeIntegrator, cache::A
     # dt = tend-t
     # dt ≈ 0.0 || SciMLBase.step!(integrator, dt, true)
     @inbounds while integrator.tdir * integrator.t < tend
+        integrator.dt ≈ 0.0 && error("???")
+        @info integrator.t, integrator.dt, tend
         step_header!(integrator)
         if OrdinaryDiffEqCore.check_error!(integrator) != SciMLBase.ReturnCode.Success
             return
@@ -681,43 +684,122 @@ function SciMLBase.solution_new_retcode(sol::DummyODESolution, retcode)
 end
 fix_solution_buffer_sizes!(integrator, sol::DummyODESolution) = nothing
 
-# Glue code
-function OS.build_subintegrators_recursive(f, synchronizer, p::Any, cache::AbstractTimeSolverCache, t::tType, dt::tType, dof_range, uparent, tstops, _tstops, saveat, _saveat) where tType
-    d_discontinuities = () # TODO pass
+OS.recursive_null_parameters(stuff::Union{AbstractSemidiscreteProblem, AbstractSemidiscreteFunction}) = SciMLBase.NullParameters()
+syncronize_parameters!(integ, f, ::OS.NoExternalSynchronization) = nothing
 
-    tstops_internal            = OrdinaryDiffEqCore.initialize_tstops(tType, _tstops, d_discontinuities, (t, t+dt))
-    d_discontinuities_internal = OrdinaryDiffEqCore.initialize_d_discontinuities(tType, d_discontinuities, (t, t+dt))
-    saveat_internal            = nothing #OrdinaryDiffEqCore.initialize_saveat(tType, _saveat, (t, t+dt))
+function OS.build_subintegrators_with_cache(
+    f::AbstractSemidiscreteFunction, alg::AbstractSolver, p,
+    uprevouter::AbstractVector, uouter::AbstractVector,
+    solution_indices,
+    t0, dt, tf,
+    tstops, saveat, d_discontinuities, callback,
+    adaptive, verbose,
+    save_end = false,
+    controller = nothing,
+)
+    uprev = @view uprevouter[solution_indices]
+    u     = @view uouter[solution_indices]
 
-    integrator = Thunderbolt.ThunderboltTimeIntegrator(
-        nothing, # FIXME
+    dt > zero(dt) || error("dt must be positive")
+    _dt = dt
+    tdir = tf > t0 ? 1.0 : -1.0
+    tType = typeof(dt)
+
+    if tstops isa AbstractArray || tstops isa Tuple || tstops isa Number
+        _tstops = nothing
+    else
+        _tstops = tstops
+        tstops = ()
+    end
+
+    # Setup tstop logic
+    tstops_internal = OrdinaryDiffEqCore.initialize_tstops(tType, tstops, d_discontinuities, (t0, tf))
+    saveat_internal = OrdinaryDiffEqCore.initialize_saveat(tType, saveat, (t0, tf))
+    d_discontinuities_internal = OrdinaryDiffEqCore.initialize_d_discontinuities(tType, d_discontinuities, (t0, tf))
+
+    cache = setup_solver_cache(f, alg, t0; uprev=uprev, u=u)
+
+    # Setup solution buffers
+    uType                = typeof(u)
+    uBottomEltype        = OrdinaryDiffEqCore.recursive_bottom_eltype(u)
+    uBottomEltypeNoUnits = OrdinaryDiffEqCore.recursive_unitless_bottom_eltype(u)
+
+    # Setup callbacks
+    callbacks_internal = SciMLBase.CallbackSet(callback)
+    max_len_cb = DiffEqBase.max_vector_callback_length_int(callbacks_internal)
+    if max_len_cb !== nothing
+        uBottomEltypeReal = real(uBottomEltype)
+        # if SciMLBase.isinplace(prob)
+        #     callback_cache = SciMLBase.CallbackCache(u, max_len_cb, uBottomEltypeReal,
+        #         uBottomEltypeReal)
+        # else
+            callback_cache = SciMLBase.CallbackCache(max_len_cb, uBottomEltypeReal,
+                uBottomEltypeReal)
+        # end
+    else
+        callback_cache = nothing
+    end
+
+    # # Setup solution
+    # save_idxs, saved_subsystem = SciMLBase.get_save_idxs_and_saved_subsystem(prob, save_idxs)
+
+    # rate_prototype = compute_rate_prototype(prob)
+    # rateType = typeof(rate_prototype)
+    # if save_idxs === nothing
+    #     ksEltype = Vector{rateType}
+    # else
+    #     ks_prototype = rate_prototype[save_idxs]
+    #     ksEltype = Vector{typeof(ks_prototype)}
+    # end
+
+    ts = tType[]
+    ks = uType[]
+
+    # sol = SciMLBase.build_solution(
+    #     prob, alg, ts, uType[],
+    #     # dense = dense, k = ks, saved_subsystem = saved_subsystem,
+    #     calculate_error = false
+    # )
+    sol = DummyODESolution()
+
+    if controller === nothing && adaptive
+        controller = default_controller(alg, cache)
+    end
+
+    save_end = save_end === nothing ? save_everystep || isempty(saveat) || saveat isa Number || tf in saveat : save_end
+
+    # Setup the actual integrator object
+    integrator = ThunderboltTimeIntegrator(
+        alg,
         f,
         cache.uₙ,
         cache.uₙ₋₁,
-        dof_range,
+        1:length(u),
         p,
-        t,
-        t,
+        t0,
+        t0,
         dt,
-        tType(sign(dt)), #tdir,
+        tdir,
         cache,
-        nothing,
-        synchronizer,
-        DummyODESolution(),
-        true, #dtchangeable
-        nothing, # FIXME controller
+        callback_cache,
+        OS.NoExternalSynchronization(),
+        sol,
+        true,
+        adaptive ? controller : nothing,
         IntegratorStats(),
-        IntegratorOptions(; # TODO pass from outside
-            adaptive = false,
+        IntegratorOptions(
             dtmin = eps(tType),
-            dtmax = tType(Inf),
-            callback = SciMLBase.CallbackSet(nothing),
-            save_end = false,
+            dtmax = tType(tf-t0),
+            verbose = verbose,
+            adaptive = adaptive,
+            # maxiters = maxiters,
+            callback = callbacks_internal,
+            save_end = save_end,
             tstops = tstops_internal,
             saveat = saveat_internal,
             d_discontinuities = d_discontinuities_internal,
-            tstops_cache = _tstops,
-            saveat_cache = _saveat,
+            tstops_cache = tstops,
+            saveat_cache = saveat,
             d_discontinuities_cache = d_discontinuities,
         ),
         false,
@@ -728,13 +810,19 @@ function OS.build_subintegrators_recursive(f, synchronizer, p::Any, cache::Abstr
         false,
         0,
         0,
+        false,
     )
-    # This makes sure that the parameters are set correctly for the first time step
-    syncronize_parameters!(integrator, f, synchronizer)
-    return integrator
+    OrdinaryDiffEqCore.initialize_callbacks!(integrator)
+    DiffEqBase.initialize!(integrator, integrator.cache)
+
+    if _tstops !== nothing
+        tstops = _tstops(parameter_values(integrator), prob.tspan)
+        for tstop in tstops
+            add_tstop!(integrator, tstop)
+        end
+    end
+
+    OrdinaryDiffEqCore.handle_dt!(integrator)
+
+    return integrator, integrator.cache
 end
-function OS.construct_inner_cache(f, alg::AbstractSolver; u0, t0, kwargs...)
-    return Thunderbolt.setup_solver_cache(f, alg, t0)
-end
-OS.recursive_null_parameters(stuff::Union{AbstractSemidiscreteProblem, AbstractSemidiscreteFunction}) = SciMLBase.NullParameters()
-syncronize_parameters!(integ, f, ::OS.NoExternalSynchronization) = nothing
