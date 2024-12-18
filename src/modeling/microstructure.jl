@@ -202,6 +202,7 @@ function create_simple_microstructure_model(coordinate_system, ip_collection::Ve
                 apicobasal_direction /= norm(apicobasal_direction)
                 transmural_direction = function_gradient(cv, qp, coordinate_system.u_transmural[dof_indices])
                 transmural_direction /= norm(transmural_direction)
+                apicobasal_direction = apicobasal_direction - (apicobasal_direction ⋅ transmural_direction) * transmural_direction # We do this fix to ensure local orthogonality
                 circumferential_direction = transmural_direction × apicobasal_direction
                 circumferential_direction /= norm(circumferential_direction)
 
