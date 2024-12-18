@@ -153,12 +153,12 @@ for (u, t) in OS.TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
 
                 # # v_longitudinal = function_gradient(cv_cs, qp, coordinate_system.u_apicobasal[celldofs(cell)])
                 # # v_radial = function_gradient(cv_cs, qp, coordinate_system.u_transmural[celldofs(cell)])
-                # # v_circimferential = v_longitudinal × v_radial
+                # # v_circimferential = v_radial × v_longitudinal
                 # # @TODO compute properly via coordinate system
                 # v_longitudinal = Ferrite.Vec{3}((0.0, 0.0, 1.0))
                 # v_radial = Ferrite.Vec{3}((x_global[1],x_global[2],0.0))
                 # v_radial /= norm(v_radial)
-                # v_circimferential = v_longitudinal × v_radial # Ferrite.Vec{3}((x_global[2],x_global[1],0.0))
+                # v_circimferential = v_radial × v_longitudinal # Ferrite.Vec{3}((x_global[2],x_global[1],0.0))
                 # v_circimferential /= norm(v_circimferential)
                 # #
                 # E_ll_cell += v_longitudinal ⋅ E ⋅ v_longitudinal
