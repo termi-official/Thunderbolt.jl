@@ -543,7 +543,7 @@ function SciMLBase.__init(
         adaptive ? controller : nothing,
         IntegratorStats(),
         IntegratorOptions(
-            dtmin = eps(tType),
+            dtmin = zero(tType),
             dtmax = tType(tf-t0),
             verbose = verbose,
             adaptive = adaptive,
@@ -788,7 +788,7 @@ function OS.build_subintegrators_with_cache(
         adaptive ? controller : nothing,
         IntegratorStats(),
         IntegratorOptions(
-            dtmin = eps(tType),
+            dtmin = zero(tType),
             dtmax = tType(tf-t0),
             verbose = verbose,
             adaptive = adaptive,
