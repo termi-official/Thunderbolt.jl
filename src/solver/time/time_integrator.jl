@@ -226,6 +226,77 @@ function update_uprev!(integrator::ThunderboltTimeIntegrator)
     nothing
 end
 
+function SciMLBase.check_error(integrator::ThunderboltTimeIntegrator)
+    if integrator.sol.retcode ∉ (SciMLBase.ReturnCode.Success, SciMLBase.ReturnCode.Default)
+        return integrator.sol.retcode
+    end
+    opts = integrator.opts
+    verbose = opts.verbose
+    # This implementation is intended to be used for ODEIntegrator and
+    # SDEIntegrator.
+    if isnan(integrator.dt)
+        if verbose
+            @warn("NaN dt detected. Likely a NaN value in the state, parameters, or derivative value caused this outcome.")
+        end
+        return SciMLBase.ReturnCode.DtNaN
+    end
+    if integrator.iter > opts.maxiters
+        if verbose
+            @warn("Interrupted. Larger maxiters is needed. If you are using an integrator for non-stiff ODEs or an automatic switching algorithm (the default), you may want to consider using a method for stiff equations. See the solver pages for more details (e.g. https://docs.sciml.ai/DiffEqDocs/stable/solvers/ode_solve/#Stiff-Problems).")
+        end
+        return SciMLBase.ReturnCode.MaxIters
+    end
+
+    # The last part:
+    # Bail out if we take a step with dt less than the minimum value (which may be time dependent)
+    # except if we are successfully taking such a small timestep is to hit a tstop exactly
+    # We also exit if the ODE is unstable according to a user chosen callback
+    # but only if we accepted the step to prevent from bailing out as unstable
+    # when we just took way too big a step)
+    step_accepted = !integrator.last_step_failed # Should call last_step_failed(integrator)
+    if !opts.force_dtmin && opts.adaptive
+        if abs(integrator.dt) <= abs(opts.dtmin) &&
+           (!step_accepted || (hasproperty(opts, :tstops) ?
+             integrator.t + integrator.dt < integrator.tdir * first(opts.tstops) :
+             true))
+            if verbose
+                if isdefined(integrator, :EEst)
+                    EEst = ", and step error estimate = $(integrator.EEst)"
+                else
+                    EEst = ""
+                end
+                @warn("dt($(integrator.dt)) <= dtmin($(opts.dtmin)) at t=$(integrator.t)$EEst. Aborting. There is either an error in your model specification or the true solution is unstable.")
+            end
+            return SciMLBase.ReturnCode.DtLessThanMin
+        elseif !step_accepted && integrator.t isa AbstractFloat &&
+               abs(integrator.dt) <= abs(eps(integrator.t))
+            if verbose
+                if isdefined(integrator, :EEst)
+                    EEst = ", and step error estimate = $(integrator.EEst)"
+                else
+                    EEst = ""
+                end
+                @warn("At t=$(integrator.t), dt was forced below floating point epsilon $(integrator.dt)$EEst. Aborting. There is either an error in your model specification or the true solution is unstable (or the true solution can not be represented in the precision of $(eltype(integrator.u))).")
+            end
+            return SciMLBase.ReturnCode.Unstable
+        end
+    end
+    if step_accepted &&
+       opts.unstable_check(integrator.dt, integrator.u, integrator.p, integrator.t)
+        if verbose
+            @warn("Instability detected. Aborting")
+        end
+        return SciMLBase.ReturnCode.Unstable
+    end
+    if SciMLBase.last_step_failed(integrator)
+        if verbose
+            @warn("Newton steps could not converge and algorithm is not adaptive. Use a lower dt.")
+        end
+        return SciMLBase.ReturnCode.ConvergenceFailure
+    end
+    return SciMLBase.ReturnCode.Success
+end
+
 function footer_reset_flags!(integrator)
     integrator.u_modified = false
 end
@@ -447,6 +518,8 @@ function SciMLBase.__init(
     dense = save_everystep &&
                     !(alg isa DAEAlgorithm) && !(prob isa DiscreteProblem) &&
                     isempty(saveat),
+    dtmin = zero(tType),
+    dtmax = tType(tf-t0),
     syncronizer = OS.NoExternalSynchronization(),   # custom kwarg
     kwargs...,
 )
@@ -543,8 +616,8 @@ function SciMLBase.__init(
         adaptive ? controller : nothing,
         IntegratorStats(),
         IntegratorOptions(
-            dtmin = zero(tType),
-            dtmax = tType(tf-t0),
+            dtmin = dtmin,
+            dtmax = dtmax,
             verbose = verbose,
             adaptive = adaptive,
             maxiters = maxiters,
