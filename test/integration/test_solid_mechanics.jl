@@ -114,7 +114,7 @@ end
         microstructure_model
     ))
 
-    mesh = Thunderbolt.to_mesh(generate_mixed_dimensional_grid_3D())
+    mesh = to_mesh(generate_mixed_dimensional_grid_3D())
 
     test_solve_contractile_cuboid(mesh, ActiveStressModel(
         HumphreyStrumpfYinModel(),
