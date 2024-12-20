@@ -2,7 +2,7 @@ module OS
 
 import Unrolled: @unroll
 
-import DiffEqBase, DataStructures
+import SciMLBase, DiffEqBase, DataStructures
 
 import OrdinaryDiffEqCore
 

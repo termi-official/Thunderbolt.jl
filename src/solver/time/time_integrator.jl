@@ -92,6 +92,12 @@ SciMLBase.has_tstop(integrator::ThunderboltTimeIntegrator) = !isempty(integrator
 SciMLBase.first_tstop(integrator::ThunderboltTimeIntegrator) = first(integrator.opts.tstops)
 SciMLBase.pop_tstop!(integrator::ThunderboltTimeIntegrator) = pop!(integrator.opts.tstops)
 
+function SciMLBase.add_tstop!(integrator::ThunderboltTimeIntegrator, t)
+    integrator.tdir * (t - integrator.t) < zero(integrator.t) &&
+    error("Tried to add a tstop that is behind the current time. This is strictly forbidden")
+    push!(integrator.opts.tstops, integrator.tdir * t)
+end
+
 @inline function SciMLBase.get_tmp_cache(integrator::ThunderboltTimeIntegrator)
     return (integrator.cache.tmp,)
 end
@@ -717,32 +723,49 @@ function OS.advance_solution_to!(integrator::ThunderboltTimeIntegrator, cache::A
     # @unpack f, t = integrator
     # dt = tend-t
     # dt ≈ 0.0 || SciMLBase.step!(integrator, dt, true)
-    @inbounds while integrator.tdir * integrator.t < tend
-        integrator.dt ≈ 0.0 && error("???")
-        @info integrator.t, integrator.dt, tend
-        step_header!(integrator)
-        if OrdinaryDiffEqCore.check_error!(integrator) != SciMLBase.ReturnCode.Success
-            return
-        end
-        OrdinaryDiffEqCore.perform_step!(integrator, integrator.cache)
-        step_footer!(integrator)
+    # @inbounds while integrator.tdir * integrator.t < tend
+    #     integrator.dt ≈ 0.0 && error("???")
+    #     @info integrator.t, integrator.dt, tend
+    #     step_header!(integrator)
+    #     if OrdinaryDiffEqCore.check_error!(integrator) != SciMLBase.ReturnCode.Success
+    #         return
+    #     end
+    #     OrdinaryDiffEqCore.perform_step!(integrator, integrator.cache)
+    #     step_footer!(integrator)
+    # end
+    # @info "Pre:", integrator.t, integrator.dt, tend
+    dt = tend-integrator.t
+    SciMLBase.step!(integrator, dt, true)
+    # @info "Post:", integrator.t, integrator.dt, tend
+end
+
+need_sync(a::AbstractVector, b::AbstractVector) = true
+need_sync(a::SubArray, b::AbstractVector)       = a.parent !== b
+need_sync(a::AbstractVector, b::SubArray)       = a !== b.parent
+need_sync(a::SubArray, b::SubArray)             = a.parent !== b.parent
+
+function sync_vectors(a, b)
+    if need_sync(a, b) && a !== b
+        a .= b
     end
 end
+
 @inline function OS.prepare_local_step!(uparent, subintegrator::ThunderboltTimeIntegrator)
     # Copy solution into subproblem
     uparentview      = @view uparent[subintegrator.indexset]
-    subintegrator.u .= uparentview
+    sync_vectors(subintegrator.u, uparentview)
     # Mark previous solution, if necessary
     if subintegrator.uprev !== nothing && length(subintegrator.uprev) > 0
-        subintegrator.uprev .= subintegrator.u
+        sync_vectors(subintegrator.uprev, subintegrator.u)
     end
     syncronize_parameters!(subintegrator, subintegrator.f, subintegrator.synchronizer)
 end
+
 @inline function OS.finalize_local_step!(uparent, subintegrator::ThunderboltTimeIntegrator)
     # Copy solution out of subproblem
     #
     uparentview = @view uparent[subintegrator.indexset]
-    uparentview .= subintegrator.u
+    sync_vectors(uparentview, subintegrator.u)
 end
 
 struct DummyODESolution <: SciMLBase.AbstractODESolution{Float64, 2, Vector{Float64}}
@@ -758,7 +781,8 @@ OS.recursive_null_parameters(stuff::Union{AbstractSemidiscreteProblem, AbstractS
 syncronize_parameters!(integ, f, ::OS.NoExternalSynchronization) = nothing
 
 function OS.build_subintegrators_with_cache(
-    f::AbstractSemidiscreteFunction, alg::AbstractSolver, p,
+    f::DiffEqBase.AbstractDiffEqFunction, # f::AbstractSemidiscreteFunction, # <- This is a temporary hotfix :)
+    alg::AbstractSolver, p,
     uprevouter::AbstractVector, uouter::AbstractVector,
     solution_indices,
     t0, dt, tf,
