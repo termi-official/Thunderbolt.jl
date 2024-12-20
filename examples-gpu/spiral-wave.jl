@@ -101,7 +101,7 @@ timestepper = OS.LieTrotterGodunov((
     BackwardEulerSolver(
         solution_vector_type=CuVector{Float32},
         system_matrix_type=CUDA.CUSPARSE.CuSparseMatrixCSR{Float32, Int32},
-        inner_solver=LinearSolve.KrylovJL_CG(atol=1.0f-6, rtol=1.0f-5, precs=BJPprec, ldiv=true),
+        inner_solver=LinearSolve.KrylovJL_CG(atol=1.0f-6, rtol=1.0f-5, precs=BJPprec, ldiv=false),
     ),
     AdaptiveForwardEulerSubstepper(
         solution_vector_type=CuVector{Float32},
