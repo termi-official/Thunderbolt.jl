@@ -521,8 +521,8 @@ function SciMLBase.__init(
     dense = save_everystep &&
                     !(alg isa DAEAlgorithm) && !(prob isa DiscreteProblem) &&
                     isempty(saveat),
-    dtmin = zero(tType),
-    dtmax = tType(tf-t0),
+    dtmin = nothing,
+    dtmax = nothing,
     syncronizer = OS.NoExternalSynchronization(),   # custom kwarg
     kwargs...,
 )
@@ -533,6 +533,9 @@ function SciMLBase.__init(
     _dt = dt
     tdir = tf > t0 ? 1.0 : -1.0
     tType = typeof(dt)
+
+    dtmin = dtmin === nothing ? tType(0.0) : tType(dtmin)
+    dtmax = dtmax === nothing ? tType(tf-t0) : tType(dtmax)
 
     if tstops isa AbstractArray || tstops isa Tuple || tstops isa Number
         _tstops = nothing
