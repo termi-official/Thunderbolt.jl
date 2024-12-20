@@ -1,6 +1,8 @@
 abstract type AbstractPointwiseSolver <: AbstractSolver end
 abstract type AbstractPointwiseSolverCache <: AbstractTimeSolverCache end
 
+SciMLBase.isadaptive(::AbstractPointwiseSolver) = false
+
 # Auxilliary functions to query the coordinate
 @inline getcoordinate(f::F, i::I)       where {F<:AbstractPointwiseSolverCache,I}                  = getcoordinate(f, i, f.xs)
 @inline getcoordinate(f::F, i::I, x::X) where {F<:AbstractPointwiseSolverCache,I,X<:Nothing}       = nothing

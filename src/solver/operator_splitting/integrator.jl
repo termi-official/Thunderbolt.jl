@@ -55,7 +55,7 @@ function DiffEqBase.__init(
     save_everystep = false,
     callback = nothing,
     advance_to_tstop = false,
-    adaptive = false,
+    adaptive = DiffEqBase.isadaptive(alg),
     controller = nothing,
     alias_u0 = true,
     save_func = (u, t) -> copy(u), # custom kwarg

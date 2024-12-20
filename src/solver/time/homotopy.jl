@@ -4,7 +4,7 @@
 Solve the nonlinear problem `F(u,t)=0` with given time increments `Δt`on some interval `[t_begin, t_end]`
 where `t` is some pseudo-time parameter.
 """
-mutable struct HomotopyPathSolver{IS} <: AbstractSolver
+struct HomotopyPathSolver{IS} <: AbstractSolver
     inner_solver::IS
 end
 

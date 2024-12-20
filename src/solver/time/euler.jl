@@ -10,6 +10,8 @@ Base.@kwdef struct BackwardEulerSolver{SolverType, SolutionVectorType, SystemMat
     verbose                                        = true # Temporary helper for benchmarks
 end
 
+SciMLBase.isadaptive(::BackwardEulerSolver) = false
+
 # TODO decouple from heat problem via special ODEFunction (AffineODEFunction)
 mutable struct BackwardEulerSolverCache{T, SolutionType <: AbstractVector{T}, MassMatrixType, DiffusionMatrixType, SourceTermType, SolverCacheType} <: AbstractTimeSolverCache
     # Current solution buffer

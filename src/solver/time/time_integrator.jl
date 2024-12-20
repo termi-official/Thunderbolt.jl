@@ -512,7 +512,7 @@ function SciMLBase.__init(
     save_idxs = nothing,
     callback = nothing,
     advance_to_tstop = false,
-    adaptive = false,
+    adaptive = SciMLBase.isadaptive(alg),
     verbose = false,
     alias_u0 = true,
     # alias_du0 = false,
