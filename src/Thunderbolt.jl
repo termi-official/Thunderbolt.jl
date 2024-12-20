@@ -206,7 +206,6 @@ export
     ForwardEulerCellSolver,
     AdaptiveForwardEulerSubstepper,
     # Integrator
-    get_parent_index,
     # Utils
     calculate_volume_deformed_mesh,
     elementtypes,
