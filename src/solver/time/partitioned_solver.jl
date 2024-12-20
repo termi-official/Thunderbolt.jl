@@ -33,7 +33,7 @@ Base.@kwdef struct ForwardEulerCellSolver{SolutionVectorType} <: AbstractPointwi
 end
 
 # Fully accelerator compatible
-struct ForwardEulerCellSolverCache{duType, uType, uprevType, dumType, umType, xType} <: AbstractPointwiseSolverCache
+struct ForwardEulerCellSolverCache{duType, uType, dumType, umType, xType} <: AbstractPointwiseSolverCache
     du::duType
     # These vectors hold the data
     uₙ::uType
@@ -91,11 +91,11 @@ Base.@kwdef struct AdaptiveForwardEulerSubstepper{T, SolutionVectorType <: Abstr
 end
 
 # Fully accelerator compatible
-struct AdaptiveForwardEulerSubstepperCache{T, duType, uType, uprevType, dumType, umType, xType} <: AbstractPointwiseSolverCache
+struct AdaptiveForwardEulerSubstepperCache{T, duType, uType, dumType, umType, xType} <: AbstractPointwiseSolverCache
     du::duType
     # These vectors hold the data
     uₙ::uType
-    uₙ₋₁::uprevType
+    uₙ₋₁::uType
     # These array view the data above to give easy indices of the form [ode index, local state index]
     dumat::dumType
     uₙmat::umType

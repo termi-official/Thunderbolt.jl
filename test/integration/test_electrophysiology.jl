@@ -50,6 +50,7 @@ using Thunderbolt
 
         tspan = (0.0, 10.0)
         problem = OperatorSplittingProblem(odeform, u₀, tspan)
+        u₀ = copy(u₀)
 
         integrator = DiffEqBase.init(problem, timestepper, dt=1.0, verbose=true)
         DiffEqBase.solve!(integrator)
