@@ -859,7 +859,7 @@ function OS.build_subintegrators_with_cache(
     # )
     sol = DummyODESolution()
 
-    if controller === nothing && adaptive
+    if controller === nothing && adaptive && DiffEqBase.isadaptive(alg)
         controller = default_controller(alg, cache)
     end
 

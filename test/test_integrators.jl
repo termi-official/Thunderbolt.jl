@@ -9,6 +9,8 @@ using UnPack
     # For testing purposes
     struct DummyForwardEuler <: Thunderbolt.AbstractSolver
     end
+    
+    Thunderbolt.DiffEqBase.isadaptive(::DummyForwardEuler) = false
 
     mutable struct DummyForwardEulerCache{duType, uType, duMatType} <: Thunderbolt.AbstractTimeSolverCache
         du::duType
