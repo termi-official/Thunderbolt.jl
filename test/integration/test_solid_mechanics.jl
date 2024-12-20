@@ -71,7 +71,7 @@ function test_solve_contractile_ideal_lv(mesh, constitutive_model)
     problem = QuasiStaticProblem(quasistaticform, tspan)
 
     # Create sparse matrix and residual vector
-    timestepper = LoadDrivenSolver(
+    timestepper = HomotopyPathSolver(
         NewtonRaphsonSolver(;max_iter=10)
     )
     integrator = init(problem, timestepper, dt=Δt, verbose=true)
