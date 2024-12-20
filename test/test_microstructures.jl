@@ -43,7 +43,7 @@
                 x = evaluate_coefficient(cs_cache, cellcache, qp, 0.0)
                 # If we set all angles to 0, then the generator on the ring simply generates sheetlets which point in positive z direction, where the normal point radially outwards.
                 ndir = Vec(x[1:2]..., 0.)/norm(x[1:2])
-                sdir = Vec(0., 0., 1.)
+                sdir = Vec(0., 0., -1.)
                 fdir = sdir × ndir
 
                 fsn = evaluate_coefficient(cache2, cellcache, qp, 0.0)
