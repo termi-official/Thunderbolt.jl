@@ -1,6 +1,8 @@
 # TODO remove these once they are merged
 module FerriteUtils
 include("ferrite-addons/PR883.jl")
+include("ferrite-addons/PR913.jl") 
+
 end
 
 include("collections.jl")

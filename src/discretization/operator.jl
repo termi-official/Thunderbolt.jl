@@ -577,13 +577,14 @@ function init_linear_operator(::Type{BackendCUDA},protocol::IntegrandType,qrc::Q
     if CUDA.functional()
         b = CUDA.zeros(Float32, ndofs(dh))
         linear_op =  LinearOperator(b, protocol, qrc, dh)
-
-        threads = convert(Ti, min(n_cells, 256))
+        n_cells = dh |> get_grid |> getncells |> Int32
+        threads = convert(Int32, min(n_cells, 256))
         blocks = _calculate_nblocks(threads, n_cells)
-        mem_alloc = try_allocate_shared_mem(RHSObject{Float32}, threads, n_basefuncs)
+        n_basefuncs = ndofs_per_cell(dh) |> Int32
+        mem_alloc = FerriteUtils.try_allocate_shared_mem(FerriteUtils.RHSObject{Float32}, threads, n_basefuncs)
         mem_alloc isa Nothing || return CudaOperatorKernel(linear_op, threads, blocks, mem_alloc)
 
-        mem_alloc = allocate_global_mem(RHSObject{Float32}, n_cells, n_basefuncs)
+        mem_alloc = FeriteUtils.allocate_global_mem(FerriteUtils.RHSObject{Float32}, n_cells, n_basefuncs)
         return CudaOperatorKernel(linear_op, threads, blocks, mem_alloc)
     else
         throw(ArgumentError("CUDA is not functional, please check your GPU driver and CUDA installation"))
@@ -598,6 +599,8 @@ function _calculate_nblocks(threads::Ti, n_cells::Ti) where {Ti <: Integer}
     return convert(Ti, required_blocks)
 end
 
+(op_ker::CudaOperatorKernel)(time) = update_operator!(op_ker.op, time)
+
 function update_operator!(op_ker::CudaOperatorKernel, time)
     @unpack op, threads, blocks, mem_alloc = op_ker
     @unpack b, qrc, dh, integrand  = op
@@ -609,18 +612,20 @@ end
 
 
 function dummy_kernel!(b,dh, mem_alloc)
-    for cell in CellIterator(dh,mem_alloc)
-        bₑ = cellfe(cell)
-        b[celldofs(cell)] .+= bₑ
-    end
+    # for cell in CellIterator(dh,mem_alloc)
+    #     bₑ = FerriteUtils.cellfe(cell)
+    #     b[celldofs(cell)] .+= bₑ
+    # end
+    CUDA.@cushow 1
+    return nothing
 end
 
-function _launch_kernel!(ker, threads, blocks, mem_alloc::AbstractGlobalMemAlloc)
-    @cuda threads=threads blocks=blocks ker()
+function _launch_kernel!(ker, threads, blocks, ::FerriteUtils.AbstractGlobalMemAlloc)
+    CUDA.@cuda threads=threads blocks=blocks ker()
 end
 
-function _launch_kernel!(ker, threads, blocks, mem_alloc::AbstractSharedMemAlloc)
-    shmem_size = mem_size(mem_alloc)
-    CUDA.@sync @cuda threads=threads blocks=blocks  shmem = shmem_size ker()
+function _launch_kernel!(ker, threads, blocks, mem_alloc::FerriteUtils.AbstractSharedMemAlloc)
+    shmem_size = FerriteUtils.mem_size(mem_alloc)
+    CUDA.@sync CUDA.@cuda threads=threads blocks=blocks  shmem = shmem_size ker()
 end
 

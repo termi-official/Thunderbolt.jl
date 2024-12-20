@@ -20,7 +20,7 @@ protocol = AnalyticalTransmembraneStimulationProtocol(
                 [SVector((0.0, 1.0))]
             )
 
-
+ 
 
 
 
@@ -33,17 +33,19 @@ linop = Thunderbolt.LinearOperator(
 
 Thunderbolt.update_operator!(linop,0.0)
 @test linop.b ≈ [0.25, 0.5, 1.0, 0.5, 0.25, 0.5, 0.5, 0.25, 0.25]
-linop.b
 
-sdh = dh.subdofhandlers[1]
-field_name = first(dh.field_names)
+# sdh = dh.subdofhandlers[1]
+# field_name = first(dh.field_names)
 
-ip          = Ferrite.getfieldinterpolation(sdh, field_name)
-
-
-element_qr  = getquadraturerule(qrc, sdh)
-
-# Build evaluation caches
-element_cache = Thunderbolt.setup_element_cache(protocol, element_qr, ip, sdh)
+# ip          = Ferrite.getfieldinterpolation(sdh, field_name)
 
 
+# element_qr  = getquadraturerule(qrc, sdh)
+
+# # Build evaluation caches
+# element_cache = Thunderbolt.setup_element_cache(protocol, element_qr, ip, sdh)
+
+
+
+cuda_op = Thunderbolt.init_linear_operator(Thunderbolt.BackendCUDA,protocol, qrc, dh)
+Thunderbolt.update_operator!(cuda_op,0.0)

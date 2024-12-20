@@ -1,3 +1,6 @@
+using CUDA
+using Adapt
+
 ####################################
 # mem_alloc.jl & cuda_mem_alloc.jl #
 ####################################
@@ -19,7 +22,7 @@ end
 function (dsf::DynamicSharedMemFunction{N, Tv, Ti})() where {N, Tv, Ti}
     mem_size = dsf.mem_size
     offset = dsf.offset
-    return @cuDynamicSharedMem(Tv, mem_size, offset)
+    return CUDA.@cuDynamicSharedMem(Tv, mem_size, offset)
 end
 
 abstract type AbstractCudaMemAlloc <: AbstractMemAlloc end
@@ -96,6 +99,56 @@ function allocate_global_mem(::Type{RHSObject{Tv}}, n_cells::Ti, n_basefuncs::Ti
     return GlobalRHSMemAlloc( fes)
 end
 
+###############
+# gpu_grid.jl #
+###############
+# This file defines the GPUGrid type, which is a grid that is stored on the GPU. Therefore most of the
+# functions are same as the ones defined in grid.jl, but executable on the GPU.
+
+abstract type AbstractGPUGrid{dim} <: Ferrite.AbstractGrid{dim} end
+
+struct GPUGrid{dim, CELLVEC <: AbstractArray, NODEVEC <: AbstractArray} <: AbstractGPUGrid{dim}
+    cells::CELLVEC
+    nodes::NODEVEC
+end
+
+function GPUGrid(
+        cells::CELLVEC,
+        nodes::NODEVEC
+    ) where {C <: Ferrite.AbstractCell, CELLVEC <: AbstractArray{C, 1}, NODEVEC <: AbstractArray{Node{dim, T}}} where {dim, T}
+    return GPUGrid{dim, CELLVEC, NODEVEC}(cells, nodes)
+end
+
+get_coordinate_type(::GPUGrid{dim, CELLVEC, NODEVEC}) where
+{C <: Ferrite.AbstractCell, CELLVEC <: AbstractArray{C, 1}, NODEVEC <: AbstractArray{Node{dim, T}}} where
+{dim, T} = Vec{dim, T} # Node is baked into the mesh type.
+
+
+# Note: For functions that takes blockIdx as an argument, we need to use Int32 explicitly,
+# otherwise the compiler will not be able to infer the type of the argument and throw a dynamic function invokation error.
+@inline getcells(grid::GPUGrid, v::Union{Int32, Vector{Int32}}) = grid.cells[v]
+@inline getnodes(grid::GPUGrid, v::Int32) = grid.nodes[v]
+
+"""
+    getcoordinates(grid::Ferrite.GPUGrid,e::Int32)
+
+Return the coordinates of the nodes of the element `e` in the `GPUGrid` `grid`.
+"""
+function getcoordinates(grid::GPUGrid, e::Int32)
+    # e is the element index.
+    CT = get_coordinate_type(grid)
+    cell = getcells(grid, e)
+    N = nnodes(cell)
+    x = MVector{N, CT}(undef) # local array to store the coordinates of the nodes of the cell.
+    node_ids = get_node_ids(cell)
+    for i in 1:length(x)
+        x[i] = get_node_coordinate(grid, node_ids[i])
+    end
+
+    return SVector(x...)
+end
+
+
 
 ####################
 # GPUDofHandler.jl #
@@ -112,10 +165,10 @@ Abstract type representing degree-of-freedom (DoF) handlers for GPU-based
 finite element computations. This serves as the base type for GPU-specific
 DoF handler implementations.
 """
-abstract type AbstractGPUDofHandler <: AbstractDofHandler end
+abstract type AbstractGPUDofHandler <: Ferrite.AbstractDofHandler end
 
 # TODO: add subdofhandlers
-struct GPUDofHandler{CDOFS <: AbstractArray{<:Number, 1}, VEC_INT <: AbstractArray{Int32, 1}, GRID <: AbstractGrid} <: AbstractGPUDofHandler
+struct GPUDofHandler{CDOFS <: AbstractArray{<:Number, 1}, VEC_INT <: AbstractArray{Int32, 1}, GRID <: Ferrite.AbstractGrid} <: AbstractGPUDofHandler
     cell_dofs::CDOFS
     grid::GRID
     cell_dofs_offset::VEC_INT
@@ -144,7 +197,20 @@ end
 ####################
 
 ##### GPUCellIterator #####
+# abstract types and interfaces
+abstract type AbstractIterator end
+abstract type AbstractCellCache end
 
+abstract type AbstractKernelCellCache <: AbstractCellCache end
+abstract type AbstractKernelCellIterator <: AbstractIterator end
+
+@inline function cellke(::AbstractKernelCellCache)
+    throw(ArgumentError("cellke should be implemented in the derived type"))
+end
+
+@inline function cellfe(::AbstractKernelCellCache)
+    throw(ArgumentError("cellfe should be implemented in the derived type"))
+end
 
 abstract type AbstractCellMem end
 struct RHSCellMem{VectorType} <: AbstractCellMem 
@@ -160,19 +226,14 @@ struct FullCellMem{MatrixType, VectorType} <: AbstractCellMem
     fe::VectorType
 end
 
-"""
-    AbstractCUDACellIterator <: Ferrite.AbstractKernelCellIterator
 
-Abstract type representing CUDA cell iterators for finite element computations
-on the GPU. It provides the base for implementing multiple cell iteration strategies (e.g. with shared memory, with global memory).
-"""
-abstract type AbstractCUDACellIterator <: Ferrite.AbstractKernelCellIterator end
+abstract type AbstractCUDACellIterator <: AbstractKernelCellIterator end
 
 
 ncells(iterator::AbstractCUDACellIterator) = iterator.n_cells ## any subtype has to have `n_cells` field
 
 
-struct CUDACellIterator{DH <: Ferrite.GPUDofHandler, GRID <: Ferrite.AbstractGPUGrid, Ti <: Integer, CellMem<: AbstractCellMem} <: AbstractCUDACellIterator
+struct CUDACellIterator{DH <: GPUDofHandler, GRID <: AbstractGPUGrid, Ti <: Integer, CellMem<: AbstractCellMem} <: AbstractCUDACellIterator
     dh::DH
     grid::GRID
     n_cells::Ti
@@ -183,18 +244,19 @@ struct CudaOutOfBoundCellIterator <: AbstractCUDACellIterator end  # used to han
 
 _cellmem(buffer_alloc::AbstractSharedMemAlloc, ::Integer) = throw(ErrorException("please provide concrete implementation for $(typeof(buffer_alloc))."))
 
-function _cellmem(buffer_alloc::SharedMemAlloc, i::Integer)
+
+function _cellmem(buffer_alloc::GlobalMemAlloc, i::Integer)
     ke = cellke(buffer_alloc, i)
     fe = cellfe(buffer_alloc, i)
     return FullCellMem(ke, fe)
 end
-function _cellmem(buffer_alloc::SharedRHSMemAlloc, i::Integer)
+function _cellmem(buffer_alloc::GlobalRHSMemAlloc, i::Integer)
     fe = cellfe(buffer_alloc, i)
     return RHSCellMem(fe)
 end
 
 
-function Ferrite.CellIterator(dh::Ferrite.GPUDofHandler, buffer_alloc::AbstractGlobalMemAlloc)
+function Ferrite.CellIterator(dh::GPUDofHandler, buffer_alloc::AbstractGlobalMemAlloc)
     grid = get_grid(dh)
     n_cells = grid |> getncells |> Int32
     bd = blockDim().x
@@ -209,14 +271,14 @@ end
 
 _cellmem(buffer_alloc::AbstractGlobalMemAlloc, ::Integer) = throw(ErrorException("please provide concrete implementation for $(typeof(buffer_alloc))."))
 
-function _cellmem(buffer_alloc::GlobalMemAlloc, i::Integer)
+function _cellmem(buffer_alloc::SharedMemAlloc, i::Integer)
     block_ke = buffer_alloc.Ke()
     block_fe = buffer_alloc.fe()
     ke = @view block_ke[i, :, :]
     fe = @view block_fe[i, :]
     return FullCellMem(ke, fe)
 end
-function _cellmem(buffer_alloc::GlobalRHSMemAlloc, i::Integer)
+function _cellmem(buffer_alloc::SharedRHSMemAlloc, i::Integer)
     block_fe = buffer_alloc.fe()
     fe = @view block_fe[i, :]
     return RHSCellMem(fe)
@@ -224,7 +286,7 @@ end
 
 
 
-function Ferrite.CellIterator(dh::Ferrite.GPUDofHandler, buffer_alloc::AbstractSharedMemAlloc)
+function Ferrite.CellIterator(dh::GPUDofHandler, buffer_alloc::AbstractSharedMemAlloc)
     grid = get_grid(dh)
     n_cells = grid |> getncells |> Int32
     local_thread_id = threadIdx().x
@@ -253,7 +315,7 @@ Base.iterate(::CudaOutOfBoundCellIterator) = nothing
 Base.iterate(::CudaOutOfBoundCellIterator, state) = nothing # I believe this is not necessary
 
 
-struct GPUCellCache{Ti <: Integer, DOFS <: AbstractVector{Ti}, NN, NODES <: SVector{NN, Ti}, X, COORDS <: SVector{X}, CellMem<: AbstractCellMem} <: Ferrite.AbstractKernelCellCache
+struct GPUCellCache{Ti <: Integer, DOFS <: AbstractVector{Ti}, NN, NODES <: SVector{NN, Ti}, X, COORDS <: SVector{X}, CellMem<: AbstractCellMem} <: AbstractKernelCellCache
     coords::COORDS
     dofs::DOFS
     cellid::Ti
@@ -266,20 +328,20 @@ function _makecache(iterator::AbstractCUDACellIterator, e::Integer)
     dh = iterator.dh
     grid = iterator.grid
     cellid = e
-    cell = Ferrite.getcells(grid, e)
+    cell = FerriteUtils.getcells(grid, e)
 
     # Extract the node IDs of the cell.
     nodes = SVector(convert.(Int32, Ferrite.get_node_ids(cell))...)
 
     # Extract the degrees of freedom for the cell.
-    dofs = Ferrite.celldofs(dh, e)
+    dofs = FerriteUtils.celldofs(dh, e)
 
     # Get the coordinates of the nodes of the cell.
-    CT = Ferrite.get_coordinate_type(grid)
-    N = Ferrite.nnodes(cell)
+    CT = FerriteUtils.get_coordinate_type(grid)
+    N = FerriteUtils.nnodes(cell)
     x = MVector{N, CT}(undef)
     for i in eachindex(x)
-        x[i] = Ferrite.get_node_coordinate(grid, nodes[i])
+        x[i] = FerriteUtils.get_node_coordinate(grid, nodes[i])
     end
     coords = SVector(x...)
 
@@ -313,7 +375,7 @@ end
 
 _cellke(::HasNoKe, ::GPUCellCache) = throw(ErrorException("$(typeof(cc.cell_mem)) does not have ke field."))
 
-Ferrite.cellke(cc::GPUCellCache) = _cellke(KeTrait(typeof(cc.cell_mem)), cc)
+cellke(cc::GPUCellCache) = _cellke(KeTrait(typeof(cc.cell_mem)), cc)
 
 @inline function _cellfe(::HasFe, cc::GPUCellCache)
     fe =  cc.cell_mem.fe
@@ -322,4 +384,97 @@ end
 
 _cellfe(::HasNoFe, ::GPUCellCache) = throw(ErrorException("$(typeof(cc.cell_mem)) does not have fe field."))
 
-Ferrite.cellfe(cc::GPUCellCache) = _cellfe(FeTrait(typeof(cc.cell_mem)), cc)
+cellfe(cc::GPUCellCache) = _cellfe(FeTrait(typeof(cc.cell_mem)), cc)
+
+
+############
+# adapt.jl #
+############
+Adapt.@adapt_structure GPUGrid
+Adapt.@adapt_structure GPUDofHandler
+Adapt.@adapt_structure GlobalMemAlloc
+
+function _adapt_args(args)
+    return tuple(((_adapt(arg) for arg in args) |> collect)...)
+end
+
+
+function _adapt(kgpu::CUSPARSE.CuSparseMatrixCSC)
+    # custom adaptation
+    return Adapt.adapt_structure(CUSPARSE.CuSparseDeviceMatrixCSC, kgpu)
+end
+
+
+function _adapt(obj::Any)
+    # fallback to the default implementation
+    return Adapt.adapt_structure(CuArray, obj)
+end
+
+## Adapt GlobalMemAlloc
+function Adapt.adapt_structure(to, mem_alloc::GlobalMemAlloc)
+    kes = Adapt.adapt_structure(to, mem_alloc.Kes)
+    fes = Adapt.adapt_structure(to, mem_alloc.fes)
+    return GlobalMemAlloc(kes, fes)
+end
+
+
+function Adapt.adapt_structure(to, cv::CellValues)
+    fv = Adapt.adapt(to, StaticInterpolationValues(cv.fun_values))
+    gm = Adapt.adapt(to, StaticInterpolationValues(cv.geo_mapping))
+    weights = Adapt.adapt(to, ntuple(i -> getweights(cv.qr)[i], getnquadpoints(cv)))
+    return Ferrite.StaticCellValues(fv, gm, weights)
+end
+
+
+function Adapt.adapt_structure(to, iter::QuadratureValuesIterator)
+    cv = Adapt.adapt_structure(to, iter.v)
+    cell_coords = Adapt.adapt_structure(to, iter.cell_coords)
+    return QuadratureValuesIterator(cv, cell_coords)
+end
+
+function Adapt.adapt_structure(to, qv::StaticQuadratureValues)
+    det = Adapt.adapt_structure(to, qv.detJdV)
+    N = Adapt.adapt_structure(to, qv.N)
+    dNdx = Adapt.adapt_structure(to, qv.dNdx)
+    M = Adapt.adapt_structure(to, qv.M)
+    return StaticQuadratureValues(det, N, dNdx, M)
+end
+# function Adapt.adapt_structure(to, qv::StaticQuadratureView)
+#     mapping = Adapt.adapt_structure(to, qv.mapping)
+#     cell_coords = Adapt.adapt_structure(to, qv.cell_coords |> cu)
+#     q_point = Adapt.adapt_structure(to, qv.q_point)
+#     cv = Adapt.adapt_structure(to, qv.cv)
+#     return StaticQuadratureView(mapping, cell_coords, q_point, cv)
+# end
+
+function Adapt.adapt_structure(to, grid::Grid)
+    # map Int64 to Int32 to reduce number of registers
+    cu_cells = grid.cells .|> (x -> Int32.(x.nodes)) .|> Quadrilateral |> cu
+    cells = Adapt.adapt_structure(to, cu_cells)
+    nodes = Adapt.adapt_structure(to, cu(grid.nodes))
+    return GPUGrid(cells, nodes)
+end
+
+
+function Adapt.adapt_structure(to, iterator::CUDACellIterator)
+    grid = Adapt.adapt_structure(to, iterator.grid)
+    dh = Adapt.adapt_structure(to, iterator.dh)
+    ncells = Adapt.adapt_structure(to, iterator.n_cells)
+    return GPUCellIterator(dh, grid, ncells)
+end
+
+
+function _get_ndofs_cell(dh::DofHandler)
+    ndofs_cell = [Int32(Ferrite.ndofs_per_cell(dh, i)) for i in 1:(dh |> Ferrite.get_grid |> Ferrite.getncells)]
+    return ndofs_cell
+end
+
+
+function Adapt.adapt_structure(to, dh::DofHandler)
+    cell_dofs = Adapt.adapt_structure(to, dh.cell_dofs .|> Int32 |> cu)
+    cells = Adapt.adapt_structure(to, dh.grid.cells |> cu)
+    offsets = Adapt.adapt_structure(to, dh.cell_dofs_offset .|> Int32 |> cu)
+    nodes = Adapt.adapt_structure(to, dh.grid.nodes |> cu)
+    ndofs_cell = Adapt.adapt_structure(to, _get_ndofs_cell(dh) |> cu)
+    return GPUDofHandler(cell_dofs, GPUGrid(cells, nodes), offsets, ndofs_cell)
+end
