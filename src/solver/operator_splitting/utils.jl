@@ -71,7 +71,7 @@ function forward_sync_external!(outer_integrator::OperatorSplittingIntegrator, i
     synchronize_solution_with_parameters!(outer_integrator, inner_integrator.p, sync)
 end
 
-function synchronize_solution_with_parameters!(outer_integrator::OperatorSplittingIntegrator, p::Any, sync::StandardSynchronizationMap)
+function synchronize_solution_with_parameters!(outer_integrator::OperatorSplittingIntegrator, p::Any, sync)
     error("Outer synchronizer not dispatched for parameter type $(typeof(p)).")
 end
 
@@ -79,7 +79,7 @@ end
 synchronize_solution_with_parameters!(outer_integrator::OperatorSplittingIntegrator, p::DiffEqBase.NullParameters, sync) = nothing
 
 # Default convention is that the first parameter serves as a buffer for the external solution
-# function synchronize_solution_with_parameters!(outer_integrator::OperatorSplittingIntegrator, p::Tuple, sync::StandardSynchronizationMap)
+# function synchronize_solution_with_parameters!(outer_integrator::OperatorSplittingIntegrator, p::Tuple, sync)
 #     @views uouter = outer_integrator.u[sync.parameter_indices]
 #     sync_vectors!(p[1], uouter)
 # end
