@@ -27,19 +27,19 @@ function init_cache(f::GenericSplitFunction, alg::LieTrotterGodunov;
     LieTrotterGodunovCache(_u, _uprev, inner_caches)
 end
 
-@inline @unroll function advance_solution_to!(subintegrators::Tuple, cache::LieTrotterGodunovCache, tnext; uparent)
+@inline @unroll function advance_solution_to!(outer_integrator::OperatorSplittingIntegrator, subintegrators::Tuple, dof_ranges::Tuple, synchronizers::Tuple, cache::LieTrotterGodunovCache, tnext)
     # We assume that the integrators are already synced
-    @unpack u, uprev, inner_caches = cache
-
-    # Store current solution
-    uprev .= u
-
+    @unpack inner_caches = cache
     # For each inner operator
     i = 0
     @unroll for subinteg in subintegrators
         i += 1
-        prepare_local_step!(uparent, subinteg)
-        advance_solution_to!(subinteg, inner_caches[i], tnext; uparent)
-        finalize_local_step!(uparent, subinteg)
+        synchronizer = synchronizers[i]
+        dof_range    = dof_ranges[i]
+        # prepare_local_step!(uparent, subinteg)
+        forward_sync_subintegrator!(outer_integrator, subinteg, dof_range, synchronizer)
+        advance_solution_to!(outer_integrator, subinteg, dof_range, synchronizer, inner_caches[i], tnext)
+        # finalize_local_step!(uparent, subinteg)
+        backward_sync_internal!(outer_integrator, subinteg, dof_range)
     end
 end 

@@ -17,7 +17,7 @@ mutable struct OperatorSplittingIntegrator{
     callbackType,
     cacheType,
     solType,
-    subintsetType
+    subintsetType,
 } <: DiffEqBase.AbstractODEIntegrator{algType, true, uType, tType}
     f::fType
     alg::algType
@@ -318,7 +318,7 @@ function __step!(integrator)
     tnext = integrator.t + integrator.dt
 
     # Solve inner problems
-    advance_solution_to!(integrator, tnext; uparent=integrator.u)
+    advance_solution_to!(integrator, tnext)
     stepsize_controller!(integrator)
 
     # Update integrator
@@ -339,8 +339,8 @@ function __step!(integrator)
 end
 
 # solvers need to define this interface
-function advance_solution_to!(integrator, tnext; uparent)
-    advance_solution_to!(integrator, integrator.cache, tnext; uparent)
+function advance_solution_to!(integrator::OperatorSplittingIntegrator, tnext)
+    advance_solution_to!(integrator, integrator.cache, tnext)
 end
 
 DiffEqBase.get_dt(integrator::OperatorSplittingIntegrator) = integrator._dt
@@ -376,44 +376,11 @@ end
     end
 end
 
-function advance_solution_to!(integrator::OperatorSplittingIntegrator, cache::AbstractOperatorSplittingCache, tnext::Number; uparent)
-    advance_solution_to!(integrator.subintegrators, cache, tnext; uparent)
+function advance_solution_to!(integrator::OperatorSplittingIntegrator, cache::AbstractOperatorSplittingCache, tnext::Number)
+    advance_solution_to!(integrator, integrator.subintegrators, integrator.f.dof_ranges, integrator.f.synchronizers, cache, tnext)
 end
 
 # Dispatch for tree node construction
-# function build_subintegrators_recursive(f::GenericSplitFunction, synchronizers::Tuple, p::Tuple, cache::AbstractOperatorSplittingCache, t, dt, dof_range, uparent, tstops, _tstops, saveat, _saveat)
-#     return ntuple(i ->
-#         build_subintegrators_recursive(
-#             get_operator(f, i),
-#             synchronizers[i],
-#             p[i],
-#             cache.inner_caches[i],
-#             # TODO recover this
-#             t, dt, f.dof_ranges[i],
-#             # We pass the full solution, because some parameters might require
-#             # access to solution variables which are not part of the local solution range
-#             uparent,
-#             tstops, _tstops, saveat, _saveat
-#         ), length(f.functions)
-#     )
-# end
-# function build_subintegrators_recursive(f::GenericSplitFunction, synchronizers::NoExternalSynchronization, p::Tuple, cache::AbstractOperatorSplittingCache, t, dt, dof_range, uparent, tstops, _tstops, saveat, _saveat)
-#     return ntuple(i ->
-#         build_subintegrators_recursive(
-#             get_operator(f, i),
-#             synchronizers,
-#             p[i],
-#             cache.inner_caches[i],
-#             # TODO recover this
-#             t, dt, f.dof_ranges[i],
-#             # We pass the full solution, because some parameters might require
-#             # access to solution variables which are not part of the local solution range
-#             uparent,
-#             tstops, _tstops, saveat, _saveat
-#         ), length(f.functions)
-#     )
-# end
-
 function build_subintegrators_with_cache(
     prob::OperatorSplittingProblem, alg::AbstractOperatorSplittingAlgorithm,
     uprevouter::AbstractVector, uouter::AbstractVector,
@@ -481,14 +448,19 @@ function build_subintegrators_with_cache(
     )
 end
 
-@unroll function prepare_local_step!(uparent, subintegrators::Tuple)
+# TODO check for type stability
+@unroll function forward_sync_subintegrator!(outer_integrator::OperatorSplittingIntegrator, subintegrators::Tuple, dof_ranges::Tuple, synchronizers::Tuple)
+    i = 0
     @unroll for subintegrator in subintegrators
-        prepare_local_step!(uparent, subintegrator)
+        i += 1
+        forward_sync_subintegrator!(outer_integrator, subintegrator, dof_ranges[i], syncronizers[i])
     end
 end
 
-@unroll function finalize_local_step!(uparent, subintegrators::Tuple)
+@unroll function backward_sync_subintegrator!(outer_integrator::OperatorSplittingIntegrator, subintegrators::Tuple, dof_range::Tuple)
+    i = 0
     @unroll for subintegrator in subintegrators
-        finalize_local_step!(uparent, subintegrator)
+        i += 1
+        backward_sync_subintegrator!(uparent, subintegrator, synchronizers[i])
     end
 end

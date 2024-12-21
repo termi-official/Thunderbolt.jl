@@ -6,35 +6,42 @@ end
 
 IntegratorStats() = IntegratorStats(0,0)
 
-Base.@kwdef  struct IntegratorOptions{tType, #=msgType,=# F1, F2, F3, F4, F5, SType, tstopsType, saveatType, discType, tcache, savecache, disccache}
+Base.@kwdef  struct IntegratorOptions{tType, msgType, F1, F2, F3, F4, F5, SType, tstopsType, saveatType, discType, tcache, savecache, disccache}
+    force_dtmin::Bool = false
     dtmin::tType = eps(tType)
     dtmax::tType = Inf
     failfactor::tType = 4.0
     verbose::Bool = false
     adaptive::Bool = false # Redundant with the dispatch on SciMLBase.isadaptive below (alg adaptive + controller not nothing)
     maxiters::Int = 1000000
-    # OrdinaryDiffEqCore compat
-    force_dtmin::Bool = false
-    progress::Bool = false # FIXME
-    # progress_steps::Int = 0
-    # progress_name::String = ""
-    # progress_message::msgType = ""
-    # progress_id::Symbol = :msg
+    # Internal norms to measure matrix and vector sizes (in the sense of normed vector spaces)
     internalnorm::F1 = DiffEqBase.ODE_DEFAULT_NORM
     internalopnorm::F2 = LinearAlgebra.opnorm
+    # Function to check whether the solution is still inside the domain it is defined on
     isoutofdomain::F3 = DiffEqBase.ODE_DEFAULT_ISOUTOFDOMAIN
+    # Function to check whether the solution is unstable
     unstable_check::F4 = DiffEqBase.ODE_DEFAULT_UNSTABLE_CHECK
+    # This is mostly OrdinaryDiffEqCore compat
+    progress::Bool = false # FIXME
+    progress_steps::Int = 0
+    progress_name::String = ""
+    progress_message::msgType = ""
+    progress_id::Symbol = :msg
     save_idxs::SType = nothing
+    save_end::Bool = true
+    dense::Bool = false
+    save_on::Bool = false
+    # TODO vvv factor these into some event management data type vvv
     tstops::tstopsType = nothing
     saveat::saveatType = nothing
-    save_end::Bool = true
     d_discontinuities::discType = nothing
     tstops_cache::tcache = ()
     saveat_cache::savecache = ()
     d_discontinuities_cache::disccache = ()
+    # TODO ^^^ factor these into some event management data type ^^^
+    # Callbacks are inconsistent with the remaining event management above, as the
+    # associated cache is stored in the integrator instead of the options data type
     callback::F5
-    dense::Bool = false
-    save_on::Bool = false
 end
 
 """
@@ -65,7 +72,10 @@ mutable struct ThunderboltTimeIntegrator{
     tprev::tType
     dt::tType
     tdir::tType
+    # cache of the time integration algorithm
     cache::cacheType
+    # We need this one explicitly, because there is no API to access this variable
+    # E.g. https://github.com/SciML/DiffEqBase.jl/blob/ceec4c0ae42a5cf50b78ec876ed650993d7a55b5/src/callbacks.jl#L112
     callback_cache::callbackcacheType
     synchronizer::syncType
     sol::solType
@@ -152,6 +162,10 @@ DiffEqBase.get_tstops_max(integ::ThunderboltTimeIntegrator) = maximum(get_tstops
 
 
 # ----------------------------------- OrdinaryDiffEqCore compat ----------------------------------
+OrdinaryDiffEqCore.has_discontinuity(integrator::ThunderboltTimeIntegrator) = !isempty(integrator.opts.d_discontinuities)
+OrdinaryDiffEqCore.first_discontinuity(integrator::ThunderboltTimeIntegrator) = first(integrator.opts.d_discontinuities)
+OrdinaryDiffEqCore.pop_discontinuity!(integrator::ThunderboltTimeIntegrator) = pop!(integrator.opts.d_discontinuities)
+
 function _postamble!(integrator)
     DiffEqBase.finalize!(integrator.opts.callback, integrator.u, integrator.t, integrator)
     OrdinaryDiffEqCore.solution_endpoint_match_cur_integrator!(integrator)
@@ -722,54 +736,28 @@ end
 # TODO some operator splitting methods require to go back in time, so we need to figure out what the best way is.
 OS.tdir(integ::ThunderboltTimeIntegrator) = integ.tdir
 
-function OS.advance_solution_to!(integrator::ThunderboltTimeIntegrator, cache::AbstractTimeSolverCache, tend; kwargs...)
-    # @unpack f, t = integrator
-    # dt = tend-t
-    # dt ≈ 0.0 || SciMLBase.step!(integrator, dt, true)
-    # @inbounds while integrator.tdir * integrator.t < tend
-    #     integrator.dt ≈ 0.0 && error("???")
-    #     @info integrator.t, integrator.dt, tend
-    #     step_header!(integrator)
-    #     if OrdinaryDiffEqCore.check_error!(integrator) != SciMLBase.ReturnCode.Success
-    #         return
-    #     end
-    #     OrdinaryDiffEqCore.perform_step!(integrator, integrator.cache)
-    #     step_footer!(integrator)
-    # end
-    # @info "Pre:", integrator.t, integrator.dt, tend
+function OS.advance_solution_to!(outer_integrator::OS.OperatorSplittingIntegrator, integrator::ThunderboltTimeIntegrator, dof_range, sync, cache::AbstractTimeSolverCache, tend)
     dt = tend-integrator.t
     SciMLBase.step!(integrator, dt, true)
-    # @info "Post:", integrator.t, integrator.dt, tend
 end
 
-need_sync(a::AbstractVector, b::AbstractVector) = true
-need_sync(a::SubArray, b::AbstractVector)       = a.parent !== b
-need_sync(a::AbstractVector, b::SubArray)       = a !== b.parent
-need_sync(a::SubArray, b::SubArray)             = a.parent !== b.parent
+# @inline function OS.prepare_local_step!(uparent, subintegrator::ThunderboltTimeIntegrator)
+#     # Copy solution into subproblem
+#     uparentview      = @view uparent[subintegrator.indexset]
+#     sync_vectors(subintegrator.u, uparentview)
+#     # Mark previous solution, if necessary
+#     if subintegrator.uprev !== nothing && length(subintegrator.uprev) > 0
+#         sync_vectors(subintegrator.uprev, subintegrator.u)
+#     end
+#     syncronize_parameters!(subintegrator, subintegrator.f, subintegrator.synchronizer)
+# end
 
-function sync_vectors(a, b)
-    if need_sync(a, b) && a !== b
-        a .= b
-    end
-end
-
-@inline function OS.prepare_local_step!(uparent, subintegrator::ThunderboltTimeIntegrator)
-    # Copy solution into subproblem
-    uparentview      = @view uparent[subintegrator.indexset]
-    sync_vectors(subintegrator.u, uparentview)
-    # Mark previous solution, if necessary
-    if subintegrator.uprev !== nothing && length(subintegrator.uprev) > 0
-        sync_vectors(subintegrator.uprev, subintegrator.u)
-    end
-    syncronize_parameters!(subintegrator, subintegrator.f, subintegrator.synchronizer)
-end
-
-@inline function OS.finalize_local_step!(uparent, subintegrator::ThunderboltTimeIntegrator)
-    # Copy solution out of subproblem
-    #
-    uparentview = @view uparent[subintegrator.indexset]
-    sync_vectors(uparentview, subintegrator.u)
-end
+# @inline function OS.finalize_local_step!(uparent, subintegrator::ThunderboltTimeIntegrator)
+#     # Copy solution out of subproblem
+#     #
+#     uparentview = @view uparent[subintegrator.indexset]
+#     sync_vectors(uparentview, subintegrator.u)
+# end
 
 struct DummyODESolution <: SciMLBase.AbstractODESolution{Float64, 2, Vector{Float64}}
     retcode::SciMLBase.ReturnCode.T
@@ -781,7 +769,7 @@ end
 fix_solution_buffer_sizes!(integrator, sol::DummyODESolution) = nothing
 
 OS.recursive_null_parameters(stuff::Union{AbstractSemidiscreteProblem, AbstractSemidiscreteFunction}) = SciMLBase.NullParameters()
-syncronize_parameters!(integ, f, ::OS.NoExternalSynchronization) = nothing
+# syncronize_parameters!(integ, f, ::OS.NoExternalSynchronization) = nothing
 
 function OS.build_subintegrators_with_cache(
     f::DiffEqBase.AbstractDiffEqFunction, # f::AbstractSemidiscreteFunction, # <- This is a temporary hotfix :)

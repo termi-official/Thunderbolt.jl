@@ -63,12 +63,6 @@ Adapt.@adapt_structure ForwardEulerCellSolverCache
     return true
 end
 
-# function init_cache(prob, alg::ForwardEulerCellSolver; t0)
-#     cache = setup_solver_cache(prob.f, alg, t0)
-#     resize(cache.uₙ₋₁, size(cache.uₙ))
-#     return cache
-# end
-
 function setup_solver_cache(f::PointwiseODEFunction, solver::ForwardEulerCellSolver, t₀; u = nothing, uprev=nothing)
     @unpack npoints, ode = f
     ndofs_local = num_states(ode)
@@ -140,13 +134,6 @@ Adapt.@adapt_structure AdaptiveForwardEulerSubstepperCache
 
     return true
 end
-
-
-# function init_cache(prob, alg::AdaptiveForwardEulerSubstepper; t0)
-#     cache = setup_solver_cache(prob.f, alg, t0)
-#     resize(cache.uₙ₋₁, size(cache.uₙ))
-#     return cache
-# end
 
 function setup_solver_cache(f::PointwiseODEFunction, solver::AdaptiveForwardEulerSubstepper, t₀; u = nothing, uprev=nothing)
     @unpack npoints, ode = f
