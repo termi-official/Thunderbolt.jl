@@ -10,14 +10,14 @@ Base.@kwdef struct BackwardEulerSolver{SolverType, SolutionVectorType, SystemMat
     verbose                                        = true # Temporary helper for benchmarks
 end
 
+SciMLBase.isadaptive(::BackwardEulerSolver) = false
+
 # TODO decouple from heat problem via special ODEFunction (AffineODEFunction)
 mutable struct BackwardEulerSolverCache{T, SolutionType <: AbstractVector{T}, MassMatrixType, DiffusionMatrixType, SourceTermType, SolverCacheType} <: AbstractTimeSolverCache
     # Current solution buffer
     uₙ::SolutionType
     # Last solution buffer
     uₙ₋₁::SolutionType
-    # Temporary buffer for interpolations and stuff
-    tmp::SolutionType
     # Mass matrix
     M::MassMatrixType
     # Diffusion matrix
@@ -74,7 +74,7 @@ function perform_step!(f::TransientDiffusionFunction, cache::BackwardEulerSolver
     return !solve_failed
 end
 
-function setup_solver_cache(f::TransientDiffusionFunction, solver::BackwardEulerSolver, t₀)
+function setup_solver_cache(f::TransientDiffusionFunction, solver::BackwardEulerSolver, t₀; u = nothing, uprev = nothing)
     @unpack dh = f
     @unpack inner_solver = solver
     @assert length(dh.field_names) == 1 # TODO relax this assumption, maybe.
@@ -82,9 +82,8 @@ function setup_solver_cache(f::TransientDiffusionFunction, solver::BackwardEuler
 
     A     = create_system_matrix(solver.system_matrix_type  , f)
     b     = create_system_vector(solver.solution_vector_type, f)
-    u0    = create_system_vector(solver.solution_vector_type, f)
-    uprev = create_system_vector(solver.solution_vector_type, f)
-    tmp   = create_system_vector(solver.solution_vector_type, f)
+    u0    = u === nothing ? create_system_vector(solver.solution_vector_type, f) : u
+    uprev = uprev === nothing ? create_system_vector(solver.solution_vector_type, f) : uprev
 
     T = eltype(u0)
 
@@ -121,7 +120,6 @@ function setup_solver_cache(f::TransientDiffusionFunction, solver::BackwardEuler
     cache       = BackwardEulerSolverCache(
         u0, # u
         uprev,
-        tmp,
         mass_operator,
         diffusion_operator,
         source_operator,
@@ -165,12 +163,14 @@ function perform_step!(f::ODEFunction, solver_cache::ForwardEulerSolverCache, t:
     return !any(isnan.(uₙ))
 end
 
-function setup_solver_cache(f::ODEFunction, solver::ForwardEulerSolver, t₀)
+function setup_solver_cache(f::ODEFunction, solver::ForwardEulerSolver, t₀; u = nothing, uprev = nothing)
+    du = create_system_vector(solver.solution_vector_type, f)
+    u = u === nothing ? create_system_vector(solver.solution_vector_type, f) : u
     return ForwardEulerSolverCache(
         solver.rate,
-        create_system_vector(solver.solution_vector_type, f),
-        create_system_vector(solver.solution_vector_type, f),
-        create_system_vector(solver.solution_vector_type, f),
+        du,
+        u,
+        u,
         f.f
     )
 end

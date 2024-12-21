@@ -10,31 +10,21 @@ end
 
 @inline DiffEqBase.isadaptive(::AbstractOperatorSplittingAlgorithm) = false
 
-struct LieTrotterGodunovCache{uType, tmpType, iiType} <: AbstractOperatorSplittingCache
+struct LieTrotterGodunovCache{uType, uprevType, iiType} <: AbstractOperatorSplittingCache
     u::uType
-    uprev::uType # True previous solution
-    tmp::tmpType # Scratch
+    uprev::uprevType
     inner_caches::iiType
 end
 
-# Dispatch for outer construction
-function init_cache(prob::OperatorSplittingProblem, alg::LieTrotterGodunov; u0, kwargs...) # TODO
-    @unpack f = prob
-    @assert f isa GenericSplitFunction
-
-    # Build inner integrator
-    return construct_inner_cache(f, alg; uparent=u0, u0, kwargs...)
-end
-
-# Dispatch for recursive construction
-function construct_inner_cache(f::AbstractOperatorSplitFunction, alg::LieTrotterGodunov; uparent, u0, kwargs...)
-    dof_ranges = f.dof_ranges
-
-    u          = copy(u0)
-    uprev      = copy(u0)
-    tmp        = similar(u)
-    inner_caches = ntuple(i->construct_inner_cache(get_operator(f, i), alg.inner_algs[i]; uparent, u0=view(uparent,dof_ranges[i]), kwargs...), length(f.functions))
-    LieTrotterGodunovCache(u, uprev, tmp, inner_caches)
+function init_cache(f::GenericSplitFunction, alg::LieTrotterGodunov;
+    uprev::AbstractArray, u::AbstractVector,
+    inner_caches,
+    alias_uprev = true,
+    alias_u     = false,
+)
+    _uprev = alias_uprev ? uprev : SciMLBase.recursivecopy(uprev)
+    _u     = alias_u     ? u     : SciMLBase.recursivecopy(u)
+    LieTrotterGodunovCache(_u, _uprev, inner_caches)
 end
 
 @inline @unroll function advance_solution_to!(subintegrators::Tuple, cache::LieTrotterGodunovCache, tnext; uparent)

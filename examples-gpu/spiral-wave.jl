@@ -1,4 +1,5 @@
 using Thunderbolt, Thunderbolt.TimerOutputs, CUDA, UnPack
+using LinearSolve, KrylovPreconditioners
 
 Base.@kwdef struct HeterogeneousFHNModel{T, T2} <: Thunderbolt.AbstractIonicModel
     a::T = T(0.1)
@@ -90,11 +91,17 @@ spiral_wave_initializer!(u₀, odeform)
 u₀gpu = CuVector(u₀)
 problem = OS.OperatorSplittingProblem(odeform, u₀gpu, tspan)
 
+# 
+function BJPprec(A,p)
+    P = BlockJacobiPreconditioner(A, 1000, CUDABackend())
+    KrylovPreconditioners.update!(P, A)
+    return (P,I)
+end
 timestepper = OS.LieTrotterGodunov((
     BackwardEulerSolver(
         solution_vector_type=CuVector{Float32},
         system_matrix_type=CUDA.CUSPARSE.CuSparseMatrixCSR{Float32, Int32},
-        inner_solver=LinearSolve.KrylovJL_CG(atol=1.0f-6, rtol=1.0f-5),
+        inner_solver=LinearSolve.KrylovJL_CG(atol=1.0f-6, rtol=1.0f-5, precs=BJPprec, ldiv=false),
     ),
     AdaptiveForwardEulerSubstepper(
         solution_vector_type=CuVector{Float32},

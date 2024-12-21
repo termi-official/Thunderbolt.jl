@@ -469,3 +469,63 @@ function get_closest_vertex(val::Vec, grid::AbstractGrid)
     end
     return closest_vertex
 end
+
+@generated function dot_2_1(S1::FourthOrderTensor{dim}, S2::SecondOrderTensor{dim}) where {dim}
+    idxS1(i, j, k, l) = Tensors.compute_index(Tensors.get_base(S1), i, j, k, l)
+    idxS2(i, j) = Tensors.compute_index(Tensors.get_base(S2), i, j)
+    exps = Expr(:tuple)
+    for l in 1:dim, k in 1:dim, j in 1:dim, i in 1:dim
+        ex1 = Expr[:(Tensors.get_data(S1)[$(idxS1(i, m, k, l))]) for m in 1:dim]
+        ex2 = Expr[:(Tensors.get_data(S2)[$(idxS2(m, j))]) for m in 1:dim]
+        push!(exps.args, Tensors.reducer(ex1, ex2))
+    end
+    quote
+        $(Expr(:meta, :inline))
+        @inbounds return Tensor{4, dim}($exps)
+    end
+end
+
+@generated function dot_2_1t(S1::FourthOrderTensor{dim}, S2::SecondOrderTensor{dim}) where {dim}
+    idxS1(i, j, k, l) = Tensors.compute_index(Tensors.get_base(S1), i, j, k, l)
+    idxS2(i, j) = Tensors.compute_index(Tensors.get_base(S2), i, j)
+    exps = Expr(:tuple)
+    for l in 1:dim, k in 1:dim, j in 1:dim, i in 1:dim
+        ex1 = Expr[:(Tensors.get_data(S1)[$(idxS1(i, m, k, l))]) for m in 1:dim]
+        ex2 = Expr[:(Tensors.get_data(S2)[$(idxS2(j, m))]) for m in 1:dim]
+        push!(exps.args, Tensors.reducer(ex1, ex2))
+    end
+    quote
+        $(Expr(:meta, :inline))
+        @inbounds return Tensor{4, dim}($exps)
+    end
+end
+
+@generated function dot_3_1(S1::FourthOrderTensor{dim}, S2::SecondOrderTensor{dim}) where {dim}
+    idxS1(i, j, k, l) = Tensors.compute_index(Tensors.get_base(S1), i, j, k, l)
+    idxS2(i, j) = Tensors.compute_index(Tensors.get_base(S2), i, j)
+    exps = Expr(:tuple)
+    for l in 1:dim, k in 1:dim, j in 1:dim, i in 1:dim
+        ex1 = Expr[:(Tensors.get_data(S1)[$(idxS1(i, j, m, l))]) for m in 1:dim]
+        ex2 = Expr[:(Tensors.get_data(S2)[$(idxS2(m, j))]) for m in 1:dim]
+        push!(exps.args, Tensors.reducer(ex1, ex2))
+    end
+    quote
+        $(Expr(:meta, :inline))
+        @inbounds return Tensor{4, dim}($exps)
+    end
+end
+
+@generated function dot_3_1t(S1::FourthOrderTensor{dim}, S2::SecondOrderTensor{dim}) where {dim}
+    idxS1(i, j, k, l) = Tensors.compute_index(Tensors.get_base(S1), i, j, k, l)
+    idxS2(i, j) = Tensors.compute_index(Tensors.get_base(S2), i, j)
+    exps = Expr(:tuple)
+    for l in 1:dim, k in 1:dim, j in 1:dim, i in 1:dim
+        ex1 = Expr[:(Tensors.get_data(S1)[$(idxS1(i, j, m, l))]) for m in 1:dim]
+        ex2 = Expr[:(Tensors.get_data(S2)[$(idxS2(j, m))]) for m in 1:dim]
+        push!(exps.args, Tensors.reducer(ex1, ex2))
+    end
+    quote
+        $(Expr(:meta, :inline))
+        @inbounds return Tensor{4, dim}($exps)
+    end
+end

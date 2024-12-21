@@ -312,7 +312,7 @@ coupledform = semidiscretize(
 
 # Create sparse matrix and residual vector
 timestepper = LieTrotterGodunov((
-    LoadDrivenSolver(
+    HomotopyPathSolver(
         NewtonRaphsonSolver(;
             max_iter=100,
             tol=1e-2,

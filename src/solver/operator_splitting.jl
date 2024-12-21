@@ -2,7 +2,9 @@ module OS
 
 import Unrolled: @unroll
 
-import DiffEqBase, DataStructures
+import SciMLBase, DiffEqBase, DataStructures
+
+import OrdinaryDiffEqCore
 
 import UnPack: @unpack
 import DiffEqBase: init, TimeChoiceIterator
