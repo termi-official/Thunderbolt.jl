@@ -612,11 +612,16 @@ end
 
 
 function dummy_kernel!(b,dh, mem_alloc)
-    # for cell in CellIterator(dh,mem_alloc)
-    #     bₑ = FerriteUtils.cellfe(cell)
-    #     b[celldofs(cell)] .+= bₑ
-    # end
-    CUDA.@cushow 1
+    for cell in CellIterator(dh,mem_alloc)
+        bₑ = FerriteUtils.cellfe(cell)
+        #b[celldofs(cell)] .+= bₑ
+        dofs = celldofs(cell)
+        @inbounds for i in 1:length(dofs)
+            b[dofs[i]] += bₑ[i]
+        end
+        #CUDA.@cushow 1
+        CUDA.@cushow bₑ[1]
+    end
     return nothing
 end
 

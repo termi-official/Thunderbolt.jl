@@ -78,7 +78,7 @@ end
 function try_allocate_shared_mem(::Type{RHSObject{Tv}}, block_dim::Ti, n_basefuncs::Ti) where {Ti <: Integer, Tv <: Real}
     shared_mem = convert(Ti, sizeof(Tv) * (block_dim) * n_basefuncs)
     _can_use_dynshmem(shared_mem) || return nothing
-    fe = DynamicSharedMemFunction{2, Tv, Ti}((block_dim, n_basefuncs), convert(Ti, sizeof(Tv) * block_dim * n_basefuncs * n_basefuncs))
+    fe = DynamicSharedMemFunction{2, Tv, Ti}((block_dim, n_basefuncs), convert(Ti, 0))
     return SharedRHSMemAlloc( fe, shared_mem)
 end
 
@@ -119,24 +119,24 @@ function GPUGrid(
     return GPUGrid{dim, CELLVEC, NODEVEC}(cells, nodes)
 end
 
-get_coordinate_type(::GPUGrid{dim, CELLVEC, NODEVEC}) where
+Ferrite.get_coordinate_type(::GPUGrid{dim, CELLVEC, NODEVEC}) where
 {C <: Ferrite.AbstractCell, CELLVEC <: AbstractArray{C, 1}, NODEVEC <: AbstractArray{Node{dim, T}}} where
 {dim, T} = Vec{dim, T} # Node is baked into the mesh type.
 
 
 # Note: For functions that takes blockIdx as an argument, we need to use Int32 explicitly,
 # otherwise the compiler will not be able to infer the type of the argument and throw a dynamic function invokation error.
-@inline getcells(grid::GPUGrid, v::Union{Int32, Vector{Int32}}) = grid.cells[v]
-@inline getnodes(grid::GPUGrid, v::Int32) = grid.nodes[v]
+@inline Ferrite.getcells(grid::GPUGrid, v::Union{Int32, Vector{Int32}}) = grid.cells[v]
+@inline Ferrite.getnodes(grid::GPUGrid, v::Int32) = grid.nodes[v]
 
 """
     getcoordinates(grid::Ferrite.GPUGrid,e::Int32)
 
 Return the coordinates of the nodes of the element `e` in the `GPUGrid` `grid`.
 """
-function getcoordinates(grid::GPUGrid, e::Int32)
+function Ferrite.getcoordinates(grid::GPUGrid, e::Int32)
     # e is the element index.
-    CT = get_coordinate_type(grid)
+    CT = Ferrite.get_coordinate_type(grid)
     cell = getcells(grid, e)
     N = nnodes(cell)
     x = MVector{N, CT}(undef) # local array to store the coordinates of the nodes of the cell.
@@ -184,7 +184,7 @@ cell_dof_offset(dh::GPUDofHandler, i::Int32) = dh.cell_dofs_offset[i]
 
 get_grid(dh::GPUDofHandler) = dh.grid
 
-function celldofs(dh::GPUDofHandler, i::Int32)
+function Ferrite.celldofs(dh::GPUDofHandler, i::Int32)
     offset = cell_dof_offset(dh, i)
     ndofs = ndofs_per_cell(dh, i)
     view = @view dh.cell_dofs[offset:(offset + ndofs - Int32(1))]
@@ -328,20 +328,20 @@ function _makecache(iterator::AbstractCUDACellIterator, e::Integer)
     dh = iterator.dh
     grid = iterator.grid
     cellid = e
-    cell = FerriteUtils.getcells(grid, e)
+    cell = Ferrite.getcells(grid, e)
 
     # Extract the node IDs of the cell.
     nodes = SVector(convert.(Int32, Ferrite.get_node_ids(cell))...)
 
     # Extract the degrees of freedom for the cell.
-    dofs = FerriteUtils.celldofs(dh, e)
+    dofs = Ferrite.celldofs(dh, e)
 
     # Get the coordinates of the nodes of the cell.
-    CT = FerriteUtils.get_coordinate_type(grid)
-    N = FerriteUtils.nnodes(cell)
+    CT = Ferrite.get_coordinate_type(grid)
+    N = Ferrite.nnodes(cell)
     x = MVector{N, CT}(undef)
     for i in eachindex(x)
-        x[i] = FerriteUtils.get_node_coordinate(grid, nodes[i])
+        x[i] = Ferrite.get_node_coordinate(grid, nodes[i])
     end
     coords = SVector(x...)
 
