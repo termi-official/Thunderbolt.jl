@@ -1,25 +1,3 @@
-struct SummaryNewtonMonitor
-end
-
-@inline function newton_monitor_inner_callback(::SummaryNewtonMonitor, t, i, f, u, sol, linear_cache)
-    @info "Linear solver stats: $(sol.stats) - norm(Δu) = $(norm(sol.u))"
-end
-
-struct VTKNewtonMonitor
-    outdir::String
-end
-
-function newton_monitor_inner_callback(monitor::VTKNewtonMonitor, time, newton_itr, f, u, sol, linear_cache)
-    @info "Linear solver stats: $(sol.stats) - norm(Δu) = $(norm(sol.u))"
-
-    VTKGridFile(joinpath(monitor.outdir, "newton-monitor-t=$time-i=$newton_itr.vtu"), f.dh) do vtk
-        write_solution(vtk, f.dh, u)
-        write_solution(vtk, f.dh, linear_cache.b, "_residual")
-        write_solution(vtk, f.dh, linear_cache.u, "_increment")
-    end
-end
-
-
 """
     NewtonRaphsonSolver{T}
 
@@ -27,24 +5,22 @@ Classical Newton-Raphson solver to solve nonlinear problems of the form `F(u) = 
 To use the Newton-Raphson solver you have to dispatch on
 * [update_linearization!](@ref)
 """
-Base.@kwdef struct NewtonRaphsonSolver{T, solverType, M} <: AbstractNonlinearSolver
+Base.@kwdef struct NewtonRaphsonSolver{T, solverType} <: AbstractNonlinearSolver
     # Convergence tolerance
     tol::T = 1e-4
     # Maximum number of iterations
     max_iter::Int = 100
     inner_solver::solverType = LinearSolve.KrylovJL_GMRES()
-    monitor::M = SummaryNewtonMonitor()
 end
 
-mutable struct NewtonRaphsonSolverCache{OpType, ResidualType, T, NewtonType <: NewtonRaphsonSolver{T}, InnerSolverCacheType} <: AbstractNonlinearSolverCache
+mutable struct NewtonRaphsonSolverCache{OpType, ResidualType, T, InnerSolverCacheType} <: AbstractNonlinearSolverCache
     # The nonlinear operator
     op::OpType
     # Cache for the right hand side f(u)
     residual::ResidualType
     #
-    const parameters::NewtonType
+    const parameters::NewtonRaphsonSolver{T}
     linear_solver_cache::InnerSolverCacheType
-    Θks::Vector{T} # TODO modularize this
 end
 
 function setup_solver_cache(f::AbstractSemidiscreteFunction, solver::NewtonRaphsonSolver{T}) where {T}
@@ -61,7 +37,7 @@ function setup_solver_cache(f::AbstractSemidiscreteFunction, solver::NewtonRaphs
     @assert inner_cache.b === residual
     @assert inner_cache.A === getJ(op)
 
-    NewtonRaphsonSolverCache(op, residual, solver, inner_cache, T[])
+    NewtonRaphsonSolverCache(op, residual, solver, inner_cache)
 end
 
 function setup_solver_cache(f::AbstractSemidiscreteBlockedFunction, solver::NewtonRaphsonSolver{T}) where {T}
@@ -82,21 +58,25 @@ function setup_solver_cache(f::AbstractSemidiscreteBlockedFunction, solver::Newt
 end
 
 function nlsolve!(u::AbstractVector, f::AbstractSemidiscreteFunction, cache::NewtonRaphsonSolverCache, t)
-    @unpack op, residual, linear_solver_cache, Θks = cache
+    @unpack op, residual, linear_solver_cache = cache
     newton_itr = -1
     Δu = linear_solver_cache.u
-    residualnormprev = 0.0
-    resize!(Θks, 0)
     while true
         newton_itr += 1
+
         residual .= 0.0
         @timeit_debug "update operator" update_linearization!(op, residual, u, t)
         @timeit_debug "elimination" eliminate_constraints_from_linearization!(cache, f)
         linear_solver_cache.isfresh = true # Notify linear solver that we touched the system matrix
 
+        # vtk_grid("newton-debug-$newton_itr", problem.structural_problem.dh) do vtk
+        #     vtk_point_data(vtk, f.structural_problem.dh, u[Block(1)])
+        #     vtk_point_data(vtk, f.structural_problem.dh, residual[Block(1)], :residual)
+        # end
+
         residualnorm = residual_norm(cache, f)
         @info "Newton itr $newton_itr: ||r||=$residualnorm"
-        if residualnorm < cache.parameters.tol && newton_itr > 1 # Do at least two iterations to get a sane convergence estimate
+        if residualnorm < cache.parameters.tol #|| (newton_itr > 0 && norm(Δu) < cache.parameters.tol)
             break
         elseif newton_itr > cache.parameters.max_iter
             @warn "Reached maximum Newton iterations. Aborting. ||r|| = $residualnorm"
@@ -107,29 +87,13 @@ function nlsolve!(u::AbstractVector, f::AbstractSemidiscreteFunction, cache::New
         end
 
         @timeit_debug "solve" sol = LinearSolve.solve!(linear_solver_cache)
-        newton_monitor_inner_callback(cache.parameters.monitor, t, newton_itr, f, u, sol, linear_solver_cache)
+        @info "Linear solver stats: $(sol.stats) - norm(Δu) = $(norm(Δu))"
         solve_succeeded = LinearSolve.SciMLBase.successful_retcode(sol) || sol.retcode == LinearSolve.ReturnCode.Default # The latter seems off...
         solve_succeeded || return false
 
         eliminate_constraints_from_increment!(Δu, f, cache)
 
         u .-= Δu # Current guess
-
-        if newton_itr > 0
-            Θk =residualnorm/residualnormprev
-            push!(Θks, isnan(Θk) ? Inf : Θk)
-            if Θk ≥ 1.0
-                @warn "Newton-Raphson diverged. Aborting. ||r|| = $residualnorm"
-                return false
-            end
-            
-            # Late out on second iteration
-            if residualnorm < cache.parameters.tol
-                break
-            end
-        end
-
-        residualnormprev = residualnorm
     end
     return true
 end

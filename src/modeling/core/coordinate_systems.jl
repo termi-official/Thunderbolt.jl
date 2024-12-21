@@ -115,7 +115,6 @@ function compute_lv_coordinate_system(mesh::SimpleMesh{3,<:Any,T}, subdomains::V
     end
 
     # Transmural coordinate
-    begin
     ch = ConstraintHandler(dh);
     dbc = Dirichlet(:coordinates, getfacetset(mesh, "Endocardium"), (x, t) -> 0)
     Ferrite.add!(ch, dbc);
@@ -124,36 +123,19 @@ function compute_lv_coordinate_system(mesh::SimpleMesh{3,<:Any,T}, subdomains::V
     close!(ch)
     update!(ch, 0.0);
 
-    K_transmural = copy(K)
+    K_transmural = K
     f = zeros(ndofs(dh))
 
     apply!(K_transmural, f, ch)
     sol = solve(LinearSolve.LinearProblem(K_transmural, f), LinearSolve.KrylovJL_CG())
     transmural = sol.u
-    end
 
     # Apicobasal coordinate
-    begin
-    # apicobasal = zeros(ndofs(dh))
-    # apply_analytical!(apicobasal, dh, :coordinates, x->x ⋅ up)
-    # apicobasal .-= minimum(apicobasal)
-    # apicobasal = abs.(apicobasal)
-    # apicobasal ./= maximum(apicobasal)
-    ch = ConstraintHandler(dh);
-    dbc = Dirichlet(:coordinates, getfacetset(mesh, "Base"), (x, t) -> 1)
-    Ferrite.add!(ch, dbc);
-    dbc = Dirichlet(:coordinates, getnodeset(mesh, "ApexInOut"), (x, t) -> 0)
-    Ferrite.add!(ch, dbc);
-    close!(ch)
-    update!(ch, 0.0);
-
-    K_apicobasal = K
-    f = zeros(ndofs(dh))
-
-    apply!(K_apicobasal, f, ch)
-    sol = solve(LinearSolve.LinearProblem(K_apicobasal, f), LinearSolve.KrylovJL_CG())
-    apicobasal = sol.u
-    end
+    apicobasal = zeros(ndofs(dh))
+    apply_analytical!(apicobasal, dh, :coordinates, x->x ⋅ up)
+    apicobasal .-= minimum(apicobasal)
+    apicobasal = abs.(apicobasal)
+    apicobasal ./= maximum(apicobasal)
 
     rotational = zeros(ndofs(dh))
     rotational .= NaN

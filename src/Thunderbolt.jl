@@ -18,6 +18,8 @@ import ReadVTK
 include("solver/operator_splitting.jl")
 @reexport using .OS
 solution_size(f::GenericSplitFunction) = OS.function_size(f)
+# include("solver/local_time_stepping.jl")
+# include("solver/multilevel.jl")
 
 @reexport using Ferrite
 import Ferrite: AbstractDofHandler, AbstractGrid, AbstractRefShape, AbstractCell, get_grid
@@ -25,15 +27,12 @@ import Ferrite: vertices, edges, faces, sortedge, sortface
 import Ferrite: get_coordinate_type, getspatialdim
 import Ferrite: reference_shape_value
 
-import Logging: @logmsg
-
-import SciMLBase
-@reexport import SciMLBase: init, solve, solve!, step!
 import DiffEqBase#: AbstractDiffEqFunction, AbstractDEProblem
-import OrdinaryDiffEqCore#: OrdinaryDiffEqCore
-import LinearSolve
+@reexport import LinearSolve
 
 import Base: *, +, -
+
+@reexport import CommonSolve: init, solve, solve!, step!
 
 import ModelingToolkit
 import ModelingToolkit: @variables, @parameters, @component, @named,
@@ -63,7 +62,7 @@ include("modeling/fluid_mechanics.jl")
 include("modeling/multiphysics.jl")
 
 include("modeling/functions.jl")
-include("modeling/problems.jl")
+include("modeling/problems.jl") # Utility for compat against DiffEqBase
 
 include("discretization/interface.jl")
 include("discretization/fem.jl")
@@ -200,12 +199,13 @@ export
     # Solver
     SchurComplementLinearSolver,
     NewtonRaphsonSolver,
-    HomotopyPathSolver,
+    LoadDrivenSolver,
     ForwardEulerSolver,
     BackwardEulerSolver,
     ForwardEulerCellSolver,
     AdaptiveForwardEulerSubstepper,
     # Integrator
+    get_parent_index,
     # Utils
     calculate_volume_deformed_mesh,
     elementtypes,
