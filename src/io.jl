@@ -6,7 +6,7 @@ mutable struct ParaViewWriter{PVD}
     current_file::Union{WriteVTK.DatasetFile, Nothing}
 end
 
-Ferrite.create_vtk_grid(filename::AbstractString, mesh::AbstractGrid) = _thunderbolt_fix_create_vtk_grid(filename, mesh)
+Ferrite.create_vtk_grid(filename::AbstractString, mesh::SimpleMesh) = _thunderbolt_fix_create_vtk_grid(filename, mesh)
 
 function _thunderbolt_fix_create_vtk_grid(filename::AbstractString, grid::AbstractGrid{sdim}) where sdim
     cls = WriteVTK.MeshCell[]
