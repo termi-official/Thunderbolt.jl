@@ -1,6 +1,7 @@
 # TODO split nonlinear operator and the linearization concepts
 # TODO energy based operator?
 # TODO maybe a trait system for operators?
+
 """
     AbstractNonlinearOperator
 
@@ -554,3 +555,72 @@ end
 function _needs_update(op::Union{LinearOperator, PEALinearOperator}, protocol::NoStimulationProtocol, t)
     return false
 end
+
+
+###################################
+# GPU dispatch for LinearOperator #
+###################################
+abstract type AbstractBackend end
+abstract type AbstractOperatorKernel{BKD <: AbstractBackend} end
+
+struct BackendCUDA <: AbstractBackend end
+struct BackendCPU <: AbstractBackend end
+
+struct CudaOperatorKernel{Operator, Ti <: Integer, MemAlloc} <: AbstractOperatorKernel{BackendCUDA} 
+    op::Operator
+    threads::Ti
+    blocks::Ti
+    mem_alloc::MemAlloc
+end
+
+function init_linear_operator(::Type{BackendCUDA},protocol::IntegrandType,qrc::QuadratureRuleCollection,dh::AbstractDofHandler ) where {IntegrandType}
+    if CUDA.functional()
+        b = CUDA.zeros(Float32, ndofs(dh))
+        linear_op =  LinearOperator(b, protocol, qrc, dh)
+
+        threads = convert(Ti, min(n_cells, 256))
+        blocks = _calculate_nblocks(threads, n_cells)
+        mem_alloc = try_allocate_shared_mem(RHSObject{Float32}, threads, n_basefuncs)
+        mem_alloc isa Nothing || return CudaOperatorKernel(linear_op, threads, blocks, mem_alloc)
+
+        mem_alloc = allocate_global_mem(RHSObject{Float32}, n_cells, n_basefuncs)
+        return CudaOperatorKernel(linear_op, threads, blocks, mem_alloc)
+    else
+        throw(ArgumentError("CUDA is not functional, please check your GPU driver and CUDA installation"))
+    end
+end
+
+function _calculate_nblocks(threads::Ti, n_cells::Ti) where {Ti <: Integer}
+    dev = device()
+    no_sms = CUDA.attribute(dev, CUDA.CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT)
+    required_blocks = cld(n_cells, threads)
+    required_blocks < 2 * no_sms || return convert(Ti, 2 * no_sms)
+    return convert(Ti, required_blocks)
+end
+
+function update_operator!(op_ker::CudaOperatorKernel, time)
+    @unpack op, threads, blocks, mem_alloc = op_ker
+    @unpack b, qrc, dh, integrand  = op
+
+    ker = () -> dummy_kernel!(b, dh, mem_alloc)
+    
+    _launch_kernel!(ker, threads, blocks, mem_alloc)
+end
+
+
+function dummy_kernel!(b,dh, mem_alloc)
+    for cell in CellIterator(dh,mem_alloc)
+        bₑ = cellfe(cell)
+        b[celldofs(cell)] .+= bₑ
+    end
+end
+
+function _launch_kernel!(ker, threads, blocks, mem_alloc::AbstractGlobalMemAlloc)
+    @cuda threads=threads blocks=blocks ker()
+end
+
+function _launch_kernel!(ker, threads, blocks, mem_alloc::AbstractSharedMemAlloc)
+    shmem_size = mem_size(mem_alloc)
+    CUDA.@sync @cuda threads=threads blocks=blocks  shmem = shmem_size ker()
+end
+
