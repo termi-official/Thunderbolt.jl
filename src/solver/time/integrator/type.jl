@@ -53,12 +53,10 @@ mutable struct ThunderboltTimeIntegrator{
     fType,
     uType,
     uprevType,
-    indexSetType,
     tType,
     pType,
     cacheType,
     callbackcacheType,
-    syncType,
     solType,
     controllerType,
 }  <: SciMLBase.DEIntegrator{algType, true, uType, tType}
@@ -66,7 +64,6 @@ mutable struct ThunderboltTimeIntegrator{
     const f::fType # Right hand side
     u::uType # Current local solution
     uprev::uprevType
-    indexset::indexSetType
     p::pType
     t::tType
     tprev::tType
@@ -77,7 +74,6 @@ mutable struct ThunderboltTimeIntegrator{
     # We need this one explicitly, because there is no API to access this variable
     # E.g. https://github.com/SciML/DiffEqBase.jl/blob/ceec4c0ae42a5cf50b78ec876ed650993d7a55b5/src/callbacks.jl#L112
     callback_cache::callbackcacheType
-    synchronizer::syncType
     sol::solType
     const dtchangeable::Bool
     controller::controllerType
@@ -537,7 +533,6 @@ function SciMLBase.__init(
                     isempty(saveat),
     dtmin = nothing,
     dtmax = nothing,
-    syncronizer = OS.NoExternalSynchronization(),   # custom kwarg
     kwargs...,
 )
     (; f, u0, p) = prob
@@ -622,7 +617,6 @@ function SciMLBase.__init(
         f,
         cache.uₙ,
         cache.uₙ₋₁,
-        1:length(u0),
         p,
         t0,
         t0,
@@ -630,7 +624,6 @@ function SciMLBase.__init(
         tdir,
         cache,
         callback_cache,
-        syncronizer,
         sol,
         true,
         adaptive ? controller : nothing,
@@ -859,7 +852,6 @@ function OS.build_subintegrators_with_cache(
         f,
         cache.uₙ,
         cache.uₙ₋₁,
-        1:length(u),
         p,
         t0,
         t0,
@@ -867,7 +859,6 @@ function OS.build_subintegrators_with_cache(
         tdir,
         cache,
         callback_cache,
-        OS.NoExternalSynchronization(),
         sol,
         true,
         adaptive ? controller : nothing,
