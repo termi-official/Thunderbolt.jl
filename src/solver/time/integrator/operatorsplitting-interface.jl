@@ -1,7 +1,7 @@
 # TODO some operator splitting methods require to go back in time, so we need to figure out what the best way is.
 OS.tdir(integ::ThunderboltTimeIntegrator) = integ.tdir
 
-function OS.advance_solution_to!(outer_integrator::OS.OperatorSplittingIntegrator, integrator::ThunderboltTimeIntegrator, dof_range, sync, cache::AbstractTimeSolverCache, tend)
+function OS.advance_solution_to!(outer_integrator::OS.OperatorSplittingIntegrator, integrator::ThunderboltTimeIntegrator, solution_indices, sync, cache::AbstractTimeSolverCache, tend)
     dt = tend-integrator.t
     SciMLBase.step!(integrator, dt, true)
 end
