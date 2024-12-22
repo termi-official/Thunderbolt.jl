@@ -331,7 +331,7 @@ function OrdinaryDiffEqCore.perform_step!(integ::ThunderboltTimeIntegrator, cach
 end
 
 function init_cache(prob, alg; dt, kwargs...)
-    return setup_solver_cache(prob.f, alg, prob.tspan[1])
+    return setup_solver_cache(prob.f, alg, prob.tspan[1]; kwargs...)
 end
 
 function setup_u(prob::AbstractSemidiscreteProblem, solver, alias_u0)
