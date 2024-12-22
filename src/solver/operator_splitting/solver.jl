@@ -27,7 +27,7 @@ function init_cache(f::GenericSplitFunction, alg::LieTrotterGodunov;
     LieTrotterGodunovCache(_u, _uprev, inner_caches)
 end
 
-@inline @unroll function advance_solution_to!(outer_integrator::OperatorSplittingIntegrator, subintegrators::Tuple, dof_ranges::Tuple, synchronizers::Tuple, cache::LieTrotterGodunovCache, tnext)
+@inline @unroll function advance_solution_to!(outer_integrator::OperatorSplittingIntegrator, subintegrators::Tuple, solution_indices::Tuple, synchronizers::Tuple, cache::LieTrotterGodunovCache, tnext)
     # We assume that the integrators are already synced
     @unpack inner_caches = cache
     # For each inner operator
@@ -35,11 +35,16 @@ end
     @unroll for subinteg in subintegrators
         i += 1
         synchronizer = synchronizers[i]
-        dof_range    = dof_ranges[i]
+        idxs         = solution_indices[i]
+        cache        = inner_caches[i]
+
         # prepare_local_step!(uparent, subinteg)
-        forward_sync_subintegrator!(outer_integrator, subinteg, dof_range, synchronizer)
-        advance_solution_to!(outer_integrator, subinteg, dof_range, synchronizer, inner_caches[i], tnext)
+        forward_sync_subintegrator!(outer_integrator, subinteg, idxs, synchronizer)
+        advance_solution_to!(outer_integrator, subinteg, idxs, synchronizer, cache, tnext)
+        if !(subinteg isa Tuple) && subinteg.sol.retcode ∉ (SciMLBase.ReturnCode.Default, SciMLBase.ReturnCode.Success)
+            return
+        end
         # finalize_local_step!(uparent, subinteg)
-        backward_sync_internal!(outer_integrator, subinteg, dof_range)
+        backward_sync_subintegrator!(outer_integrator, subinteg, idxs)
     end
 end 

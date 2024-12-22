@@ -6,7 +6,7 @@ end
 
 IntegratorStats() = IntegratorStats(0,0)
 
-Base.@kwdef  struct IntegratorOptions{tType, msgType, F1, F2, F3, F4, F5, SType, tstopsType, saveatType, discType, tcache, savecache, disccache}
+Base.@kwdef mutable struct IntegratorOptions{tType, msgType, F1, F2, F3, F4, F5, SType, tstopsType, saveatType, discType, tcache, savecache, disccache}
     force_dtmin::Bool = false
     dtmin::tType = eps(tType)
     dtmax::tType = Inf

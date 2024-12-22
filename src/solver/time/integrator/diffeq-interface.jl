@@ -34,10 +34,72 @@ end
 
 SciMLBase.get_sol(integrator::ThunderboltTimeIntegrator) = integrator.sol
 
+function SciMLBase.set_proposed_dt!(integrator::ThunderboltTimeIntegrator, dt)
+    if integrator.dtchangeable == true
+        integrator.dt = dt
+    elseif integrator.dt != dt
+        error("Trying to change dt on constant time step integrator.")
+    end
+end
+
 # ---------------------------------- DiffEqBase.jl Interface ------------------------------------
 DiffEqBase.get_tstops(integ::ThunderboltTimeIntegrator) = integ.opts.tstops
 DiffEqBase.get_tstops_array(integ::ThunderboltTimeIntegrator) = get_tstops(integ).valtree
 DiffEqBase.get_tstops_max(integ::ThunderboltTimeIntegrator) = maximum(get_tstops_array(integ))
+
+
+DiffEqBase.has_reinit(integrator::ThunderboltTimeIntegrator) = true
+function DiffEqBase.reinit!(
+    integrator::ThunderboltTimeIntegrator,
+    u0 = integrator.sol.prob.u0;
+    t0 = integrator.sol.prob.tspan[1],
+    tf = integrator.sol.prob.tspan[2],
+    dt0 = tf-t0,
+    erase_sol = false,
+    tstops = integrator.opts.tstops_cache,
+    saveat =  integrator.opts.saveat_cache,
+    d_discontinuities = integrator.opts.d_discontinuities_cache,
+    reinit_callbacks = true,
+    reinit_retcode = true,
+    reinit_cache = true,
+)
+    SciMLBase.recursivecopy!(integrator.u, u0)
+    SciMLBase.recursivecopy!(integrator.uprev, integrator.u)
+    integrator.t = t0
+    integrator.tprev = t0
+
+    integrator.iter = 0
+    integrator.u_modified = false
+
+    integrator.stats.naccept = 0
+    integrator.stats.nreject = 0
+
+    if erase_sol
+        resize!(integrator.sol.t, 0)
+        resize!(integrator.sol.u, 0)
+    end
+    if reinit_callbacks
+        DiffEqBase.initialize!(integrator.opts.callback, u0, t0, integrator)
+    else # always reinit the saving callback so that t0 can be saved if needed
+        saving_callback = integrator.opts.callback.discrete_callbacks[end]
+        DiffEqBase.initialize!(saving_callback, u0, t0, integrator)
+    end
+    if reinit_retcode
+        integrator.sol = DiffEqBase.solution_new_retcode(integrator.sol, SciMLBase.ReturnCode.Default)
+    end
+
+    tType = typeof(integrator.t)
+    tspan = (tType(t0), tType(tf))
+    integrator.opts.tstops = OrdinaryDiffEqCore.initialize_tstops(tType, tstops, d_discontinuities, tspan)
+    integrator.opts.saveat = OrdinaryDiffEqCore.initialize_saveat(tType, saveat, tspan)
+    integrator.opts.d_discontinuities = OrdinaryDiffEqCore.initialize_d_discontinuities(tType,
+        d_discontinuities,
+        tspan)
+
+    if reinit_cache
+        DiffEqBase.initialize!(integrator, integrator.cache)
+    end
+end
 
 
 # ----------------------------------- OrdinaryDiffEqCore compat ----------------------------------

@@ -37,12 +37,12 @@ end
 
 
 # struct StandardSynchronizationMap{uMapType, pMapType}
-#     unknown_indices::uMapType
+#     solution_indices::uMapType
 #     parameter_indices::pMapType
 # end
 
-function forward_sync_subintegrator!(outer_integrator::OperatorSplittingIntegrator, inner_integrator::DiffEqBase.DEIntegrator, dof_range, sync)
-    forward_sync_internal!(outer_integrator, inner_integrator, dof_range)
+function forward_sync_subintegrator!(outer_integrator::OperatorSplittingIntegrator, inner_integrator::DiffEqBase.DEIntegrator, solution_indices, sync)
+    forward_sync_internal!(outer_integrator, inner_integrator, solution_indices)
     forward_sync_external!(outer_integrator, inner_integrator, sync)
 end
 
@@ -53,15 +53,15 @@ end
 # This is a bit tricky, because per default the operator splitting integrators share their solution vector. However, there is also the case
 # when part of the problem is on a different device (thing e.g. about operator A being on CPU and B being on GPU).
 # This case should be handled with special synchronizers.
-forward_sync_internal!(outer_integrator::OperatorSplittingIntegrator, inner_integrator::OperatorSplittingIntegrator, dof_range) = nothing
-backward_sync_internal!(outer_integrator::OperatorSplittingIntegrator, inner_integrator::OperatorSplittingIntegrator, dof_range) = nothing
+forward_sync_internal!(outer_integrator::OperatorSplittingIntegrator, inner_integrator::OperatorSplittingIntegrator, solution_indices) = nothing
+backward_sync_internal!(outer_integrator::OperatorSplittingIntegrator, inner_integrator::OperatorSplittingIntegrator, solution_indices) = nothing
 
-function forward_sync_internal!(outer_integrator::OperatorSplittingIntegrator, inner_integrator::DiffEqBase.DEIntegrator, unknown_indices)
-    @views uouter = outer_integrator.u[unknown_indices]
+function forward_sync_internal!(outer_integrator::OperatorSplittingIntegrator, inner_integrator::DiffEqBase.DEIntegrator, solution_indices)
+    @views uouter = outer_integrator.u[solution_indices]
     sync_vectors!(inner_integrator.uprev, uouter)
 end
-function backward_sync_internal!(outer_integrator::OperatorSplittingIntegrator, inner_integrator::DiffEqBase.DEIntegrator, unknown_indices)
-    @views uouter = outer_integrator.u[unknown_indices]
+function backward_sync_internal!(outer_integrator::OperatorSplittingIntegrator, inner_integrator::DiffEqBase.DEIntegrator, solution_indices)
+    @views uouter = outer_integrator.u[solution_indices]
     sync_vectors!(uouter, inner_integrator.u)
 end
 
@@ -83,3 +83,29 @@ synchronize_solution_with_parameters!(outer_integrator::OperatorSplittingIntegra
 #     @views uouter = outer_integrator.u[sync.parameter_indices]
 #     sync_vectors!(p[1], uouter)
 # end
+
+
+function build_solution_index_tree(f::GenericSplitFunction)
+    return ntuple(i->build_solution_index_tree_recursion(f.functions[i], f.solution_indices[i]), length(f.functions))
+end
+
+function build_solution_index_tree_recursion(f::GenericSplitFunction, solution_indices)
+    return ntuple(i->build_solution_index_tree_recursion(f.functions[i], f.solution_indices[i]), length(f.functions))
+end
+
+function build_solution_index_tree_recursion(f, solution_indices)
+    return solution_indices
+end
+
+
+function build_synchronizer_tree(f::GenericSplitFunction)
+    return ntuple(i->build_synchronizer_tree_recursion(f.functions[i], f.synchronizers[i]), length(f.functions))
+end
+
+function build_synchronizer_tree_recursion(f::GenericSplitFunction, synchronizers)
+    return ntuple(i->build_synchronizer_tree_recursion(f.functions[i], f.synchronizers[i]), length(f.functions))
+end
+
+function build_synchronizer_tree_recursion(f, synchronizer)
+    return synchronizer
+end

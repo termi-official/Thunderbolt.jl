@@ -1,8 +1,3 @@
-function OS.synchronize_subintegrator!(subintegrator::ThunderboltTimeIntegrator, integrator::OS.OperatorSplittingIntegrator)
-    @unpack t, dt = integrator
-    # subintegrator.t = t
-    # subintegrator.dt = dt
-end
 # TODO some operator splitting methods require to go back in time, so we need to figure out what the best way is.
 OS.tdir(integ::ThunderboltTimeIntegrator) = integ.tdir
 
@@ -22,7 +17,7 @@ fix_solution_buffer_sizes!(integrator, sol::DummyODESolution) = nothing
 
 OS.recursive_null_parameters(stuff::Union{AbstractSemidiscreteProblem, AbstractSemidiscreteFunction}) = SciMLBase.NullParameters()
 
-function OS.build_subintegrators_with_cache(
+function OS.build_subintegrator_tree_with_cache(
     f::DiffEqBase.AbstractDiffEqFunction, # f::AbstractSemidiscreteFunction, # <- This is a temporary hotfix :)
     alg::AbstractSolver, p,
     uprevouter::AbstractVector, uouter::AbstractVector,
