@@ -150,8 +150,7 @@ function SciMLBase.__init(
     controller = nothing,
     maxiters = 1000000,
     dense = save_everystep &&
-                    !(alg isa DAEAlgorithm) && !(prob isa DiscreteProblem) &&
-                    isempty(saveat),
+                    !(alg isa DAEAlgorithm) && !(prob isa DiscreteProblem),
     dtmin = nothing,
     dtmax = nothing,
     kwargs...,
@@ -163,6 +162,8 @@ function SciMLBase.__init(
     _dt = dt
     tdir = tf > t0 ? 1.0 : -1.0
     tType = typeof(dt)
+
+    dtchangeable = DiffEqBase.isadaptive(alg)
 
     dtmin = dtmin === nothing ? tType(0.0) : tType(dtmin)
     dtmax = dtmax === nothing ? tType(tf-t0) : tType(dtmax)
@@ -246,7 +247,7 @@ function SciMLBase.__init(
         cache,
         callback_cache,
         sol,
-        true,
+        dtchangeable,
         adaptive ? controller : nothing,
         IntegratorStats(),
         IntegratorOptions(

@@ -21,8 +21,8 @@ mutable struct OperatorSplittingIntegrator{
     solidxTreeType,
     syncTreeType,
 } <: DiffEqBase.AbstractODEIntegrator{algType, true, uType, tType}
-    f::fType
-    alg::algType
+    const f::fType
+    const alg::algType
     u::uType # Master Solution
     uprev::uType # Master Solution
     tmp::uType # Interpolation buffer
@@ -31,7 +31,7 @@ mutable struct OperatorSplittingIntegrator{
     tprev::tType
     dt::tType # This is the time step length which which we intend to advance
     _dt::tType # This is the time step length which which we use during time marching
-    dtchangeable::Bool # Indicator whether _dt can be changed
+    const dtchangeable::Bool # Indicator whether _dt can be changed
     tstops::heapType
     _tstops::tstopsType # argument to __init used as default argument to reinit!
     saveat::heapType
@@ -62,8 +62,6 @@ function DiffEqBase.__init(
     adaptive = DiffEqBase.isadaptive(alg),
     controller = nothing,
     alias_u0 = true,
-    save_func = (u, t) -> copy(u), # custom kwarg
-    dtchangeable = DiffEqBase.isadaptive(alg),           # custom kwarg
     verbose = true,
     kwargs...,
 )
@@ -74,6 +72,8 @@ function DiffEqBase.__init(
     _dt = dt
     dt = tf > t0 ? dt : -dt
     tType = typeof(dt)
+
+    dtchangeable = DiffEqBase.isadaptive(alg)
 
     if tstops isa AbstractArray || tstops isa Tuple || tstops isa Number
         _tstops = nothing
@@ -90,8 +90,9 @@ function DiffEqBase.__init(
     u     = setup_u(prob, alg, alias_u0)
     uprev = setup_u(prob, alg, false)
     tmp   = setup_u(prob, alg, false)
+    uType                = typeof(u)
 
-    sol = DiffEqBase.build_solution(prob, alg, typeof(t0)[], typeof(save_func(u0, t0))[])
+    sol = DiffEqBase.build_solution(prob, alg, tType[], uType[])
 
     callback = DiffEqBase.CallbackSet(callback)
 
