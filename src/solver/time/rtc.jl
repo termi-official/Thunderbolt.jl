@@ -32,8 +32,8 @@ end
 
 @inline DiffEqBase.get_tmp_cache(integrator::OS.OperatorSplittingIntegrator, alg::OS.AbstractOperatorSplittingAlgorithm, cache::ReactionTangentControllerCache) = DiffEqBase.get_tmp_cache(integrator, alg, cache.ltg_cache)
 
-@inline function OS.advance_solution_to!(subintegrators::Tuple, cache::ReactionTangentControllerCache, tnext; kwargs...) 
-    OS.advance_solution_to!(subintegrators, cache.ltg_cache, tnext; kwargs...)
+@inline function OS.advance_solution_to!(outer_integrator::OS.OperatorSplittingIntegrator, subintegrators::Tuple, solution_indices::Tuple, synchronizers::Tuple, cache::ReactionTangentControllerCache, tnext)
+    OS.advance_solution_to!(outer_integrator, subintegrators, solution_indices, synchronizers, cache.ltg_cache, tnext)
 end
 
 @inline DiffEqBase.isadaptive(::ReactionTangentController) = true
@@ -44,7 +44,7 @@ Returns the maximal reaction magnitude using the [`PointwiseODEFunction`](@ref) 
 It is assumed that the problem containing the reaction tangent is a [`PointwiseODEFunction`](@ref).
 """
 @inline function get_reaction_tangent(integrator::OS.OperatorSplittingIntegrator)
-    R, _ = _get_reaction_tangent(integrator.subintegrators)
+    R, _ = _get_reaction_tangent(integrator.subintegrator_tree)
     return R
 end
 
@@ -84,7 +84,7 @@ end
     return nothing # Do nothing
 end
 
-function OS.build_subintegrators_with_cache(
+function OS.build_subintegrator_tree_with_cache(
     prob::OperatorSplittingProblem, alg::ReactionTangentController,
     uprevouter::AbstractVector, uouter::AbstractVector,
     solution_indices,
@@ -92,7 +92,7 @@ function OS.build_subintegrators_with_cache(
     tstops, saveat, d_discontinuities, callback,
     adaptive, verbose,
 )
-    subintegrators, inner_cache = OS.build_subintegrators_with_cache(
+    subintegrators, inner_cache = OS.build_subintegrator_tree_with_cache(
         prob, alg.ltg, uprevouter, uouter, solution_indices,
         t0, dt, tf,
         tstops, saveat, d_discontinuities, callback,

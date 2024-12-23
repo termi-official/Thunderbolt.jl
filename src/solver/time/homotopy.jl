@@ -15,30 +15,83 @@ mutable struct HomotopyPathSolverCache{ISC, T, VT <: AbstractVector{T}} <: Abstr
     tmp::VT
 end
 
-function setup_solver_cache(f::AbstractSemidiscreteFunction, solver::HomotopyPathSolver, t₀)
+function setup_solver_cache(f::AbstractSemidiscreteFunction, solver::HomotopyPathSolver, t₀;
+        uprev = nothing,
+        u = nothing,
+        alias_uprev = true,
+        alias_u     = false,
+    )
     inner_solver_cache = setup_solver_cache(f, solver.inner_solver)
-    T = Float64 # TODO query
-    vtype = Vector{T}
+
+    vtype = Vector{Float64}
+
+    if u === nothing
+        _u = vtype(undef, solution_size(f))
+        @warn "Cannot initialize u for $(typeof(solver))."
+    else
+        _u = alias_u ? u : SciMLBase.recursivecopy(u)
+    end
+
+    if uprev === nothing
+        _uprev = vtype(undef, solution_size(f))
+        _uprev .= u
+    else
+        _uprev = alias_uprev ? uprev : SciMLBase.recursivecopy(uprev)
+    end
+
     HomotopyPathSolverCache(
         inner_solver_cache,
-        vtype(undef, solution_size(f)),
-        vtype(undef, solution_size(f)),
+        _u,
+        _uprev,
         vtype(undef, solution_size(f)),
     )
 end
 
-function setup_solver_cache(f::AbstractSemidiscreteBlockedFunction, solver::HomotopyPathSolver, t₀)
+function setup_solver_cache(f::AbstractSemidiscreteBlockedFunction, solver::HomotopyPathSolver, t₀;
+        uprev = nothing,
+        u = nothing,
+        alias_uprev = true,
+        alias_u     = false,
+    )
     inner_solver_cache = setup_solver_cache(f, solver.inner_solver)
-    T = Float64 # TODO query
-    vtype = Vector{T}
+
+    vtype = Vector{Float64}
+    if u === nothing
+        _u = mortar([
+            vtype(undef, solution_size(fi)) for fi ∈ blocks(f)
+        ])
+        @warn "Cannot initialize u for $(typeof(solver))."
+    else
+        if alias_u
+            _u     = u
+        else
+            _u = mortar([
+                vtype(undef, solution_size(fi)) for fi ∈ blocks(f)
+            ])
+            _u .= u
+        end
+    end
+
+    if uprev === nothing
+        _uprev = mortar([
+            vtype(undef, solution_size(fi)) for fi ∈ blocks(f)
+        ])
+        _uprev .= u
+    else
+        if alias_uprev
+            _uprev     = uprev
+        else
+            _uprev = mortar([
+                vtype(undef, solution_size(fi)) for fi ∈ blocks(f)
+            ])
+            _uprev .= uprev
+        end
+    end
+
     HomotopyPathSolverCache(
         inner_solver_cache,
-        mortar([
-            vtype(undef, solution_size(fi)) for fi ∈ blocks(f)
-        ]),
-        mortar([
-            vtype(undef, solution_size(fi)) for fi ∈ blocks(f)
-        ]),
+        _u,
+        _uprev,
         mortar([
             vtype(undef, solution_size(fi)) for fi ∈ blocks(f)
         ]),

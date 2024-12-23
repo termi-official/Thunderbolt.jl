@@ -169,7 +169,7 @@ using UnPack
                 ufinal = copy(integrator.u)
                 @test ufinal ≉ u0 # Make sure the solve did something
 
-                DiffEqBase.reinit!(integrator, u0; tspan)
+                DiffEqBase.reinit!(integrator)
                 @test integrator.sol.retcode == DiffEqBase.ReturnCode.Default
                 for (u, t) in DiffEqBase.TimeChoiceIterator(integrator, 0.0:5.0:100.0)
                 end
@@ -207,7 +207,7 @@ using UnPack
                     integrator_NaN = DiffEqBase.init(prob_NaN, tstepper1, dt=dt, verbose=true, alias_u0=false)
                     @test integrator_NaN.sol.retcode == DiffEqBase.ReturnCode.Default
                     DiffEqBase.solve!(integrator_NaN)
-                    @test integrator_NaN.sol.retcode == DiffEqBase.ReturnCode.Failure
+                    @test integrator_NaN.sol.retcode ∈ (DiffEqBase.ReturnCode.Unstable, DiffEqBase.ReturnCode.DtNaN)
                 end
             end
             integrator = DiffEqBase.init(prob, timestepper, dt=dt, verbose=true, alias_u0=false)

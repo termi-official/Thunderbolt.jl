@@ -4,7 +4,7 @@ using Thunderbolt
     function simple_initializer!(u₀, f::GenericSplitFunction)
         # TODO cleaner implementation. We need to extract this from the types or via dispatch.
         heatfun = f.functions[1]
-        heat_dofrange = f.dof_ranges[1]
+        heat_dofrange = f.solution_indices[1]
         odefun = f.functions[2]
         ionic_model = odefun.ode
 
