@@ -1,4 +1,4 @@
-# ----------------------------------- SciMLBase.jl Interface ------------------------------------
+# ----------------------------------- SciMLBase.jl Integrator Interface ------------------------------------
 SciMLBase.has_stats(::ThunderboltTimeIntegrator) = true
 
 SciMLBase.has_tstop(integrator::ThunderboltTimeIntegrator) = !isempty(integrator.opts.tstops)
@@ -40,6 +40,24 @@ function SciMLBase.set_proposed_dt!(integrator::ThunderboltTimeIntegrator, dt)
     elseif integrator.dt != dt
         error("Trying to change dt on constant time step integrator.")
     end
+end
+
+function SciMLBase.isadaptive(integrator::ThunderboltTimeIntegrator)
+    integrator.controller === nothing && return false
+    if !SciMLBase.isadaptive(integrator.alg)
+        error("Algorithm $(integrator.alg) is not adaptive, but the integrator is trying to adapt. Aborting.")
+    end
+    return true
+end
+
+function SciMLBase.last_step_failed(integrator::ThunderboltTimeIntegrator)
+    integrator.last_step_failed
+end
+
+SciMLBase.postamble!(integrator::ThunderboltTimeIntegrator) = _postamble!(integrator)
+
+function SciMLBase.savevalues!(integrator::ThunderboltTimeIntegrator, force_save = false, reduce_size = true)
+    OrdinaryDiffEqCore._savevalues!(integrator, force_save, reduce_size)
 end
 
 # ---------------------------------- DiffEqBase.jl Interface ------------------------------------
@@ -118,6 +136,13 @@ OrdinaryDiffEqCore.alg_extrapolates(alg::AbstractSolver) = false
 
 OrdinaryDiffEqCore.choose_algorithm!(integrator, cache::AbstractTimeSolverCache) = nothing
 
+function OrdinaryDiffEqCore.perform_step!(integ::ThunderboltTimeIntegrator, cache::AbstractTimeSolverCache)
+    integ.opts.verbose && @info "Time integration on [$(integ.t), $(integ.t+integ.dt)] (Δt=$(integ.dt))"
+    if !perform_step!(integ.f, cache, integ.t, integ.dt)
+        integ.force_stepfail = true
+    end
+    return nothing
+end
 
 # --------------------------- New Interface Stuff (to be upstreamed) ---------------------------------
 

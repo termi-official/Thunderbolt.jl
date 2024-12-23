@@ -91,29 +91,16 @@ mutable struct ThunderboltTimeIntegrator{
     just_hit_tstop::Bool
 end
 
+function init_cache(prob, alg; dt, kwargs...)
+    return setup_solver_cache(prob.f, alg, prob.tspan[1]; kwargs...)
+end
+
 # Interpolation
 function (integrator::ThunderboltTimeIntegrator)(tmp, t)
     OS.linear_interpolation!(tmp, t, integrator.uprev, integrator.u, integrator.t-integrator.dt, integrator.t)
 end
 
-function SciMLBase.isadaptive(integrator::ThunderboltTimeIntegrator)
-    integrator.controller === nothing && return false
-    if !SciMLBase.isadaptive(integrator.alg)
-        error("Algorithm $(integrator.alg) is not adaptive, but the integrator is trying to adapt. Aborting.")
-    end
-    return true
-end
-
-function SciMLBase.last_step_failed(integrator::ThunderboltTimeIntegrator)
-    integrator.last_step_failed
-end
-
-SciMLBase.postamble!(integrator::ThunderboltTimeIntegrator) = _postamble!(integrator)
-
-function SciMLBase.savevalues!(integrator::ThunderboltTimeIntegrator, force_save = false, reduce_size = true)
-    OrdinaryDiffEqCore._savevalues!(integrator, force_save, reduce_size)
-end
-
+# CommonSolve interface
 @inline function SciMLBase.step!(integrator::ThunderboltTimeIntegrator)
     @inbounds while true # Emulate do-while
         step_header!(integrator)
@@ -290,15 +277,7 @@ function SciMLBase.__init(
     return integrator
 end
 
-function DiffEqBase.initialize!(integrator::ThunderboltTimeIntegrator, cache::AbstractTimeSolverCache)
-    if cache.uₙ   !== integrator.u
-        cache.uₙ   .= integrator.u
-    end
-
-    if cache.uₙ₋₁ !== integrator.u
-        cache.uₙ₋₁ .= integrator.u
-    end
-end
+DiffEqBase.initialize!(integrator::ThunderboltTimeIntegrator, cache::AbstractTimeSolverCache) = nothing
 
 function SciMLBase.solve!(integrator::ThunderboltTimeIntegrator)
     @inbounds while SciMLBase.has_tstop(integrator)
@@ -322,19 +301,7 @@ function SciMLBase.solve!(integrator::ThunderboltTimeIntegrator)
     return integrator.sol = SciMLBase.solution_new_retcode(integrator.sol, SciMLBase.ReturnCode.Success)
 end
 
-# Compat with OrdinaryDiffEq
-function OrdinaryDiffEqCore.perform_step!(integ::ThunderboltTimeIntegrator, cache::AbstractTimeSolverCache)
-    integ.opts.verbose && @info "Time integration on [$(integ.t), $(integ.t+integ.dt)] (Δt=$(integ.dt))"
-    if !perform_step!(integ.f, cache, integ.t, integ.dt)
-        integ.force_stepfail = true
-    end
-    return nothing
-end
-
-function init_cache(prob, alg; dt, kwargs...)
-    return setup_solver_cache(prob.f, alg, prob.tspan[1]; kwargs...)
-end
-
+# Utils
 function setup_u(prob::AbstractSemidiscreteProblem, solver, alias_u0)
     if alias_u0
         return prob.u0
