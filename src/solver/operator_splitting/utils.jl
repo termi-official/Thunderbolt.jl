@@ -35,12 +35,6 @@ function sync_vectors!(a, b)
     end
 end
 
-
-# struct StandardSynchronizationMap{uMapType, pMapType}
-#     solution_indices::uMapType
-#     parameter_indices::pMapType
-# end
-
 function forward_sync_subintegrator!(outer_integrator::OperatorSplittingIntegrator, inner_integrator::DiffEqBase.DEIntegrator, solution_indices, sync)
     forward_sync_internal!(outer_integrator, inner_integrator, solution_indices)
     forward_sync_external!(outer_integrator, inner_integrator, sync)
@@ -84,7 +78,7 @@ synchronize_solution_with_parameters!(outer_integrator::OperatorSplittingIntegra
 #     sync_vectors!(p[1], uouter)
 # end
 
-
+# TODO this should go into a custom tree data structure instead of into a tuple-tree
 function build_solution_index_tree(f::GenericSplitFunction)
     return ntuple(i->build_solution_index_tree_recursion(f.functions[i], f.solution_indices[i]), length(f.functions))
 end

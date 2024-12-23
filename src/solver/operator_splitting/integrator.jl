@@ -96,7 +96,7 @@ function DiffEqBase.__init(
 
     callback = DiffEqBase.CallbackSet(callback)
 
-
+    # There should be a dispatch which calls some __init dispatch on the leaf algorithms
     subintegrator_tree, cache = build_subintegrator_tree_with_cache(
         prob, alg,
         uprev, u,
@@ -403,6 +403,11 @@ function advance_solution_to!(integrator::OperatorSplittingIntegrator, tnext)
     advance_solution_to!(integrator, integrator.cache, tnext)
 end
 
+function advance_solution_to!(outer_integrator::OperatorSplittingIntegrator, integrator::DiffEqBase.DEIntegrator, solution_indices, sync, cache, tend)
+    dt = tend-integrator.t
+    SciMLBase.step!(integrator, dt, true)
+end
+
 DiffEqBase.get_dt(integrator::OperatorSplittingIntegrator) = integrator._dt
 function set_dt!(integrator::OperatorSplittingIntegrator, dt)
     # TODO: figure out interface for recomputing other objects (linear operators, etc)
@@ -436,10 +441,12 @@ end
     end
 end
 
-function OS.synchronize_subintegrator!(subintegrator::SciMLBase.DEIntegrator, integrator::OS.OperatorSplittingIntegrator)
+function synchronize_subintegrator!(subintegrator::SciMLBase.DEIntegrator, integrator::OperatorSplittingIntegrator)
     @unpack t, dt = integrator
     @assert subintegrator.t == t
-    SciMLBase.set_proposed_dt!(subintegrator, dt)
+    if !DiffEqBase.isadaptive(subintegrator)
+        SciMLBase.set_proposed_dt!(subintegrator, dt)
+    end
 end
 
 function advance_solution_to!(integrator::OperatorSplittingIntegrator, cache::AbstractOperatorSplittingCache, tnext::Number)
@@ -514,19 +521,5 @@ function build_subintegrator_tree_with_cache(
     )
 end
 
-# TODO check for type stability
-@unroll function forward_sync_subintegrator!(outer_integrator::OperatorSplittingIntegrator, subintegrator_tree::Tuple, solution_indices::Tuple, synchronizers::Tuple)
-    # i = 0
-    # @unroll for subintegrator in subintegrator_tree
-    #     i += 1
-    #     forward_sync_subintegrator!(outer_integrator, subintegrator, solution_indices[i], synchronizers[i])
-    # end
-end
-
-@unroll function backward_sync_subintegrator!(outer_integrator::OperatorSplittingIntegrator, subintegrator_tree::Tuple, solution_indices::Tuple)
-    # i = 0
-    # @unroll for subintegrator in subintegrator_tree
-    #     i += 1
-    #     backward_sync_subintegrator!(uparent, subintegrator, synchronizers[i])
-    # end
-end
+forward_sync_subintegrator!(outer_integrator::OperatorSplittingIntegrator, subintegrator_tree::Tuple, solution_indices::Tuple, synchronizers::Tuple) = nothing
+backward_sync_subintegrator!(outer_integrator::OperatorSplittingIntegrator, subintegrator_tree::Tuple, solution_indices::Tuple) = nothing

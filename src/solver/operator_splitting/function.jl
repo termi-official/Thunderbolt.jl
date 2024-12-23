@@ -39,4 +39,4 @@ GenericSplitFunction(fs::Tuple, drs::Tuple) = GenericSplitFunction(fs, drs, ntup
 
 recursive_null_parameters(f::AbstractOperatorSplitFunction) = @error "Not implemented"
 recursive_null_parameters(f::GenericSplitFunction) = ntuple(i->recursive_null_parameters(get_operator(f, i)), length(f.functions));
-recursive_null_parameters(f::DiffEqBase.AbstractODEFunction) = DiffEqBase.NullParameters()
+recursive_null_parameters(f::DiffEqBase.AbstractDiffEqFunction) = DiffEqBase.NullParameters()

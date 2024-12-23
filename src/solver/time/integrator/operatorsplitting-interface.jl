@@ -1,11 +1,3 @@
-# TODO some operator splitting methods require to go back in time, so we need to figure out what the best way is.
-OS.tdir(integ::ThunderboltTimeIntegrator) = integ.tdir
-
-function OS.advance_solution_to!(outer_integrator::OS.OperatorSplittingIntegrator, integrator::ThunderboltTimeIntegrator, solution_indices, sync, cache::AbstractTimeSolverCache, tend)
-    dt = tend-integrator.t
-    SciMLBase.step!(integrator, dt, true)
-end
-
 struct DummyODESolution <: SciMLBase.AbstractODESolution{Float64, 2, Vector{Float64}}
     retcode::SciMLBase.ReturnCode.T
 end
@@ -14,8 +6,6 @@ function SciMLBase.solution_new_retcode(sol::DummyODESolution, retcode)
     return DiffEqBase.@set sol.retcode = retcode
 end
 fix_solution_buffer_sizes!(integrator, sol::DummyODESolution) = nothing
-
-OS.recursive_null_parameters(stuff::Union{AbstractSemidiscreteProblem, AbstractSemidiscreteFunction}) = SciMLBase.NullParameters()
 
 function OS.build_subintegrator_tree_with_cache(
     f::DiffEqBase.AbstractDiffEqFunction, # f::AbstractSemidiscreteFunction, # <- This is a temporary hotfix :)
