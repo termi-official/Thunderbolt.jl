@@ -2,7 +2,7 @@ import Thunderbolt: OS, ThunderboltTimeIntegrator
 # using BenchmarkTools
 using UnPack
 
-# @testset "Operator Splitting API" begin
+@testset "Operator Splitting API" begin
 
     ODEFunction = Thunderbolt.DiffEqBase.ODEFunction
 
@@ -227,4 +227,4 @@ using UnPack
             end
         end
     end
-# end
+end
