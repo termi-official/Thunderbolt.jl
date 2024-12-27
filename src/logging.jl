@@ -24,7 +24,7 @@ end
 
 function integration_finalize_monitor(integrator, progress_monitor::DefaultProgressMonitor)
     # (; id)         = progress_monitor
-    (; t, d, iter) = integrator
+    (; t, iter) = integrator
     # push!(msgs, id => "$id: done at $t.")
     @info "Finished integration at t=$t." iter=iter _group=:timeintegration
 end
@@ -53,7 +53,6 @@ end
 #
 
 function linear_finalize_monitor(lincache, progress_monitor::DefaultProgressMonitor, sol)
-    # (; id, msgs) = progress_monitor
     stats = hasproperty(lincache.cacheval, :stats) ? lincache.cacheval.stats : nothing
     success = DiffEqBase.SciMLBase.successful_retcode(sol.retcode) || sol.retcode == DiffEqBase.ReturnCode.Default
     if stats === nothing
