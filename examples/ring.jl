@@ -82,6 +82,8 @@ using Thunderbolt.TimerOutputs
 TimerOutputs.enable_debug_timings(Thunderbolt)
 TimerOutputs.reset_timer!()
 for (u, t) in OS.TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
+    @info t,norm(u)
+
     @unpack dh = problem.f
     grid = get_grid(dh)
     cvc = CellValueCollection(qr_collection, ip_mech)
