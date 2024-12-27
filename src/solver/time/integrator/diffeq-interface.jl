@@ -137,7 +137,6 @@ OrdinaryDiffEqCore.alg_extrapolates(alg::AbstractSolver) = false
 OrdinaryDiffEqCore.choose_algorithm!(integrator, cache::AbstractTimeSolverCache) = nothing
 
 function OrdinaryDiffEqCore.perform_step!(integ::ThunderboltTimeIntegrator, cache::AbstractTimeSolverCache)
-    # integ.opts.verbose && @info "Time integration on [$(integ.t), $(integ.t+integ.dt)] (Δt=$(integ.dt))"
     if !perform_step!(integ.f, cache, integ.t, integ.dt)
         integ.force_stepfail = true
     end
@@ -327,7 +326,7 @@ function step_footer!(integrator::ThunderboltTimeIntegrator)
 
     integration_monitor_step(integrator)
 
-    nothing
+    return nothing
 end
 
 notify_integrator_hit_tstop!(integrator) = integrator.just_hit_tstop = true
