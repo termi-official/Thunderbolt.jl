@@ -6,7 +6,7 @@ end
 
 IntegratorStats() = IntegratorStats(0,0)
 
-Base.@kwdef mutable struct IntegratorOptions{tType, msgType, F1, F2, F3, F4, F5, SType, tstopsType, saveatType, discType, tcache, savecache, disccache}
+Base.@kwdef mutable struct IntegratorOptions{tType, F1, F2, F3, F4, F5, progressMonitorType, SType, tstopsType, saveatType, discType, tcache, savecache, disccache}
     force_dtmin::Bool = false
     dtmin::tType = eps(tType)
     dtmax::tType = Inf
@@ -22,11 +22,9 @@ Base.@kwdef mutable struct IntegratorOptions{tType, msgType, F1, F2, F3, F4, F5,
     # Function to check whether the solution is unstable
     unstable_check::F4 = DiffEqBase.ODE_DEFAULT_UNSTABLE_CHECK
     # This is mostly OrdinaryDiffEqCore compat
-    progress::Bool = false # FIXME
-    progress_steps::Int = 0
-    progress_name::String = ""
-    progress_message::msgType = ""
-    progress_id::Symbol = :msg
+    progress::Bool = true
+    progress_steps::Int = 1
+    progress_monitor::progressMonitorType = DefaultProgressMonitor()
     save_idxs::SType = nothing
     save_end::Bool = true
     dense::Bool = false

@@ -137,7 +137,6 @@ OrdinaryDiffEqCore.alg_extrapolates(alg::AbstractSolver) = false
 OrdinaryDiffEqCore.choose_algorithm!(integrator, cache::AbstractTimeSolverCache) = nothing
 
 function OrdinaryDiffEqCore.perform_step!(integ::ThunderboltTimeIntegrator, cache::AbstractTimeSolverCache)
-    integ.opts.verbose && @info "Time integration on [$(integ.t), $(integ.t+integ.dt)] (Δt=$(integ.dt))"
     if !perform_step!(integ.f, cache, integ.t, integ.dt)
         integ.force_stepfail = true
     end
@@ -327,7 +326,7 @@ function step_footer!(integrator::ThunderboltTimeIntegrator)
 
     integration_monitor_step(integrator)
 
-    nothing
+    return nothing
 end
 
 notify_integrator_hit_tstop!(integrator) = integrator.just_hit_tstop = true
@@ -337,20 +336,13 @@ increment_iteration(integrator) = integrator.iter += 1
 
 function integration_monitor_step(integrator)
     if integrator.opts.progress && integrator.iter % integrator.opts.progress_steps == 0
-        OrdinaryDiffEqCore.log_step!(integrator.opts.progress_name, integrator.opts.progress_id,
-            integrator.opts.progress_message, integrator.dt, integrator.u,
-            integrator.p, integrator.t, integrator.sol.prob.tspan)
+        integration_step_monitor(integrator, integrator.opts.progress_monitor)
     end
 end
 
 function finalize_integration_monitor(integrator)
     if integrator.opts.progress
-        @logmsg(LogLevel(-1),
-            integrator.opts.progress_name,
-            _id=integrator.opts.progress_id,
-            message=integrator.opts.progress_message(integrator.dt, integrator.u,
-                integrator.p, integrator.t),
-            progress="done")
+        integration_finalize_monitor(integrator, integrator.opts.progress_monitor)
     end
 end
 

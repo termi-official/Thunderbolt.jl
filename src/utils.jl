@@ -1,3 +1,40 @@
+
+const DEBUG = Preferences.@load_preference("use_debug", false)
+
+"""
+    Thunderbolt.debug_mode(; enable=true)
+
+Helper to turn on (`enable=true`) or off (`enable=false`) debug expressions in Ferrite.
+
+Debug mode influences `Ferrite.@debug expr`: when debug mode is enabled, `expr` is
+evaluated, and when debug mode is disabled `expr` is ignored.
+"""
+function debug_mode(; enable = true)
+    if DEBUG == enable == true
+        @info "Debug mode already enabled."
+    elseif DEBUG == enable == false
+        @info "Debug mode already disabled."
+    else
+        Preferences.@set_preferences!("use_debug" => enable)
+        @info "Debug mode $(enable ? "en" : "dis")abled. Restart the Julia session for this change to take effect!"
+    end
+    return
+end
+
+@static if DEBUG
+    @eval begin
+        macro debugonly(ex)
+            return :($(esc(ex)))
+        end
+    end
+else
+    @eval begin
+        macro debugonly(ex)
+            return nothing
+        end
+    end
+end
+
 # TODO remove these once they are merged
 module FerriteUtils
 include("ferrite-addons/PR883.jl")
@@ -51,9 +88,9 @@ resulting vector is `α` (given in radians).
          and `v \\cdot n = 0`.
 """
 @inline function unproject(v::Vec{dim,T}, n::Vec{dim,T}, α::T)::Vec{dim, T} where {dim, T}
-    @debug @assert norm(v) ≈ 1.0
-    @debug @assert norm(n) ≈ 1.0
-    @debug @assert v ⋅ n ≈ 0.0
+    @debugonly @assert norm(v) ≈ 1.0
+    @debugonly @assert norm(n) ≈ 1.0
+    @debugonly @assert v ⋅ n ≈ 0.0
 
     α ≈ π/2.0 && return n # special case to prevent division by 0
 
@@ -69,7 +106,7 @@ Perform a Rodrigues' rotation of the vector `v` around the axis `a` with `θ` ra
 !!! note It is assumed that the vectors are normalized, i.e. `||v|| = 1` and `||a|| = 1`.
 """
 @inline function rotate_around(v::Vec{dim,T}, a::Vec{dim,T}, θ::T)::Vec{dim,T} where {dim, T}
-    @debug @assert norm(n) ≈ 1.0
+    @debugonly @assert norm(n) ≈ 1.0
 
     return v * cos(θ) + (a × v) * sin(θ) + a * (a ⋅ v) * (1-cos(θ))
 end
@@ -221,7 +258,7 @@ function Ferrite.apply_zero!(K::SparseMatrixCSR, f::AbstractVector, ch::Constrai
 end
 
 function Ferrite.zero_out_rows!(K::SparseMatrixCSR, dofs::Vector{Int}) # can be removed in 0.7 with #24711 merged
-    Ferrite.@debug @assert issorted(dofs)
+    @debugonly @assert issorted(dofs)
     for col in dofs
         r = nzrange(K, col)
         K.nzval[r] .= 0.0

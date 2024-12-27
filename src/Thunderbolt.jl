@@ -25,7 +25,9 @@ import Ferrite: vertices, edges, faces, sortedge, sortface
 import Ferrite: get_coordinate_type, getspatialdim
 import Ferrite: reference_shape_value
 
-import Logging: @logmsg
+import Preferences
+
+import Logging: Logging, LogLevel, @info, @logmsg
 
 import SciMLBase
 @reexport import SciMLBase: init, solve, solve!, step!
@@ -43,6 +45,8 @@ import ModelingToolkit: @variables, @parameters, @component, @named,
 import GPUArraysCore: AbstractGPUVector, AbstractGPUArray
 import Adapt:
     Adapt, adapt_structure, adapt
+
+include("logging.jl")
 
 include("utils.jl")
 

@@ -1,19 +1,20 @@
 #########################################################
 ########################## TIME #########################
 #########################################################
-Base.@kwdef struct BackwardEulerSolver{SolverType, SolutionVectorType, SystemMatrixType} <: AbstractSolver
+Base.@kwdef struct BackwardEulerSolver{SolverType, SolutionVectorType, SystemMatrixType, MonitorType} <: AbstractSolver
     inner_solver::SolverType                       = LinearSolve.KrylovJL_CG()
     solution_vector_type::Type{SolutionVectorType} = Vector{Float64}
     system_matrix_type::Type{SystemMatrixType}     = ThreadedSparseMatrixCSR{Float64, Int64}
     # mass operator info
     # diffusion opeartor info
-    verbose                                        = true # Temporary helper for benchmarks
+    # DO NOT USE THIS (will be replaced by proper logging system)
+    monitor::MonitorType = DefaultProgressMonitor()
 end
 
 SciMLBase.isadaptive(::BackwardEulerSolver) = false
 
 # TODO decouple from heat problem via special ODEFunction (AffineODEFunction)
-mutable struct BackwardEulerSolverCache{T, SolutionType <: AbstractVector{T}, MassMatrixType, DiffusionMatrixType, SourceTermType, SolverCacheType} <: AbstractTimeSolverCache
+mutable struct BackwardEulerSolverCache{T, SolutionType <: AbstractVector{T}, MassMatrixType, DiffusionMatrixType, SourceTermType, SolverCacheType, MonitorType} <: AbstractTimeSolverCache
     # Current solution buffer
     uₙ::SolutionType
     # Last solution buffer
@@ -29,7 +30,7 @@ mutable struct BackwardEulerSolverCache{T, SolutionType <: AbstractVector{T}, Ma
     # Last time step length as a check if we have to update K
     Δt_last::T
     # DO NOT USE THIS (will be replaced by proper logging system)
-    verbose::Bool
+    monitor::MonitorType
 end
 
 # Helper to get A into the right form
@@ -68,9 +69,7 @@ function perform_step!(f::TransientDiffusionFunction, cache::BackwardEulerSolver
     # Solve linear problem
     @timeit_debug "inner solve" sol = LinearSolve.solve!(inner_solver)
     solve_failed = !(DiffEqBase.SciMLBase.successful_retcode(sol.retcode) || sol.retcode == DiffEqBase.ReturnCode.Default)
-    if cache.verbose || solve_failed # The latter seems off...
-        @info inner_solver.cacheval.stats
-    end
+    linear_finalize_monitor(inner_solver, cache.monitor, sol)
     return !solve_failed
 end
 
@@ -125,7 +124,7 @@ function setup_solver_cache(f::TransientDiffusionFunction, solver::BackwardEuler
         source_operator,
         inner_cache,
         T(0.0),
-        solver.verbose,
+        solver.monitor,
     )
 
     @timeit_debug "initial assembly" begin
