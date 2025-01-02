@@ -52,6 +52,8 @@ include("utils.jl")
 include("mesh/meshes.jl")
 
 include("ferrite-addons/transfer_operators.jl")
+include("ferrite-addons/gpu/gpugrid.jl")
+include("ferrite-addons/gpu/gpudofhandler.jl")
 
 # Note that some modules below have an "interface.jl" but this one has only a "common.jl".
 # This is simply because there is no modeling interface, but just individual physics modules and couplers.
@@ -89,8 +91,6 @@ include("disambiguation.jl")
 include("modeling/rsafdq2022.jl")
 include("discretization/rsafdq-operator.jl")
 
-include("accelerator/grid.jl")
-include("accelerator/dofhandler.jl")
 
 # TODO put exports into the individual submodules above!
 export
