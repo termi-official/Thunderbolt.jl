@@ -40,8 +40,8 @@ module FerriteUtils
 include("ferrite-addons/PR883.jl")
 end
 
-include("collections.jl")
-include("quadrature_iterator.jl")
+include("ferrite-addons/collections.jl")
+include("ferrite-addons/quadrature_iterator.jl")
 
 function celldofsview(dh::DofHandler, i::Int)
     ndofs = ndofs_per_cell(dh, i)

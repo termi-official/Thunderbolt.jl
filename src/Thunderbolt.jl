@@ -46,13 +46,12 @@ import GPUArraysCore: AbstractGPUVector, AbstractGPUArray
 import Adapt:
     Adapt, adapt_structure, adapt
 
-include("logging.jl")
 
 include("utils.jl")
 
 include("mesh/meshes.jl")
 
-include("transfer_operators.jl")
+include("ferrite-addons/transfer_operators.jl")
 
 # Note that some modules below have an "interface.jl" but this one has only a "common.jl".
 # This is simply because there is no modeling interface, but just individual physics modules and couplers.
@@ -73,15 +72,16 @@ include("discretization/interface.jl")
 include("discretization/fem.jl")
 include("discretization/operator.jl")
 
+include("solver/logging.jl")
 include("solver/interface.jl")
 include("solver/linear.jl")
 include("solver/nonlinear.jl")
 include("solver/time_integration.jl")
 
 
-include("processing/ecg.jl")
+include("modeling/electrophysiology/ecg.jl")
 
-include("io.jl")
+include("ferrite-addons/io.jl")
 
 include("disambiguation.jl")
 
