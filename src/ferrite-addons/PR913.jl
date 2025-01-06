@@ -419,6 +419,7 @@ cellfe(cc::GPUCellCache) = _cellfe(FeTrait(typeof(cc.cell_mem)), cc)
 ############
 Adapt.@adapt_structure GPUGrid
 Adapt.@adapt_structure GPUDofHandler
+Adapt.@adapt_structure GPUSubDofHandler
 Adapt.@adapt_structure GlobalMemAlloc
 
 function _adapt_args(args)
@@ -500,6 +501,7 @@ end
 _symbols_to_int32(symbols) = 1:length(symbols) .|> (sym -> convert(Int32, sym))
 
 function Adapt.adapt_structure(to, sdh::SubDofHandler)
+    @show "in sdh"
     cellset = Adapt.adapt_structure(to, sdh.cellset |> collect .|> (x -> convert(Int32, x)) |> cu)
     field_names = Adapt.adapt_structure(to, _symbols_to_int32(sdh.field_names) |> cu)
     field_interpolations = sdh.field_interpolations .|> (ip -> Adapt.adapt_structure(to, ip)) |> cu
@@ -508,7 +510,7 @@ function Adapt.adapt_structure(to, sdh::SubDofHandler)
 end
 
 function Adapt.adapt_structure(to, dh::DofHandler)
-    subdofhandlers = dh.subdofhandlers .|> (sdh -> Adapt.adapt_structure(to, sdh)) |> cu
+    subdofhandlers = Adapt.adapt_structure(to,dh.subdofhandlers .|> (sdh -> Adapt.adapt_structure(to, sdh)) |> cu)
     cell_dofs = Adapt.adapt_structure(to, dh.cell_dofs .|> (x -> convert(Int32, x)) |> cu)
     cells = Adapt.adapt_structure(to, dh.grid.cells |> cu)
     offsets = Adapt.adapt_structure(to, dh.cell_dofs_offset .|> Int32 |> cu)

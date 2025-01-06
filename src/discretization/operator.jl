@@ -619,8 +619,8 @@ end
 function update_operator!(op_ker::CudaOperatorKernel, time)
     @unpack op, threads, blocks, mem_alloc = op_ker
     @unpack b, qrc, dh, integrand  = op
-    
-    sdhs, eles_caches = _setup_caches(op)
+
+    ##sdhs, eles_caches = _setup_caches(op)
     
     ker = () -> dummy_kernel!(b, dh, mem_alloc)
     
@@ -629,15 +629,17 @@ end
 
 
 function dummy_kernel!(b,dh, mem_alloc)
-    for cell in CellIterator(dh,mem_alloc)
-        bₑ = FerriteUtils.cellfe(cell)
-        #b[celldofs(cell)] .+= bₑ
-        dofs = celldofs(cell)
-        @inbounds for i in 1:length(dofs)
-            b[dofs[i]] += bₑ[i]
+    for sdh_idx in 1:length(dh.subdofhandlers)
+        for cell in CellIterator(dh,convert(Int32, sdh_idx),mem_alloc)
+            bₑ = FerriteUtils.cellfe(cell)
+            #b[celldofs(cell)] .+= bₑ
+            dofs = celldofs(cell)
+            @inbounds for i in 1:length(dofs)
+                b[dofs[i]] += bₑ[i]
+            end
+            #CUDA.@cushow 1
+            CUDA.@cushow bₑ[1]
         end
-        #CUDA.@cushow 1
-        CUDA.@cushow bₑ[1]
     end
     return nothing
 end
