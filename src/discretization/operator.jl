@@ -601,10 +601,27 @@ end
 
 (op_ker::CudaOperatorKernel)(time) = update_operator!(op_ker.op, time)
 
+function _setup_caches(op::LinearOperator)
+    @unpack qrc, dh, chunksize, protocol = op
+    eles_caches = []
+    for sdh in dh.subdofhandlers
+        # Prepare evaluation caches
+        ip          = Ferrite.getfieldinterpolation(sdh, field_name)
+        element_qr  = getquadraturerule(qrc, sdh)
+
+        # Build evaluation caches
+        element_cache = setup_element_cache(protocol, element_qr, ip, sdh)
+        push!(eles_caches, element_cache)
+    end
+   return dh.subdofhandlers |> cu, eles_caches |> cu
+end
+
 function update_operator!(op_ker::CudaOperatorKernel, time)
     @unpack op, threads, blocks, mem_alloc = op_ker
     @unpack b, qrc, dh, integrand  = op
-
+    
+    sdhs, eles_caches = _setup_caches(op)
+    
     ker = () -> dummy_kernel!(b, dh, mem_alloc)
     
     _launch_kernel!(ker, threads, blocks, mem_alloc)
@@ -624,6 +641,7 @@ function dummy_kernel!(b,dh, mem_alloc)
     end
     return nothing
 end
+
 
 function _launch_kernel!(ker, threads, blocks, ::FerriteUtils.AbstractGlobalMemAlloc)
     CUDA.@cuda threads=threads blocks=blocks ker()

@@ -167,21 +167,30 @@ DoF handler implementations.
 """
 abstract type AbstractGPUDofHandler <: Ferrite.AbstractDofHandler end
 
-# TODO: add subdofhandlers
-struct GPUDofHandler{CDOFS <: AbstractArray{<:Number, 1}, VEC_INT <: AbstractArray{Int32, 1}, GRID <: Ferrite.AbstractGrid} <: AbstractGPUDofHandler
+struct GPUSubDofHandler{VEC_INT, Ti, VEC_IP} <: AbstractGPUDofHandler
+    cellset::VEC_INT
+    field_names::VEC_INT # cannot use symbols in GPU
+    field_interpolations::VEC_IP
+    ndofs_per_cell::Ti
+end
+
+## IDEA: to have multiple interfaces for dofhandlers (e.g. one domain dofhandler, multiple subdomains)
+struct GPUDofHandler{SUB_DOFS <: AbstractArray{<:AbstractGPUDofHandler, 1}, CDOFS <: AbstractArray{<:Number, 1}, VEC_INT <: AbstractArray{Int32, 1}, GRID <: Ferrite.AbstractGrid} <: AbstractGPUDofHandler
+    subdofhandlers::SUB_DOFS
     cell_dofs::CDOFS
     grid::GRID
     cell_dofs_offset::VEC_INT
-    ndofs_cell::VEC_INT
+    cell_to_subdofhandler::VEC_INT
 end
 
 
-ndofs_per_cell(dh::GPUDofHandler, i::Int32) = dh.ndofs_cell[i]
-
-
+function ndofs_per_cell(dh::GPUDofHandler, cell::Ti) where {Ti <: Integer}
+    sdhidx = dh.cell_to_subdofhandler[cell]
+    sdhidx ∉ 1:length(dh.subdofhandlers) && return 0 # Dof handler is just defined on a subdomain
+    return ndofs_per_cell(dh.subdofhandlers[sdhidx])
+end
+ndofs_per_cell(sdh::GPUSubDofHandler) = sdh.ndofs_per_cell
 cell_dof_offset(dh::GPUDofHandler, i::Int32) = dh.cell_dofs_offset[i]
-
-
 get_grid(dh::GPUDofHandler) = dh.grid
 
 function Ferrite.celldofs(dh::GPUDofHandler, i::Int32)
@@ -470,11 +479,23 @@ function _get_ndofs_cell(dh::DofHandler)
 end
 
 
+_symbols_to_int32(symbols) = 1:length(symbols) .|> (sym -> convert(Int32, sym))
+
+function Adapt.adapt_structure(to, sdh::SubDofHandler)
+    cellset = Adapt.adapt_structure(to, sdh.cellset |> collect .|> (x -> convert(Int32, x)) |> cu)
+    field_names = Adapt.adapt_structure(to, _symbols_to_int32(sdh.field_names) |> cu)
+    field_interpolations = sdh.field_interpolations .|> (ip -> Adapt.adapt_structure(to, ip)) |> cu
+    ndofs_per_cell = Adapt.adapt_structure(to, sdh.ndofs_per_cell)
+    return GPUSubDofHandler(cellset, field_names, field_interpolations, ndofs_per_cell)
+end
+
 function Adapt.adapt_structure(to, dh::DofHandler)
-    cell_dofs = Adapt.adapt_structure(to, dh.cell_dofs .|> Int32 |> cu)
+    subdofhandlers = dh.subdofhandlers .|> (sdh -> Adapt.adapt_structure(to, sdh)) |> cu
+    cell_dofs = Adapt.adapt_structure(to, dh.cell_dofs .|> (x -> convert(Int32, x)) |> cu)
     cells = Adapt.adapt_structure(to, dh.grid.cells |> cu)
     offsets = Adapt.adapt_structure(to, dh.cell_dofs_offset .|> Int32 |> cu)
     nodes = Adapt.adapt_structure(to, dh.grid.nodes |> cu)
-    ndofs_cell = Adapt.adapt_structure(to, _get_ndofs_cell(dh) |> cu)
-    return GPUDofHandler(cell_dofs, GPUGrid(cells, nodes), offsets, ndofs_cell)
+    #ndofs_cell = Adapt.adapt_structure(to, _get_ndofs_cell(dh) |> cu)
+    cell_to_subdofhandler = Adapt.adapt_structure(to, dh.cell_to_subdofhandler .|> (x -> convert(Int32, x)) |> cu)
+    return GPUDofHandler(subdofhandlers, cell_dofs, GPUGrid(cells, nodes), offsets, cell_to_subdofhandler)
 end
