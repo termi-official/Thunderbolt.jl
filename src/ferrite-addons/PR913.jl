@@ -247,6 +247,7 @@ struct CUDACellIterator{DH <: GPUDofHandler, GRID <: AbstractGPUGrid, Ti <: Inte
     grid::GRID
     n_cells::Ti
     cell_mem::CellMem
+    sdh_idx::Ti # subdomain index (this is similar to set on the CPU side, but instead of set we have subdomain index (-1 -> all cells), otherwise index of the subdomain)
 end
 
 struct CudaOutOfBoundCellIterator <: AbstractCUDACellIterator end  # used to handle the case for out of bound threads (global memory only)
@@ -264,21 +265,7 @@ function _cellmem(buffer_alloc::GlobalRHSMemAlloc, i::Integer)
     return RHSCellMem(fe)
 end
 
-
-function Ferrite.CellIterator(dh::GPUDofHandler, buffer_alloc::AbstractGlobalMemAlloc)
-    grid = get_grid(dh)
-    n_cells = grid |> getncells |> Int32
-    bd = blockDim().x
-    local_thread_id = threadIdx().x
-    global_thread_id = (blockIdx().x - Int32(1)) * bd + local_thread_id
-    global_thread_id <= n_cells || return CudaOutOfBoundCellIterator()
-    cell_mem = _cellmem(buffer_alloc, global_thread_id)
-    return CUDACellIterator(dh, grid, n_cells, cell_mem)
-end
-
-
-
-_cellmem(buffer_alloc::AbstractGlobalMemAlloc, ::Integer) = throw(ErrorException("please provide concrete implementation for $(typeof(buffer_alloc))."))
+_cellmem(buffer_alloc::AbstractGlobalMemAlloc, ::Integer) = error("please provide concrete implementation for $(typeof(buffer_alloc)).")
 
 function _cellmem(buffer_alloc::SharedMemAlloc, i::Integer)
     block_ke = buffer_alloc.Ke()
@@ -293,14 +280,43 @@ function _cellmem(buffer_alloc::SharedRHSMemAlloc, i::Integer)
     return RHSCellMem(fe)
 end
 
-
-
-function Ferrite.CellIterator(dh::GPUDofHandler, buffer_alloc::AbstractSharedMemAlloc)
+function _cell_iterator(dh::GPUDofHandler,sdh_idx::Integer,n_cells::Integer, buffer_alloc::AbstractGlobalMemAlloc)
     grid = get_grid(dh)
-    n_cells = grid |> getncells |> Int32
+    bd = blockDim().x
+    local_thread_id = threadIdx().x
+    global_thread_id = (blockIdx().x - Int32(1)) * bd + local_thread_id
+    global_thread_id <= n_cells || return CudaOutOfBoundCellIterator()
+    cell_mem = _cellmem(buffer_alloc, global_thread_id)
+    return CUDACellIterator(dh, grid, n_cells, cell_mem,sdh_idx)
+end
+
+function _cell_iterator(dh::GPUDofHandler,sdh_idx::Integer,n_cells::Integer, buffer_alloc::AbstractSharedMemAlloc)
+    grid = get_grid(dh)
     local_thread_id = threadIdx().x
     cell_mem = _cellmem(buffer_alloc, local_thread_id)
-    return CUDACellIterator(dh, grid, n_cells, cell_mem)
+    return CUDACellIterator(dh, grid, n_cells, cell_mem,sdh_idx)
+end
+
+ 
+Ferrite.CellIterator(dh::GPUDofHandler, buffer_alloc::AbstractGlobalMemAlloc) = _cell_iterator(dh, -1,  dh |> get_grid |> getncells |> Int32, buffer_alloc) ## iterate over all cells
+
+function Ferrite.CellIterator(dh::GPUDofHandler,sdh_idx::Integer, buffer_alloc::AbstractGlobalMemAlloc)
+    ## iterate over all cells in the subdomain
+    # check if the subdomain index is valid
+    sdh_idx ∉ 1:length(dh.subdofhandlers) && return CudaOutOfBoundCellIterator()
+    n_cells = dh.subdofhandlers[sdh_idx].cellset |> length |> Int32 
+    return _cell_iterator(dh, sdh_idx,n_cells, buffer_alloc)
+end
+
+Ferrite.CellIterator(dh::GPUDofHandler, buffer_alloc::AbstractSharedMemAlloc) = _cell_iterator(dh, -1,dh |> get_grid |> getncells |> Int32, buffer_alloc) ## iterate over all cells
+   
+
+function Ferrite.CellIterator(dh::GPUDofHandler,sdh_idx::Integer, buffer_alloc::AbstractSharedMemAlloc)
+    ## iterate over all cells in the subdomain
+    # check if the subdomain index is valid
+    sdh_idx ∉ 1:length(dh.subdofhandlers) && return CudaOutOfBoundCellIterator()
+    n_cells = dh.subdofhandlers[sdh_idx].cellset |> length |> Int32 
+    return _cell_iterator(dh, sdh_idx,n_cells, buffer_alloc)
 end
 
 
@@ -336,7 +352,9 @@ end
 function _makecache(iterator::AbstractCUDACellIterator, e::Integer)
     dh = iterator.dh
     grid = iterator.grid
+    sdh_idx = iterator.sdh_idx
     cellid = e
+    sdh_idx <= 0 || (cellid = dh.subdofhandlers[sdh_idx].cellset[e])
     cell = Ferrite.getcells(grid, e)
 
     # Extract the node IDs of the cell.

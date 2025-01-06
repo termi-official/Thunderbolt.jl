@@ -49,3 +49,5 @@ Thunderbolt.update_operator!(linop,0.0)
 
 cuda_op = Thunderbolt.init_linear_operator(Thunderbolt.BackendCUDA,protocol, qrc, dh)
 Thunderbolt.update_operator!(cuda_op,0.0)
+
+
