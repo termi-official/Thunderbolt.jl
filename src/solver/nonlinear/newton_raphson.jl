@@ -58,7 +58,7 @@ function setup_solver_cache(f::AbstractSemidiscreteBlockedFunction, solver::Newt
     @assert inner_cache.b === residual
     @assert inner_cache.A === getJ(op)
 
-    NewtonRaphsonSolverCache(op, residual, solver, inner_cache)
+    NewtonRaphsonSolverCache(op, residual, solver, inner_cache, T[], 0)
 end
 
 function nlsolve!(u::AbstractVector, f::AbstractSemidiscreteFunction, cache::NewtonRaphsonSolverCache, t)

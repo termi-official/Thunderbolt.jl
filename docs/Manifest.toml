@@ -2,7 +2,7 @@
 
 julia_version = "1.11.1"
 manifest_format = "2.0"
-project_hash = "d2ba1f39d529e32df2f9824f2714dfeeb5c4c611"
+project_hash = "d702879a44f268eba60ba2aa39548ec804142926"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "72af59f5b8f09faee36b4ec48e014a79210f2f4f"
@@ -225,8 +225,6 @@ weakdeps = ["SparseArrays"]
 [[deps.CirculatorySystemModels]]
 deps = ["CSV", "DataFrames", "ModelingToolkit"]
 git-tree-sha1 = "b620791d0cb7d512b791233ddafdf7d5271507b2"
-repo-rev = "main"
-repo-url = "https://github.com/TS-CUBED/CirculatorySystemModels.jl"
 uuid = "4211d73e-f4e8-40c4-b600-92e4b82f0e1a"
 version = "0.4.1"
 
@@ -1597,6 +1595,12 @@ weakdeps = ["EnzymeCore"]
 
     [deps.OrdinaryDiffEqCore.extensions]
     OrdinaryDiffEqCoreEnzymeCoreExt = "EnzymeCore"
+
+[[deps.OrdinaryDiffEqTsit5]]
+deps = ["DiffEqBase", "FastBroadcast", "LinearAlgebra", "MuladdMacro", "OrdinaryDiffEqCore", "PrecompileTools", "Preferences", "RecursiveArrayTools", "Reexport", "Static", "TruncatedStacktraces"]
+git-tree-sha1 = "96552f7d4619fabab4038a29ed37dd55e9eb513a"
+uuid = "b1df2697-797e-41e3-8120-5422d3b24e4a"
+version = "1.1.0"
 
 [[deps.PCRE2_jll]]
 deps = ["Artifacts", "Libdl"]

@@ -142,11 +142,11 @@ Base.@kwdef struct ForwardEulerSolver{SolutionVectorType} <: AbstractSolver
     solution_vector_type::Type{SolutionVectorType} = Vector{Float64}
 end
 
-mutable struct ForwardEulerSolverCache{VT,F} <: AbstractTimeSolverCache
+mutable struct ForwardEulerSolverCache{VT,VTrate,VTprev,F} <: AbstractTimeSolverCache
     rate::Int
-    du::VT
+    du::VTrate
     uₙ::VT
-    uₙ₋₁::VT
+    uₙ₋₁::VTprev
     rhs!::F
 end
 
