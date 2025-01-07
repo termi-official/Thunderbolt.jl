@@ -31,7 +31,7 @@ generate_quadratic_open_ring_mesh
 generate_ideal_lv_mesh
 ```
 
-## Utility
+## [Utility](@id mesh-utility-api)
 
 ```@docs
 Thunderbolt.hexahedralize

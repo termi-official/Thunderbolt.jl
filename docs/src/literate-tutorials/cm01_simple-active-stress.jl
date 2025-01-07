@@ -35,7 +35,7 @@ mesh = generate_ideal_lv_mesh(11,2,5;
 
 # !!! tip
 #     We can also load realistic geometries with external formats. For this simply use either FerriteGmsh.jl
-#     or one of the loader functions stated in the [mesh API]().
+#     or one of the loader functions stated in the [mesh API](@ref mesh-utility-api).
 
 # Next we will define a coordinate system, which helps us to work with cardiac geometries.
 # This way we can reuse different methods, like for example fiber generators, across geometries.
@@ -104,10 +104,10 @@ mechanical_model = StructuralModel(:displacement, active_stress_model, weak_boun
 # Here we use a finite element discretization in space with first order Lagrange polynomials to discretize the displacement field.
 # !!! danger
 #     The discretization API does now play well with multiple domains right now and will be updated with a possible breaking change in future releases.
-discretization = FiniteElementDiscretization(
+spatial_discretization_method = FiniteElementDiscretization(
     Dict(:displacement => LagrangeCollection{1}()^3),
 )
-quasistaticform = semidiscretize(mechanical_model, discretization, mesh);
+quasistaticform = semidiscretize(mechanical_model, spatial_discretization_method, mesh);
 
 # The remaining code is very similar to how we use SciML solvers.
 # We first define our time domain, initial time step length and some dt for visualization.
@@ -139,7 +139,7 @@ integrator = init(problem, timestepper, dt=dt₀, verbose=true, adaptive=true, d
 #     Right now the solution is just exported into VTK, such that users can visualize the solution in e.g. ParaView.
 
 # And finally we solve the problem in time.
-io = ParaViewWriter("01_simple_lv");
+io = ParaViewWriter("CM01_simple_lv");
 for (u, t) in TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
     @info t
     (; dh) = problem.f

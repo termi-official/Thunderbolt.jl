@@ -42,3 +42,6 @@ function Thunderbolt.cell_rhs!(du::TD,u::TU,x::TX,t::TT,p::TP) where {TD,TU,TX,T
     ## Return nothing so no oopsies happen. :)
     return nothing
 end
+
+# !!! todo
+#     Show how users can control which the coordiante system information is passed into the cell model.

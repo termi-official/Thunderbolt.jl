@@ -1,4 +1,4 @@
-# # [Electrophysiology Tutorial 1: Simple Spiral Wave](@id ep-tutorial_simple-spiral-wave)
+# # [Electrophysiology Tutorial 1: Simple Spiral Wave](@id ep-tutorial_spiral-wave)
 # ![Spiral Wave](spiral-wave.gif)
 #
 # This tutorial shows how to perform a simulation of electrophysiological behavior of cardiac tissue.
@@ -28,12 +28,34 @@ using Thunderbolt, LinearSolve
 
 # We start by constructing a square domain for our simulation.
 mesh = generate_mesh(Quadrilateral, (2^6, 2^6), Vec{2}((0.0,0.0)), Vec{2}((2.5,2.5)))
+# Here the first parameter is the element type and the second parameter is a tuple holding the number of subdivisions per dimension.
+# The last two parameters are the corners defining the rectangular domain.
+# !!! tip
+#     We can also load realistic geometries with external formats. For this simply use either FerriteGmsh.jl
+#     or one of the loader functions stated in the [mesh API](@ref mesh-utility-api).
 
 # We now define the parameters appearing in the model.
 # For simplciity we assume $C_{\mathrm{m}} = \chi = 1.0$ and a homogeneous, anisotropic symmetric conductivity tensor.
 Cₘ = ConstantCoefficient(1.0)
 χ  = ConstantCoefficient(1.0)
 κ  = ConstantCoefficient(SymmetricTensor{2,2,Float64}((4.5e-5, 0, 2.0e-5)))
+# !!! tip
+#     If the mesh is properly annotated, then we can generate (or even load) a cardiac coordinate system.
+#     Consult [coordinate system API documentation](@ref coordinate-system-api) for details.
+#     With this information we can [construct idealized microstructures](@ref microstructure-api) to define heterogeneous conductivity tensors as follows:
+#     ```julia
+#     microstructure = create_simple_microstructure_model(
+#       coordinate_system,
+#       LagrangeCollection{1}()^3;
+#       endo_helix_angle = deg2rad(60.0),
+#       epi_helix_angle = deg2rad(-60.0),
+#     )
+#     κ = SpectralTensorCoefficient(
+#         microstructure,
+#         ConstantCoefficient(SVector(κ₁, κ₂, κ₃))
+#     )
+#     ```
+#     where κ₁, κ₂, κ₃ are the eigenvalues for the fiber, sheet and normal direction.
 
 # The spiral wave will unfold due to the specific construction of the initial conditions, hence we do not need to apply a stimulus.
 stimulation_protocol = NoStimulationProtocol()
@@ -80,66 +102,122 @@ function spiral_wave_initializer!(u₀, f::GenericSplitFunction)
 end
 
 # Now we put the components together by instantiating the monodomain model.
-model = MonodomainModel(
+ep_model = MonodomainModel(
     Cₘ,
     χ,
-    microstructure,
+    κ,
     stimulation_protocol,
     cell_model,
     :φₘ, :s,
 )
 
+# We now annotate the model to be reaction-diffusion split.
+# Special solvers need special forms for the model.
+# However, the same solver can work with different forms.
+# In the case of operator splitting users might choose to split the equations differently.
+# Hence we leave it as a user option which split they prefer, or if they even want work on the full problem.
+split_ep_model = ReactionDiffusionSplit(ep_model)
 
-csc = CoordinateSystemCoefficient(
-    CartesianCoordinateSystem(mesh)
-)
+# !!! todo
+#     Show how to use solvers different that LTG (and implement them).
 
-odeform = semidiscretize(
-    ReactionDiffusionSplit(model, csc),
-    FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}())),
-    mesh
+# We now need to transform the space-time problem into a time-dependent problem by discretizing it spatially.
+# This can be accomplished by the function semidiscretize, which takes a model and the disretization technique.
+# Here we use a finite element discretization in space with first order Lagrange polynomials to discretize the displacement field.
+# !!! danger
+#     The discretization API does now play well with multiple domains right now and will be updated with a possible breaking change in future releases.
+spatial_discretization_method = FiniteElementDiscretization(
+    Dict(:φₘ => LagrangeCollection{1}()),
 )
+odeform = semidiscretize(split_ep_model, spatial_discretization_method, mesh)
+
+# We now allocate a solution vector and set the initial condition.
 u₀ = zeros(Float32, OS.function_size(odeform))
-
 spiral_wave_initializer!(u₀, odeform)
 
-u₀gpu = CuVector(u₀)
-problem = OS.OperatorSplittingProblem(odeform, u₀gpu, tspan)
 
+# We proceed by defining the time integration algorithms for each subproblem.
+# First, there is the heat problem, which we will solve with a low-storage backward Euler method
 heat_timestepper = BackwardEulerSolver(
-    solution_vector_type=CuVector{Float32},
-    system_matrix_type=CUDA.CUSPARSE.CuSparseMatrixCSR{Float32, Int32},
-    inner_solver=KrylovJL_CG(atol=1.0f-6, rtol=1.0f-5),
+    inner_solver=KrylovJL_CG(atol=1e-6, rtol=1e-5),
 )
 # !!! tip
 #     On non-trivial geometries it is highly recommended to use a preconditioner.
 #     Please consult the [LinearSolve.jl docs](https://docs.sciml.ai/LinearSolve/stable/basics/Preconditioners/) for details.
 
-cell_timestepper = AdaptiveForwardEulerSubstepper(
-    solution_vector_type=CuVector{Float32},
-    reaction_threshold=0.1f0,
+# And then there is the reaction subproblem, which decouples locally into "number of dofs in the discrete heat problem" separate ODE.
+# We will solve these locally adaptive with forward Euler steps.
+cell_timestepper = AdaptiveForwardEulerSubstepper(;
+    reaction_threshold=0.1,
 )
 
+# Now we can just instantiate the operator splitting algorithm of our choice.
+# Since our time integrators are both first order in time we opt for the standard first order accurrate operator splitting technique by Lie-Trotter (or Godunov).
 timestepper = OS.LieTrotterGodunov((heat_timestepper, cell_timestepper))
 
-integrator = OS.init(problem, timestepper, dt=dt₀, verbose=true)
+# The remaining code is very similar to how we use SciML solvers.
+# We first define our time domain, initial time step length and some dt for visualization.
+dt₀ = 10.0
+tspan = (0.0, 500.0)
+dtvis = 25.0;
 
-io = ParaViewWriter("spiral-wave-test")
+# Then we setup the problem.
+# We have a split function, so the correct problem is an OperatorSplittingProblem.
+problem = OS.OperatorSplittingProblem(odeform, u₀, tspan)
 
-# TimerOutputs.enable_debug_timings(Thunderbolt)
-TimerOutputs.reset_timer!()
+# !!! tip
+#     If we want to solve the problem on the GPU, or if we want to use special matrix and vector formats, we just need to adjust the vector and matrix types.
+#     For example, if we want to problem to be solved on a CUDA GPU with 32 bit precision, then we need to adjust the types as follows.
+#     ```
+#     u₀gpu = CuVector(u₀)
+#     heat_timestepper = BackwardEulerSolver(
+#       solution_vector_type=CuVector{Float32},
+#       system_matrix_type=CUDA.CUSPARSE.CuSparseMatrixCSR{Float32, Int32},
+#       inner_solver=KrylovJL_CG(atol=1.0f-6, rtol=1.0f-5),
+#     )
+#     cell_timestepper = AdaptiveForwardEulerSubstepper(
+#         solution_vector_type=CuVector{Float32},
+#         reaction_threshold=0.1f0,
+#     )
+#     ...
+#     problem = OS.OperatorSplittingProblem(odeform, u₀gpu, tspan)
+#     ```
+
+# Now we initialize our time integrator as usual.
+integrator = OS.init(problem, timestepper, dt=dt₀)
+
+# !!! todo
+#     The post-processing API is not yet finished.
+#     Please revisit the tutorial later to see how to post-process the simulation online.
+#     Right now the solution is just exported into VTK, such that users can visualize the solution in e.g. ParaView.
+
+# And finally we solve the problem in time.
+io = ParaViewWriter("EP01_spiral_wave")
 for (u, t) in OS.TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
-    dh = odeform.functions[1].dh
-    φ = u[odeform.dof_ranges[1]]
-    @info t,norm(u)
-    # sflat = ....?
+    (; dh) = odeform.functions[1]
+    φ = u[odeform.solution_indices[1]]
     store_timestep!(io, t, dh.grid) do file
-        Thunderbolt.store_timestep_field!(file, t, dh, Vector(φ), :φₘ)
-        # s = reshape(sflat, (Thunderbolt.num_states(ionic_model),length(φ)))
-        # for sidx in 1:Thunderbolt.num_states(ionic_model)
-        #    Thunderbolt.store_timestep_field!(io, t, dh, s[sidx,:], state_symbol(ionic_model, sidx))
-        # end
+        Thunderbolt.store_timestep_field!(file, t, dh, φ, :φₘ)
     end
 end
-TimerOutputs.print_timer()
-# TimerOutputs.disable_debug_timings(Thunderbolt)
+
+# !!! tip
+#     If you want to see more details of the solution process launch Julia with Thunderbolt as debug module:
+#     ```
+#     JULIA_DEBUG=Thunderbolt julia --project --threads=auto my_simulation_runner.jl
+#     ```
+
+#md # ## References
+#md # ```@bibliography
+#md # Pages = ["cm01_simple-active-stress.md"]
+#md # Canonical = false
+#md # ```
+
+#md # ## [Plain program](@id mechanics-tutorial_simple-active-stress-plain-program)
+#md #
+#md # Here follows a version of the program without any comments.
+#md # The file is also available here: [`cm01_simple-active-stress.jl`](cm01_simple-active-stress.jl).
+#md #
+#md # ```julia
+#md # @__CODE__
+#md # ```
