@@ -12,7 +12,7 @@
 #
 # $$\bm{P} = \partial_{\bm{F}} \psi_{\mathrm{p}} + \mathcal{N}(\bm{\alpha}) \, \partial_{\bm{F}} \psi_{\mathrm{a}}$$
 #
-# According to R. Chadwick (1982) the additive split of the stress in active and passive parts dates back to unpublished Peskin and has been popularized by Guccione et al. (1993).
+# According to [Cha:1982:mlv](@citet) the additive split of the stress in active and passive parts dates back to unpublished Peskin and has been popularized by [GucWalMcC:1993:mac](@citet).
 #
 # ## Commented Program
 # We start by loading Thunderbolt and LinearSolve to use a custom direct solver of our choice.
