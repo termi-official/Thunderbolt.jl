@@ -326,6 +326,8 @@ splitform = semidiscretize(
 dt₀ = 1.0
 dtvis = 5.0
 tspan = (0.0, 1000.0)
+# This speeds up the CI #hide
+tspan = (0.0, dtvis)    #hide
 
 # The remaining code is very similar to how we use SciML solvers.
 chamber_solver = HomotopyPathSolver(
