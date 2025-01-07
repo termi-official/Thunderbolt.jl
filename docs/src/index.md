@@ -51,10 +51,8 @@ Ferrite internal code.
 
 ## Getting started
 
-If you are new to the Thunderbolt project, then it is suggested to start with the tutorials
+If you are new to the Thunderbolt project, it is suggested to start with the tutorials
 section before tackling more complex problems.
-
-More information coming soon...
 
 !!! todo
     We should provide a template for computational studies, possibly via DrWatson.jl ([DrWatsonSim.jl](https://github.com/sebastianpech/DrWatsonSim.jl)?), to guide users towards best practices for computational studies.
