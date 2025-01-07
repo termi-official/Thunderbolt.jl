@@ -42,10 +42,12 @@ mesh = generate_ideal_lv_mesh(11,2,5;
 coordinate_system = compute_lv_coordinate_system(mesh);
 
 # In this coordinate system we will now create a microstructure with linearly varying helix angle in transmural direction.
+# The compute microstructure field will be generated on the function space of piecewise continuous first order Lagrange polynomials.
 microstructure = create_simple_microstructure_model(
     coordinate_system,
+    LagrangeCollection{1}()^3;
     endo_helix_angle = deg2rad(-60.0),
-    epi_helix_angle = deg2rad(70.0)
+    epi_helix_angle = deg2rad(70.0),
 );
 
 # Now we describe the model which we want to use.
@@ -60,14 +62,12 @@ active_material_model  = Guccione1993ActiveModel();
 # To simplify this tutorial we will use an analytical calcium profile.
 # Note that we can also use experimental data or a precomputed calcium profile here, too, by simply changing the function implementation below.
 function calcium_profile_function(x::LVCoordinate,t)
-    function linear_interpolation(t,y1,y2,t1,t2)
-        y1 + (t-t1) * (y2-y1)/(t2-t1)
-    end
-    ca_peak = (1-x.transmural*0.7)
-    if 0 ≤ t < 300.0
-        return linear_interpolation(t,0.0,ca_peak,0.0, 300.0)
-    elseif t < 500.0
-        return linear_interpolation(t,ca_peak,0.0,300.0, 500.0)
+    linear_interpolation(t,y1,y2,t1,t2) = y1 + (t-t1) * (y2-y1)/(t2-t1)
+    ca_peak(x)                          = 1.0
+    if 0 ≤ t ≤ 300.0
+        return linear_interpolation(t,        0.0, ca_peak(x),   0.0, 300.0)
+    elseif t ≤ 500.0
+        return linear_interpolation(t, ca_peak(x),        0.0, 300.0, 500.0)
     else
         return 0.0
     end
@@ -81,33 +81,33 @@ calcium_field = AnalyticalCoefficient(
 # Note that a using a sarcomere model which has evoluation equations or rate-dependent terms will require different solvers.
 sarcomere_model = ConstantStretchModel(;calcium_field);
 
-# Now we have everything set to describe our PDE model by passing all the model components down.
-mechanical_model = ActiveStressModel(
+# Now we have everything set to describe our active stress model by passing all the model components into it.
+active_stress_model = ActiveStressModel(
     passive_material_model,
     active_material_model,
     sarcomere_model,
-    microstructure_coefficient,
+    microstructure,
 );
 
+# Next we define some boundary conditions.
+# In order to have a very rough approximation of the effect of the pericardium, we use a Robin boundary condition in normal direction.
+weak_boundary_conditions = (NormalSpringBC(1.0, "Epicardium"),)
+
+# We finalize the mechanical model by assigning a symbol to identify the unknown solution field and connect the active stress model with the weak boundary conditions.
+mechanical_model = StructuralModel(:displacement, active_stress_model, weak_boundary_conditions)
+
 # !!! tip
-#     A full list of all models can be found in the [API reference](https://termi-official.github.io/Thunderbolt.jl/dev/api-reference/models/#Solid-Mechanics)
+#     A full list of all models can be found in the [API reference](https://termi-official.github.io/Thunderbolt.jl/dev/api-reference/models/#Solid-Mechanics).
 
 # We now need to transform the space-time problem into a time-dependent problem by discretizing it spatially.
 # This can be accomplished by the function semidiscretize, which takes a model and the disretization technique.
-# Here we deploy a finite element discretization in space.
-quasistaticform = semidiscretize(
-    StructuralModel(:displacement, constitutive_model, ()),
-    FiniteElementDiscretization(
-        Dict(:displacement => ip_mech),
-        [
-            Dirichlet(:displacement, getnodeset(ring_grid, "MyocardialAnchor1"), (x,t) -> (0.0, 0.0, 0.0), [1,2,3]),
-            Dirichlet(:displacement, getnodeset(ring_grid, "MyocardialAnchor2"), (x,t) -> (0.0, 0.0), [2,3]),
-            Dirichlet(:displacement, getnodeset(ring_grid, "MyocardialAnchor3"), (x,t) -> (0.0,), [3]),
-            Dirichlet(:displacement, getnodeset(ring_grid, "MyocardialAnchor4"), (x,t) -> (0.0,), [3])
-        ]
-    ),
-    ring_grid
-);
+# Here we use a finite element discretization in space with first order Lagrange polynomials to discretize the displacement field.
+# !!! danger
+#     The discretization API does now play well with multiple domains right now and will be updated with a possible breaking change in future releases.
+discretization = FiniteElementDiscretization(
+    Dict(:displacement => LagrangeCollection{1}()^3),
+)
+quasistaticform = semidiscretize(mechanical_model, discretization, mesh);
 
 # The remaining code is very similar to how we use SciML solvers.
 # We first define our time domain, initial time step length and some dt for visualization.
@@ -138,10 +138,10 @@ integrator = init(problem, timestepper, dt=dt₀, verbose=true, adaptive=true, d
 #     Right now the solution is just exported into VTK, such that users can visualize the solution in e.g. ParaView.
 
 # And finally we solve the problem in time.
-io = ParaViewWriter(name);
+io = ParaViewWriter("01_simple_lv");
 for (u, t) in TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
     @info t
-    @unpack dh = problem.f
+    (; dh) = problem.f
     Thunderbolt.store_timestep!(io, t, dh.grid) do file
     Thunderbolt.store_timestep_field!(io, t, dh, u, :displacement)
     end
