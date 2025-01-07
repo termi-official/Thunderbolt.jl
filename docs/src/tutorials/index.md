@@ -30,7 +30,8 @@ This section explains how cardiac solid mechanics simulations can be carried out
 ---
 #### [Mechanics Tutorial 01: Simple Active Stress](@ref mechanics-tutorial_simple-active-stress)
 In this tutorial you will learn how to:
-* setup a basic electrophysiology simulation
+* setup a basic contraction simulation
+* use the homotpy path solver (,,Load Stepping'') and choose a custom inner solver
 * extract quantities to post-process solutions online and offline
 ---
 #### [Mechanics Tutorial 02: Prestress]()
@@ -75,15 +76,15 @@ This section explains how cardiac electrophysiology simulations can be carried o
 ---
 #### [EP Tutorial 01: Spiral Waves with a Monodomain Model]()
 In this tutorial you will learn how to:
-* setup a basic electrophysiology simulations?
-* set initial conditions?
-* define a custom stimulation protocols?
-* run an electrophysiology simulation on a GPU?
+* setup a basic electrophysiology simulations
+* set initial conditions
+* define a custom stimulation protocols
+* run an electrophysiology simulation on a GPU
 ---
 #### [EP Tutorial 02: Activating a Left Ventricle via Purkinje Network]()
 In this tutorial you will learn how to:
-* generate a Purkinje Network?
-* define different couplings?
+* generate a Purkinje Network
+* couple the chamber tissue with the network
 ---
 #### [EP Tutorial 03: ECG with a Bidomain Model]()
 In this tutorial you will learn how to:

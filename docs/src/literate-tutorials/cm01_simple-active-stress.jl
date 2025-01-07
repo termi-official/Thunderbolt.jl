@@ -122,6 +122,7 @@ problem = QuasiStaticProblem(quasistaticform, tspan);
 # Next we define the time stepper.
 # Since there are no time derivatives appearing in our formulation we have to opt for a homotopy path method, which solve the time depentent problems adaptively.
 # As our non-linear solver we choose the standard Newton-Raphson method and a direct solver for the inner linear system.
+# For the theory behind homotopy path methods we refer to [the corresponding theory manual on homotopy path methods](@ref theory_homotopy-path-methods)
 timestepper = HomotopyPathSolver(
     NewtonRaphsonSolver(
         max_iter=10,
@@ -155,14 +156,14 @@ end;
 
 #md # ## References
 #md # ```@bibliography
-#md # Pages = ["mechanics_simple-active-stress.md"]
+#md # Pages = ["cm01_simple-active-stress.md"]
 #md # Canonical = false
 #md # ```
 
-#md # ## [Plain program](@id heat_equation-DG-plain-program)
+#md # ## [Plain program](@id mechanics-tutorial_simple-active-stress-plain-program)
 #md #
 #md # Here follows a version of the program without any comments.
-#md # The file is also available here: [`dg_heat_equation.jl`](dg_heat_equation.jl).
+#md # The file is also available here: [`cm01_simple-active-stress.jl`](cm01_simple-active-stress.jl).
 #md #
 #md # ```julia
 #md # @__CODE__

@@ -31,5 +31,6 @@ LiveServer.servedocs(;
             # Watch the index files in the skip_dirs folders
         joinpath(repo_root, "docs/src/tutorials/index.md"),
         joinpath(repo_root, "docs/src/howto/index.md"),
+        joinpath(repo_root, "docs/src/howto/benchmarking.md"),
     ],
 )

@@ -42,10 +42,10 @@ bibtex_plugin = CitationBibliography(
         "Tutorials" => [
             "Overview" => "tutorials/index.md",
             "Continuum Mechanics" => [
-                "CM01: Simple Active Stress" => "tutorials/mechanics_simple-active-stress.md",
+                "CM01: Simple Active Stress" => "tutorials/cm01_simple-active-stress.md",
             ],
             "Electrophysiology" => [
-                "EP01: Simple Active Stress" => "tutorials/mechanics_simple-active-stress.md",
+                "EP01: Spiral Wave" => "tutorials/ep01_spiral-wave.md",
             ],
         ],
         "Topic Guides" => [
