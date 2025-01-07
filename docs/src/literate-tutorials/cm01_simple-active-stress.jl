@@ -138,7 +138,7 @@ integrator = init(problem, timestepper, dt=dt₀, verbose=true, adaptive=true, d
 #     Please revisit the tutorial later to see how to post-process the simulation online.
 #     Right now the solution is just exported into VTK, such that users can visualize the solution in e.g. ParaView.
 
-# And finally we solve the problem in time.
+# Finally we solve the problem in time.
 io = ParaViewWriter("CM01_simple_lv");
 for (u, t) in TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
     @info t
