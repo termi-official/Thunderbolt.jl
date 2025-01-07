@@ -25,83 +25,88 @@ tweaks to the program that you can try out on your own.
 
 ### Cardiac Mechanics
 
-This section explains how cardiac solid mechanics simulations can be carried out and how these simulations can be coupled with blood circuit models.
+This section explains how cardiac solid mechanics simulations can be carried out, how these simulations can be coupled with blood circuit models and how to add mechanical custom models.
 
-#### [Tutorial 01: Simple Active Stress]()
+---
+#### [Mechanics Tutorial 01: Simple Active Stress](literate/idealized-left-ventricle.jl)
 In this tutorial you will learn how to:
 * setup a basic electrophysiology simulation
 * extract quantities to post-process solutions online and offline
-
-#### [Tutorial 02: Prestress]()
+---
+#### [Mechanics Tutorial 02: Prestress]()
 In this tutorial you will learn how to:
 * add residual strains to a model
 * add preload to a model
 * find the new reference configuration
-
-#### [Tutorial 03: Coupling A Ciculatory System Model]()
+---
+#### [Mechanics Tutorial 03: Coupling A Ciculatory System Model]()
 In this tutorial you will learn how to:
 * define a blood circuit model
 * couple the blood circuit model with a single heart chamber
 * visualize pressure-volume loops and the blood circuit solution along the
-
-#### [Tutorial 04: Pericardial Boundary Condtions]()
+---
+#### [Mechanics Tutorial 04: Pericardial Boundary Condtions]()
 In this tutorial you will learn how to:
 * generate a pericardium
 * add pericardial boundary condtions to a model
-
-#### [Tutorial 05: Four Chamber Models]()
+---
+#### [Mechanics Tutorial 05: Four Chamber Models]()
 In this tutorial you will learn how to:
 * handle and couple multiple subdomains
 * couple the blood circuit model with a multiple heart chambers
-
-#### [Tutorial 06: Heart Valves]()
+---
+#### [Mechanics Tutorial 06: Heart Valves]()
 In this tutorial you will learn how to:
 * handle 1D and 2D elements in 3D
 * add a 3D fluid model to the heart
 * couple a 3D fluid model an external blood circuit model
-
-#### [Tutorial 07: Custom Solid Models]()
+---
+#### [Mechanics Tutorial 07: Custom Solid Models]()
 In this tutorial you will learn how to:
 * define a custom active stress model
 * define a custom active energy model
 * define a custom contraction dynamics model
 
+---
 ### Cardiac Electrophysiology
 
-#### [Tutorial 01: Spiral Waves with a Monodomain Model]()
+This section explains how cardiac electrophysiology simulations can be carried out, how these simulations can be coupled with Purkinje network models, how to extract the ECG and how to add mechanical electrophysiology models.
+
+---
+#### [EP Tutorial 01: Spiral Waves with a Monodomain Model]()
 In this tutorial you will learn how to:
 * setup a basic electrophysiology simulations?
-* setup initial conditions?
+* set initial conditions?
 * define a custom stimulation protocols?
 * run an electrophysiology simulation on a GPU?
-
-#### [Tutorial 02: Activating a Left Ventricle via Purkinje Network]()
+---
+#### [EP Tutorial 02: Activating a Left Ventricle via Purkinje Network]()
 In this tutorial you will learn how to:
 * generate a Purkinje Network?
 * define different couplings?
-
-#### [Tutorial 03: ECG with a Bidomain Model]()
+---
+#### [EP Tutorial 03: ECG with a Bidomain Model]()
 In this tutorial you will learn how to:
 * handle multiple subdomains with different physics
 * handle coefficients when facing multiple subdomains
-* setup ground boundary conditons
+* add ground boundary conditons
 * induce Torsade de pointes
-* setup defibrillation boundary conditions
-
-#### [Tutorial 04: ECG with a Monodomain Model]()
+* add defibrillation boundary conditions
+---
+#### [EP Tutorial 04: ECG with a Monodomain Model]()
 In this tutorial you will learn how to:
 * transfer coefficients and solutions between overlapping domains
 * compute the ECG form a monodomain model as a postprocessing step
-
-#### [Tutorial 05: Reaction-Eikonal ECG]()
+---
+#### [EP Tutorial 05: Reaction-Eikonal ECG]()
 In this tutorial you will learn how to:
 * perform ECG simulations with a simplified activation dynamics model
-
-#### [Tutorial 06: Including Pacemakers]()
+---
+#### [EP Tutorial 06: Including Pacemakers]()
 In this tutorial you will learn how to:
 * Handling Heterogeneous Tissues
-
-#### [Tutorial 07: Custom Electrophysiology Models]()
+---
+#### [EP Tutorial 07: Custom Electrophysiology Models]()
 In this tutorial you will learn how to:
 * define a custom cell model
 * define a electrophysiology PDE model
