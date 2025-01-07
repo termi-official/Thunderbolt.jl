@@ -1,4 +1,5 @@
 # # [Custom EP Cell Model](@id how-to-custom-ep-cell-model)
+using Thunderbolt
 
 # We first need to define a struct holding all the parameters.
 # If you want to have parameters with spatial variation, which can be exchanged easily, then simply add a field with custom type and a function which accepts a coordinate `x` and a time `t` as input, as for example here for the parameter `e`:
