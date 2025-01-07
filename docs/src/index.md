@@ -56,7 +56,8 @@ section before tackling more complex problems.
 
 More information coming soon...
 
-TODO refer to an example project via DrWatson.jl.
+!!! todo
+    We should provide a template for computational studies, possibly via DrWatson.jl ([DrWatsonSim.jl](https://github.com/sebastianpech/DrWatsonSim.jl)?), to guide users towards best practices for computational studies.
 
 ### Getting help
 
@@ -71,12 +72,8 @@ Installing Thunderbolt can then be done from the Pkg REPL; press `]` at the `jul
 enter `pkg>` mode:
 
 ```
-pkg> add Ferrite#b6976d3, https://github.com/termi-official/Thunderbolt.jl#main
+pkg> add https://github.com/termi-official/Thunderbolt.jl#main
 ```
-
-!!! note
-    The package is under development, which is why you will need the currently (unreleased)
-    1.0 version of Ferrite.jl and the (unregistered) Thunderbolt.jl package.
 
 This will install Thunderbolt and all necessary dependencies. Press backspace to get back to the
 `julia>` prompt. (See the [documentation for Pkg](https://pkgdocs.julialang.org/), Julia's
