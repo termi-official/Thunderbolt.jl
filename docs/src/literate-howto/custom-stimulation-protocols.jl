@@ -11,9 +11,9 @@
 # Hence, we define a struct holding two callable functions and the windows for the Stimuli.
 using Thunderbolt, StaticArrays
 
-struct SimpleS1S2Protocol{S1Type, S2Type} <: Function
+struct SimpleS1S2Protocol{S1Type, S2Type, WT} <: Function
     S1::S1Type
-    S1_window::T
+    S1_window::WT
     S2::S2Type
     S2_window::WT
 end
