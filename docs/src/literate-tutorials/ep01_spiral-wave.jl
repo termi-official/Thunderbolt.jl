@@ -42,7 +42,7 @@ Cₘ = ConstantCoefficient(1.0)
 # !!! tip
 #     If the mesh is properly annotated, then we can generate (or even load) a cardiac coordinate system.
 #     Consult [coordinate system API documentation](@ref coordinate-system-api) for details.
-#     With this information we can [construct idealized microstructures](@ref microstructure-api) to define heterogeneous conductivity tensors as follows:
+#     With this information we can [construct idealized microstructures](@ref microstructure-api) to define heterogeneous conductivity tensors e.g. as
 #     ```julia
 #     microstructure = create_simple_microstructure_model(
 #       coordinate_system,

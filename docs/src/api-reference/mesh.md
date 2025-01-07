@@ -20,7 +20,7 @@ BiVCoordinateSystem
 BiVCoordinate
 ```
 
-## Mesh Generators
+## [Mesh Generators](@id mesh-generator-api)
 
 ```@docs
 generate_mesh
