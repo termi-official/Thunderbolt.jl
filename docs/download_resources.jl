@@ -4,9 +4,10 @@ import Downloads
 const directory = joinpath(@__DIR__, "src", "tutorials")
 mkpath(directory)
 
+assets_url_base = "https://raw.githubusercontent.com/termi-official/Thunderbolt.jl/gh-pages/assets/"
 for (file, url) in [
-        # "spiral-wave.gif" => "https://raw.githubusercontent.com/Ferrite-FEM/Ferrite.jl/gh-pages/assets/spiral-wave.gif",
-        # "contracting-left-ventricle.gif" => "https://raw.githubusercontent.com/Ferrite-FEM/Ferrite.jl/gh-pages/assets/contracting-left-ventricle.gif",
+        "spiral-wave.gif" => assets_url_base * "spiral-wave-lts-amr.gif",
+        "contracting-left-ventricle.gif" => assets_url_base * "contracting-biv-simple.gif",
     ]
     afile = joinpath(directory, file)
     if !isfile(afile)
