@@ -1,4 +1,4 @@
-# # [Minimal Custom EP Cell Model Example](@id how-to-custom-ep-cell-model)
+# # [Custom EP Cell Model](@id how-to-custom-ep-cell-model)
 
 # We first need to define a struct holding all the parameters.
 # If you want to have parameters with spatial variation, which can be exchanged easily, then simply add a field with custom type and a function which accepts a coordinate `x` and a time `t` as input, as for example here for the parameter `e`:
@@ -24,6 +24,7 @@ Thunderbolt.default_initial_state(::HeterogeneousFHNModel) = [0.0, 0.0]
 # Finally we also need to provide the right hand side of the model.
 # The API is similar to what we have in SciML, but we have one additional input `x`.
 # `x` contains spatial information to distinguish individual cells, allowing spatial gradients of cellular behavior.
+# If no spatial information is provded, then `x === nothing`.
 # Usually the types for x are either Vec{sdim}, if the coordinate is carthesian, or some generalized coordinate.
 # Please consult [the coordinate system API docs](@ref coordinate-system-api) for more details.
 # !!! note
