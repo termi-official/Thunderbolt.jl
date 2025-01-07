@@ -57,6 +57,7 @@ bibtex_plugin = CitationBibliography(
         "How-to guides" => [
             "Overview" => "howto/index.md",
             "howto/benchmarking.md",
+            "howto/custom-ep-cell-model.md",
         ],
         "API Reference" => [
             "Overview" => "api-reference/index.md",

@@ -10,11 +10,14 @@ Thunderbolt.to_mesh
 Thunderbolt.elementtypes
 ```
 
-## Coordinate Systems
+## [Coordinate Systems](@id coordinate-system-api)
 
 ```@docs
-Thunderbolt.CartesianCoordinateSystem
-Thunderbolt.LVCoordinateSystem
+CartesianCoordinateSystem
+LVCoordinateSystem
+LVCoordinate
+BiVCoordinateSystem
+BiVCoordinate
 ```
 
 ## Mesh Generators

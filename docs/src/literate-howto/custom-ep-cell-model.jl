@@ -24,6 +24,8 @@ Thunderbolt.default_initial_state(::HeterogeneousFHNModel) = [0.0, 0.0]
 # Finally we also need to provide the right hand side of the model.
 # The API is similar to what we have in SciML, but we have one additional input `x`.
 # `x` contains spatial information to distinguish individual cells, allowing spatial gradients of cellular behavior.
+# Usually the types for x are either Vec{sdim}, if the coordinate is carthesian, or some generalized coordinate.
+# Please consult [the coordinate system API docs](@ref coordinate-system-api) for more details.
 # !!! note
 #     You may have noticed that all inputs are parametrized.
 #     This seems to be necessary to force specialization for the GPU code -- removing the type parameters leads to cryptic CUDA.jl errors.
