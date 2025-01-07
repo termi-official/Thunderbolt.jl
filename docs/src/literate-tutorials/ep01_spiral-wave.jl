@@ -27,7 +27,7 @@
 using Thunderbolt, LinearSolve
 
 # We start by constructing a square domain for our simulation.
-mesh = generate_mesh(Quadrilateral, (2^6, 2^6), Vec{2}((0.0,0.0)), Vec{2}((2.5,2.5)))
+mesh = generate_mesh(Quadrilateral, (2^6, 2^6), Vec{2}((0.0,0.0)), Vec{2}((2.5,2.5)));
 # Here the first parameter is the element type and the second parameter is a tuple holding the number of subdivisions per dimension.
 # The last two parameters are the corners defining the rectangular domain.
 # !!! tip
@@ -38,7 +38,7 @@ mesh = generate_mesh(Quadrilateral, (2^6, 2^6), Vec{2}((0.0,0.0)), Vec{2}((2.5,2
 # For simplciity we assume $C_{\mathrm{m}} = \chi = 1.0$ and a homogeneous, anisotropic symmetric conductivity tensor.
 Cₘ = ConstantCoefficient(1.0)
 χ  = ConstantCoefficient(1.0)
-κ  = ConstantCoefficient(SymmetricTensor{2,2,Float64}((4.5e-5, 0, 2.0e-5)))
+κ  = ConstantCoefficient(SymmetricTensor{2,2,Float64}((4.5e-5, 0, 2.0e-5)));
 # !!! tip
 #     If the mesh is properly annotated, then we can generate (or even load) a cardiac coordinate system.
 #     Consult [coordinate system API documentation](@ref coordinate-system-api) for details.
@@ -58,11 +58,11 @@ Cₘ = ConstantCoefficient(1.0)
 #     where κ₁, κ₂, κ₃ are the eigenvalues for the fiber, sheet and normal direction.
 
 # The spiral wave will unfold due to the specific construction of the initial conditions, hence we do not need to apply a stimulus.
-stimulation_protocol = NoStimulationProtocol()
+stimulation_protocol = NoStimulationProtocol();
 
 # Now we choose a cell model.
 # For simplicity we choose a neuronal electrophysiology model, which is a nice playground.
-cell_model = Thunderbolt.FHNModel()
+cell_model = Thunderbolt.FHNModel();
 # !!! tip
 #     A full list of all models can be found in the [API reference](api-reference/models/#Cells).
 #     To implement a custom cell model please consult [the how-to section](@ref how-to-custom-ep-cell-model).
@@ -99,7 +99,7 @@ function spiral_wave_initializer!(u₀, f::GenericSplitFunction)
             end
         end
     end
-end
+end;
 
 # Now we put the components together by instantiating the monodomain model.
 ep_model = MonodomainModel(
@@ -109,14 +109,14 @@ ep_model = MonodomainModel(
     stimulation_protocol,
     cell_model,
     :φₘ, :s,
-)
+);
 
 # We now annotate the model to be reaction-diffusion split.
 # Special solvers need special forms for the model.
 # However, the same solver can work with different forms.
 # In the case of operator splitting users might choose to split the equations differently.
 # Hence we leave it as a user option which split they prefer, or if they even want work on the full problem.
-split_ep_model = ReactionDiffusionSplit(ep_model)
+split_ep_model = ReactionDiffusionSplit(ep_model);
 
 # !!! todo
 #     Show how to use solvers different that LTG (and implement them).
@@ -129,18 +129,18 @@ split_ep_model = ReactionDiffusionSplit(ep_model)
 spatial_discretization_method = FiniteElementDiscretization(
     Dict(:φₘ => LagrangeCollection{1}()),
 )
-odeform = semidiscretize(split_ep_model, spatial_discretization_method, mesh)
+odeform = semidiscretize(split_ep_model, spatial_discretization_method, mesh);
 
 # We now allocate a solution vector and set the initial condition.
 u₀ = zeros(Float32, OS.function_size(odeform))
-spiral_wave_initializer!(u₀, odeform)
+spiral_wave_initializer!(u₀, odeform);
 
 
 # We proceed by defining the time integration algorithms for each subproblem.
 # First, there is the heat problem, which we will solve with a low-storage backward Euler method
 heat_timestepper = BackwardEulerSolver(
     inner_solver=KrylovJL_CG(atol=1e-6, rtol=1e-5),
-)
+);
 # !!! tip
 #     On non-trivial geometries it is highly recommended to use a preconditioner.
 #     Please consult the [LinearSolve.jl docs](https://docs.sciml.ai/LinearSolve/stable/basics/Preconditioners/) for details.
@@ -149,11 +149,11 @@ heat_timestepper = BackwardEulerSolver(
 # We will solve these locally adaptive with forward Euler steps.
 cell_timestepper = AdaptiveForwardEulerSubstepper(;
     reaction_threshold=0.1,
-)
+);
 
 # Now we can just instantiate the operator splitting algorithm of our choice.
 # Since our time integrators are both first order in time we opt for the standard first order accurrate operator splitting technique by Lie-Trotter (or Godunov).
-timestepper = OS.LieTrotterGodunov((heat_timestepper, cell_timestepper))
+timestepper = OS.LieTrotterGodunov((heat_timestepper, cell_timestepper));
 
 # The remaining code is very similar to how we use SciML solvers.
 # We first define our time domain, initial time step length and some dt for visualization.
@@ -163,7 +163,7 @@ dtvis = 25.0;
 
 # Then we setup the problem.
 # We have a split function, so the correct problem is an OperatorSplittingProblem.
-problem = OS.OperatorSplittingProblem(odeform, u₀, tspan)
+problem = OS.OperatorSplittingProblem(odeform, u₀, tspan);
 
 # !!! tip
 #     If we want to solve the problem on the GPU, or if we want to use special matrix and vector formats, we just need to adjust the vector and matrix types.
@@ -184,7 +184,7 @@ problem = OS.OperatorSplittingProblem(odeform, u₀, tspan)
 #     ```
 
 # Now we initialize our time integrator as usual.
-integrator = OS.init(problem, timestepper, dt=dt₀)
+integrator = OS.init(problem, timestepper, dt=dt₀);
 
 # !!! todo
 #     The post-processing API is not yet finished.
@@ -199,7 +199,7 @@ for (u, t) in OS.TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
     store_timestep!(io, t, dh.grid) do file
         Thunderbolt.store_timestep_field!(file, t, dh, φ, :φₘ)
     end
-end
+end;
 
 # !!! tip
 #     If you want to see more details of the solution process launch Julia with Thunderbolt as debug module:
@@ -209,14 +209,14 @@ end
 
 #md # ## References
 #md # ```@bibliography
-#md # Pages = ["cm01_simple-active-stress.md"]
+#md # Pages = ["ep01_spiral_wave.md"]
 #md # Canonical = false
 #md # ```
 
 #md # ## [Plain program](@id mechanics-tutorial_simple-active-stress-plain-program)
 #md #
 #md # Here follows a version of the program without any comments.
-#md # The file is also available here: [`cm01_simple-active-stress.jl`](cm01_simple-active-stress.jl).
+#md # The file is also available here: [`ep01_spiral_wave.jl`](ep01_spiral_wave.jl).
 #md #
 #md # ```julia
 #md # @__CODE__
