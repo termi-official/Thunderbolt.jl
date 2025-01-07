@@ -8,8 +8,8 @@
 );</code></pre><p>Here the first 3 parameters control the number of elements in circumferential, radial and longitudinal directions. The number of elements is very low, so users have an easy time to play around with it. For scientific studies the mesh needs to be finer, such that the simulation converges properly. The remaining parameters control the chamber geometry shape itself.</p><div class="admonition is-success"><header class="admonition-header">Tip</header><div class="admonition-body"><p>We can also load realistic geometries with external formats. For this simply use either FerriteGmsh.jl or one of the loader functions stated in the <a href>mesh API</a>.</p></div></div><p>Next we will define a coordinate system, which helps us to work with cardiac geometries. This way we can reuse different methods, like for example fiber generators, across geometries.</p><pre><code class="language-julia hljs">coordinate_system = compute_lv_coordinate_system(mesh);</code></pre><p>In this coordinate system we will now create a microstructure with linearly varying helix angle in transmural direction. The compute microstructure field will be generated on the function space of piecewise continuous first order Lagrange polynomials.</p><pre><code class="language-julia hljs">microstructure = create_simple_microstructure_model(
     coordinate_system,
     LagrangeCollection{1}()^3;
-    endo_helix_angle = deg2rad(-60.0),
-    epi_helix_angle = deg2rad(70.0),
+    endo_helix_angle = deg2rad(60.0),
+    epi_helix_angle = deg2rad(-60.0),
 );</code></pre><p>Now we describe the model which we want to use. The models provided by Thunderbolt are designed to be highly modular, so you can quickly swap out individual component or compose models with each other. For the active stress formulation we need first the active and passive material models. For this tutorial we use the models described by Guccione.</p><pre><code class="language-julia hljs">passive_material_model = Guccione1991PassiveModel()
 active_material_model  = Guccione1993ActiveModel();</code></pre><p>Furthermore we need to describe the calcium field and associate it with the sarcomere model. To simplify this tutorial we will use an analytical calcium profile. Note that we can also use experimental data or a precomputed calcium profile here, too, by simply changing the function implementation below.</p><pre><code class="language-julia hljs">function calcium_profile_function(x::LVCoordinate,t)
     linear_interpolation(t,y1,y2,t1,t2) = y1 + (t-t1) * (y2-y1)/(t2-t1)
@@ -34,7 +34,7 @@ calcium_field = AnalyticalCoefficient(
     Dict(:displacement =&gt; LagrangeCollection{1}()^3),
 )
 quasistaticform = semidiscretize(mechanical_model, discretization, mesh);</code></pre><p>The remaining code is very similar to how we use SciML solvers. We first define our time domain, initial time step length and some dt for visualization.</p><pre><code class="language-julia hljs">dt₀ = 10.0
-tspan = (0.0, 1000.0)
+tspan = (0.0, 500.0)
 dtvis = 25.0;</code></pre><p>Then we setup the problem. Since we have no time dependence in our active stress model the correct problem here is a quasistatic problem.</p><pre><code class="language-julia hljs">problem = QuasiStaticProblem(quasistaticform, tspan);</code></pre><p>Next we define the time stepper. Since there are no time derivatives appearing in our formulation we have to opt for a homotopy path method, which solve the time depentent problems adaptively. As our non-linear solver we choose the standard Newton-Raphson method and a direct solver for the inner linear system.</p><pre><code class="language-julia hljs">timestepper = HomotopyPathSolver(
     NewtonRaphsonSolver(
         max_iter=10,
@@ -67,69 +67,7 @@ end;</code></pre><pre class="documenter-example-output"><code class="nohighlight
 [ Info: 425.0
 [ Info: 450.0
 [ Info: 475.0
-[ Info: 500.0
-┌ Warning: At t=520.4799032910976, dt was forced below floating point epsilon 1.1368683772161603e-13. Aborting. There is either an error in your model specification or the true solution is unstable (or the true solution can not be represented in the precision of Float64).
-└ @ Thunderbolt ~/work/Thunderbolt.jl/Thunderbolt.jl/src/solver/time/integrator/diffeq-interface.jl:267
-┌ Info: Finished integration at t=520.4799032910976.
-└   iter = 69
-[ Info: 525.0
-┌ Info: Finished integration at t=520.4799032910976.
-└   iter = 70
-[ Info: 550.0
-┌ Info: Finished integration at t=520.4799032910976.
-└   iter = 71
-[ Info: 575.0
-┌ Info: Finished integration at t=520.4799032910976.
-└   iter = 72
-[ Info: 600.0
-┌ Info: Finished integration at t=520.4799032910976.
-└   iter = 73
-[ Info: 625.0
-┌ Info: Finished integration at t=520.4799032910976.
-└   iter = 74
-[ Info: 650.0
-┌ Info: Finished integration at t=520.4799032910976.
-└   iter = 75
-[ Info: 675.0
-┌ Info: Finished integration at t=520.4799032910976.
-└   iter = 76
-[ Info: 700.0
-┌ Info: Finished integration at t=520.4799032910976.
-└   iter = 77
-[ Info: 725.0
-┌ Info: Finished integration at t=520.4799032910976.
-└   iter = 78
-[ Info: 750.0
-┌ Info: Finished integration at t=520.4799032910976.
-└   iter = 79
-[ Info: 775.0
-┌ Info: Finished integration at t=520.4799032910976.
-└   iter = 80
-[ Info: 800.0
-┌ Info: Finished integration at t=520.4799032910976.
-└   iter = 81
-[ Info: 825.0
-┌ Info: Finished integration at t=520.4799032910976.
-└   iter = 82
-[ Info: 850.0
-┌ Info: Finished integration at t=520.4799032910976.
-└   iter = 83
-[ Info: 875.0
-┌ Info: Finished integration at t=520.4799032910976.
-└   iter = 84
-[ Info: 900.0
-┌ Info: Finished integration at t=520.4799032910976.
-└   iter = 85
-[ Info: 925.0
-┌ Info: Finished integration at t=520.4799032910976.
-└   iter = 86
-[ Info: 950.0
-┌ Info: Finished integration at t=520.4799032910976.
-└   iter = 87
-[ Info: 975.0
-┌ Info: Finished integration at t=520.4799032910976.
-└   iter = 88
-[ Info: 1000.0</code></pre><div class="admonition is-success"><header class="admonition-header">Tip</header><div class="admonition-body"><p>If you want to see more details of the solution process launch Julia with Thunderbolt as debug module:</p><pre><code class="nohighlight hljs">JULIA_DEBUG=Thunderbolt julia --project --threads=auto my_simulation_runner.jl</code></pre></div></div><h2 id="References"><a class="docs-heading-anchor" href="#References">References</a><a id="References-1"></a><a class="docs-heading-anchor-permalink" href="#References" title="Permalink"></a></h2><div class="citation noncanonical"><dl><dt>[1]</dt><dd><div>R. Chadwick. <em>Mechanics of the left ventricle</em>. Biophysical journal <strong>39</strong>, 279–288 (1982).</div></dd><dt>[2]</dt><dd><div>J. M. Guccione, L. K. Waldman and A. D. McCulloch. <em>Mechanics of Active Contraction in Cardiac Muscle: Part II—Cylindrical Models of the Systolic Left Ventricle</em>. <a href="https://doi.org/10.1115/1.2895474">Journal of Biomechanical Engineering <strong>115</strong>, 82–90</a> (1993).</div></dd></dl></div><h2 id="heat_equation-DG-plain-program"><a class="docs-heading-anchor" href="#heat_equation-DG-plain-program">Plain program</a><a id="heat_equation-DG-plain-program-1"></a><a class="docs-heading-anchor-permalink" href="#heat_equation-DG-plain-program" title="Permalink"></a></h2><p>Here follows a version of the program without any comments. The file is also available here: <a href="dg_heat_equation.jl"><code>dg_heat_equation.jl</code></a>.</p><pre><code class="language-julia hljs">using Thunderbolt, LinearSolve
+[ Info: 500.0</code></pre><div class="admonition is-success"><header class="admonition-header">Tip</header><div class="admonition-body"><p>If you want to see more details of the solution process launch Julia with Thunderbolt as debug module:</p><pre><code class="nohighlight hljs">JULIA_DEBUG=Thunderbolt julia --project --threads=auto my_simulation_runner.jl</code></pre></div></div><h2 id="References"><a class="docs-heading-anchor" href="#References">References</a><a id="References-1"></a><a class="docs-heading-anchor-permalink" href="#References" title="Permalink"></a></h2><div class="citation noncanonical"><dl><dt>[1]</dt><dd><div>R. Chadwick. <em>Mechanics of the left ventricle</em>. Biophysical journal <strong>39</strong>, 279–288 (1982).</div></dd><dt>[2]</dt><dd><div>J. M. Guccione, L. K. Waldman and A. D. McCulloch. <em>Mechanics of Active Contraction in Cardiac Muscle: Part II—Cylindrical Models of the Systolic Left Ventricle</em>. <a href="https://doi.org/10.1115/1.2895474">Journal of Biomechanical Engineering <strong>115</strong>, 82–90</a> (1993).</div></dd></dl></div><h2 id="heat_equation-DG-plain-program"><a class="docs-heading-anchor" href="#heat_equation-DG-plain-program">Plain program</a><a id="heat_equation-DG-plain-program-1"></a><a class="docs-heading-anchor-permalink" href="#heat_equation-DG-plain-program" title="Permalink"></a></h2><p>Here follows a version of the program without any comments. The file is also available here: <a href="dg_heat_equation.jl"><code>dg_heat_equation.jl</code></a>.</p><pre><code class="language-julia hljs">using Thunderbolt, LinearSolve
 
 mesh = generate_ideal_lv_mesh(11,2,5;
     inner_radius = 0.7,
@@ -144,8 +82,8 @@ coordinate_system = compute_lv_coordinate_system(mesh);
 microstructure = create_simple_microstructure_model(
     coordinate_system,
     LagrangeCollection{1}()^3;
-    endo_helix_angle = deg2rad(-60.0),
-    epi_helix_angle = deg2rad(70.0),
+    endo_helix_angle = deg2rad(60.0),
+    epi_helix_angle = deg2rad(-60.0),
 );
 
 passive_material_model = Guccione1991PassiveModel()
@@ -186,7 +124,7 @@ discretization = FiniteElementDiscretization(
 quasistaticform = semidiscretize(mechanical_model, discretization, mesh);
 
 dt₀ = 10.0
-tspan = (0.0, 1000.0)
+tspan = (0.0, 500.0)
 dtvis = 25.0;
 
 problem = QuasiStaticProblem(quasistaticform, tspan);
@@ -207,4 +145,4 @@ for (u, t) in TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
     Thunderbolt.store_timestep!(io, t, dh.grid) do file
     Thunderbolt.store_timestep_field!(io, t, dh, u, :displacement)
     end
-end;</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../">« Overview</a><a class="docs-footer-nextpage" href>EP01: Simple Active Stress »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.8.0 on <span class="colophon-date" title="Tuesday 7 January 2025 16:12">Tuesday 7 January 2025</span>. Using Julia version 1.11.2.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+end;</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../">« Overview</a><a class="docs-footer-nextpage" href>EP01: Simple Active Stress »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.8.0 on <span class="colophon-date" title="Tuesday 7 January 2025 16:14">Tuesday 7 January 2025</span>. Using Julia version 1.11.2.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>

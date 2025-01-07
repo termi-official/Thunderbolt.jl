@@ -13,8 +13,8 @@ coordinate_system = compute_lv_coordinate_system(mesh);
 microstructure = create_simple_microstructure_model(
     coordinate_system,
     LagrangeCollection{1}()^3;
-    endo_helix_angle = deg2rad(-60.0),
-    epi_helix_angle = deg2rad(70.0),
+    endo_helix_angle = deg2rad(60.0),
+    epi_helix_angle = deg2rad(-60.0),
 );
 
 passive_material_model = Guccione1991PassiveModel()
@@ -55,7 +55,7 @@ discretization = FiniteElementDiscretization(
 quasistaticform = semidiscretize(mechanical_model, discretization, mesh);
 
 dt₀ = 10.0
-tspan = (0.0, 1000.0)
+tspan = (0.0, 500.0)
 dtvis = 25.0;
 
 problem = QuasiStaticProblem(quasistaticform, tspan);

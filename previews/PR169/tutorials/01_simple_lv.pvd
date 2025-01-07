@@ -22,25 +22,5 @@
     <DataSet timestep="450.0" part="0" file="01_simple_lv/450.0.vtu"/>
     <DataSet timestep="475.0" part="0" file="01_simple_lv/475.0.vtu"/>
     <DataSet timestep="500.0" part="0" file="01_simple_lv/500.0.vtu"/>
-    <DataSet timestep="525.0" part="0" file="01_simple_lv/525.0.vtu"/>
-    <DataSet timestep="550.0" part="0" file="01_simple_lv/550.0.vtu"/>
-    <DataSet timestep="575.0" part="0" file="01_simple_lv/575.0.vtu"/>
-    <DataSet timestep="600.0" part="0" file="01_simple_lv/600.0.vtu"/>
-    <DataSet timestep="625.0" part="0" file="01_simple_lv/625.0.vtu"/>
-    <DataSet timestep="650.0" part="0" file="01_simple_lv/650.0.vtu"/>
-    <DataSet timestep="675.0" part="0" file="01_simple_lv/675.0.vtu"/>
-    <DataSet timestep="700.0" part="0" file="01_simple_lv/700.0.vtu"/>
-    <DataSet timestep="725.0" part="0" file="01_simple_lv/725.0.vtu"/>
-    <DataSet timestep="750.0" part="0" file="01_simple_lv/750.0.vtu"/>
-    <DataSet timestep="775.0" part="0" file="01_simple_lv/775.0.vtu"/>
-    <DataSet timestep="800.0" part="0" file="01_simple_lv/800.0.vtu"/>
-    <DataSet timestep="825.0" part="0" file="01_simple_lv/825.0.vtu"/>
-    <DataSet timestep="850.0" part="0" file="01_simple_lv/850.0.vtu"/>
-    <DataSet timestep="875.0" part="0" file="01_simple_lv/875.0.vtu"/>
-    <DataSet timestep="900.0" part="0" file="01_simple_lv/900.0.vtu"/>
-    <DataSet timestep="925.0" part="0" file="01_simple_lv/925.0.vtu"/>
-    <DataSet timestep="950.0" part="0" file="01_simple_lv/950.0.vtu"/>
-    <DataSet timestep="975.0" part="0" file="01_simple_lv/975.0.vtu"/>
-    <DataSet timestep="1000.0" part="0" file="01_simple_lv/1000.0.vtu"/>
   </Collection>
 </VTKFile>
