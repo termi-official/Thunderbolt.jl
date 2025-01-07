@@ -28,9 +28,12 @@ LiveServer.servedocs(;
         # which then triggers a new run of make.jl etc.
         joinpath(repo_root, "docs/src/tutorials"),
         joinpath(repo_root, "docs/src/howto"),
-            # Watch the index files in the skip_dirs folders
+    ],
+    include_files = [
+        joinpath(repo_root, "generate.md"),
+        # Watch the index files in the skip_dirs folders
         joinpath(repo_root, "docs/src/tutorials/index.md"),
         joinpath(repo_root, "docs/src/howto/index.md"),
         joinpath(repo_root, "docs/src/howto/benchmarking.md"),
-    ],
+    ]
 )
