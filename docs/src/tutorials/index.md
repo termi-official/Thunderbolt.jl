@@ -28,7 +28,7 @@ tweaks to the program that you can try out on your own.
 This section explains how cardiac solid mechanics simulations can be carried out, how these simulations can be coupled with blood circuit models and how to add mechanical custom models.
 
 ---
-#### [Mechanics Tutorial 01: Simple Active Stress](literate/idealized-left-ventricle.jl)
+#### [Mechanics Tutorial 01: Simple Active Stress](@ref mechanics-tutorial_simple-active-stress)
 In this tutorial you will learn how to:
 * setup a basic electrophysiology simulation
 * extract quantities to post-process solutions online and offline

@@ -20,5 +20,16 @@ LiveServer.servedocs(;
     include_dirs = [
         # Watch the src folder so docstrings can be Revise'd
         joinpath(repo_root, "src"),
-    ]
+        joinpath(repo_root, "ext"),
+    ],
+    skip_dirs = [
+        # Skip the folder where Literate.jl output is written. This is needed
+        # to avoid infinite loops where running make.jl updates watched files,
+        # which then triggers a new run of make.jl etc.
+        joinpath(repo_root, "docs/src/tutorials"),
+        joinpath(repo_root, "docs/src/howto"),
+            # Watch the index files in the skip_dirs folders
+        joinpath(repo_root, "docs/src/tutorials/index.md"),
+        joinpath(repo_root, "docs/src/howto/index.md"),
+    ],
 )

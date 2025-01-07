@@ -1,4 +1,4 @@
-# # [Mechanics Tutorial 1: Simple Contracting Ventricle](@id tutorial-heat-equation)
+# # [Mechanics Tutorial 1: Simple Contracting Ventricle](@id mechanics-tutorial_simple-active-stress)
 # ![Contracting Left Ventricle](contracting-left-ventricle.gif)
 #
 # This tutorial shows how to perform a simulation for simple active mechanical behavior of heart chambers.
@@ -15,7 +15,7 @@
 # According to R. Chadwick (1982) the additive split of the stress in active and passive parts dates back to unpublished Peskin and has been popularized by Guccione et al. (1993).
 #
 # ## Commented Program
-# We start by loading Thunderbolt
+# We start by loading Thunderbolt and LinearSolve to use a custom direct solver of our choice.
 using Thunderbolt, LinearSolve
 
 # Our goal is to simulate the contraction of a left ventricle with a very simple active stress formulation.
@@ -27,7 +27,7 @@ mesh = generate_ideal_lv_mesh(11,2,5;
     longitudinal_upper = 0.2,
     apex_inner = 1.3,
     apex_outer = 1.5
-)
+);
 # Here the first 3 parameters control the number of elements in circumferential, radial and longitudinal directions.
 # The number of elements is very low, so users have an easy time to play around with it.
 # For scientific studies the mesh needs to be finer, such that the simulation converges properly.
@@ -39,14 +39,14 @@ mesh = generate_ideal_lv_mesh(11,2,5;
 
 # Next we will define a coordinate system, which helps us to work with cardiac geometries.
 # This way we can reuse different methods, like for example fiber generators, across geometries.
-coordinate_system = compute_lv_coordinate_system(mesh)
+coordinate_system = compute_lv_coordinate_system(mesh);
 
 # In this coordinate system we will now create a microstructure with linearly varying helix angle in transmural direction.
 microstructure = create_simple_microstructure_model(
     coordinate_system,
     endo_helix_angle = deg2rad(-60.0),
     epi_helix_angle = deg2rad(70.0)
-)
+);
 
 # Now we describe the model which we want to use.
 # The models provided by Thunderbolt are designed to be highly modular, so you can quickly swap out individual
@@ -54,7 +54,7 @@ microstructure = create_simple_microstructure_model(
 # For the active stress formulation we need first the active and passive material models.
 # For this tutorial we use the models described by Guccione.
 passive_material_model = Guccione1991PassiveModel()
-active_material_model  = Guccione1993ActiveModel()
+active_material_model  = Guccione1993ActiveModel();
 
 # Furthermore we need to describe the calcium field and associate it with the sarcomere model.
 # To simplify this tutorial we will use an analytical calcium profile.
@@ -75,11 +75,11 @@ end
 calcium_field = AnalyticalCoefficient(
     calcium_profile_function,
     CoordinateSystemCoefficient(coordinate_system),
-)
+);
 
 # We will use for a very simple sarcomere model which is constant in the calcium concentration.
 # Note that a using a sarcomere model which has evoluation equations or rate-dependent terms will require different solvers.
-sarcomere_model = ConstantStretchModel(;calcium_field)
+sarcomere_model = ConstantStretchModel(;calcium_field);
 
 # Now we have everything set to describe our PDE model by passing all the model components down.
 mechanical_model = ActiveStressModel(
@@ -87,7 +87,7 @@ mechanical_model = ActiveStressModel(
     active_material_model,
     sarcomere_model,
     microstructure_coefficient,
-)
+);
 
 # !!! tip
 #     A full list of all models can be found in the [API reference](https://termi-official.github.io/Thunderbolt.jl/dev/api-reference/models/#Solid-Mechanics)
@@ -107,17 +107,17 @@ quasistaticform = semidiscretize(
         ]
     ),
     ring_grid
-)
+);
 
 # The remaining code is very similar to how we use SciML solvers.
 # We first define our time domain, initial time step length and some dt for visualization.
 dt₀ = 10.0
 tspan = (0.0, 1000.0)
-dtvis = 25.0
+dtvis = 25.0;
 
 # Then we setup the problem.
 # Since we have no time dependence in our active stress model the correct problem here is a quasistatic problem.
-problem = QuasiStaticProblem(quasistaticform, tspan)
+problem = QuasiStaticProblem(quasistaticform, tspan);
 
 # Next we define the time stepper.
 # Since there are no time derivatives appearing in our formulation we have to opt for a homotopy path method, which solve the time depentent problems adaptively.
@@ -127,10 +127,10 @@ timestepper = HomotopyPathSolver(
         max_iter=10,
         inner_solver=LinearSolve.UMFPACKFactorization(),
     )
-)
+);
 
 # Now we initialize our time integrator as usual.
-integrator = init(problem, timestepper, dt=dt₀, verbose=true, adaptive=true, dtmax=25.0)
+integrator = init(problem, timestepper, dt=dt₀, verbose=true, adaptive=true, dtmax=25.0);
 
 # !!! todo
 #     The post-processing API is not yet finished.
@@ -145,10 +145,25 @@ for (u, t) in TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
     Thunderbolt.store_timestep!(io, t, dh.grid) do file
     Thunderbolt.store_timestep_field!(io, t, dh, u, :displacement)
     end
-end
+end;
 
 # !!! tip
 #     If you want to see more details of the solution process launch Julia with Thunderbolt as debug module:
 #     ```
 #     JULIA_DEBUG=Thunderbolt julia --project --threads=auto my_simulation_runner.jl
 #     ```
+
+#md # ## References
+#md # ```@bibliography
+#md # Pages = ["mechanics_simple-active-stress.md"]
+#md # Canonical = false
+#md # ```
+
+#md # ## [Plain program](@id heat_equation-DG-plain-program)
+#md #
+#md # Here follows a version of the program without any comments.
+#md # The file is also available here: [`dg_heat_equation.jl`](dg_heat_equation.jl).
+#md #
+#md # ```julia
+#md # @__CODE__
+#md # ```
