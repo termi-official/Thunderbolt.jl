@@ -129,10 +129,10 @@ struct VolumeTransfer0D3D{TP} <: AbstractTransferOperator
     tying::TP
 end
 
-function syncronize_parameters!(integ, f, syncer::VolumeTransfer0D3D)
+function OS.forward_sync_external!(outer_integrator::OS.OperatorSplittingIntegrator, inner_integrator::DiffEqBase.DEIntegrator, sync::VolumeTransfer0D3D)
     # Tying holds a buffer for the 3D problem with some meta information about the 0D problem
-    for chamber ∈ syncer.tying.chambers
-        chamber.V⁰ᴰval = integ.uparent[chamber.V⁰ᴰidx_global]
+    for chamber ∈ sync.tying.chambers
+        chamber.V⁰ᴰval = outer_integrator.u[chamber.V⁰ᴰidx_global]
     end
 end
 
@@ -143,10 +143,12 @@ struct PressureTransfer3D0D{TP } <: AbstractTransferOperator
     tying::TP
 end
 
-function syncronize_parameters!(integ, f, syncer::PressureTransfer3D0D)
+function OS.forward_sync_external!(outer_integrator::OS.OperatorSplittingIntegrator, inner_integrator::DiffEqBase.DEIntegrator, sync::PressureTransfer3D0D)
+    @info "Here"
+    f = inner_integrator.f
     # Tying holds a buffer for the 3D problem with some meta information about the 0D problem
-    for (chamber_idx,chamber) ∈ enumerate(syncer.tying.chambers)
-        p = integ.uparent[chamber.pressure_dof_index_global]
+    for (chamber_idx,chamber) ∈ enumerate(sync.tying.chambers)
+        p = outer_integrator.u[chamber.pressure_dof_index_global]
         # The pressure buffer is constructed in a way that the chamber index and
         # pressure index coincides
         f.p[chamber_idx] = p

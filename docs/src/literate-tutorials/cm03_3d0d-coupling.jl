@@ -240,10 +240,10 @@ circ_eqs = [
 circ_sys = structural_simplify(circ_model);
 
 # We now generate the mechanical subproblem as in the [first tutorial](@ref mechanics-tutorial_simple-active-stress)
-scaling_factor = 2.7;
+scaling_factor = 3.0;
 # !!! warning
 #     Tuning parameter until all bugs are fixed in this tutorial :)
-mesh = generate_ideal_lv_mesh(8,3,5;
+mesh = generate_ideal_lv_mesh(8,2,5;
     inner_radius = scaling_factor*0.7,
     outer_radius = scaling_factor*1.0,
     longitudinal_upper = scaling_factor*0.2,
@@ -323,7 +323,7 @@ splitform = semidiscretize(
     mesh,
 )
 
-dt₀ = 0.1
+dt₀ = 1.0
 dtvis = 5.0
 tspan = (0.0, 1000.0)
 
