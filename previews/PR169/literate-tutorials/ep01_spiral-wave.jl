@@ -159,8 +159,8 @@ timestepper = OS.LieTrotterGodunov((heat_timestepper, cell_timestepper));
 # We first define our time domain, initial time step length and some dt for visualization.
 dt₀ = 10.0
 dtvis = 25.0;
-# This speeds up the CI #hide
-tspan = (0.0, dtvis);   #hide
+# This speeds up the CI # hide
+tspan = (0.0, dtvis);   # hide
 
 # Then we setup the problem.
 # We have a split function, so the correct problem is an OperatorSplittingProblem.

@@ -270,7 +270,7 @@ dt₀ = 1.0
 dtvis = 5.0
 tspan = (0.0, 1000.0)
 
-tspan = (0.0, dtvis)    #hide
+tspan = (0.0, dtvis)    # hide
 
 chamber_solver = HomotopyPathSolver(
     NewtonRaphsonSolver(;

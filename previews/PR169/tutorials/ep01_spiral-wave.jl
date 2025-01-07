@@ -72,7 +72,7 @@ timestepper = OS.LieTrotterGodunov((heat_timestepper, cell_timestepper));
 dt₀ = 10.0
 dtvis = 25.0;
 
-tspan = (0.0, dtvis);   #hide
+tspan = (0.0, dtvis);   # hide
 
 problem = OS.OperatorSplittingProblem(odeform, u₀, tspan);
 
