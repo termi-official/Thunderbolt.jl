@@ -26,10 +26,6 @@
 # We start by loading Thunderbolt and LinearSolve to use a custom direct solver of our choice.
 using Thunderbolt, LinearSolve
 
-# To boost performance we pin threads to the cores.
-using ThreadPinning
-pinthreads(:cores)
-
 # We start by constructing a square domain for our simulation.
 mesh = generate_mesh(Quadrilateral, (2^6, 2^6), Vec{2}((0.0,0.0)), Vec{2}((2.5,2.5)));
 # Here the first parameter is the element type and the second parameter is a tuple holding the number of subdivisions per dimension.
