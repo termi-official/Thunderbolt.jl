@@ -15,17 +15,17 @@ using Thunderbolt, LinearAlgebra, StaticArrays
 #     The initializer API is not yet finished and hence we deconstruct stuff here manually.
 #     Please note that this method is quite fragile w.r.t. to many changes you can make in the code below.
 function steady_state_initializer!(u₀, f::GenericSplitFunction)
-    # TODO cleaner implementation. We need to extract this from the types or via dispatch.
+    ## TODO cleaner implementation. We need to extract this from the types or via dispatch.
     heatfun = f.functions[1]
     heat_dofrange = f.solution_indices[1]
     odefun = f.functions[2]
     ionic_model = odefun.ode
 
     φ₀ = @view u₀[heat_dofrange];
-    # TODO extraction these via utility functions
+    ## TODO extraction these via utility functions
     dh = heatfun.dh
     s₀flat = @view u₀[(ndofs(dh)+1):end];
-    # Should not be reshape but some array of arrays fun
+    ## Should not be reshape but some array of arrays fun
     s₀ = reshape(s₀flat, (ndofs(dh), Thunderbolt.num_states(ionic_model)-1));
     default_values = Thunderbolt.default_initial_state(ionic_model)
 
