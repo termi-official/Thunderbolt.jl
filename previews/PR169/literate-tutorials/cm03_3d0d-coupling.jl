@@ -418,7 +418,7 @@ end
 #md # Canonical = false
 #md # ```
 
-#md # ## [Plain program](@id mechanics-tutorial_simple-active-stress-plain-program)
+#md # ## [Plain program](@id mechanics-tutorial_3d0dcoupling-plain-program)
 #md #
 #md # Here follows a version of the program without any comments.
 #md # The file is also available here: [`cm03_3d0d-coupling.jl`](cm03_3d0d-coupling.jl).

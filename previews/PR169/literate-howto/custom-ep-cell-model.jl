@@ -1,4 +1,4 @@
-# # [Custom EP Cell Model](@id how-to-custom-ep-cell-model)
+# # [Adding EP Cell Models](@id how-to-custom-ep-cell-model)
 using Thunderbolt
 
 # We first need to define a struct holding all the parameters.
