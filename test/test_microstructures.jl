@@ -35,7 +35,8 @@
             epi_helix_angle = deg2rad(0.0),
             endo_transversal_angle = 0.0,
             epi_transversal_angle = 0.0,
-            sheetlet_pseudo_angle = deg2rad(0)
+            endo_rot_angle = deg2rad(0.0),
+            epi_rot_angle = deg2rad(0.0),
         )
         cache2 = Thunderbolt.setup_coefficient_cache(ms, qr, sdh)
         for cellcache in CellIterator(ring_grid)
