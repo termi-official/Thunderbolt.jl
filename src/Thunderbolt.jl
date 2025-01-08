@@ -190,6 +190,8 @@ export
     create_simple_microstructure_model,
     # Coordinate system
     LVCoordinateSystem,
+    LVCoordinate,
+    BiVCoordinate,
     CartesianCoordinateSystem,
     compute_lv_coordinate_system,
     compute_midmyocardial_section_coordinate_system,

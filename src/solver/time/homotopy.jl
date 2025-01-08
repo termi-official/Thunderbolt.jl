@@ -8,10 +8,10 @@ struct HomotopyPathSolver{IS} <: AbstractSolver
     inner_solver::IS
 end
 
-mutable struct HomotopyPathSolverCache{ISC, T, VT <: AbstractVector{T}} <: AbstractTimeSolverCache
+mutable struct HomotopyPathSolverCache{ISC, T, VT <: AbstractVector{T}, VTprev} <: AbstractTimeSolverCache
     inner_solver_cache::ISC
     uₙ::VT
-    uₙ₋₁::VT
+    uₙ₋₁::VTprev
     tmp::VT
 end
 

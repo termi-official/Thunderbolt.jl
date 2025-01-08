@@ -397,7 +397,7 @@ function Geselowitz1989ECGLeadCache(
         torso_grid,
         heart_diffusion_tensor_field, # κᵢ - diffusion tensor description for heart on heart grid
         full_diffusion_tensor_field,  # κ - diffusion tensor description for heart and torso on torso grid
-        [[get_closest_vertex(position, grid) for position in positions] for positions in electrode_positions];
+        [[get_closest_vertex(position, torso_grid) for position in positions] for positions in electrode_positions];
         ipc                 ,
         qrc                 ,
         ground              ,
