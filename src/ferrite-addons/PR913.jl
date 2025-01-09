@@ -83,7 +83,7 @@ function try_allocate_shared_mem(::Type{RHSObject{Tv}}, block_dim::Ti, n_basefun
 end
 
 function try_allocate_shared_mem(::Type{JacobianObject{Tv}}, block_dim::Ti, n_basefuncs::Ti) where {Ti <: Integer, Tv <: Real}
-    throw(ErrorException("Not implemented"))
+    error("Not implemented")
 end
 
 
@@ -400,7 +400,7 @@ FeTrait(::Type{<:JacobianCellMem}) = HasNoFe()
     return CUDA.fill!(ke, 0.0f0)
 end
 
-_cellke(::HasNoKe, ::GPUCellCache) = throw(ErrorException("$(typeof(cc.cell_mem)) does not have ke field."))
+_cellke(::HasNoKe, ::GPUCellCache) = error("$(typeof(cc.cell_mem)) does not have ke field.")
 
 cellke(cc::GPUCellCache) = _cellke(KeTrait(typeof(cc.cell_mem)), cc)
 
@@ -409,7 +409,7 @@ cellke(cc::GPUCellCache) = _cellke(KeTrait(typeof(cc.cell_mem)), cc)
     return CUDA.fill!(fe, 0.0f0)
 end
 
-_cellfe(::HasNoFe, ::GPUCellCache) = throw(ErrorException("$(typeof(cc.cell_mem)) does not have fe field."))
+_cellfe(::HasNoFe, ::GPUCellCache) = error("$(typeof(cc.cell_mem)) does not have fe field.")
 
 cellfe(cc::GPUCellCache) = _cellfe(FeTrait(typeof(cc.cell_mem)), cc)
 
@@ -449,8 +449,9 @@ end
 function Adapt.adapt_structure(to, cv::CellValues)
     fv = Adapt.adapt(to, StaticInterpolationValues(cv.fun_values))
     gm = Adapt.adapt(to, StaticInterpolationValues(cv.geo_mapping))
-    weights = Adapt.adapt(to, ntuple(i -> getweights(cv.qr)[i], getnquadpoints(cv)))
-    return Ferrite.StaticCellValues(fv, gm, weights)
+    n_quadoints = cv.qr.weights |> length
+    weights = Adapt.adapt(to, ntuple(i -> cv.qr.weights[i], n_quadoints))
+    return StaticCellValues(fv, gm, weights)
 end
 
 
@@ -501,7 +502,6 @@ end
 _symbols_to_int32(symbols) = 1:length(symbols) .|> (sym -> convert(Int32, sym))
 
 function Adapt.adapt_structure(to, sdh::SubDofHandler)
-    @show "in sdh"
     cellset = Adapt.adapt_structure(to, sdh.cellset |> collect .|> (x -> convert(Int32, x)) |> cu)
     field_names = Adapt.adapt_structure(to, _symbols_to_int32(sdh.field_names) |> cu)
     field_interpolations = sdh.field_interpolations .|> (ip -> Adapt.adapt_structure(to, ip)) |> cu

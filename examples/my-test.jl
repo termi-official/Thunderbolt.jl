@@ -49,5 +49,32 @@ Thunderbolt.update_operator!(linop,0.0)
 
 cuda_op = Thunderbolt.init_linear_operator(Thunderbolt.BackendCUDA,protocol, qrc, dh)
 Thunderbolt.update_operator!(cuda_op,0.0)
+propertynames(cuda_op)
+cuda_op.op.b
 
+
+sdh = dh.subdofhandlers[1]
+ip = Ferrite.getfieldinterpolation(sdh, :u)
+element_qr  = getquadraturerule(qrc, sdh)
+element_cache = Thunderbolt.setup_element_cache(protocol, element_qr, ip, sdh)
+
+
+using CUDA
+using Adapt
+
+
+# function Adapt.adapt_structure(to, cv::StaticInterpolationValues)
+#     return Adapt.adapt(to, cv)
+# end
+
+function coeff_kernel(sv)
+    @cushow sv.Nξ[1,2]
+    return nothing
+end
+
+sv = element_cache.cc.coordinate_system_cache
+cv = element_cache.cv
+sv1 = StaticInterpolationValues(cv.fun_values)
+@cuda threads = 1  blocks = 1 coeff_kernel(sv)
+element_cache
 

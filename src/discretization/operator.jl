@@ -587,7 +587,7 @@ function init_linear_operator(::Type{BackendCUDA},protocol::IntegrandType,qrc::Q
         mem_alloc = FeriteUtils.allocate_global_mem(FerriteUtils.RHSObject{Float32}, n_cells, n_basefuncs)
         return CudaOperatorKernel(linear_op, threads, blocks, mem_alloc)
     else
-        throw(ArgumentError("CUDA is not functional, please check your GPU driver and CUDA installation"))
+        error("CUDA is not functional, please check your GPU driver and CUDA installation")
     end
 end
 
@@ -602,48 +602,129 @@ end
 (op_ker::CudaOperatorKernel)(time) = update_operator!(op_ker.op, time)
 
 function _setup_caches(op::LinearOperator)
-    @unpack qrc, dh, chunksize, protocol = op
-    eles_caches = []
-    for sdh in dh.subdofhandlers
+    @unpack b, qrc, dh, integrand  = op
+    sdh_to_cache = sdh  -> 
+    begin
         # Prepare evaluation caches
-        ip          = Ferrite.getfieldinterpolation(sdh, field_name)
+        ip          = Ferrite.getfieldinterpolation(sdh, sdh.field_names[1])
         element_qr  = getquadraturerule(qrc, sdh)
 
         # Build evaluation caches
-        element_cache = setup_element_cache(protocol, element_qr, ip, sdh)
-        push!(eles_caches, element_cache)
+        element_cache =  Adapt.adapt_structure(CuArray,setup_element_cache(integrand, element_qr, ip, sdh))
+        return element_cache
     end
-   return dh.subdofhandlers |> cu, eles_caches |> cu
+    eles_caches  = dh.subdofhandlers .|> sdh_to_cache 
+    # for sdh in dh.subdofhandlers
+    #     # Prepare evaluation caches
+    #     ip          = Ferrite.getfieldinterpolation(sdh, sdh.field_names[1])
+    #     element_qr  = getquadraturerule(qrc, sdh)
+
+    #     # Build evaluation caches
+    #     element_cache = setup_element_cache(integrand, element_qr, ip, sdh)
+    #     push!(eles_caches, element_cache)
+    # end
+   return eles_caches 
 end
 
 function update_operator!(op_ker::CudaOperatorKernel, time)
     @unpack op, threads, blocks, mem_alloc = op_ker
     @unpack b, qrc, dh, integrand  = op
 
-    ##sdhs, eles_caches = _setup_caches(op)
-    
-    ker = () -> dummy_kernel!(b, dh, mem_alloc)
-    
+    eles_caches =Adapt.adapt_structure(CuArray,_setup_caches(op) |> cu)
+    ker = () -> _update_linear_operator_kernel!(b, dh, eles_caches,mem_alloc, time)
     _launch_kernel!(ker, threads, blocks, mem_alloc)
 end
 
 
-function dummy_kernel!(b,dh, mem_alloc)
+function dummy_kernel!(b,dh, mem_alloc,eles_caches)
+    @cushow eles_caches.cv
+    # for sdh_idx in 1:length(dh.subdofhandlers)
+    #     for cell in CellIterator(dh,convert(Int32, sdh_idx),mem_alloc)
+    #         bₑ = FerriteUtils.cellfe(cell)
+    #         #b[celldofs(cell)] .+= bₑ
+    #         dofs = celldofs(cell)
+    #         @inbounds for i in 1:length(dofs)
+    #             b[dofs[i]] += bₑ[i]
+    #         end
+    #         #CUDA.@cushow 1
+    #         CUDA.@cushow bₑ[1]
+    #     end
+    # end
+    return nothing
+end
+
+
+function _update_linear_operator_kernel!(b, dh, eles_caches,mem_alloc, time)
     for sdh_idx in 1:length(dh.subdofhandlers)
-        for cell in CellIterator(dh,convert(Int32, sdh_idx),mem_alloc)
+        #sdh = dh.subdofhandlers[sdh_idx]
+        element_cache = eles_caches[sdh_idx]
+        #ndofs = ndofs_per_cell(sdh) ## TODO: check memalloc whether rhs is a constant vector or not ? 
+        for cell in CellIterator(dh,convert(Int32, sdh_idx) ,mem_alloc)
             bₑ = FerriteUtils.cellfe(cell)
+            assemble_element!(bₑ, cell, element_cache, time)
             #b[celldofs(cell)] .+= bₑ
             dofs = celldofs(cell)
             @inbounds for i in 1:length(dofs)
                 b[dofs[i]] += bₑ[i]
             end
-            #CUDA.@cushow 1
-            CUDA.@cushow bₑ[1]
         end
     end
     return nothing
 end
 
+
+# function _update_linear_operator_kernel!(b, dh, element_cache,mem_alloc, time)
+#     #for sdh_idx in 1:length(dh.subdofhandlers)
+#         #sdh = dh.subdofhandlers[sdh_idx]
+#         #element_cache = eles_caches[sdh_idx]
+#         @cushow element_cache.cv |> typeof
+#         #ndofs = ndofs_per_cell(sdh) ## TODO: check memalloc whether rhs is a constant vector or not ? 
+#         # for cell in CellIterator(dh,convert(Int32, sdh_idx) ,mem_alloc)
+#         #     # bₑ = FerriteUtils.cellfe(cell)
+#         #     # assemble_element!(bₑ, cell, element_cache, time)
+#         #     # #b[celldofs(cell)] .+= bₑ
+#         #     # dofs = celldofs(cell)
+#         #     # @inbounds for i in 1:length(dofs)
+#         #     #     b[dofs[i]] += bₑ[i]
+#         #     # end
+#         # end
+#    # end
+#     return nothing
+# end
+
+## TODO: put the adapt somewhere else ?!
+function Adapt.adapt_structure(to, element_cache::AnalyticalCoefficientElementCache)
+    cc = Adapt.adapt_structure(to, element_cache.cc)
+    nz_intervals = Adapt.adapt_structure(to, element_cache.nonzero_intervals |> cu)
+    cv = element_cache.cv
+    fv = Adapt.adapt(to, FerriteUtils.StaticInterpolationValues(cv.fun_values))
+    gm = Adapt.adapt(to, FerriteUtils.StaticInterpolationValues(cv.geo_mapping))
+    n_quadoints = cv.qr.weights |> length
+    weights = Adapt.adapt(to, ntuple(i -> cv.qr.weights[i], n_quadoints))
+    sv = FerriteUtils.StaticCellValues(fv, gm, weights)
+    #cv = Adapt.adapt_structure(to, element_cache.cv)
+    return AnalyticalCoefficientElementCache(cc, nz_intervals, sv)
+end
+
+function Adapt.adapt_structure(to, coeff::AnalyticalCoefficientCache)
+    f = Adapt.adapt_structure(to, coeff.f)
+    coordinate_system_cache = Adapt.adapt_structure(to, coeff.coordinate_system_cache)
+    return AnalyticalCoefficientCache(f, coordinate_system_cache)
+end
+
+function Adapt.adapt_structure(to, cysc::CartesianCoordinateSystemCache)
+    cs = Adapt.adapt_structure(to, cysc.cs)
+    cv = Adapt.adapt_structure(to, cysc.cv)
+    return CartesianCoordinateSystemCache(cs, cv)
+end
+
+function Adapt.adapt_structure(to, cv::CellValues)
+    fv = Adapt.adapt(to, FerriteUtils.StaticInterpolationValues(cv.fun_values))
+    gm = Adapt.adapt(to, FerriteUtils.StaticInterpolationValues(cv.geo_mapping))
+    n_quadoints = cv.qr.weights |> length
+    weights = Adapt.adapt(to, ntuple(i -> cv.qr.weights[i], n_quadoints))
+    return FerriteUtils.StaticCellValues(fv, gm, weights)
+end
 
 function _launch_kernel!(ker, threads, blocks, ::FerriteUtils.AbstractGlobalMemAlloc)
     CUDA.@cuda threads=threads blocks=blocks ker()

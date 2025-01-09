@@ -165,6 +165,17 @@ function evaluate_coefficient(coeff::CartesianCoordinateSystemCache{<:CartesianC
     return x
 end
 
+function evaluate_coefficient(coeff::CartesianCoordinateSystemCache{<:CartesianCoordinateSystem{sdim}}, geometry_cache::FerriteUtils.GPUCellCache, qv::FerriteUtils.StaticQuadratureValues{T, <:Any, <:Any, <:Any, <:Any, <:Any}, t) where {sdim,T}
+    @unpack cv = coeff
+    x          = zero(Vec{sdim, T})
+    coords     = getcoordinates(geometry_cache) 
+    for i in 1:getnbasefunctions(cv)
+        x += FerriteUtils.shape_value(qv, i) * coords[i]
+    end
+    return x
+end
+
+
 struct LVCoordinateSystemCache{CS <: LVCoordinateSystem, CV}
     cs::CS
     cv::CV
