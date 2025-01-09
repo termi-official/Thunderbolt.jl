@@ -614,44 +614,18 @@ function _setup_caches(op::LinearOperator)
         return element_cache
     end
     eles_caches  = dh.subdofhandlers .|> sdh_to_cache 
-    # for sdh in dh.subdofhandlers
-    #     # Prepare evaluation caches
-    #     ip          = Ferrite.getfieldinterpolation(sdh, sdh.field_names[1])
-    #     element_qr  = getquadraturerule(qrc, sdh)
-
-    #     # Build evaluation caches
-    #     element_cache = setup_element_cache(integrand, element_qr, ip, sdh)
-    #     push!(eles_caches, element_cache)
-    # end
    return eles_caches 
 end
 
 function update_operator!(op_ker::CudaOperatorKernel, time)
     @unpack op, threads, blocks, mem_alloc = op_ker
     @unpack b, qrc, dh, integrand  = op
-
+    ## TODO: element_caches should be in the init or Lazily evaluated here and then stored in CUDA operator object
     eles_caches =Adapt.adapt_structure(CuArray,_setup_caches(op) |> cu)
     ker = () -> _update_linear_operator_kernel!(b, dh, eles_caches,mem_alloc, time)
     _launch_kernel!(ker, threads, blocks, mem_alloc)
 end
 
-
-function dummy_kernel!(b,dh, mem_alloc,eles_caches)
-    @cushow eles_caches.cv
-    # for sdh_idx in 1:length(dh.subdofhandlers)
-    #     for cell in CellIterator(dh,convert(Int32, sdh_idx),mem_alloc)
-    #         bₑ = FerriteUtils.cellfe(cell)
-    #         #b[celldofs(cell)] .+= bₑ
-    #         dofs = celldofs(cell)
-    #         @inbounds for i in 1:length(dofs)
-    #             b[dofs[i]] += bₑ[i]
-    #         end
-    #         #CUDA.@cushow 1
-    #         CUDA.@cushow bₑ[1]
-    #     end
-    # end
-    return nothing
-end
 
 
 function _update_linear_operator_kernel!(b, dh, eles_caches,mem_alloc, time)
@@ -672,25 +646,6 @@ function _update_linear_operator_kernel!(b, dh, eles_caches,mem_alloc, time)
     return nothing
 end
 
-
-# function _update_linear_operator_kernel!(b, dh, element_cache,mem_alloc, time)
-#     #for sdh_idx in 1:length(dh.subdofhandlers)
-#         #sdh = dh.subdofhandlers[sdh_idx]
-#         #element_cache = eles_caches[sdh_idx]
-#         @cushow element_cache.cv |> typeof
-#         #ndofs = ndofs_per_cell(sdh) ## TODO: check memalloc whether rhs is a constant vector or not ? 
-#         # for cell in CellIterator(dh,convert(Int32, sdh_idx) ,mem_alloc)
-#         #     # bₑ = FerriteUtils.cellfe(cell)
-#         #     # assemble_element!(bₑ, cell, element_cache, time)
-#         #     # #b[celldofs(cell)] .+= bₑ
-#         #     # dofs = celldofs(cell)
-#         #     # @inbounds for i in 1:length(dofs)
-#         #     #     b[dofs[i]] += bₑ[i]
-#         #     # end
-#         # end
-#    # end
-#     return nothing
-# end
 
 ## TODO: put the adapt somewhere else ?!
 function Adapt.adapt_structure(to, element_cache::AnalyticalCoefficientElementCache)

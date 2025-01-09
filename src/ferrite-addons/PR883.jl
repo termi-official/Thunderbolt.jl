@@ -1,6 +1,5 @@
 using Ferrite
 using StaticArrays
-using CUDA
 import Base: @propagate_inbounds
 
 # QuadratureValuesIterator
@@ -282,6 +281,7 @@ end
 
 
 function _quadrature_point_values(fe_v::StaticCellValues, q_point::Int, cell_coords::AbstractVector, neg_detJ_err_fun::Function)
+    ## TODO: un comment this function 
     #q_point bounds checked, ok to use @inbounds
     @inbounds begin
             #mapping = calculate_mapping(fe_v.gm, q_point, cell_coords)
@@ -294,7 +294,6 @@ function _quadrature_point_values(fe_v::StaticCellValues, q_point::Int, cell_coo
             #Nx, dNdx = calculate_mapped_values(fe_v.fv, q_point, mapping)
             #M = fe_v.gm.Nξ[:, q_point]
         end
-        return 2
         # return StaticQuadratureValues(detJdV, Nx, dNdx, M)
 end
 
