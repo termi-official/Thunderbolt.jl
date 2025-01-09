@@ -23,7 +23,12 @@ end
 
 duplicate_for_parallel(cache::AnalyticalCoefficientCache) = AnalyticalCoefficientCache(cache.f, duplicate_for_parallel(cache.coordinate_system_cache))
 
-@inline function evaluate_coefficient(coeff::F, cell_cache, qp::QuadraturePoint{<:Any,T}, t) where {F <: AnalyticalCoefficientCache, T}
+@inline function evaluate_coefficient(coeff::F, cell_cache::CellCache, qp::QuadraturePoint{<:Any,T}, t) where {F <: AnalyticalCoefficientCache, T}
+    x = evaluate_coefficient(coeff.coordinate_system_cache, cell_cache, qp, t)
+    return coeff.f(x, t)
+end
+
+@inline function evaluate_coefficient(coeff::F, cell_cache::FerriteUtils.GPUCellCache, qp::FerriteUtils.StaticQuadratureValues, t) where {F <: AnalyticalCoefficientCache}
     x = evaluate_coefficient(coeff.coordinate_system_cache, cell_cache, qp, t)
     return coeff.f(x, t)
 end
@@ -74,7 +79,7 @@ end
     for qv in FerriteUtils.QuadratureValuesIterator(cv, coords)
         dΩ = FerriteUtils.getdetJdV(qv)
         @inbounds for j ∈ 1:getnbasefunctions(cv)
-            fx = Float32(1.0) #evaluate_coefficient(cc, geometry_cache, qv, time) ## FIXME: dynamic function invocation
+            fx =  evaluate_coefficient(cc, geometry_cache, qv, time) ## FIXME: dynamic function invocation
             δu = FerriteUtils.shape_value(qv, j)
             bₑ[j] += fx * δu * dΩ
         end
