@@ -306,4 +306,4 @@ function eliminate_constraints_from_linearization!(solver_cache::AbstractNonline
     getJ(op, Block((2,1)))[:, ch.prescribed_dofs] .= 0.0
 end
 
-update_constraints_block!(::RSAFDQ2022TyingInfo, ::BlockArrays.Block, ::Thunderbolt.LoadDrivenSolverCache, ::Float64) = nothing
+update_constraints_block!(::RSAFDQ2022TyingInfo, ::BlockArrays.Block, ::Thunderbolt.HomotopyPathSolverCache, ::Float64) = nothing

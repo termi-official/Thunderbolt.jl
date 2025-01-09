@@ -1,23 +1,24 @@
 #########################################################
 ########################## TIME #########################
 #########################################################
-Base.@kwdef struct BackwardEulerSolver{SolverType, SolutionVectorType, SystemMatrixType} <: AbstractSolver
+Base.@kwdef struct BackwardEulerSolver{SolverType, SolutionVectorType, SystemMatrixType, MonitorType} <: AbstractSolver
     inner_solver::SolverType                       = LinearSolve.KrylovJL_CG()
     solution_vector_type::Type{SolutionVectorType} = Vector{Float64}
     system_matrix_type::Type{SystemMatrixType}     = ThreadedSparseMatrixCSR{Float64, Int64}
     # mass operator info
     # diffusion opeartor info
-    verbose                                        = true # Temporary helper for benchmarks
+    # DO NOT USE THIS (will be replaced by proper logging system)
+    monitor::MonitorType = DefaultProgressMonitor()
 end
 
+SciMLBase.isadaptive(::BackwardEulerSolver) = false
+
 # TODO decouple from heat problem via special ODEFunction (AffineODEFunction)
-mutable struct BackwardEulerSolverCache{T, SolutionType <: AbstractVector{T}, MassMatrixType, DiffusionMatrixType, SourceTermType, SolverCacheType} <: AbstractTimeSolverCache
+mutable struct BackwardEulerSolverCache{T, SolutionType <: AbstractVector{T}, MassMatrixType, DiffusionMatrixType, SourceTermType, SolverCacheType, MonitorType} <: AbstractTimeSolverCache
     # Current solution buffer
     uₙ::SolutionType
     # Last solution buffer
     uₙ₋₁::SolutionType
-    # Temporary buffer for interpolations and stuff
-    tmp::SolutionType
     # Mass matrix
     M::MassMatrixType
     # Diffusion matrix
@@ -29,7 +30,7 @@ mutable struct BackwardEulerSolverCache{T, SolutionType <: AbstractVector{T}, Ma
     # Last time step length as a check if we have to update K
     Δt_last::T
     # DO NOT USE THIS (will be replaced by proper logging system)
-    verbose::Bool
+    monitor::MonitorType
 end
 
 # Helper to get A into the right form
@@ -68,13 +69,11 @@ function perform_step!(f::TransientDiffusionFunction, cache::BackwardEulerSolver
     # Solve linear problem
     @timeit_debug "inner solve" sol = LinearSolve.solve!(inner_solver)
     solve_failed = !(DiffEqBase.SciMLBase.successful_retcode(sol.retcode) || sol.retcode == DiffEqBase.ReturnCode.Default)
-    if cache.verbose || solve_failed # The latter seems off...
-        @info inner_solver.cacheval.stats
-    end
+    linear_finalize_monitor(inner_solver, cache.monitor, sol)
     return !solve_failed
 end
 
-function setup_solver_cache(f::TransientDiffusionFunction, solver::BackwardEulerSolver, t₀)
+function setup_solver_cache(f::TransientDiffusionFunction, solver::BackwardEulerSolver, t₀; u = nothing, uprev = nothing)
     @unpack dh = f
     @unpack inner_solver = solver
     @assert length(dh.field_names) == 1 # TODO relax this assumption, maybe.
@@ -82,9 +81,8 @@ function setup_solver_cache(f::TransientDiffusionFunction, solver::BackwardEuler
 
     A     = create_system_matrix(solver.system_matrix_type  , f)
     b     = create_system_vector(solver.solution_vector_type, f)
-    u0    = create_system_vector(solver.solution_vector_type, f)
-    uprev = create_system_vector(solver.solution_vector_type, f)
-    tmp   = create_system_vector(solver.solution_vector_type, f)
+    u0    = u === nothing ? create_system_vector(solver.solution_vector_type, f) : u
+    uprev = uprev === nothing ? create_system_vector(solver.solution_vector_type, f) : uprev
 
     T = eltype(u0)
 
@@ -121,13 +119,12 @@ function setup_solver_cache(f::TransientDiffusionFunction, solver::BackwardEuler
     cache       = BackwardEulerSolverCache(
         u0, # u
         uprev,
-        tmp,
         mass_operator,
         diffusion_operator,
         source_operator,
         inner_cache,
         T(0.0),
-        solver.verbose,
+        solver.monitor,
     )
 
     @timeit_debug "initial assembly" begin
@@ -145,11 +142,11 @@ Base.@kwdef struct ForwardEulerSolver{SolutionVectorType} <: AbstractSolver
     solution_vector_type::Type{SolutionVectorType} = Vector{Float64}
 end
 
-mutable struct ForwardEulerSolverCache{VT,F} <: AbstractTimeSolverCache
+mutable struct ForwardEulerSolverCache{VT,VTrate,VTprev,F} <: AbstractTimeSolverCache
     rate::Int
-    du::VT
+    du::VTrate
     uₙ::VT
-    uₙ₋₁::VT
+    uₙ₋₁::VTprev
     rhs!::F
 end
 
@@ -165,12 +162,14 @@ function perform_step!(f::ODEFunction, solver_cache::ForwardEulerSolverCache, t:
     return !any(isnan.(uₙ))
 end
 
-function setup_solver_cache(f::ODEFunction, solver::ForwardEulerSolver, t₀)
+function setup_solver_cache(f::ODEFunction, solver::ForwardEulerSolver, t₀; u = nothing, uprev = nothing)
+    du = create_system_vector(solver.solution_vector_type, f)
+    u = u === nothing ? create_system_vector(solver.solution_vector_type, f) : u
     return ForwardEulerSolverCache(
         solver.rate,
-        create_system_vector(solver.solution_vector_type, f),
-        create_system_vector(solver.solution_vector_type, f),
-        create_system_vector(solver.solution_vector_type, f),
+        du,
+        u,
+        u,
         f.f
     )
 end

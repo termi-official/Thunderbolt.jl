@@ -3,7 +3,7 @@ using Thunderbolt, Thunderbolt.TimerOutputs
 function spiral_wave_initializer!(u₀, f::GenericSplitFunction)
     # TODO cleaner implementation. We need to extract this from the types or via dispatch.
     heatfun = f.functions[1]
-    heat_dofrange = f.dof_ranges[1]
+    heat_dofrange = f.solution_indices[1]
     odefun = f.functions[2]
     ionic_model = odefun.ode
 
@@ -68,7 +68,7 @@ TimerOutputs.enable_debug_timings(Thunderbolt)
 TimerOutputs.reset_timer!()
 for (u, t) in OS.TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
     dh = odeform.functions[1].dh
-    φ = u[odeform.dof_ranges[1]]
+    φ = u[odeform.solution_indices[1]]
     @info t,norm(u)
     # sflat = ....?
     store_timestep!(io, t, dh.grid) do file

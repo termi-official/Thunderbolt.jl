@@ -1,5 +1,6 @@
 # NOTE This example is work in progress. Please consult it at a later time again.
 using Thunderbolt, UnPack
+using LinearSolve
 import Thunderbolt: OS
 
 import Ferrite: get_grid, find_field
@@ -36,7 +37,8 @@ ring_cs = compute_midmyocardial_section_coordinate_system(ring_grid)
 
 constitutive_model = ActiveStressModel(
     Guccione1991PassiveModel(),
-    PiersantiActiveStress(;Tmax=10.0),
+    # PiersantiActiveStress(;Tmax=10.0),
+    Guccione1993ActiveModel(;Tmax=100.0),
     PelceSunLangeveld1995Model(;calcium_field=AnalyticalCoefficient(
         calcium_profile_function,
         CoordinateSystemCoefficient(ring_cs)
@@ -65,14 +67,14 @@ quasistaticform = semidiscretize(
 )
 
 problem = QuasiStaticProblem(quasistaticform, tspan)
-timestepper = LoadDrivenSolver(
+timestepper = HomotopyPathSolver(
     NewtonRaphsonSolver(
         max_iter=10,
         inner_solver=LinearSolve.UMFPACKFactorization(),
     )
 )
 
-integrator = OS.init(problem, timestepper, dt=dt₀, verbose=true)
+integrator = OS.init(problem, timestepper, dt=dt₀, verbose=true, adaptive=true, dtmax=25.0)
 
 io = ParaViewWriter(name);
 
@@ -80,6 +82,8 @@ using Thunderbolt.TimerOutputs
 TimerOutputs.enable_debug_timings(Thunderbolt)
 TimerOutputs.reset_timer!()
 for (u, t) in OS.TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
+    @info t,norm(u)
+
     @unpack dh = problem.f
     grid = get_grid(dh)
     cvc = CellValueCollection(qr_collection, ip_mech)
@@ -92,12 +96,12 @@ for (u, t) in OS.TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
 
     Jdata = zeros(getncells(grid))
 
-    frefdata = zero(Vector{Ferrite.Vec{3}}(undef, getncells(grid)))
-    srefdata = zero(Vector{Ferrite.Vec{3}}(undef, getncells(grid)))
-    fdata = zero(Vector{Ferrite.Vec{3}}(undef, getncells(grid)))
-    sdata = zero(Vector{Ferrite.Vec{3}}(undef, getncells(grid)))
-    helixangledata = zero(Vector{Float64}(undef, getncells(grid)))
-    helixanglerefdata = zero(Vector{Float64}(undef, getncells(grid)))
+    frefdata = zeros(Ferrite.Vec{3,Float64}, getncells(grid))
+    srefdata = zeros(Ferrite.Vec{3,Float64}, getncells(grid))
+    fdata = zeros(Ferrite.Vec{3,Float64}, getncells(grid))
+    sdata = zeros(Ferrite.Vec{3,Float64}, getncells(grid))
+    helixangledata = zeros(Float64, getncells(grid))
+    helixanglerefdata = zeros(Float64, getncells(grid))
 
     # Compute some elementwise measures
     for sdh ∈ dh.subdofhandlers
@@ -151,12 +155,12 @@ for (u, t) in OS.TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
 
                 # # v_longitudinal = function_gradient(cv_cs, qp, coordinate_system.u_apicobasal[celldofs(cell)])
                 # # v_radial = function_gradient(cv_cs, qp, coordinate_system.u_transmural[celldofs(cell)])
-                # # v_circimferential = v_longitudinal × v_radial
+                # # v_circimferential = v_radial × v_longitudinal
                 # # @TODO compute properly via coordinate system
                 # v_longitudinal = Ferrite.Vec{3}((0.0, 0.0, 1.0))
                 # v_radial = Ferrite.Vec{3}((x_global[1],x_global[2],0.0))
                 # v_radial /= norm(v_radial)
-                # v_circimferential = v_longitudinal × v_radial # Ferrite.Vec{3}((x_global[2],x_global[1],0.0))
+                # v_circimferential = v_radial × v_longitudinal # Ferrite.Vec{3}((x_global[2],x_global[1],0.0))
                 # v_circimferential /= norm(v_circimferential)
                 # #
                 # E_ll_cell += v_longitudinal ⋅ E ⋅ v_longitudinal

@@ -25,12 +25,12 @@ with $a,b \geq 1$.
 Entry 1 from table 3 in [HarNef:2003:pgp](@cite).
 """
 @Base.kwdef struct HartmannNeffCompressionPenalty1{TD1, TD2}
-    a::TD1  = 1.0
-    b::TD1  = 2.0
+    a::TD1  = 1
+    b::TD1  = 2
     β::TD2  = 1.0
 end
 function U(I₃, mp::HartmannNeffCompressionPenalty1)
-    mp.β * (I₃^mp.b + 1/I₃^mp.b - 2)^mp.a
+    mp.β * (I₃^mp.b + 1/(I₃^mp.b) - 2)^mp.a
 end
 
 
@@ -59,13 +59,12 @@ $U(I_3) = \beta (I_3 - 2\log(\sqrt{I_3}) + 4\log(\sqrt{I_3})^2))$
 
 Entry 3 from table 3 in [HarNef:2003:pgp](@cite).
 """
-@Base.kwdef struct HartmannNeffCompressionPenalty3{TD1, TD2}
-    a::TD1  = 1.0
-    b::TD1  = 2.0
-    β::TD2  = 1.0
+@Base.kwdef struct HartmannNeffCompressionPenalty3{T}
+    β::T  = 1.0
 end
 function U(I₃, mp::HartmannNeffCompressionPenalty3)
-    mp.β * (I₃^mp.b + 1/I₃^mp.b - 2)^mp.a
+    J = √I₃
+    mp.β * (I₃ - 2ln(J) + 4ln(J)^2)
 end
 
 

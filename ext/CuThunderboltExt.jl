@@ -90,7 +90,7 @@ function _gpu_pointwise_step_inner_kernel_wrapper!(f, t, Δt, cache::AbstractPoi
 end
 
 # This controls the outer loop over the ODEs
-function Thunderbolt._pointwise_step_outer_kernel!(f::AbstractPointwiseFunction, t::Real, Δt::Real, cache::AbstractPointwiseSolverCache, ::CuVector)
+function Thunderbolt._pointwise_step_outer_kernel!(f::AbstractPointwiseFunction, t::Real, Δt::Real, cache::AbstractPointwiseSolverCache, ::Union{<:CuVector, SubArray{<:Any,1,<:CuVector}})
     kernel = @cuda launch=false _gpu_pointwise_step_inner_kernel_wrapper!(f.ode, t, Δt, cache) # || return false
     config = launch_configuration(kernel.fun)
     threads = min(f.npoints, config.threads)

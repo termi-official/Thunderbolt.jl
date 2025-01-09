@@ -18,8 +18,6 @@ import ReadVTK
 include("solver/operator_splitting.jl")
 @reexport using .OS
 solution_size(f::GenericSplitFunction) = OS.function_size(f)
-# include("solver/local_time_stepping.jl")
-# include("solver/multilevel.jl")
 
 @reexport using Ferrite
 import Ferrite: AbstractDofHandler, AbstractGrid, AbstractRefShape, AbstractCell, get_grid
@@ -27,12 +25,17 @@ import Ferrite: vertices, edges, faces, sortedge, sortface
 import Ferrite: get_coordinate_type, getspatialdim
 import Ferrite: reference_shape_value
 
+import Preferences
+
+import Logging: Logging, LogLevel, @info, @logmsg
+
+import SciMLBase
+@reexport import SciMLBase: init, solve, solve!, step!
 import DiffEqBase#: AbstractDiffEqFunction, AbstractDEProblem
-@reexport import LinearSolve
+import OrdinaryDiffEqCore#: OrdinaryDiffEqCore
+import LinearSolve
 
 import Base: *, +, -
-
-@reexport import CommonSolve: init, solve, solve!, step!
 
 import ModelingToolkit
 import ModelingToolkit: @variables, @parameters, @component, @named,
@@ -44,11 +47,14 @@ import Adapt:
     Adapt, adapt_structure, adapt
 using CUDA
 
+
 include("utils.jl")
 
 include("mesh/meshes.jl")
 
-include("transfer_operators.jl")
+include("ferrite-addons/transfer_operators.jl")
+include("ferrite-addons/gpu/gpugrid.jl")
+include("ferrite-addons/gpu/gpudofhandler.jl")
 
 # Note that some modules below have an "interface.jl" but this one has only a "common.jl".
 # This is simply because there is no modeling interface, but just individual physics modules and couplers.
@@ -63,21 +69,22 @@ include("modeling/fluid_mechanics.jl")
 include("modeling/multiphysics.jl")
 
 include("modeling/functions.jl")
-include("modeling/problems.jl") # Utility for compat against DiffEqBase
+include("modeling/problems.jl")
 
 include("discretization/interface.jl")
 include("discretization/fem.jl")
 include("discretization/operator.jl")
 
+include("solver/logging.jl")
 include("solver/interface.jl")
 include("solver/linear.jl")
 include("solver/nonlinear.jl")
 include("solver/time_integration.jl")
 
 
-include("processing/ecg.jl")
+include("modeling/electrophysiology/ecg.jl")
 
-include("io.jl")
+include("ferrite-addons/io.jl")
 
 include("disambiguation.jl")
 
@@ -85,8 +92,6 @@ include("disambiguation.jl")
 include("modeling/rsafdq2022.jl")
 include("discretization/rsafdq-operator.jl")
 
-include("accelerator/grid.jl")
-include("accelerator/dofhandler.jl")
 
 # TODO put exports into the individual submodules above!
 export
@@ -186,6 +191,8 @@ export
     create_simple_microstructure_model,
     # Coordinate system
     LVCoordinateSystem,
+    LVCoordinate,
+    BiVCoordinate,
     CartesianCoordinateSystem,
     compute_lv_coordinate_system,
     compute_midmyocardial_section_coordinate_system,
@@ -200,13 +207,12 @@ export
     # Solver
     SchurComplementLinearSolver,
     NewtonRaphsonSolver,
-    LoadDrivenSolver,
+    HomotopyPathSolver,
     ForwardEulerSolver,
     BackwardEulerSolver,
     ForwardEulerCellSolver,
     AdaptiveForwardEulerSubstepper,
     # Integrator
-    get_parent_index,
     # Utils
     calculate_volume_deformed_mesh,
     elementtypes,

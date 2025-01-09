@@ -4,7 +4,7 @@ using Thunderbolt
     function simple_initializer!(u₀, f::GenericSplitFunction)
         # TODO cleaner implementation. We need to extract this from the types or via dispatch.
         heatfun = f.functions[1]
-        heat_dofrange = f.dof_ranges[1]
+        heat_dofrange = f.solution_indices[1]
         odefun = f.functions[2]
         ionic_model = odefun.ode
 
@@ -50,6 +50,7 @@ using Thunderbolt
 
         tspan = (0.0, 10.0)
         problem = OperatorSplittingProblem(odeform, u₀, tspan)
+        u₀ = copy(u₀)
 
         integrator = DiffEqBase.init(problem, timestepper, dt=1.0, verbose=true)
         DiffEqBase.solve!(integrator)
