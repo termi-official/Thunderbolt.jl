@@ -266,34 +266,22 @@ end
 end
 
 @inline function quadrature_point_values(fe_v::StaticCellValues{<:Any, <:Any}, q_point::Int, cell_coords::StaticVector)
-    @inbounds begin
-        mapping = Ferrite.calculate_mapping(fe_v.gm, q_point, cell_coords)
-        detJ = Ferrite.calculate_detJ(Ferrite.getjacobian(mapping))
-        detJ > 0.0f0 || -1.0f0 #neg_detJ_err_fun(detJ) # Cannot throw error on GPU, TODO: return error code instead
-        detJdV = detJ * fe_v.weights[q_point]
-    
-        Nx, dNdx = calculate_mapped_values(fe_v.fv, q_point, mapping)
-        M = fe_v.gm.Nξ[:, q_point]
-    end
-     return StaticQuadratureValues(detJdV, Nx, dNdx, M)
-    #return _quadrature_point_values(fe_v, q_point, cell_coords, detJ -> -1)
+    return _quadrature_point_values(fe_v, q_point, cell_coords, detJ -> -1)
 end
 
 
 function _quadrature_point_values(fe_v::StaticCellValues, q_point::Int, cell_coords::AbstractVector, neg_detJ_err_fun::Function)
-    ## TODO: un comment this function 
     #q_point bounds checked, ok to use @inbounds
     @inbounds begin
-            #mapping = calculate_mapping(fe_v.gm, q_point, cell_coords)
+            mapping = Ferrite.calculate_mapping(fe_v.gm, q_point, cell_coords)
         
-           # detJ = Ferrite.calculate_detJ(Ferrite.getjacobian(mapping))
-            @cushow fe_v.weights[q_point]
-            #detJ > 0.0f0 || neg_detJ_err_fun(detJ) # Cannot throw error on GPU, TODO: return error code instead
-            #detJdV = detJ * fe_v.weights[q_point]
+            detJ = Ferrite.calculate_detJ(Ferrite.getjacobian(mapping))
+            detJ > 0.0f0 || neg_detJ_err_fun(detJ) # Cannot throw error on GPU, TODO: return error code instead
+            detJdV = detJ * fe_v.weights[q_point]
         
-            #Nx, dNdx = calculate_mapped_values(fe_v.fv, q_point, mapping)
-            #M = fe_v.gm.Nξ[:, q_point]
+            Nx, dNdx = calculate_mapped_values(fe_v.fv, q_point, mapping)
+            M = fe_v.gm.Nξ[:, q_point]
         end
-        # return StaticQuadratureValues(detJdV, Nx, dNdx, M)
+        return StaticQuadratureValues(detJdV, Nx, dNdx, M)
 end
 

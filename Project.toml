@@ -33,17 +33,14 @@ UnPack = "3a884ed6-31ef-47d7-9d2a-63182c4928ed"
 Unrolled = "9602ed7d-8fef-5bc8-8597-8f21381861e8"
 WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192"
 
-[weakdeps]
-CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
-
 [extensions]
 CuThunderboltExt = "CUDA"
 
 [compat]
 Aqua = "0.8"
 BlockArrays = "1"
-CUDA = "5.5.2"
-DiffEqBase = "6.151.3"
+CUDA = "5.6.0"
+DiffEqBase = "6"
 Ferrite = "1"
 LinearSolve = "2"
 Logging = "1.10"
