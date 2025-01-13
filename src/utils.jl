@@ -45,11 +45,12 @@ end
 include("ferrite-addons/collections.jl")
 include("ferrite-addons/quadrature_iterator.jl")
 
-function celldofsview(dh::DofHandler, i::Int)
+function celldofsview(dh::DHType, i::Ti) where {DHType, Ti <: Integer}
     ndofs = ndofs_per_cell(dh, i)
     offset = dh.cell_dofs_offset[i]
     return @views dh.cell_dofs[offset:(offset+ndofs-1)]
 end
+
 
 function calculate_element_volume(cell, cellvalues_u, uₑ)
     reinit!(cellvalues_u, cell)

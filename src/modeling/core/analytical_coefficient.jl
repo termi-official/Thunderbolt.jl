@@ -46,14 +46,14 @@ struct AnalyticalCoefficientElementCache{CoefficientCacheType <: AnalyticalCoeff
 end
 duplicate_for_parallel(ec::AnalyticalCoefficientElementCache) = AnalyticalCoefficientElementCache(duplicate_for_parallel(ec.cc), ec.nonzero_intervals, ec.cv)
 
-@inline function assemble_element!(bₑ::AbstractVector, geometry_cache::CellCache, element_cache::AnalyticalCoefficientElementCache, time)
+@inline function assemble_element!(bₑ::AbstractVector, geometry_cache::CellCacheType, element_cache::AnalyticalCoefficientElementCache, time) where {CellCacheType} # to be used in both CPU and GPU
     _assemble_element!(bₑ, geometry_cache, getcoordinates(geometry_cache), element_cache::AnalyticalCoefficientElementCache, time)
 end
 
-# TODO: This is a duplicate of the CPU version, we can curcumvent that by define abstract type for CellCache.
-@inline function assemble_element!(bₑ::VectorType, geometry_cache::FerriteUtils.GPUCellCache, element_cache::AnalyticalCoefficientElementCache, time) where {VectorType}
-    _assemble_element!(bₑ, geometry_cache, getcoordinates(geometry_cache), element_cache::AnalyticalCoefficientElementCache, time)
-end
+# # TODO: This is a duplicate of the CPU version, we can curcumvent that by define abstract type for CellCache or type parameter.
+# @inline function assemble_element!(bₑ::VectorType, geometry_cache::FerriteUtils.GPUCellCache, element_cache::AnalyticalCoefficientElementCache, time) where {VectorType}
+#     _assemble_element!(bₑ, geometry_cache, getcoordinates(geometry_cache), element_cache::AnalyticalCoefficientElementCache, time)
+# end
 
 # We want this to be as fast as possible, so throw away everything unused
 @inline function _assemble_element!(bₑ::AbstractVector, geometry_cache::CellCache, coords::AbstractVector{<:Vec{dim,T}}, element_cache::AnalyticalCoefficientElementCache, time) where {dim,T}
@@ -75,11 +75,10 @@ end
 
 @inline function _assemble_element!(bₑ, geometry_cache::FerriteUtils.GPUCellCache, coords, element_cache::AnalyticalCoefficientElementCache, time) 
     @unpack cc, cv = element_cache
-    #n_geom_basefuncs = getngeobasefunctions(cv)
     for qv in FerriteUtils.QuadratureValuesIterator(cv, coords)
         dΩ = FerriteUtils.getdetJdV(qv)
         @inbounds for j ∈ 1:getnbasefunctions(cv)
-            fx =  evaluate_coefficient(cc, geometry_cache, qv, time) ## FIXME: dynamic function invocation
+            fx =  evaluate_coefficient(cc, geometry_cache, qv, time) 
             δu = FerriteUtils.shape_value(qv, j)
             bₑ[j] += fx * δu * dΩ
         end

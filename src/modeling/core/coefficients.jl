@@ -46,6 +46,18 @@ function evaluate_coefficient(cache::FieldCoefficientCache{T}, geometry_cache, q
     end
     return val
 end
+# GPU coefficient evaluation!
+function evaluate_coefficient(cache::FieldCoefficientCache{T}, geometry_cache::FerriteUtils.GPUCellCache, qv::FerriteUtils.StaticQuadratureValues, t) where T
+    @unpack elementwise_data, cv = cache
+    val = zero(T)
+    cellidx = FerriteUtils.cellid(geometry_cache)
+
+    @inbounds for i in 1:getnbasefunctions(cv)
+        val += FerriteUtils.shape_value(qv, i) * elementwise_data[i, cellidx]
+    end
+    return val
+end
+
 
 """
     ConstantCoefficient(value)
@@ -165,7 +177,7 @@ function evaluate_coefficient(coeff::CartesianCoordinateSystemCache{<:CartesianC
     return x
 end
 
-function evaluate_coefficient(coeff::CartesianCoordinateSystemCache{<:CartesianCoordinateSystem{sdim}}, geometry_cache::FerriteUtils.GPUCellCache, qv::FerriteUtils.StaticQuadratureValues{T, <:Any, <:Any, <:Any, <:Any, <:Any}, t) where {sdim,T}
+function evaluate_coefficient(coeff::CartesianCoordinateSystemCache{<:CartesianCoordinateSystem{sdim}}, geometry_cache::FerriteUtils.GPUCellCache, qv::FerriteUtils.StaticQuadratureValues{T}, t) where {sdim,T}
     @unpack cv = coeff
     x          = zero(Vec{sdim, T})
     coords     = FerriteUtils.getcoordinates(geometry_cache) 
@@ -208,6 +220,24 @@ function evaluate_coefficient(coeff::LVCoordinateSystemCache, geometry_cache::Ce
     return LVCoordinate(x1, x2, x3)
 end
 
+# GPU coefficient evaluation!
+function evaluate_coefficient(coeff::LVCoordinateSystemCache, geometry_cache::FerriteUtils.GPUCellCache, qv::FerriteUtils.StaticQuadratureValues{T}, t) where {T}
+    @unpack cv, cs = coeff
+    @unpack dh     = cs
+    x1 = zero(T)
+    x2 = zero(T)
+    x3 = zero(T)
+    dofs = celldofsview(dh, FerriteUtils.cellid(geometry_cache))
+    @inbounds for i in 1:getnbasefunctions(cv)
+        val = FerriteUtils.shape_value(qv, i)::T
+        x1 += val * cs.u_transmural[dofs[i]]
+        x2 += val * cs.u_apicobasal[dofs[i]]
+        x3 += val * cs.u_rotational[dofs[i]]
+    end
+    return LVCoordinate(x1, x2, x3)
+end
+
+
 struct BiVCoordinateSystemCache{CS <: BiVCoordinateSystem, CV}
     cs::CS
     cv::CV
@@ -234,6 +264,25 @@ function evaluate_coefficient(cc::BiVCoordinateSystemCache, cell_cache, qp::Quad
     x4 = zero(T)
     @inbounds for i in 1:getnbasefunctions(cv)
         val = shape_value(cv, qp, i)::T
+        x1 += val * cs.u_transmural[dofs[i]]
+        x2 += val * cs.u_apicobasal[dofs[i]]
+        x3 += val * cs.u_rotational[dofs[i]]
+        x4 += val * cs.u_transventricular[dofs[i]]
+    end
+    return BiVCoordinate(x1, x2, x3, x4)
+end
+
+# GPU coefficient evaluation!
+function evaluate_coefficient(cc::BiVCoordinateSystemCache, cell_cache::FerriteUtils.GPUCellCache, qv::FerriteUtils.StaticQuadratureValues{T}, t) where {T}
+    @unpack cv, cs = cc
+    @unpack dh     = cs
+    dofs = celldofsview(dh, FerriteUtils.cellid(cell_cache))
+    x1 = zero(T)
+    x2 = zero(T)
+    x3 = zero(T)
+    x4 = zero(T)
+    @inbounds for i in 1:getnbasefunctions(cv)
+        val = FerriteUtils.shape_value(qv, i)::T
         x1 += val * cs.u_transmural[dofs[i]]
         x2 += val * cs.u_apicobasal[dofs[i]]
         x3 += val * cs.u_rotational[dofs[i]]

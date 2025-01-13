@@ -74,7 +74,6 @@ include("modeling/problems.jl")
 include("discretization/interface.jl")
 include("discretization/fem.jl")
 include("discretization/operator.jl")
-include("discretization/gpu_operator.jl")
 
 include("solver/logging.jl")
 include("solver/interface.jl")
@@ -92,6 +91,12 @@ include("disambiguation.jl")
 # TODO where to put these?
 include("modeling/rsafdq2022.jl")
 include("discretization/rsafdq-operator.jl")
+
+
+## GPU stuf ##
+# TODO: add to extension later
+include("gpu/gpu_operator.jl")
+include("gpu/adapt.jl")
 
 
 # TODO put exports into the individual submodules above!
