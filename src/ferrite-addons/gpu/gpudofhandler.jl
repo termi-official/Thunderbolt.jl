@@ -1,9 +1,11 @@
 
 # Utility which holds partial information for assembly.
-struct GPUSubDofHandlerData{IndexType, IndexVectorType <: AbstractGPUVector{IndexType},Ti<:Integer} <: Ferrite.AbstractDofHandler
+struct GPUSubDofHandlerData{VEC_IP,IndexType, IndexVectorType <: AbstractGPUVector{IndexType},Ti<:Integer} <: Ferrite.AbstractDofHandler
     # Relevant fields from GPUDofHandler
     #cell_dofs::IndexVectorType # why we need this?
     #cell_dofs_offset::IndexVectorType # why we need this?
+    field_interpolations::VEC_IP
+    field_names::IndexVectorType
     # Flattened cellset
     cellset::IndexVectorType
     ndofs_per_cell::Ti
@@ -33,7 +35,7 @@ function _show(io::IO, mime::MIME"text/plain", data::GPUDofHandlerData{sdim}, in
 end
 
 struct GPUDofHandler{DHType <: Ferrite.AbstractDofHandler, GPUDataType} <: Ferrite.AbstractDofHandler
-    dh::DHType #Why do we need this? already all info is in gpudata
+    #dh::DHType #Why do we need this? already all info is in gpudata
     gpudata::GPUDataType
 end
 
