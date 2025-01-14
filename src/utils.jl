@@ -37,6 +37,12 @@ end
 
 # TODO remove these once they are merged
 module FerriteUtils
+using Ferrite
+import GPUArraysCore: AbstractGPUVector, AbstractGPUArray
+using Adapt
+
+include("ferrite-addons/gpu/gpudofhandler.jl")
+include("ferrite-addons/gpu/gpugrid.jl")
 include("ferrite-addons/PR883.jl")
 include("ferrite-addons/PR913.jl") 
 

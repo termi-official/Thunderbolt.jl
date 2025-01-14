@@ -1,16 +1,16 @@
+
 # Utility which holds partial information for assembly.
-struct GPUSubDofHandlerData{IndexType, IndexVectorType <: AbstractGPUVector{IndexType}} <: AbstractDofHandler
+struct GPUSubDofHandlerData{IndexType, IndexVectorType <: AbstractGPUVector{IndexType},Ti<:Integer} <: Ferrite.AbstractDofHandler
     # Relevant fields from GPUDofHandler
-    cell_dofs::IndexVectorType
-    cell_dofs_offset::IndexVectorType
+    #cell_dofs::IndexVectorType # why we need this?
+    #cell_dofs_offset::IndexVectorType # why we need this?
     # Flattened cellset
     cellset::IndexVectorType
-    # Dunno if we need this
-    ndofs_per_cell::Int
+    ndofs_per_cell::Ti
 end
 
 # Utility which holds partial information for assembly.
-struct GPUDofHandlerData{sdim, G<:AbstractGrid{sdim}, #=nfields,=# SDHTupleType, IndexType, IndexVectorType <: AbstractGPUVector{IndexType}} <: AbstractDofHandler
+struct GPUDofHandlerData{sdim, G<:Ferrite.AbstractGrid{sdim}, #=nfields,=# SDHTupleType, IndexType, IndexVectorType <: AbstractGPUVector{IndexType},Ti<: Integer} <: Ferrite.AbstractDofHandler
     grid::G
     subdofhandlers::SDHTupleType
     # field_names::SVector{Symbol, nfields}
@@ -18,7 +18,7 @@ struct GPUDofHandlerData{sdim, G<:AbstractGrid{sdim}, #=nfields,=# SDHTupleType,
     cell_dofs_offset::IndexVectorType
     cell_to_subdofhandler::IndexVectorType
     # grid::G # We do not need this explicitly on the GPU
-    ndofs::Int
+    ndofs::Ti
 end
 
 function Base.show(io::IO, mime::MIME"text/plain", data::GPUDofHandlerData{sdim}) where sdim
@@ -32,8 +32,8 @@ function _show(io::IO, mime::MIME"text/plain", data::GPUDofHandlerData{sdim}, in
     println(io, offset, "  SubDofHandlers: ", length(data.subdofhandlers))
 end
 
-struct GPUDofHandler{DHType <: AbstractDofHandler, GPUDataType} <: AbstractDofHandler
-    dh::DHType
+struct GPUDofHandler{DHType <: Ferrite.AbstractDofHandler, GPUDataType} <: Ferrite.AbstractDofHandler
+    dh::DHType #Why do we need this? already all info is in gpudata
     gpudata::GPUDataType
 end
 
@@ -66,3 +66,19 @@ end
 Ferrite.isclosed(::GPUDofHandler) = true
 
 Ferrite.allocate_matrix(dh::GPUDofHandler) = _allocate_matrix(dh, allocate_matrix(dh.dh), dh.gpudata.cellset)
+
+function Ferrite.ndofs_per_cell(dh::GPUDofHandlerData, cell::Ti) where {Ti <: Integer}
+    sdhidx = dh.cell_to_subdofhandler[cell]
+    sdhidx ∉ 1:length(dh.subdofhandlers) && return 0 # Dof handler is just defined on a subdomain
+    return ndofs_per_cell(dh.subdofhandlers[sdhidx])
+end
+Ferrite.ndofs_per_cell(sdh::GPUSubDofHandlerData) = sdh.ndofs_per_cell
+cell_dof_offset(dh::GPUDofHandlerData, i::Ti) where {Ti<:Integer} = dh.cell_dofs_offset[i]
+Ferrite.get_grid(dh::GPUDofHandlerData) = dh.grid
+
+function Ferrite.celldofs(dh::GPUDofHandlerData, i::Ti) where {Ti<:Integer}
+    offset = cell_dof_offset(dh, i)
+    ndofs = ndofs_per_cell(dh, i)
+    view = @view dh.cell_dofs[offset:(offset + ndofs - convert(Ti, 1))]
+    return view
+end

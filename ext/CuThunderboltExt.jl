@@ -23,47 +23,7 @@ import Adapt:
     Adapt, adapt_structure, adapt
 
 # ---------------------- Generic part ------------------------
-function _convert_subdofhandler_to_gpu(cell_dofs, cell_dof_soffset, sdh::SubDofHandler)
-    GPUSubDofHandler(
-        cell_dofs,
-        cell_dofs_offset,
-        adapt(typeof(cell_dofs), collect(sdh.cellset)),
-        Tuple(sym for sym in sdh.field_names),
-        Tuple(sym for sym in sdh.field_n_components),
-        sdh.ndofs_per_cell.x,
-    )
-end
 
-function Adapt.adapt_structure(to::Type{CUDABackend}, dh::DofHandler{sdim}) where sdim
-    grid             = adapt_structure(to, dh.grid)
-    # field_names      = Tuple(sym for sym in dh.field_names)
-    IndexType        = eltype(dh.cell_dofs)
-    IndexVectorType  = CuVector{IndexType}
-    cell_dofs        = adapt(IndexVectorType, dh.cell_dofs)
-    cell_dofs_offset = adapt(IndexVectorType, dh.cell_dofs_offset)
-    cell_to_sdh      = adapt(IndexVectorType, dh.cell_to_subdofhandler)
-    subdofhandlers   = Tuple(i->_convert_subdofhandler_to_gpu(cell_dofs, cell_dofs_offset, sdh) for sdh in dh.subdofhandlers)
-    gpudata = GPUDofHandlerData(
-        grid,
-        subdofhandlers,
-        # field_names,
-        cell_dofs,
-        cell_dofs_offset,
-        cell_to_sdh,
-        dh.ndofs.x,
-    )
-    return GPUDofHandler(dh, gpudata)
-end
-
-
-
-function Adapt.adapt_structure(to::Type{CUDABackend}, grid::Grid{sdim, cell_type, T}) where {sdim, cell_type, T}
-    node_type = typeof(first(grid.nodes))
-    cells = Adapt.adapt_structure(to, grid.cells)
-    nodes = Adapt.adapt_structure(to, grid.nodes)
-    #TODO subdomain info
-    return GPUGrid{sdim, cell_type, T, typeof(cells), typeof(nodes)}(cells, nodes)
-end
 
 # function Thunderbolt.setup_operator(protocol::Thunderbolt.AnalyticalTransmembraneStimulationProtocol, solver::Thunderbolt.AbstractSolver, dh::GPUDofHandler, field_name::Symbol, qr)
 #     ip = dh.dh.subdofhandlers[1].field_interpolations[1]
@@ -120,5 +80,8 @@ Thunderbolt.__add_to_vector!(b::CuVector, a::Vector) = b .+= CuVector(a)
 function Thunderbolt.adapt_vector_type(::Type{<:CuVector}, v::VT) where {VT <: Vector}
     return CuVector(v)
 end
+
+include("cuda/cuda_operator.jl")
+include("cuda/cuda_adapt.jl")
 
 end

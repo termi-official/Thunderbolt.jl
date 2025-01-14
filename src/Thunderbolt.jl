@@ -94,9 +94,7 @@ include("discretization/rsafdq-operator.jl")
 
 
 ## GPU stuf ##
-# TODO: add to extension later
 include("gpu/gpu_operator.jl")
-include("gpu/adapt.jl")
 
 
 # TODO put exports into the individual submodules above!
@@ -247,5 +245,6 @@ export
     PressureFieldBC,
     BendingSpringBC,
     RobinBC,
-    ConstantPressureBC
+    ConstantPressureBC,
+    test_ext
 end
