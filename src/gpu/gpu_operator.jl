@@ -20,7 +20,3 @@ function update_operator!(::AbstractOperatorKernel, time)
     error("Not implemented")
 end
 
-
-function test_ext(x::AbstractFloat)
-    error("Not implemented")
-end

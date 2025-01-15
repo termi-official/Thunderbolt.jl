@@ -31,10 +31,10 @@ end
 
 function _init_linop_cuda(linop::LinearOperator)
     @unpack dh  = linop
-    n_cells = dh |> get_grid |> getncells |> Int32
+    n_cells = dh |> get_grid |> getncells |> (x -> convert(Int32, x))
     threads = convert(Int32, min(n_cells, 256))
     blocks = _calculate_nblocks(threads, n_cells)
-    n_basefuncs = ndofs_per_cell(dh) |> Int32
+    n_basefuncs = convert(Int32,ndofs_per_cell(dh)) 
     eles_caches = _setup_caches(linop)
     mem_alloc = try_allocate_shared_mem(RHSObject{Float32}, threads, n_basefuncs)
     mem_alloc isa Nothing || return CudaOperatorKernel(linop, threads, blocks, mem_alloc,eles_caches)
@@ -91,12 +91,11 @@ function Thunderbolt.update_operator!(op_ker::CudaOperatorKernel, time)
 end
 
 
-
 function _update_linear_operator_kernel!(b, dh_, eles_caches,mem_alloc, time)
     dh = dh_.gpudata
     for sdh_idx in 1:length(dh.subdofhandlers)
         element_cache = eles_caches[sdh_idx]
-        for cell in CellIterator(dh,convert(Int32, sdh_idx) ,mem_alloc)
+        for cell in CellIterator(dh, convert(Int32,sdh_idx) ,mem_alloc)
             bₑ = cellfe(cell)
             assemble_element!(bₑ, cell, element_cache, time)
             dofs = celldofs(cell)
@@ -106,9 +105,4 @@ function _update_linear_operator_kernel!(b, dh_, eles_caches,mem_alloc, time)
         end
     end
     return nothing
-end
-
-
-function Thunderbolt.test_ext(x::Float64)
-    println("Hello from the CUDA backend")
 end

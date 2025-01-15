@@ -304,11 +304,11 @@ end
  
 Ferrite.CellIterator(dh::GPUDofHandlerData, buffer_alloc::AbstractGlobalMemAlloc) = _cell_iterator(dh, -1,  dh |> get_grid |> getncells |> Int32, buffer_alloc) ## iterate over all cells
 
-function Ferrite.CellIterator(dh::GPUDofHandlerData,sdh_idx::Integer, buffer_alloc::AbstractGlobalMemAlloc)
+function Ferrite.CellIterator(dh::GPUDofHandlerData,sdh_idx::Ti, buffer_alloc::AbstractGlobalMemAlloc) where {Ti <: Integer}
     ## iterate over all cells in the subdomain
     # check if the subdomain index is valid
     sdh_idx ∉ 1:length(dh.subdofhandlers) && return CudaOutOfBoundCellIterator()
-    n_cells = dh.subdofhandlers[sdh_idx].cellset |> length |> Int32 
+    n_cells = dh.subdofhandlers[sdh_idx].cellset |> length |> (x -> convert(Ti, x)) 
     return _cell_iterator(dh, sdh_idx,n_cells, buffer_alloc)
 end
 
@@ -319,7 +319,7 @@ function Ferrite.CellIterator(dh::GPUDofHandlerData,sdh_idx::Integer, buffer_all
     ## iterate over all cells in the subdomain
     # check if the subdomain index is valid
     sdh_idx ∉ 1:length(dh.subdofhandlers) && return CudaOutOfBoundCellIterator()
-    n_cells = dh.subdofhandlers[sdh_idx].cellset |> length |> Int32 
+    n_cells = dh.subdofhandlers[sdh_idx].cellset |> length |> (x -> convert(typeof(dh.ndofs), x))  
     return _cell_iterator(dh, sdh_idx,n_cells, buffer_alloc)
 end
 
@@ -353,7 +353,7 @@ struct GPUCellCache{Ti <: Integer, DOFS <: AbstractVector{Ti}, NN, NODES <: SVec
 end
 
 
-function _makecache(iterator::AbstractCUDACellIterator, e::Integer)
+function _makecache(iterator::AbstractCUDACellIterator, e::Ti) where {Ti <: Integer}
     dh = iterator.dh
     grid = iterator.grid
     sdh_idx = iterator.sdh_idx
@@ -362,7 +362,7 @@ function _makecache(iterator::AbstractCUDACellIterator, e::Integer)
     cell = Ferrite.getcells(grid, e)
 
     # Extract the node IDs of the cell.
-    nodes = SVector(convert.(Int32, Ferrite.get_node_ids(cell))...)
+    nodes = SVector(convert.(Ti, Ferrite.get_node_ids(cell))...)
 
     # Extract the degrees of freedom for the cell.
     dofs = Ferrite.celldofs(dh, e)

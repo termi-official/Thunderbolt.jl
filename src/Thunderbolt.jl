@@ -245,6 +245,5 @@ export
     PressureFieldBC,
     BendingSpringBC,
     RobinBC,
-    ConstantPressureBC,
-    test_ext
+    ConstantPressureBC
 end
