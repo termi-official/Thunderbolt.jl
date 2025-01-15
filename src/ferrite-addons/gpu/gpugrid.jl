@@ -1,5 +1,5 @@
 # Utility which holds partial information for assembly.
-struct GPUGrid{sdim, C<:Ferrite.AbstractCell, T<:Real, CellDataType <: AbstractGPUVector{C}, NodeDataType <: AbstractGPUVector} <: Ferrite.AbstractGrid{sdim}
+struct GPUGrid{sdim, C<:Ferrite.AbstractCell, T<:Real, CellDataType <: AbstractVector{C}, NodeDataType <: AbstractVector} <: Ferrite.AbstractGrid{sdim}
     cells::CellDataType
     nodes::NodeDataType
     #TODO subdomain info
@@ -31,7 +31,7 @@ end
 
 Ferrite.get_coordinate_type(::GPUGrid{sdim, <:Any, T,<:Any,<:Any}) where {sdim, T} = Vec{sdim, T} # Node is baked into the mesh type.
 
-
+@inline Ferrite.getcells(grid::GPUGrid, v::Ti) where {Ti <: Integer} = grid.cells[v]
 @inline Ferrite.getnodes(grid::GPUGrid, v::Ti) where {Ti<: Integer} = grid.nodes[v]
 
 

@@ -4,20 +4,28 @@ using Thunderbolt
 
 import CUDA:
     CUDA, CuArray, CuVector, CUSPARSE,
-    threadIdx, blockIdx, blockDim, @cuda,
-    CUDABackend, launch_configuration
+    threadIdx, blockIdx, blockDim, @cuda, @cushow,
+    CUDABackend, launch_configuration, device, cu
 
 import Thunderbolt:
     UnPack.@unpack,
     SimpleMesh,
     SparseMatrixCSR, SparseMatrixCSC,
     AbstractSemidiscreteFunction, AbstractPointwiseFunction, solution_size,
-    AbstractPointwiseSolverCache,
-    GPUDofHandlerData, GPUSubDofHandlerData, GPUDofHandler,
-    GPUGrid
+    AbstractPointwiseSolverCache,assemble_element!,
+    LinearOperator,AbstractOperatorKernel,QuadratureRuleCollection,
+    AnalyticalCoefficientElementCache,AnalyticalCoefficientCache,CartesianCoordinateSystemCache,
+    setup_element_cache,update_operator!,init_linear_operator
+
+import Thunderbolt.FerriteUtils:
+    AbstractGlobalMemAlloc, AbstractSharedMemAlloc,
+    StaticInterpolationValues,StaticCellValues, try_allocate_shared_mem,
+    CellIterator,allocate_global_mem, RHSObject, mem_size,
+    GPUDofHandlerData, GPUSubDofHandlerData, GPUDofHandler, GPUGrid,
+    cellfe,celldofs
 
 import Ferrite:
-    AbstractDofHandler
+    AbstractDofHandler,get_grid,CellIterator
 
 import Adapt:
     Adapt, adapt_structure, adapt

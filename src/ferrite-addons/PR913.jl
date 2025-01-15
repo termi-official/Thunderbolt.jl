@@ -294,8 +294,8 @@ function _cell_iterator(dh::GPUDofHandlerData,sdh_idx::Integer,n_cells::Integer,
     return CUDACellIterator(dh, grid, n_cells, cell_mem,sdh_idx)
 end
 
-function _cell_iterator(dh::GPUDofHandler,sdh_idx::Integer,n_cells::Integer, buffer_alloc::AbstractSharedMemAlloc)
-    grid = get_grid(dh)
+function _cell_iterator(dh::GPUDofHandlerData,sdh_idx::Integer,n_cells::Integer, buffer_alloc::AbstractSharedMemAlloc)
+    grid = Ferrite.get_grid(dh)
     local_thread_id = threadIdx().x
     cell_mem = _cellmem(buffer_alloc, local_thread_id)
     return CUDACellIterator(dh, grid, n_cells, cell_mem,sdh_idx)
@@ -423,6 +423,7 @@ cellfe(cc::GPUCellCache) = _cellfe(FeTrait(typeof(cc.cell_mem)), cc)
 ############
 Adapt.@adapt_structure GPUGrid
 Adapt.@adapt_structure GPUDofHandler
+Adapt.@adapt_structure GPUDofHandlerData
 Adapt.@adapt_structure GPUSubDofHandlerData
 Adapt.@adapt_structure GlobalMemAlloc
 
@@ -510,7 +511,7 @@ function Adapt.adapt_structure(to, sdh::SubDofHandler)
     field_names = Adapt.adapt_structure(to, _symbols_to_int32(sdh.field_names) |> cu)
     field_interpolations = sdh.field_interpolations .|> (ip -> Adapt.adapt_structure(to, ip)) |> cu
     ndofs_per_cell = Adapt.adapt_structure(to, sdh.ndofs_per_cell)
-    return GPUSubDofHandler(cellset, field_names, field_interpolations, ndofs_per_cell)
+    return GPUSubDofHandlerData(cellset, field_names, field_interpolations, ndofs_per_cell)
 end
 
 # function Adapt.adapt_structure(to, dh::DofHandler)

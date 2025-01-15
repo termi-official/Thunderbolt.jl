@@ -1,3 +1,4 @@
+
 # CUDA backend concrete implementation #
 struct CudaOperatorKernel{Operator, Ti <: Integer, MemAlloc,ELementsCaches} <: AbstractOperatorKernel{CUDABackend} 
     op::Operator
@@ -35,10 +36,10 @@ function _init_linop_cuda(linop::LinearOperator)
     blocks = _calculate_nblocks(threads, n_cells)
     n_basefuncs = ndofs_per_cell(dh) |> Int32
     eles_caches = _setup_caches(linop)
-    mem_alloc = FerriteUtils.try_allocate_shared_mem(FerriteUtils.RHSObject{Float32}, threads, n_basefuncs)
+    mem_alloc = try_allocate_shared_mem(RHSObject{Float32}, threads, n_basefuncs)
     mem_alloc isa Nothing || return CudaOperatorKernel(linop, threads, blocks, mem_alloc,eles_caches)
 
-    mem_alloc = FeriteUtils.allocate_global_mem(FerriteUtils.RHSObject{Float32}, n_cells, n_basefuncs)
+    mem_alloc =allocate_global_mem(RHSObject{Float32}, n_cells, n_basefuncs)
     return CudaOperatorKernel(linop, threads, blocks, mem_alloc,eles_caches)
 end
 
@@ -68,6 +69,18 @@ function _setup_caches(op::LinearOperator)
     return eles_caches |> cu
 end
 
+
+function _launch_kernel!(ker, threads, blocks, ::AbstractGlobalMemAlloc)
+    CUDA.@cuda threads=threads blocks=blocks ker()
+    return nothing
+end
+
+function _launch_kernel!(ker, threads, blocks, mem_alloc::AbstractSharedMemAlloc)
+    shmem_size = mem_size(mem_alloc)
+    CUDA.@sync CUDA.@cuda threads=threads blocks=blocks  shmem = shmem_size ker()
+    return nothing
+end
+
 (op_ker::CudaOperatorKernel)(time) = update_operator!(op_ker.op, time)
 
 function Thunderbolt.update_operator!(op_ker::CudaOperatorKernel, time)
@@ -84,7 +97,7 @@ function _update_linear_operator_kernel!(b, dh_, eles_caches,mem_alloc, time)
     for sdh_idx in 1:length(dh.subdofhandlers)
         element_cache = eles_caches[sdh_idx]
         for cell in CellIterator(dh,convert(Int32, sdh_idx) ,mem_alloc)
-            bₑ = FerriteUtils.cellfe(cell)
+            bₑ = cellfe(cell)
             assemble_element!(bₑ, cell, element_cache, time)
             dofs = celldofs(cell)
             @inbounds for i in 1:length(dofs)
@@ -93,18 +106,6 @@ function _update_linear_operator_kernel!(b, dh_, eles_caches,mem_alloc, time)
         end
     end
     return nothing
-end
-
-
-
-
-function _launch_kernel!(ker, threads, blocks, ::FerriteUtils.AbstractGlobalMemAlloc)
-    CUDA.@cuda threads=threads blocks=blocks ker()
-end
-
-function _launch_kernel!(ker, threads, blocks, mem_alloc::FerriteUtils.AbstractSharedMemAlloc)
-    shmem_size = FerriteUtils.mem_size(mem_alloc)
-    CUDA.@sync CUDA.@cuda threads=threads blocks=blocks  shmem = shmem_size ker()
 end
 
 

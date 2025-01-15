@@ -5,7 +5,6 @@ using Test
 using StaticArrays
 
 
-test_ext(1.0)
 
 grid = generate_grid(Quadrilateral, (2,2))
 dh = DofHandler(grid)
@@ -44,7 +43,7 @@ cuda_op = Thunderbolt.init_linear_operator(CUDABackend,protocol, qrc, dh);
 Thunderbolt.update_operator!(cuda_op,0.0)
 
 
+
 @test Vector(cuda_op.op.b) ≈ linop.b
 
-Thunderbolt.update_operator! |> methods
 

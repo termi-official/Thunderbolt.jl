@@ -1,18 +1,18 @@
 
 # Utility which holds partial information for assembly.
-struct GPUSubDofHandlerData{VEC_IP,IndexType, IndexVectorType <: AbstractGPUVector{IndexType},Ti<:Integer} <: Ferrite.AbstractDofHandler
+struct GPUSubDofHandlerData{VEC_IP,IndexType, IndexVectorType <: AbstractVector{IndexType},Ti<:Integer} <: Ferrite.AbstractDofHandler
     # Relevant fields from GPUDofHandler
     #cell_dofs::IndexVectorType # why we need this?
     #cell_dofs_offset::IndexVectorType # why we need this?
-    field_interpolations::VEC_IP
-    field_names::IndexVectorType
     # Flattened cellset
     cellset::IndexVectorType
+    field_names::IndexVectorType
+    field_interpolations::VEC_IP
     ndofs_per_cell::Ti
 end
 
 # Utility which holds partial information for assembly.
-struct GPUDofHandlerData{sdim, G<:Ferrite.AbstractGrid{sdim}, #=nfields,=# SDHTupleType, IndexType, IndexVectorType <: AbstractGPUVector{IndexType},Ti<: Integer} <: Ferrite.AbstractDofHandler
+struct GPUDofHandlerData{sdim, G<:Ferrite.AbstractGrid{sdim}, #=nfields,=# SDHTupleType, IndexType, IndexVectorType <: AbstractVector{IndexType},Ti<: Integer} <: Ferrite.AbstractDofHandler
     grid::G
     subdofhandlers::SDHTupleType
     # field_names::SVector{Symbol, nfields}
@@ -34,7 +34,11 @@ function _show(io::IO, mime::MIME"text/plain", data::GPUDofHandlerData{sdim}, in
     println(io, offset, "  SubDofHandlers: ", length(data.subdofhandlers))
 end
 
-struct GPUDofHandler{DHType <: Ferrite.AbstractDofHandler, GPUDataType} <: Ferrite.AbstractDofHandler
+# struct GPUDofHandler{DHType <: Ferrite.AbstractDofHandler, GPUDataType} <: Ferrite.AbstractDofHandler
+#     #dh::DHType #Why do we need this? already all info is in gpudata
+#     gpudata::GPUDataType
+# end
+struct GPUDofHandler{ GPUDataType} <: Ferrite.AbstractDofHandler
     #dh::DHType #Why do we need this? already all info is in gpudata
     gpudata::GPUDataType
 end

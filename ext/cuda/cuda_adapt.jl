@@ -2,11 +2,11 @@ function Adapt.adapt_structure(to, element_cache::AnalyticalCoefficientElementCa
     cc = Adapt.adapt_structure(to, element_cache.cc)
     nz_intervals = Adapt.adapt_structure(to, element_cache.nonzero_intervals |> cu)
     cv = element_cache.cv
-    fv = Adapt.adapt(to, FerriteUtils.StaticInterpolationValues(cv.fun_values))
-    gm = Adapt.adapt(to, FerriteUtils.StaticInterpolationValues(cv.geo_mapping))
+    fv = Adapt.adapt(to, StaticInterpolationValues(cv.fun_values))
+    gm = Adapt.adapt(to, StaticInterpolationValues(cv.geo_mapping))
     n_quadoints = cv.qr.weights |> length
     weights = Adapt.adapt(to, ntuple(i -> cv.qr.weights[i], n_quadoints))
-    sv = FerriteUtils.StaticCellValues(fv, gm, weights)
+    sv = StaticCellValues(fv, gm, weights)
     return AnalyticalCoefficientElementCache(cc, nz_intervals, sv)
 end
 
@@ -23,11 +23,11 @@ function Adapt.adapt_structure(to, cysc::CartesianCoordinateSystemCache)
 end
 
 function Adapt.adapt_structure(to, cv::CellValues)
-    fv = Adapt.adapt(to, FerriteUtils.StaticInterpolationValues(cv.fun_values))
-    gm = Adapt.adapt(to, FerriteUtils.StaticInterpolationValues(cv.geo_mapping))
+    fv = Adapt.adapt(to, StaticInterpolationValues(cv.fun_values))
+    gm = Adapt.adapt(to, StaticInterpolationValues(cv.geo_mapping))
     n_quadoints = cv.qr.weights |> length
     weights = Adapt.adapt(to, ntuple(i -> cv.qr.weights[i], n_quadoints))
-    return FerriteUtils.StaticCellValues(fv, gm, weights)
+    return StaticCellValues(fv, gm, weights)
 end
 
 function _convert_subdofhandler_to_gpu(cell_dofs, cell_dof_soffset, sdh::SubDofHandler)
@@ -41,16 +41,16 @@ function _convert_subdofhandler_to_gpu(cell_dofs, cell_dof_soffset, sdh::SubDofH
     )
 end
 
-function Adapt.adapt_structure(to::Type{CUDABackend}, dh::DofHandler{sdim}) where sdim
-    @show "here"
+function Adapt.adapt_structure(to, dh::DofHandler{sdim}) where sdim
     grid             = adapt_structure(to, dh.grid)
     # field_names      = Tuple(sym for sym in dh.field_names)
-    IndexType        = eltype(dh.cell_dofs)
-    IndexVectorType  = CuVector{IndexType}
-    cell_dofs        = adapt(IndexVectorType, dh.cell_dofs)
-    cell_dofs_offset = adapt(IndexVectorType, dh.cell_dofs_offset)
-    cell_to_sdh      = adapt(IndexVectorType, dh.cell_to_subdofhandler)
-    subdofhandlers   = Tuple(i->_convert_subdofhandler_to_gpu(cell_dofs, cell_dofs_offset, sdh) for sdh in dh.subdofhandlers)
+    #IndexType        = eltype(dh.cell_dofs)\
+    #IndexVectorType  = CuVector{IndexType}
+    cell_dofs        = adapt(to, dh.cell_dofs .|> (i -> convert(Int32,i)) |> cu) # currently you cant create Dofhandler with Int32
+    cell_dofs_offset = adapt(to, dh.cell_dofs_offset .|> (i -> convert(Int32,i)) |> cu)
+    cell_to_sdh      = adapt(to, dh.cell_to_subdofhandler .|> (i -> convert(Int32,i)) |> cu)
+    #subdofhandlers   = Tuple(i->_convert_subdofhandler_to_gpu(cell_dofs, cell_dofs_offset, sdh) for sdh in dh.subdofhandlers)
+    subdofhandlers   = adapt_structure(to,dh.subdofhandlers .|> (sdh -> Adapt.adapt_structure(to, sdh)) |> cu)
     gpudata = GPUDofHandlerData(
         grid,
         subdofhandlers,
@@ -66,11 +66,10 @@ end
 
 
 
-function Adapt.adapt_structure(to::Type{CUDABackend}, grid::Grid{sdim, cell_type, T}) where {sdim, cell_type, T}
-    @show "grid"
+function Adapt.adapt_structure(to, grid::Grid{sdim, cell_type, T}) where {sdim, cell_type, T}
     node_type = typeof(first(grid.nodes))
-    cells = Adapt.adapt_structure(to, grid.cells)
-    nodes = Adapt.adapt_structure(to, grid.nodes)
+    cells = Adapt.adapt_structure(to, grid.cells |> cu)
+    nodes = Adapt.adapt_structure(to, grid.nodes |> cu)
     #TODO subdomain info
     return GPUGrid{sdim, cell_type, T, typeof(cells), typeof(nodes)}(cells, nodes)
 end
