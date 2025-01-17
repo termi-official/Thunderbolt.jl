@@ -1,9 +1,3 @@
-using Thunderbolt
-using CUDA
-using Test
-using StaticArrays
-
-
 left = Tensor{1, 2, Float32}((-1.0, -1.0)) # define the left bottom corner of the grid.
 right = Tensor{1, 2, Float32}((1.0, 1.0)) # define the right top corner of the grid.
 grid = generate_grid(Quadrilateral, (2,2),left,right)

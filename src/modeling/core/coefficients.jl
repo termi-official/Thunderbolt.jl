@@ -75,6 +75,9 @@ function setup_coefficient_cache(coefficient::ConstantCoefficient, qr::Quadratur
 end
 
 evaluate_coefficient(coeff::ConstantCoefficient, cell_cache, qp, t) = coeff.val
+evaluate_coefficient(coeff::ConstantCoefficient, ::FerriteUtils.GPUCellCache, ::FerriteUtils.StaticQuadratureValues, t) = coeff.val
+
+
 
 
 """
@@ -103,6 +106,13 @@ function setup_coefficient_cache(coefficient::ConductivityToDiffusivityCoefficie
 end
 
 function evaluate_coefficient(coeff::ConductivityToDiffusivityCoefficientCache, cell_cache, qp::QuadraturePoint, t)
+    κ  = evaluate_coefficient(coeff.conductivity_tensor_cache, cell_cache, qp, t)
+    Cₘ = evaluate_coefficient(coeff.capacitance_cache, cell_cache, qp, t)
+    χ  = evaluate_coefficient(coeff.χ_cache, cell_cache, qp, t)
+    return κ/(Cₘ*χ)
+end
+
+function evaluate_coefficient(coeff::ConductivityToDiffusivityCoefficientCache, cell_cache::FerriteUtils.GPUCellCache, qp::FerriteUtils.StaticQuadratureValues, t)
     κ  = evaluate_coefficient(coeff.conductivity_tensor_cache, cell_cache, qp, t)
     Cₘ = evaluate_coefficient(coeff.capacitance_cache, cell_cache, qp, t)
     χ  = evaluate_coefficient(coeff.χ_cache, cell_cache, qp, t)
@@ -326,6 +336,13 @@ function evaluate_coefficient(coeff::SpectralTensorCoefficientCache, cell_cache,
     return _eval_st_coefficient(M, λ) # Dispatches can be found e.g. in modeling/microstructure.jl
 end
 
+function evaluate_coefficient(coeff::SpectralTensorCoefficientCache, cell_cache::FerriteUtils.GPUCellCache, qp::FerriteUtils.StaticQuadratureValues, t)
+    M = evaluate_coefficient(coeff.eigenvector_cache, cell_cache, qp, t)
+    λ = evaluate_coefficient(coeff.eigenvalue_cache, cell_cache, qp, t)
+    return _eval_st_coefficient(M, λ) # Dispatches can be found e.g. in modeling/microstructure.jl
+end
+
+
 @inline _eval_st_coefficient(M, λ) = error("Spectral tensor evaluation not implemented for M=$(typeof(M)) and λ=$(typeof(λ)). Please provide a dispatch for _eval_st_coefficient(M, λ).")
 
 """
@@ -346,7 +363,13 @@ function setup_coefficient_cache(coefficient::SpatiallyHomogeneousDataField, qr:
     return coefficient
 end
 
-function Thunderbolt.evaluate_coefficient(coeff::SpatiallyHomogeneousDataField, ::CellCache, qp::QuadraturePoint, t)
+Thunderbolt.evaluate_coefficient(coeff::SpatiallyHomogeneousDataField, ::CellCache, ::QuadraturePoint, t) = _evaluate_coefficient(coeff, t)
+  
+
+Thunderbolt.evaluate_coefficient(coeff::SpatiallyHomogeneousDataField, ::FerriteUtils.GPUCellCache, ::FerriteUtils.StaticQuadratureValues, t) = _evaluate_coefficient(coeff, t)
+
+
+function _evaluate_coefficient(coeff::SpatiallyHomogeneousDataField, t)
     @unpack timings, data = coeff
     i = 1
     tᵢ = timings[1]
@@ -359,3 +382,4 @@ function Thunderbolt.evaluate_coefficient(coeff::SpatiallyHomogeneousDataField, 
     end
     return data[i] # TODO interpolation
 end
+

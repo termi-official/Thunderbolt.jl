@@ -15,7 +15,7 @@ import Thunderbolt:
     AbstractPointwiseSolverCache,assemble_element!,
     LinearOperator,AbstractOperatorKernel,QuadratureRuleCollection,
     AnalyticalCoefficientElementCache,AnalyticalCoefficientCache,CartesianCoordinateSystemCache,
-    setup_element_cache,update_operator!,init_linear_operator
+    setup_element_cache,update_operator!,init_linear_operator,FieldCoefficientCache
 
 import Thunderbolt.FerriteUtils:
     AbstractGlobalMemAlloc, AbstractSharedMemAlloc,

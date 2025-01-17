@@ -67,3 +67,15 @@ function Adapt.adapt_structure(to, grid::Grid{sdim, cell_type, T}) where {sdim, 
     #TODO subdomain info
     return GPUGrid{sdim, cell_type, T, typeof(cells), typeof(nodes)}(cells, nodes)
 end
+
+
+function Adapt.adapt_structure(to, cysc::FieldCoefficientCache)
+    elementwise_data = Adapt.adapt_structure(to, cysc.elementwise_data |> cu)
+    cv = Adapt.adapt_structure(to, cysc.cv)
+    return FieldCoefficientCache(elementwise_data, cv)
+end
+function Adapt.adapt_structure(to, sphdf::SpatiallyHomogeneousDataField)
+    timings = Adapt.adapt_structure(to, sphdf.timings |> cu)
+    data = Adapt.adapt_structure(to, sphdf.data |> cu)
+    return SpatiallyHomogeneousDataField(timings, data)
+end

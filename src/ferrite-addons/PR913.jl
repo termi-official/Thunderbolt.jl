@@ -238,6 +238,7 @@ struct FullCellMem{MatrixType, VectorType} <: AbstractCellMem
     ke::MatrixType
     fe::VectorType
 end
+struct NoCellMem <: AbstractCellMem end # mainly for testing purposes
 
 
 abstract type AbstractCUDACellIterator <: AbstractKernelCellIterator end
@@ -284,6 +285,16 @@ function _cellmem(buffer_alloc::SharedRHSMemAlloc, i::Integer)
     return RHSCellMem(fe)
 end
 
+function _cell_iterator(dh::GPUDofHandlerData,sdh_idx::Integer,n_cells::Integer)
+    grid = dh.grid
+    bd = blockDim().x
+    local_thread_id = threadIdx().x
+    global_thread_id = (blockIdx().x - Int32(1)) * bd + local_thread_id
+    global_thread_id <= n_cells || return CudaOutOfBoundCellIterator()
+    cell_mem = NoCellMem()
+    return CUDACellIterator(dh, grid, n_cells, cell_mem ,sdh_idx)
+end
+
 function _cell_iterator(dh::GPUDofHandlerData,sdh_idx::Integer,n_cells::Integer, buffer_alloc::AbstractGlobalMemAlloc)
     grid = get_grid(dh)
     bd = blockDim().x
@@ -309,7 +320,15 @@ function Ferrite.CellIterator(dh::GPUDofHandlerData,sdh_idx::Ti, buffer_alloc::A
     # check if the subdomain index is valid
     sdh_idx ∉ 1:length(dh.subdofhandlers) && return CudaOutOfBoundCellIterator()
     n_cells = dh.subdofhandlers[sdh_idx].cellset |> length |> (x -> convert(Ti, x)) 
-    return _cell_iterator(dh, sdh_idx,n_cells, buffer_alloc)
+    return _cell_iterator(dh, sdh_idx,n_cells,buffer_alloc)
+end
+
+function Ferrite.CellIterator(dh::GPUDofHandlerData,sdh_idx::Ti) where {Ti <: Integer}
+    ## iterate over all cells in the subdomain
+    # check if the subdomain index is valid
+    sdh_idx ∉ 1:length(dh.subdofhandlers) && return CudaOutOfBoundCellIterator()
+    n_cells = dh.subdofhandlers[sdh_idx].cellset |> length |> (x -> convert(Ti, x)) 
+    return _cell_iterator(dh, sdh_idx,n_cells)
 end
 
 Ferrite.CellIterator(dh::GPUDofHandlerData, buffer_alloc::AbstractSharedMemAlloc) = _cell_iterator(dh, -1,dh |> get_grid |> getncells |> Int32, buffer_alloc) ## iterate over all cells

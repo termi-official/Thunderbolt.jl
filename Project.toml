@@ -42,6 +42,7 @@ CuThunderboltExt = "CUDA"
 [compat]
 Aqua = "0.8"
 BlockArrays = "1"
+CUDA = "5"
 DiffEqBase = "6"
 Ferrite = "1"
 LinearSolve = "2"

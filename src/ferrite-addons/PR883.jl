@@ -28,6 +28,10 @@ end
 Base.IteratorEltype(::Type{<:QuadratureValuesIterator}) = Base.EltypeUnknown()
 Base.length(iterator::QuadratureValuesIterator) = getnquadpoints(iterator.v)
 
+# Define `keys` and `getindex` for compatibility with `pairs`
+Base.keys(it::QuadratureValuesIterator) = 1:length(it)
+Base.getindex(it::QuadratureValuesIterator, i) = iterate(it, i)
+
 # AbstractQuadratureValues
 abstract type AbstractQuadratureValues end
 
