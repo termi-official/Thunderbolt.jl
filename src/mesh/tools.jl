@@ -650,4 +650,114 @@ function load_carp_grid(filename)
     
     return Grid(elements, nodes; cellsets=domains)
 end
- 
+
+function generate_element_for_face(::SimpleMesh, cell::Hexahedron, local_face)
+    return Quadrilateral(Ferrite.faces(cell)[local_face])
+end
+
+function generate_element_for_face(::SimpleMesh, cell::Tetrahedron, local_face)
+    return Triangle(Ferrite.faces(cell)[local_face])
+end
+
+function generate_element_for_face(::SimpleMesh, cell::Wedge, local_face)
+    facenodes = Ferrite.faces(cell)[local_face]
+    if length(facenodes) == 3
+        return Triangle(facenodes)
+    else
+        return Quadrilateral(facenodes)
+    end
+end
+
+function generate_reverse_index_map(d::Dict{Int,Int})
+    inverse_indices = zeros(Int, length(d))
+    generate_reverse_index_map!(inverse_indices, d)
+    return inverse_indices
+end
+
+function generate_reverse_index_map!(inverse_indices, d::Dict{Int,Int})
+    for i in keys(d)
+        inverse_indices[d[i]] = i
+    end
+    return nothing
+end
+
+remove_unattached_nodes!(mesh::SimpleMesh) = remove_unattached_nodes!(mesh.grid)
+function remove_unattached_nodes!(grid::Grid)
+    next_nodeid = 1
+    nodemap = Dict{Int,Int}()
+    # Generate nodemap
+    for cell in grid.cells
+        for node in cell.nodes
+            haskey(nodemap, node) && continue
+            nodemap[node] = next_nodeid
+            next_nodeid += 1
+        end
+    end
+    # Regenerate nodes
+    inverse_indices = generate_reverse_index_map(nodemap)
+    grid.nodes = [grid.nodes[i] for i in inverse_indices]
+    # Regenerate cells
+    for cellid in 1:getncells(grid)
+        cell     = grid.cells[cellid]
+        celltype = typeof(cell)
+        grid.cells[cellid] = celltype(ntuple(i->nodemap[cell.nodes[i]], length(cell.nodes)))
+    end
+    return nothing
+end
+
+function extract_outer_surface_mesh(mesh::SimpleMesh{3}; subdomains = nothing)
+    actual_subdomains = subdomains === nothing ? Dict("" => 1:getncells(mesh)) : subdomains
+    # Cache for the cellid, local faceid pairs.
+    # These are 0 if not assigned and -1 if assigned more than once.
+    face_elements = zeros(Int, num_faces(mesh))
+    face_localfid  = zeros(Int, num_faces(mesh))
+    for (_, subdomain) in actual_subdomains
+        for cellid in subdomain
+            cell = getcells(mesh, cellid)
+            for (j,global_faceid) in enumerate(global_faces(mesh, cell))
+                if face_elements[global_faceid] == 0
+                    face_elements[global_faceid] = cellid
+                    face_localfid[global_faceid] = j
+                else
+                    face_elements[global_faceid] = -1
+                    face_localfid[global_faceid] = -1
+                end
+            end
+        end
+    end
+
+    # Sparse index map from face_elements to the index of the cells in the new surface grid
+    next_cellid = 1
+    face_element_index_map = Dict{Tuple{Int,Int},Int}()
+    for (i,lfi) in enumerate(zip(face_elements,face_localfid))
+        if lfi[1] > 0
+            face_element_index_map[lfi] = next_cellid
+            next_cellid += 1
+        end
+    end
+
+    # facetsets -> cellsets
+    cellsets = Dict{String, OrderedSet{Int}}()
+    for (name,facetset) in mesh.grid.facetsets
+        cellset = OrderedSet{Int}()
+        for lfi in zip(face_elements, face_localfid)
+            if lfi in facetset
+                push!(cellset, face_element_index_map[lfi])
+            end
+        end
+        if length(cellset) > 0
+            cellsets[name] = cellset
+        end
+    end
+
+    surface_grid = Grid(
+        #if face_elements[i] > 0
+        [generate_element_for_face(mesh, getcells(mesh, face_elements[i]), face_localfid[i]) for i in 1:num_faces(mesh) if face_elements[i] > 0],
+        mesh.grid.nodes;
+        cellsets 
+    )
+
+    remove_unattached_nodes!(surface_grid)
+
+    return surface_grid
+end
