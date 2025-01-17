@@ -105,14 +105,13 @@ function setup_coefficient_cache(coefficient::ConductivityToDiffusivityCoefficie
     )
 end
 
-function evaluate_coefficient(coeff::ConductivityToDiffusivityCoefficientCache, cell_cache, qp::QuadraturePoint, t)
-    κ  = evaluate_coefficient(coeff.conductivity_tensor_cache, cell_cache, qp, t)
-    Cₘ = evaluate_coefficient(coeff.capacitance_cache, cell_cache, qp, t)
-    χ  = evaluate_coefficient(coeff.χ_cache, cell_cache, qp, t)
-    return κ/(Cₘ*χ)
-end
+evaluate_coefficient(coeff::ConductivityToDiffusivityCoefficientCache, cell_cache, qp::QuadraturePoint, t) = _evaluate_coefficient(coeff, cell_cache, qp, t)
 
-function evaluate_coefficient(coeff::ConductivityToDiffusivityCoefficientCache, cell_cache::FerriteUtils.GPUCellCache, qp::FerriteUtils.StaticQuadratureValues, t)
+
+evaluate_coefficient(coeff::ConductivityToDiffusivityCoefficientCache, cell_cache::FerriteUtils.GPUCellCache, qp::FerriteUtils.StaticQuadratureValues, t) = _evaluate_coefficient(coeff, cell_cache, qp, t)
+
+
+function _evaluate_coefficient(coeff::ConductivityToDiffusivityCoefficientCache, cell_cache, qp, t)
     κ  = evaluate_coefficient(coeff.conductivity_tensor_cache, cell_cache, qp, t)
     Cₘ = evaluate_coefficient(coeff.capacitance_cache, cell_cache, qp, t)
     χ  = evaluate_coefficient(coeff.χ_cache, cell_cache, qp, t)
@@ -330,18 +329,17 @@ function setup_coefficient_cache(coefficient::SpectralTensorCoefficient, qr::Qua
     )
 end
 
-function evaluate_coefficient(coeff::SpectralTensorCoefficientCache, cell_cache, qp::QuadraturePoint, t)
+evaluate_coefficient(coeff::SpectralTensorCoefficientCache, cell_cache, qp::QuadraturePoint, t) = _evaluate_coefficient(coeff, cell_cache, qp, t)
+
+
+evaluate_coefficient(coeff::SpectralTensorCoefficientCache, cell_cache::FerriteUtils.GPUCellCache, qp::FerriteUtils.StaticQuadratureValues, t) = _evaluate_coefficient(coeff, cell_cache, qp, t)
+
+
+function _evaluate_coefficient(coeff::SpectralTensorCoefficientCache, cell_cache, qp, t)
     M = evaluate_coefficient(coeff.eigenvector_cache, cell_cache, qp, t)
     λ = evaluate_coefficient(coeff.eigenvalue_cache, cell_cache, qp, t)
     return _eval_st_coefficient(M, λ) # Dispatches can be found e.g. in modeling/microstructure.jl
 end
-
-function evaluate_coefficient(coeff::SpectralTensorCoefficientCache, cell_cache::FerriteUtils.GPUCellCache, qp::FerriteUtils.StaticQuadratureValues, t)
-    M = evaluate_coefficient(coeff.eigenvector_cache, cell_cache, qp, t)
-    λ = evaluate_coefficient(coeff.eigenvalue_cache, cell_cache, qp, t)
-    return _eval_st_coefficient(M, λ) # Dispatches can be found e.g. in modeling/microstructure.jl
-end
-
 
 @inline _eval_st_coefficient(M, λ) = error("Spectral tensor evaluation not implemented for M=$(typeof(M)) and λ=$(typeof(λ)). Please provide a dispatch for _eval_st_coefficient(M, λ).")
 
