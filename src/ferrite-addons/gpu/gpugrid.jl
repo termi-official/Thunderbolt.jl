@@ -4,7 +4,6 @@ struct GPUGrid{sdim, C<:Ferrite.AbstractCell, T<:Real, CellDataType <: AbstractV
     nodes::NodeDataType
     #TODO subdomain info
 end
-Adapt.@adapt_structure GPUGrid
 
 function Base.show(io::IO, mime::MIME"text/plain", data::GPUGrid)
     _show(io, mime, data, 0)
