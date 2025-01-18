@@ -21,21 +21,21 @@ mutable struct BackwardEulerSolverCache{T, SolutionType <: AbstractVector{T}, St
     # # Temporary buffer for interpolations and stuff
     # tmp::SolutionType
     # Utility to decide what kind of stage we solve (i.e. linear problem, full DAE or mass-matrix ODE)
-    stage_info::StageType
+    stage::StageType
     # DO NOT USE THIS (will be replaced by proper logging system)
     monitor::MonitorType
 end
 
 # Performs a backward Euler step
 function perform_step!(f, cache::BackwardEulerSolverCache, t, Δt)
-    perform_backward_euler_step!(f, cache, cache.stage_info, t, Δt)
+    perform_backward_euler_step!(f, cache, cache.stage, t, Δt)
 end
 
 #########################################################
 #                   Affine Problems                     #
 #########################################################
 # Mutable to change Δt_last
-mutable struct BackwardEulerAffineODEStageInfo{T, MassMatrixType, DiffusionMatrixType, SourceTermType, SolverCacheType}
+mutable struct BackwardEulerAffineODEStage{T, MassMatrixType, DiffusionMatrixType, SourceTermType, SolverCacheType}
     # Mass matrix
     M::MassMatrixType
     # Diffusion matrix
@@ -48,20 +48,20 @@ mutable struct BackwardEulerAffineODEStageInfo{T, MassMatrixType, DiffusionMatri
     Δt_last::T
 end
 
-function perform_backward_euler_step!(f::AffineODEFunction, cache::BackwardEulerSolverCache, stage_info::BackwardEulerAffineODEStageInfo, t, Δt)
+function perform_backward_euler_step!(f::AffineODEFunction, cache::BackwardEulerSolverCache, stage::BackwardEulerAffineODEStage, t, Δt)
     @unpack uₙ, uₙ₋₁ = cache
-    @unpack linear_solver, M, Δt_last = stage_info
+    @unpack linear_solver, M, Δt_last = stage
 
     # Update matrix if time step length has changed
-    Δt ≈ Δt_last || implicit_euler_heat_solver_update_system_matrix!(stage_info, Δt)
+    Δt ≈ Δt_last || implicit_euler_heat_solver_update_system_matrix!(stage, Δt)
 
     # Prepare right hand side b = M uₙ₋₁
     @timeit_debug "b = M uₙ₋₁" mul!(linear_solver.b, M, uₙ₋₁)
 
     # Update source term
     @timeit_debug "update source term" begin
-        implicit_euler_heat_update_source_term!(stage_info, t + Δt)
-        add!(linear_solver.b, stage_info.source_term)
+        implicit_euler_heat_update_source_term!(stage, t + Δt)
+        add!(linear_solver.b, stage.source_term)
     end
 
     # Solve linear problem, where sol.u === uₙ
@@ -72,7 +72,7 @@ function perform_backward_euler_step!(f::AffineODEFunction, cache::BackwardEuler
 end
 
 # Helper to get A into the right form
-function implicit_euler_heat_solver_update_system_matrix!(cache::BackwardEulerAffineODEStageInfo, Δt)
+function implicit_euler_heat_solver_update_system_matrix!(cache::BackwardEulerAffineODEStage, Δt)
     _implicit_euler_heat_solver_update_system_matrix!(cache.linear_solver.A, cache.M, cache.K, Δt)
 
     cache.Δt_last = Δt
@@ -85,7 +85,7 @@ function _implicit_euler_heat_solver_update_system_matrix!(A, M, K, Δt)
     nonzeros(A) .+= nonzeros(M.A)
 end
 
-function implicit_euler_heat_update_source_term!(cache::BackwardEulerAffineODEStageInfo, t)
+function implicit_euler_heat_update_source_term!(cache::BackwardEulerAffineODEStage, t)
     needs_update(cache.source_term, t) && update_operator!(cache.source_term, t)
 end
 
@@ -130,7 +130,7 @@ function setup_solver_cache(f::AffineODEFunction, solver::BackwardEulerSolver, t
         u0, # u
         uprev,
         # tmp,
-        BackwardEulerAffineODEStageInfo(
+        BackwardEulerAffineODEStage(
             mass_operator,
             bilinear_operator,
             source_operator,
@@ -153,14 +153,50 @@ end
 #                     DAE Problems                      #
 #########################################################
 
-struct BackwardEulerDAEStageInfo{SolverType}
+struct BackwardEulerDAEStage{SolverType}
     nlsolver::SolverType
 end
 
-function perform_backward_euler_step!(f, cache::BackwardEulerSolverCache, stage_info::BackwardEulerDAEStageInfo, t, Δt)
+function perform_backward_euler_step!(f, cache::BackwardEulerSolverCache, stage::BackwardEulerDAEStage, t, Δt)
     # What to do here?
     @warn "Not implemented yet."
     return false
+end
+
+function setup_solver_cache(f::MultiLevelFunction, solver::BackwardEulerSolver, t₀; u = nothing, uprev = nothing)
+    inner_solver_cache = setup_solver_cache(f, solver.inner_solver)
+
+    vtype = Vector{Float64}
+
+    if u === nothing
+        _u = vtype(undef, solution_size(f))
+        @warn "Cannot initialize u for $(typeof(solver))."
+    else
+        _u = alias_u ? u : SciMLBase.recursivecopy(u)
+    end
+
+    if uprev === nothing
+        _uprev = vtype(undef, solution_size(f))
+        _uprev .= u
+    else
+        _uprev = alias_uprev ? uprev : SciMLBase.recursivecopy(uprev)
+    end
+
+    cache = BackwardEulerSolverCache(
+        u0, # u
+        uprev,
+        # tmp,
+        BackwardEulerDAEStage(
+            # mass_operator,
+            # bilinear_operator,
+            # source_operator,
+            inner_solver_cache,
+            # T(0.0),
+        ),
+        solver.monitor,
+    )
+
+    return cache
 end
 
 #########################################################
