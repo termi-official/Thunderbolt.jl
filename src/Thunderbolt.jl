@@ -45,6 +45,7 @@ import ModelingToolkit: @variables, @parameters, @component, @named,
 import GPUArraysCore: AbstractGPUVector, AbstractGPUArray
 import Adapt:
     Adapt, adapt_structure, adapt
+using CUDA
 
 
 include("utils.jl")
@@ -52,8 +53,8 @@ include("utils.jl")
 include("mesh/meshes.jl")
 
 include("ferrite-addons/transfer_operators.jl")
-include("ferrite-addons/gpu/gpugrid.jl")
-include("ferrite-addons/gpu/gpudofhandler.jl")
+#include("ferrite-addons/gpu/gpugrid.jl")
+#include("ferrite-addons/gpu/gpudofhandler.jl")
 
 # Note that some modules below have an "interface.jl" but this one has only a "common.jl".
 # This is simply because there is no modeling interface, but just individual physics modules and couplers.
@@ -90,6 +91,10 @@ include("disambiguation.jl")
 # TODO where to put these?
 include("modeling/rsafdq2022.jl")
 include("discretization/rsafdq-operator.jl")
+
+
+## GPU stuf ##
+include("gpu/gpu_operator.jl")
 
 
 # TODO put exports into the individual submodules above!

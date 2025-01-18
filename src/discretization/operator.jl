@@ -1,6 +1,7 @@
 # TODO split nonlinear operator and the linearization concepts
 # TODO energy based operator?
 # TODO maybe a trait system for operators?
+
 """
     AbstractNonlinearOperator
 
@@ -554,3 +555,6 @@ end
 function _needs_update(op::Union{LinearOperator, PEALinearOperator}, protocol::NoStimulationProtocol, t)
     return false
 end
+
+
+
