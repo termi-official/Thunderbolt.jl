@@ -339,12 +339,15 @@ function generate_ideal_lv_mesh(num_elements_circumferential::Int, num_elements_
     facetsets["Epicardium"]   = OrderedSet{FacetIndex}(boundary[(1:length(cell_array[:,end,:][:])) .+ offset]); offset += length(cell_array[:,end,:][:])
     facetsets["Base"]    = OrderedSet{FacetIndex}(boundary[(1:length(cell_array[:,:,end][:])) .+ offset]); offset += length(cell_array[:,:,end][:])
     nodesets["Apex"] = OrderedSet{Int}()
+    nodesets["ApexInOut"] = OrderedSet{Int}()
 
     # Add apex nodes
+    push!(nodesets["ApexInOut"], length(nodes)+1)
     for radius_percent ∈ radii_in_percent
         radius = apex_inner*(1.0-radius_percent) + apex_outer*(radius_percent)
         push!(nodes, Node((0.0, 0.0, radius)))
     end
+    push!(nodesets["ApexInOut"], length(nodes))
 
     # Add apex cells
     for j ∈ 1:num_elements_radial, i ∈ 1:num_elements_circumferential

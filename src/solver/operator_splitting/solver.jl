@@ -10,49 +10,41 @@ end
 
 @inline DiffEqBase.isadaptive(::AbstractOperatorSplittingAlgorithm) = false
 
-struct LieTrotterGodunovCache{uType, tmpType, iiType} <: AbstractOperatorSplittingCache
+struct LieTrotterGodunovCache{uType, uprevType, iiType} <: AbstractOperatorSplittingCache
     u::uType
-    uprev::uType # True previous solution
-    uprev2::tmpType # Previous solution used during time marching
-    tmp::tmpType # Scratch
+    uprev::uprevType
     inner_caches::iiType
 end
 
-# Dispatch for outer construction
-function init_cache(prob::OperatorSplittingProblem, alg::LieTrotterGodunov; dt, kwargs...) # TODO
-    @unpack f = prob
-    @assert f isa GenericSplitFunction
-
-    u          = copy(prob.u0)
-    uprev      = copy(prob.u0)
-
-    # Build inner integrator
-    return construct_inner_cache(f, alg, u, uprev)
+function init_cache(f::GenericSplitFunction, alg::LieTrotterGodunov;
+    uprev::AbstractArray, u::AbstractVector,
+    inner_caches,
+    alias_uprev = true,
+    alias_u     = false,
+)
+    _uprev = alias_uprev ? uprev : SciMLBase.recursivecopy(uprev)
+    _u     = alias_u     ? u     : SciMLBase.recursivecopy(u)
+    LieTrotterGodunovCache(_u, _uprev, inner_caches)
 end
 
-# Dispatch for recursive construction
-function construct_inner_cache(f::AbstractOperatorSplitFunction, alg::LieTrotterGodunov, u::AbstractArray, uprev::AbstractArray)
-    dof_ranges = f.dof_ranges
-
-    uprev2     = similar(uprev)
-    tmp        = similar(u)
-    inner_caches = ntuple(i->construct_inner_cache(get_operator(f, i), alg.inner_algs[i], similar(u, length(dof_ranges[i])), similar(u, length(dof_ranges[i]))), length(f.functions))
-    LieTrotterGodunovCache(u, uprev, uprev2, tmp, inner_caches)
-end
-
-@inline @unroll function advance_solution_to!(subintegrators::Tuple, cache::LieTrotterGodunovCache, tnext)
+@inline @unroll function advance_solution_to!(outer_integrator::OperatorSplittingIntegrator, subintegrators::Tuple, solution_indices::Tuple, synchronizers::Tuple, cache::LieTrotterGodunovCache, tnext)
     # We assume that the integrators are already synced
-    @unpack u, uprev2, uprev, inner_caches = cache
-
-    # Store current solution
-    uprev .= u
-
+    @unpack inner_caches = cache
     # For each inner operator
     i = 0
     @unroll for subinteg in subintegrators
         i += 1
-        prepare_local_step!(subinteg)
-        advance_solution_to!(subinteg, inner_caches[i], tnext)
-        finalize_local_step!(subinteg)
+        synchronizer = synchronizers[i]
+        idxs         = solution_indices[i]
+        cache        = inner_caches[i]
+
+        # prepare_local_step!(uparent, subinteg)
+        forward_sync_subintegrator!(outer_integrator, subinteg, idxs, synchronizer)
+        advance_solution_to!(outer_integrator, subinteg, idxs, synchronizer, cache, tnext)
+        if !(subinteg isa Tuple) && subinteg.sol.retcode ∉ (SciMLBase.ReturnCode.Default, SciMLBase.ReturnCode.Success)
+            return
+        end
+        # finalize_local_step!(uparent, subinteg)
+        backward_sync_subintegrator!(outer_integrator, subinteg, idxs)
     end
 end 

@@ -9,6 +9,8 @@ using UnPack
     # For testing purposes
     struct DummyForwardEuler <: Thunderbolt.AbstractSolver
     end
+    
+    Thunderbolt.DiffEqBase.isadaptive(::DummyForwardEuler) = false
 
     mutable struct DummyForwardEulerCache{duType, uType, duMatType} <: Thunderbolt.AbstractTimeSolverCache
         du::duType
@@ -18,32 +20,29 @@ using UnPack
     end
 
     # Dispatch for leaf construction
-    function OS.construct_inner_cache(f::ODEFunction, alg::DummyForwardEuler, u::AbstractArray, uprev::AbstractArray)
-        dumat = reshape(uprev, (:,1))
-        DummyForwardEulerCache(copy(uprev), dumat, copy(uprev), copy(uprev))
-    end
-    Thunderbolt.num_states(::Any) = 2
-    Thunderbolt.transmembranepotential_index(::Any) = 1
+    Thunderbolt.num_states(::ODEFunction) = 2                   # FIXME
+    Thunderbolt.transmembranepotential_index(::ODEFunction) = 1 # FIXME
 
-    function Thunderbolt.setup_solver_cache(f::PointwiseODEFunction, solver::DummyForwardEuler, t₀)
-        @unpack npoints, ode = f
-
-        du      = Thunderbolt.create_system_vector(Vector{Float64}, f)
-        uₙ      = Thunderbolt.create_system_vector(Vector{Float64}, f)
-        uₙ₋₁    = Thunderbolt.create_system_vector(Vector{Float64}, f)
+    function Thunderbolt.setup_solver_cache(f::Any, solver::DummyForwardEuler, t₀; u = nothing, uprev = nothing)
+        n = u === nothing ? Thunderbolt.num_states(f) : length(u)
+        du      = zeros(n)
+        uₙ      = u === nothing ? zeros(n) : u
+        uₙ₋₁    = uprev === nothing ? zeros(n) : uprev
         dumat = reshape(du, (:,1))
 
         return DummyForwardEulerCache(du, dumat, uₙ, uₙ₋₁)
     end
 
     # Dispatch innermost solve
-    function OS.advance_solution_to!(integ::ThunderboltTimeIntegrator, cache::DummyForwardEulerCache, tend)
+    function Thunderbolt.OrdinaryDiffEqCore.perform_step!(integ::ThunderboltTimeIntegrator, cache::DummyForwardEulerCache)
         @unpack f, dt, u, p, t = integ
         @unpack du = cache
 
         f isa Thunderbolt.PointwiseODEFunction ? f.ode(du, u, p, t) : f(du, u, p, t)
         @. u += dt * du
         cache.dumat[:,1] .= du
+
+        return true
     end
 
     # Operator splitting
@@ -163,80 +162,69 @@ using UnPack
                     (timestepper_adaptive, timestepper_inner_adaptive, timestepper2_adaptive)
                     )
                 # The remaining code works as usual.
-                integrator = DiffEqBase.init(prob, tstepper1, dt=dt, verbose=true)
+                integrator = DiffEqBase.init(prob, tstepper1, dt=dt, verbose=true, alias_u0=false)
                 @test integrator.sol.retcode == DiffEqBase.ReturnCode.Default
                 DiffEqBase.solve!(integrator)
                 @test integrator.sol.retcode == DiffEqBase.ReturnCode.Success
                 ufinal = copy(integrator.u)
                 @test ufinal ≉ u0 # Make sure the solve did something
 
-                DiffEqBase.reinit!(integrator, u0; tspan)
+                DiffEqBase.reinit!(integrator)
                 @test integrator.sol.retcode == DiffEqBase.ReturnCode.Default
                 for (u, t) in DiffEqBase.TimeChoiceIterator(integrator, 0.0:5.0:100.0)
                 end
                 @test  isapprox(ufinal, integrator.u, atol=1e-8)
 
-                DiffEqBase.reinit!(integrator, u0; tspan)
+                DiffEqBase.reinit!(integrator)
                 @test integrator.sol.retcode == DiffEqBase.ReturnCode.Default
                 for (uprev, tprev, u, t) in DiffEqBase.intervals(integrator)
                 end
                 @test  isapprox(ufinal, integrator.u, atol=1e-8)
 
-                DiffEqBase.reinit!(integrator, u0; tspan)
+                DiffEqBase.reinit!(integrator)
                 @test integrator.sol.retcode == DiffEqBase.ReturnCode.Default
                 DiffEqBase.solve!(integrator)
                 @test integrator.sol.retcode == DiffEqBase.ReturnCode.Success
 
-                integrator2 = DiffEqBase.init(prob2, tstepper2, dt=dt, verbose=true)
+                integrator2 = DiffEqBase.init(prob2, tstepper2, dt=dt, verbose=true, alias_u0=false)
                 @test integrator2.sol.retcode == DiffEqBase.ReturnCode.Default
                 DiffEqBase.solve!(integrator2)
                 @test integrator.sol.retcode == DiffEqBase.ReturnCode.Success
                 ufinal2 = copy(integrator2.u)
                 @test ufinal2 ≉ u0 # Make sure the solve did something
 
-                DiffEqBase.reinit!(integrator2, u0; tspan)
+                DiffEqBase.reinit!(integrator2)
                 @test integrator2.sol.retcode == DiffEqBase.ReturnCode.Default
                 for (u, t) in DiffEqBase.TimeChoiceIterator(integrator2, 0.0:5.0:100.0)
                 end
                 @test isapprox(ufinal2, integrator2.u, atol=1e-8)
 
-                DiffEqBase.reinit!(integrator2, u0; tspan)
+                DiffEqBase.reinit!(integrator2)
                 @test integrator2.sol.retcode == DiffEqBase.ReturnCode.Default
                 DiffEqBase.solve!(integrator2)
                 @test integrator2.sol.retcode == DiffEqBase.ReturnCode.Success
                 @testset "NaNs" begin
-                    integrator_NaN = DiffEqBase.init(prob_NaN, tstepper1, dt=dt, verbose=true)
+                    integrator_NaN = DiffEqBase.init(prob_NaN, tstepper1, dt=dt, verbose=true, alias_u0=false)
                     @test integrator_NaN.sol.retcode == DiffEqBase.ReturnCode.Default
                     DiffEqBase.solve!(integrator_NaN)
-                    @test integrator_NaN.sol.retcode == DiffEqBase.ReturnCode.Failure
+                    @test integrator_NaN.sol.retcode ∈ (DiffEqBase.ReturnCode.Unstable, DiffEqBase.ReturnCode.DtNaN)
                 end
             end
-            integrator = DiffEqBase.init(prob, timestepper, dt=dt, verbose=true)
+            integrator = DiffEqBase.init(prob, timestepper, dt=dt, verbose=true, alias_u0=false)
             for (u, t) in DiffEqBase.TimeChoiceIterator(integrator, 0.0:5.0:100.0) end
-            integrator_adaptive = DiffEqBase.init(prob, timestepper_adaptive, dt=dt, verbose=true)
+            integrator_adaptive = DiffEqBase.init(prob, timestepper_adaptive, dt=dt, verbose=true, alias_u0=false)
             for (u, t) in DiffEqBase.TimeChoiceIterator(integrator_adaptive, 0.0:5.0:100.0) end
             @test  isapprox(integrator_adaptive.u, integrator.u, atol=1e-5)
             @testset "Multiple `PointwiseODEFunction`s" begin
-                integrator_multiple_pwode = DiffEqBase.init(prob_multiple_pwode, timestepper2_adaptive, dt=dt, verbose=true)
+                integrator_multiple_pwode = DiffEqBase.init(prob_multiple_pwode, timestepper2_adaptive, dt=dt, verbose=true, alias_u0=false)
                 @test_throws AssertionError("No or multiple integrators using PointwiseODEFunction found") DiffEqBase.solve!(integrator_multiple_pwode)
             end
             @testset "σ_s = Inf, R = σ_c" begin
                 timestepper_stepfunc_adaptive = Thunderbolt.ReactionTangentController(timestepper, Inf, 0.5, adaptive_tstep_range)
-                integrator_stepfunc_adaptive = DiffEqBase.init(prob_force_half, timestepper_stepfunc_adaptive, dt=dt, verbose=true)
+                integrator_stepfunc_adaptive = DiffEqBase.init(prob_force_half, timestepper_stepfunc_adaptive, dt=dt, verbose=true, alias_u0=false)
                 DiffEqBase.solve!(integrator_stepfunc_adaptive)
                 @test integrator_stepfunc_adaptive._dt == timestepper_stepfunc_adaptive.Δt_bounds[2]
             end
         end
     end
-
-# tnext = tspan[1]+0.01
-# @btime OS.advance_solution_to!($integrator, $tnext) setup=(DiffEqBase.reinit!(integrator, u0; tspan))
-#   326.743 ns (8 allocations: 416 bytes) for 1 (OUTDATED
-#   89.949 ns (0 allocations: 0 bytes) for 2 (OUTDATED
-#   31.418 ns (0 allocations: 0 bytes) for 3
-# @btime DiffEqBase.solve!($integrator) setup=(DiffEqBase.reinit!(integrator, u0; tspan));
-#   431.632 μs (10000 allocations: 507.81 KiB) for 1 (OUTDATED
-#   105.712 μs (0 allocations: 0 bytes) for 2 (OUTDATED)
-#   1.852 μs (0 allocations: 0 bytes) for 3
-
 end

@@ -99,6 +99,9 @@ global_edges(mgrid::SimpleMesh, cell) = [mgrid.medges[sedge] for sedge ∈ first
 global_faces(mgrid::SimpleMesh, cell) = [mgrid.mfaces[sface] for sface ∈ first.(sortface.(faces(cell)))]
 global_vertices(mgrid::SimpleMesh, cell) = [mgrid.mvertices[v] for v ∈ vertices(cell)]
 
+get_faceid_from_nodes(mgrid::SimpleMesh, nodes) = mgrid.mfaces[sortface.(nodes)]
+get_faceid(mgrid::SimpleMesh, nodes::NTuple{3,Int}) = mgrid.mfaces[nodes]
+
 num_nodes(mgrid::SimpleMesh) = length(mgrid.grid.nodes)
 num_faces(mgrid::SimpleMesh) = length(mgrid.mfaces)
 num_edges(mgrid::SimpleMesh) = length(mgrid.medges)

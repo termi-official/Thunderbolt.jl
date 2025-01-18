@@ -33,7 +33,7 @@ function test_solve_contractile_cuboid(mesh, constitutive_model, subdomains = ["
     problem = QuasiStaticProblem(quasistaticform, tspan)
 
     # Create sparse matrix and residual vector
-    timestepper = LoadDrivenSolver(
+    timestepper = HomotopyPathSolver(
         NewtonRaphsonSolver(;max_iter=10)
     )
     integrator = init(problem, timestepper, dt=Δt, verbose=true)
@@ -71,7 +71,7 @@ function test_solve_contractile_ideal_lv(mesh, constitutive_model)
     problem = QuasiStaticProblem(quasistaticform, tspan)
 
     # Create sparse matrix and residual vector
-    timestepper = LoadDrivenSolver(
+    timestepper = HomotopyPathSolver(
         NewtonRaphsonSolver(;max_iter=10)
     )
     integrator = init(problem, timestepper, dt=Δt, verbose=true)
@@ -127,6 +127,12 @@ end
 @testset "Idealized LV" begin
     grid = generate_ideal_lv_mesh(4,1,1)
     cs = compute_lv_coordinate_system(grid)
+    @test !any(isnan.(cs.u_apicobasal))
+    @test !any(isnan.(cs.u_transmural))
+    @test !any(isnan.(cs.u_rotational))
+    VTKGridFile("ideal-lv-cs-test-output.vtu", grid.grid) do vtk
+        vtk_coordinate_system(vtk, cs)
+    end
     microstructure_model = create_simple_microstructure_model(cs, LagrangeCollection{1}()^3)
 
     test_solve_contractile_ideal_lv(grid, ExtendedHillModel(

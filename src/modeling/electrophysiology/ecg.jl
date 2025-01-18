@@ -65,7 +65,7 @@ end
 """
     Plonsey1964ECGGaussCache(op::AbstractBilinearOperator, φₘ::AbstractVector)
 
-Here φₘ is the solution vector containing the transmembranepotential, op is the associated diffusion opeartor and 
+Here φₘ is the solution vector containing the transmembranepotential, op is the associated diffusion opeartor and
 κₜ is the torso's conductivity.
 
 Returns a cache to compute the lead field with the form proposed in [Plo:1964:vcf](@cite)
@@ -174,7 +174,7 @@ Sets up a cache for calculating ``\\varphi_\\mathrm{e}`` by solving the Poisson 
 ```math
 \\nabla \\cdot (\\boldsymbol{\\kappa}_{\\mathrm{i}} + \\boldsymbol{\\kappa}_{\\mathrm{e}}) \\nabla \\varphi_{\\mathrm{e}}=-\\nabla \\cdot\\left(\\boldsymbol{\\kappa}_{\\mathrm{i}} \\nabla \\varphi_\\mathrm{m}\\right)
 ```
-as for example proposed in [PotDubRicVinGul:2006:cmb](@cite) and investigated in [OgiBalPer:2021:ema](@cite) (as well as other studies). Here κₑ is the extracellular conductivity tensor and κᵢ is the intracellular conductivity tensor. The cache includes the assembled 
+as for example proposed in [PotDubRicVinGul:2006:cmb](@cite) and investigated in [OgiBalPer:2021:ema](@cite) (as well as other studies). Here κₑ is the extracellular conductivity tensor and κᵢ is the intracellular conductivity tensor. The cache includes the assembled
 stiffness matrix with applied homogeneous Dirichlet boundary condition at the first vertex of the mesh. As the problem is solved for each timestep with only the right hand side changing.
 
 ## Keyword Arguments
@@ -186,7 +186,7 @@ stiffness matrix with applied homogeneous Dirichlet boundary condition at the fi
 """
 struct PoissonECGReconstructionCache{DiffusionOperatorType1, DiffusionOperatorType2, TransferOperatorType, SolutionVectorType, SolverCacheType, PHType, CHType}
     torso_op::DiffusionOperatorType1  # Operator on the torso mesh for ∇κ∇
-    heart_op::DiffusionOperatorType2  # Operator on the torso mesh for ∇κᵢ∇
+    heart_op::DiffusionOperatorType2  # Operator on the heart mesh for ∇κᵢ∇
     transfer_op::TransferOperatorType # Transfer from heart to torso mesh
     ϕₑ::SolutionVectorType            # Solution vector buffer
     κ∇φₘ_h::SolutionVectorType        # Source term buffer on heart
@@ -200,8 +200,8 @@ end
 function PoissonECGReconstructionCache(
     epfun::GenericSplitFunction,
     torso_grid::AbstractGrid,
-    heart_diffusion_tensor_field, # κᵢ
-    torso_diffusion_tensor_field, # κ
+    heart_diffusion_tensor_field, # κᵢ - diffusion tensor description for heart on heart grid
+    torso_diffusion_tensor_field, # κ - diffusion tensor description for heart and torso on torso grid
     electrode_positions::AbstractVector{<:Vec};
     ground               = Set([VertexIndex(1, 1)]),
     linear_solver        = LinearSolve.KrylovJL_CG(),
@@ -212,7 +212,8 @@ function PoissonECGReconstructionCache(
         epfun.functions[1],
         torso_grid,
         heart_diffusion_tensor_field,
-        torso_diffusion_tensor_field;
+        torso_diffusion_tensor_field,
+        electrode_positions;
         ground,
         linear_solver,
         solution_vector_type,
@@ -223,8 +224,8 @@ end
 function PoissonECGReconstructionCache(
     heart_fun::AffineODEFunction,
     torso_grid::AbstractGrid,
-    heart_diffusion_tensor_field, # κᵢ
-    torso_diffusion_tensor_field, # κ
+    heart_diffusion_tensor_field, # κᵢ - diffusion tensor description for heart on heart grid
+    torso_diffusion_tensor_field, # κ - diffusion tensor description for heart and torso on torso grid
     electrode_positions::AbstractVector{<:Vec};
     ipc                  = LagrangeCollection{1}(),
     qrc                  = QuadratureRuleCollection(2),
@@ -265,7 +266,7 @@ function PoissonECGReconstructionCache(
 
     heart_op = setup_assembled_operator(
         BilinearDiffusionIntegrator(heart_diffusion_tensor_field),
-        system_matrix_type, 
+        system_matrix_type,
         heart_dh,
         extracellular_potential_symbol,
         qrc
@@ -274,7 +275,7 @@ function PoissonECGReconstructionCache(
 
     torso_op = setup_assembled_operator(
         BilinearDiffusionIntegrator(torso_diffusion_tensor_field),
-        system_matrix_type, 
+        system_matrix_type,
         torso_dh,
         extracellular_potential_symbol,
         qrc
@@ -307,7 +308,7 @@ function PoissonECGReconstructionCache(
     transfer_op::AbstractTransferOperator,
     ph::PointEvalHandler;
     linear_solver        = LinearSolve.KrylovJL_CG(),
-    solution_vector_type = Vector,
+    solution_vector_type = Vector{Float64},
 )
     torso_dh = torso_op.dh
     torso_ch = torso_fun.ch
@@ -349,10 +350,10 @@ function evaluate_ecg(cache::PoissonECGReconstructionCache)
 end
 
 """
-    Geselowitz1989ECGLeadCache(problem, κ, κᵢ, electordes, electrode_pairs, [ground, linear_solver, solution_vector_type, system_matrix_type])
+    Geselowitz1989ECGLeadCache(problem, torso_grid, κ, κᵢ, electrode_sets, [ground, linear_solver, solution_vector_type, system_matrix_type])
 
 Here the lead field, `Z`, is computed using the discretization of `problem`.
-The lead field is computed as the solution of 
+The lead field is computed as the solution of
 ```math
 \\nabla \\cdot(\\mathbf{\\kappa} \\nabla Z)=\\left\\{\\begin{array}{cl}
 -1 & \\text { at the positive electrode } \\\\
@@ -369,20 +370,21 @@ Calling [`reinit!`](@ref) with this method simply evaluates the following integr
 V(t)=\\int \\nabla Z(\\boldsymbol{x}) \\cdot \\boldsymbol{\\kappa}_\\mathrm{i} \\nabla \\varphi_\\mathrm{m} \\,\\mathrm{d}\\boldsymbol{x}.
 ```
 """
-struct Geselowitz1989ECGLeadCache{TZ <: AbstractMatrix, DiffusionOperatorType1, SolutionVectorType <: AbstractVector, ElectrodesVecType <: AbstractVector}
-    lead_field_op::DiffusionOperatorType1               # Operator on the torso mesh for ∇κ∇
-    extracellular_potential_op::DiffusionOperatorType1  # Operator on the torso mesh for ∇κ∇
-    ϕₑ::SolutionVectorType                              # Solution vector buffer
-    Z::TZ                                               # Solution vector buffer
-    ∇Njκ∇φₘ::SolutionVectorType                              # Source term buffer on torso
+struct Geselowitz1989ECGLeadCache{TZ <: AbstractMatrix, DiffusionOperatorType, TransferOperatorType, SolutionVectorType <: AbstractVector, ElectrodesVecType}
+    heart_op::DiffusionOperatorType   # Operator on the heart mesh for ∇κᵢ∇
+    transfer_op::TransferOperatorType # Transfer from heart to torso mesh
+    κ∇φₘ_h::SolutionVectorType        # Source term buffer on heart
+    κ∇φₘ_t::SolutionVectorType        # Source term buffer on torso
+    Z::TZ                             # Lead field
     electrode_positions::ElectrodesVecType
 end
 
 function Geselowitz1989ECGLeadCache(
-    grid::AbstractGrid,
-    heart_diffusion_tensor_field, # κᵢ
-    bulk_diffusion_tensor_field, # κ
-    electrode_positions::AbstractVector{<:Pair{<:Vec, <:Vec}};
+    heart_fun::GenericSplitFunction,
+    torso_grid::AbstractGrid,
+    heart_diffusion_tensor_field, # κᵢ - diffusion tensor description for heart on heart grid
+    full_diffusion_tensor_field,  # κ - diffusion tensor description for heart and torso on torso grid
+    electrode_positions::AbstractVector{<:Vector{<:Vec}};
     ipc                  = LagrangeCollection{1}(),
     qrc                  = QuadratureRuleCollection(2),
     ground               = OrderedSet([VertexIndex(1, 1)]),
@@ -390,27 +392,27 @@ function Geselowitz1989ECGLeadCache(
     solution_vector_type = Vector{Float64},
     system_matrix_type   = ThreadedSparseMatrixCSR{Float64,Int64},
 )
-
-return Geselowitz1989ECGLeadCache(
-    grid,
-    heart_diffusion_tensor_field, # κᵢ
-    bulk_diffusion_tensor_field, # κ
-    [_get_vertex(electrode_positions[i][1], grid) => _get_vertex(electrode_positions[i][2], grid) for i in eachindex(electrode_positions)];
-    ipc                  ,
-    qrc                  ,
-    ground               ,
-    linear_solver       ,
-    solution_vector_type,
-    system_matrix_type,
-)
-
+    return Geselowitz1989ECGLeadCache(
+        heart_fun.functions[1],
+        torso_grid,
+        heart_diffusion_tensor_field, # κᵢ - diffusion tensor description for heart on heart grid
+        full_diffusion_tensor_field,  # κ - diffusion tensor description for heart and torso on torso grid
+        [[get_closest_vertex(position, torso_grid) for position in positions] for positions in electrode_positions];
+        ipc                 ,
+        qrc                 ,
+        ground              ,
+        linear_solver       ,
+        solution_vector_type,
+        system_matrix_type  ,
+    )
 end
 
 function Geselowitz1989ECGLeadCache(
-    grid::AbstractGrid,
-    heart_diffusion_tensor_field, # κᵢ
-    bulk_diffusion_tensor_field, # κ
-    electrode_positions::AbstractVector{Pair{VertexIndex, VertexIndex}};
+    heart_fun::TransientDiffusionFunction,
+    torso_grid::AbstractGrid,
+    heart_diffusion_tensor_field, # κᵢ - diffusion tensor description for heart on heart grid
+    full_diffusion_tensor_field,  # κ - diffusion tensor description for heart and torso on torso grid
+    electrode_positions::AbstractVector{<:Vector{<:Vec}};
     ipc                  = LagrangeCollection{1}(),
     qrc                  = QuadratureRuleCollection(2),
     ground               = OrderedSet([VertexIndex(1, 1)]),
@@ -418,14 +420,41 @@ function Geselowitz1989ECGLeadCache(
     solution_vector_type = Vector{Float64},
     system_matrix_type   = ThreadedSparseMatrixCSR{Float64,Int64},
 )
+    return Geselowitz1989ECGLeadCache(
+        heart_fun,
+        torso_grid,
+        heart_diffusion_tensor_field, # κᵢ - diffusion tensor description for heart on heart grid
+        full_diffusion_tensor_field,  # κ - diffusion tensor description for heart and torso on torso grid
+        [[get_closest_vertex(position, torso_grid) for position in positions] for positions in electrode_positions];
+        ipc                 ,
+        qrc                 ,
+        ground              ,
+        linear_solver       ,
+        solution_vector_type,
+        system_matrix_type  ,
+    )
+end
 
+function Geselowitz1989ECGLeadCache(
+    heart_fun::TransientDiffusionFunction,
+    torso_grid::AbstractGrid,
+    heart_diffusion_tensor_field, # κᵢ - diffusion tensor description for heart on heart grid
+    full_diffusion_tensor_field,  # κ - diffusion tensor description for heart and torso on torso grid
+    electrode_positions::AbstractVector{Vector{VertexIndex}};
+    ipc                  = LagrangeCollection{1}(),
+    qrc                  = QuadratureRuleCollection(2),
+    ground               = OrderedSet([VertexIndex(1, 1)]),
+    linear_solver        = LinearSolve.KrylovJL_CG(),
+    solution_vector_type = Vector{Float64},
+    system_matrix_type   = ThreadedSparseMatrixCSR{Float64,Int64},
+)
     lead_field_model = SteadyDiffusionModel(
-        bulk_diffusion_tensor_field,
+        full_diffusion_tensor_field,
         NoStimulationProtocol(), #ConstantCoefficient(NaN), # FIXME Poisoning to detecte if we accidentally touch these
         :Z
     )
 
-    ϕₘ_model = SteadyDiffusionModel(
+    source_model = SteadyDiffusionModel(
         heart_diffusion_tensor_field,
         NoStimulationProtocol(), #ConstantCoefficient(NaN), # FIXME Poisoning to detecte if we accidentally touch these
         :ϕₘ
@@ -437,41 +466,53 @@ function Geselowitz1989ECGLeadCache(
             Dict(:Z => ipc),
             [Dirichlet(:Z, ground, (x,t) -> 0.0)]
         ),
-        grid
+        torso_grid
     )
 
 
-    ϕₘ_fun = semidiscretize(
-        ϕₘ_model,
+    sourcefun = semidiscretize(
+        source_model,
         FiniteElementDiscretization(
             Dict(:ϕₘ => ipc),
             Dirichlet[]
         ),
-        grid
+        get_grid(heart_fun.dh)
     )
 
     ϕₘ_op = setup_assembled_operator(
         BilinearDiffusionIntegrator(heart_diffusion_tensor_field),
-        system_matrix_type, 
-        ϕₘ_fun.dh,
+        system_matrix_type,
+        sourcefun.dh,
         :ϕₘ,
         qrc
     )
     update_operator!(ϕₘ_op, 0.) # Trigger assembly
 
     lead_op = setup_assembled_operator(
-        BilinearDiffusionIntegrator(bulk_diffusion_tensor_field),
-        system_matrix_type, 
+        BilinearDiffusionIntegrator(full_diffusion_tensor_field),
+        system_matrix_type,
         lead_field_fun.dh,
         :Z,
         qrc
     )
     update_operator!(lead_op, 0.) # Trigger assembly
 
+    lead_field_dh = lead_field_fun.dh
+    heart_dh = heart_fun.dh
+
+    transfer_op = NodalIntergridInterpolation(
+        heart_dh,
+        lead_field_dh,
+        first(heart_dh.field_names),
+        first(lead_field_dh.field_names),
+    )
+
     Geselowitz1989ECGLeadCache(
+        heart_fun,
         lead_field_fun,
         lead_op,
         ϕₘ_op,
+        transfer_op,
         electrode_positions;
         linear_solver,
         solution_vector_type,
@@ -479,53 +520,59 @@ function Geselowitz1989ECGLeadCache(
 end
 
 function Geselowitz1989ECGLeadCache(
+    heart_fun::TransientDiffusionFunction,
     lead_fun::AffineSteadyStateFunction,
     lead_op::AssembledBilinearOperator,
-    ϕₘ_op::AssembledBilinearOperator,
-    electrode_positions::AbstractVector{Pair{VertexIndex, VertexIndex}};
+    source_op::AssembledBilinearOperator,
+    transfer_op,
+    electrode_positions::AbstractVector{Vector{VertexIndex}};
     linear_solver        = LinearSolve.KrylovJL_CG(),
-    solution_vector_type = Vector,
+    solution_vector_type = Vector{Float64},
 )
-    lead_dh = lead_op.dh
+    lead_dh  = lead_op.dh
     length(lead_dh.field_names) == 1 || @warn "Multiple fields detected. Setup might be broken..."
     nelectrodes = length(electrode_positions)
-    ∇Njκ∇φₘ    = create_system_vector(solution_vector_type, lead_fun) # Solution vector
-    Z    = zeros(eltype(∇Njκ∇φₘ), nelectrodes, length(∇Njκ∇φₘ))
-    ϕₑ    = zeros(nelectrodes)
+    ∇Njκ∇φₘ_h   = create_system_vector(solution_vector_type, heart_fun) # Solution vector
+    ∇Njκ∇φₘ_t   = create_system_vector(solution_vector_type, lead_fun)  # Solution vector
+    Z           = zeros(eltype(∇Njκ∇φₘ_t), nelectrodes, length(∇Njκ∇φₘ_t))
+    ϕₑ          = zeros(nelectrodes)
 
-    lead_rhs = zeros(eltype(∇Njκ∇φₘ), nelectrodes, length(∇Njκ∇φₘ))
+    lead_rhs = zeros(eltype(∇Njκ∇φₘ_t), nelectrodes, length(∇Njκ∇φₘ_t))
 
-    @views for (i, electrode_pair) in enumerate(electrode_positions)
-        _add_electrode!(lead_rhs[i,:], lead_dh, electrode_pair[1], true)
-        _add_electrode!(lead_rhs[i,:], lead_dh, electrode_pair[2], false)
+    @views for (i, electrode_set) in enumerate(electrode_positions)
+        @assert length(electrode_set) ≥ 2 "Electrode set $i has too few electrodes ($(length(electrode_set))<2)"
+        current_rhs = lead_rhs[i,:]
+        _add_electrode!(current_rhs, lead_dh, electrode_set[1], 1.0)
+        for j in 2:length(electrode_set)
+            _add_electrode!(current_rhs, lead_dh, electrode_set[j], -1.0/(length(electrode_set)-1))
+        end
         leadprob = LinearSolve.LinearProblem(
-            lead_op.A, lead_rhs[i,:]; u0= Z[i,:]
+            lead_op.A, current_rhs; u0=Z[i,:]
         )
         lincache = init(leadprob, linear_solver)
         LinearSolve.solve!(lincache)
-
     end
 
-    return Geselowitz1989ECGLeadCache(lead_op, ϕₘ_op, ϕₑ, Z, ∇Njκ∇φₘ, electrode_positions)
+    return Geselowitz1989ECGLeadCache(source_op, transfer_op, ∇Njκ∇φₘ_h, ∇Njκ∇φₘ_t, Z, electrode_positions)
 end
 
-function _add_electrode!(f::AbstractVector{T}, dh::DofHandler, electrode::VertexIndex, is_positive::Bool) where {T<:Number}
-    grid = dh.grid
-    # haskey(grid.vertexsets, "$electrode") || addvertexset!(grid, "$electrode", x -> x ≈ electrode)
+function _add_electrode!(f::AbstractVector{T}, dh::DofHandler, electrode::VertexIndex, weight) where {T<:Number}
     local_dof = Ferrite.vertexdof_indices(Ferrite.getfieldinterpolation(dh.subdofhandlers[1], :Z))[electrode[2]][1]::Int
     global_dof = celldofs(dh, electrode[1])[local_dof]::Int
-    f[global_dof] = is_positive ? -1 : 1
+    f[global_dof] = -weight
     return nothing
 end
 
 function update_ecg!(cache::Geselowitz1989ECGLeadCache, φₘ::AbstractVector)
     # Compute κᵢ∇φₘ on the heart
-    mul!(cache.∇Njκ∇φₘ, cache.extracellular_potential_op, φₘ)
+    mul!(cache.κ∇φₘ_h, cache.heart_op, φₘ)
+    # Transfer κᵢ∇φₘ to the torso
+    transfer!(cache.κ∇φₘ_t, cache.transfer_op, cache.κ∇φₘ_h)
+    cache.κ∇φₘ_t[isnan.(cache.κ∇φₘ_t)] .= 0.0 # FIXME
     return nothing
 end
 
 # Batch evaluate all electrodes
 function evaluate_ecg(cache::Geselowitz1989ECGLeadCache)
-    return -cache.Z * cache.∇Njκ∇φₘ
+    return -cache.Z * cache.κ∇φₘ_t
 end
-

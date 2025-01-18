@@ -16,7 +16,7 @@ CoordinateSystemCoefficient
 evaluate_coefficient
 ```
 
-## Microstructure
+## [Microstructure](@id microstructure-api)
 
 ```@docs
 AnisotropicPlanarMicrostructureModel
