@@ -408,7 +408,7 @@ function Geselowitz1989ECGLeadCache(
 end
 
 function Geselowitz1989ECGLeadCache(
-    heart_fun::TransientDiffusionFunction,
+    heart_fun::AffineODEFunction,
     torso_grid::AbstractGrid,
     heart_diffusion_tensor_field, # κᵢ - diffusion tensor description for heart on heart grid
     full_diffusion_tensor_field,  # κ - diffusion tensor description for heart and torso on torso grid
@@ -436,7 +436,7 @@ function Geselowitz1989ECGLeadCache(
 end
 
 function Geselowitz1989ECGLeadCache(
-    heart_fun::TransientDiffusionFunction,
+    heart_fun::AffineODEFunction,
     torso_grid::AbstractGrid,
     heart_diffusion_tensor_field, # κᵢ - diffusion tensor description for heart on heart grid
     full_diffusion_tensor_field,  # κ - diffusion tensor description for heart and torso on torso grid
@@ -520,7 +520,7 @@ function Geselowitz1989ECGLeadCache(
 end
 
 function Geselowitz1989ECGLeadCache(
-    heart_fun::TransientDiffusionFunction,
+    heart_fun::AffineODEFunction,
     lead_fun::AffineSteadyStateFunction,
     lead_op::AssembledBilinearOperator,
     source_op::AssembledBilinearOperator,

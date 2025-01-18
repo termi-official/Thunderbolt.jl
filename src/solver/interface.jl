@@ -5,6 +5,10 @@ abstract type AbstractNonlinearSolverCache end
 
 abstract type AbstractTimeSolverCache end
 
+function setup_compatible_operator(operator, f, solver)
+    return setup_operator(f, solver)
+end
+
 function setup_operator(f::NullFunction, solver::AbstractSolver)
     return NullOperator{Float64,solution_size(f),solution_size(f)}()
 end

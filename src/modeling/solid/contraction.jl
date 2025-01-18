@@ -3,14 +3,13 @@ TODO wrap the existing models into this one
 """
 abstract type SteadyStateSarcomereModel <: SteadyStateInternalVariable end
 
-struct RateIntependentSarcomereModel{ModelType, TCF, TSL, TSV}
+Base.@kwdef struct RateIntependentSarcomereModel{ModelType, TCF, TSL}
     model::ModelType
     calcium_field::TCF
     sarcomere_length::TSL
-    sarcomere_velocity::TSV
 end
 
-struct RateDependentSarcomereModel{ModelType, TCF, TSL, TSV}
+Base.@kwdef struct RateDependentSarcomereModel{ModelType, TCF, TSL, TSV}
     model::ModelType
     calcium_field::TCF
     sarcomere_length::TSL
