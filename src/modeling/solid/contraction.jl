@@ -25,7 +25,7 @@ TODO remove explicit calcium field dependence
     It should be highlighted that this model directly gives the steady state
     for the active stretch.
 """
-Base.@kwdef struct PelceSunLangeveld1995Model{TD, CF} <: AbstractInternalModel
+Base.@kwdef struct PelceSunLangeveld1995Model{TD, CF} <: SteadyStateSarcomereModel
     β::TD = 3.0
     λᵃₘₐₓ::TD = 0.7
     calcium_field::CF
@@ -60,7 +60,7 @@ update_contraction_model_cache!(cache::PelceSunLangeveld1995Cache, time, cell, c
 """
 TODO remove explicit calcium field dependence
 """
-Base.@kwdef struct ConstantStretchModel{TD, CF} <: AbstractInternalModel
+Base.@kwdef struct ConstantStretchModel{TD, CF} <: SteadyStateSarcomereModel
     λ::TD = 1.0
     calcium_field::CF
 end

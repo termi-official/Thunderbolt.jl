@@ -6,7 +6,7 @@ abstract type QuasiStaticModel end
 function material_routine(constitutive_model::QuasiStaticModel, F::Tensor{2}, coefficient_cache, internal_cache, geometry_cache::Ferrite.CellCache, qp::QuadraturePoint, time)
     coefficients = evaluate_coefficient(coefficient_cache, geometry_cache, qp, time)
     internal_state = state(internal_cache, geometry_cache, qp, time)
-    return material_routine(F, coefficients, internal_state, constitutive_model)
+    return material_routine(constitutive_model, F, coefficients, internal_state)
 end
 
 @doc raw"""
@@ -37,7 +37,7 @@ end
 function material_routine(constitutive_model::PrestressedMechanicalModel, F::Tensor{2}, coefficient_cache::PrestressedMechanicalModelCoefficientCache, internal_state, geometry_cache::Ferrite.CellCache, qp::QuadraturePoint, time)
     F₀inv = evaluate_coefficient(coefficient_cache.prestress_cache, geometry_cache, qp, time)
     Fᵉ = F ⋅ F₀inv
-    ∂Ψᵉ∂Fᵉ, ∂²Ψᵉ∂Fᵉ² = material_routine(constitutive_model.inner_model, coefficient_cache.inner_cache, Fᵉ, internal_state, geometry_cache, qp, time)
+    ∂Ψᵉ∂Fᵉ, ∂²Ψᵉ∂Fᵉ² = material_routine(constitutive_model.inner_model, Fᵉ, coefficient_cache.inner_cache, internal_state, geometry_cache, qp, time)
     Pᵉ = ∂Ψᵉ∂Fᵉ # Elastic PK1
     P  = Pᵉ ⋅ transpose(F₀inv) # Obtained by Coleman-Noll procedure
     Aᵉ = ∂²Ψᵉ∂Fᵉ² # Elastic mixed modulus
@@ -82,7 +82,7 @@ end
 
 setup_internal_cache(constitutive_model::PK1Model, qr::QuadratureRule, sdh::SubDofHandler) = setup_internal_cache(constitutive_model.internal_model, qr, sdh)
 
-function material_routine(F::Tensor{2}, coefficients, ::EmptyInternalModel, model::PK1Model)
+function material_routine(model::PK1Model, F::Tensor{2}, coefficients, ::EmptyInternalModel)
     ∂²Ψ∂F², ∂Ψ∂F = Tensors.hessian(
         F_ad ->
               Ψ(F_ad, coefficients, model.material),
@@ -115,7 +115,7 @@ function setup_coefficient_cache(m::GeneralizedHillModel, qr::QuadratureRule, sd
     return setup_coefficient_cache(m.microstructure_model, qr, sdh)
 end
 
-function material_routine(F::Tensor{2}, coefficients, internal_state, model::GeneralizedHillModel)
+function material_routine(model::GeneralizedHillModel, F::Tensor{2}, coefficients, internal_state)
     # TODO what is a good abstraction here?
     Fᵃ = compute_Fᵃ(internal_state, coefficients, model.contraction_model, model.active_deformation_gradient_model)
 
@@ -153,7 +153,7 @@ function setup_coefficient_cache(m::ExtendedHillModel, qr::QuadratureRule, sdh::
     return setup_coefficient_cache(m.microstructure_model, qr, sdh)
 end
 
-function material_routine(F::Tensor{2}, coefficients, cell_state, model::ExtendedHillModel)
+function material_routine(model::ExtendedHillModel, F::Tensor{2}, coefficients, cell_state)
     # TODO what is a good abstraction here?
     Fᵃ = compute_Fᵃ(cell_state, coefficients, model.contraction_model, model.active_deformation_gradient_model)
     N = 𝓝(cell_state, model.contraction_model)
@@ -190,7 +190,7 @@ function setup_coefficient_cache(m::ActiveStressModel, qr::QuadratureRule, sdh::
     return setup_coefficient_cache(m.microstructure_model, qr, sdh)
 end
 
-function material_routine(F::Tensor{2}, coefficients, cell_state, model::ActiveStressModel)
+function material_routine(model::ActiveStressModel, F::Tensor{2}, coefficients, cell_state)
     ∂²Ψ∂F², ∂Ψ∂F = Tensors.hessian(
         F_ad ->
               Ψ(F_ad, coefficients, model.material_model),
