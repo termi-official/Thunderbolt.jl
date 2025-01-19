@@ -1,3 +1,8 @@
+struct MultiLevelFunction{G,L}
+    g::G # Global instance
+    l::L # Local instance helper
+end
+
 """
     MultilevelNewtonRaphsonSolver{T}
 
@@ -10,7 +15,7 @@ Base.@kwdef struct MultiLevelNewtonRaphsonSolver{gSolverType <: NewtonRaphsonSol
     local_newton::lSolverType
 end
 
-mutable struct MultiLevelNewtonRaphsonSolverCache{gCacheType, lCacheType} <: AbstractNonlinearSolverCache
+struct MultiLevelNewtonRaphsonSolverCache{gCacheType, lCacheType} <: AbstractNonlinearSolverCache
     global_solver_cache::gCacheType
     local_solver_cache::lCacheType
 end
