@@ -22,7 +22,10 @@ end
 
 solution_size(problem::RSAFDQ2022TyingInfo) = length(problem.chambers)
 
-function setup_tying_cache(tying_info::RSAFDQ2022TyingInfo, qr, ip, sdh)
+function setup_tying_cache(tying_info::RSAFDQ2022TyingInfo, qr, sdh::SubDofHandler)
+    @assert length(sdh.dh.field_names) == 1 "Support for multiple fields not yet implemented."
+    field_name = first(sdh.dh.field_names)
+    ip          = Ferrite.getfieldinterpolation(sdh, field_name)
     ip_geo = geometric_subdomain_interpolation(sdh)
     RSAFDQ2022TyingCache(FacetValues(qr, ip, ip_geo), tying_info.chambers)
 end

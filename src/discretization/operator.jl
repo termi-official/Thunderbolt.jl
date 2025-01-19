@@ -154,7 +154,7 @@ struct AssembledNonlinearOperator{MatrixType <: AbstractSparseMatrix, ElementMod
     dh::DHType
 end
 
-function AssembledNonlinearOperator(dh::AbstractDofHandler, field_name::Symbol, element_model, element_qrc::QuadratureRuleCollection)
+function AssembledNonlinearOperator(dh::AbstractDofHandler, element_model, element_qrc::QuadratureRuleCollection)
     AssembledNonlinearOperator(
         allocate_matrix(dh),
         element_model, element_qrc,
@@ -165,7 +165,7 @@ function AssembledNonlinearOperator(dh::AbstractDofHandler, field_name::Symbol, 
 end
 
 #Utility constructor to get the nonlinear operator for a single field problem.
-function AssembledNonlinearOperator(dh::AbstractDofHandler, field_name::Symbol, element_model, element_qrc::QuadratureRuleCollection, boundary_model, boundary_qrc::FacetQuadratureRuleCollection)
+function AssembledNonlinearOperator(dh::AbstractDofHandler, element_model, element_qrc::QuadratureRuleCollection, boundary_model, boundary_qrc::FacetQuadratureRuleCollection)
     AssembledNonlinearOperator(
         allocate_matrix(dh),
         element_model, element_qrc,
@@ -175,7 +175,7 @@ function AssembledNonlinearOperator(dh::AbstractDofHandler, field_name::Symbol, 
     )
 end
 
-function AssembledNonlinearOperator(dh::AbstractDofHandler, field_name::Symbol, element_model, element_qrc::QuadratureRuleCollection, boundary_model, boundary_qrc::FacetQuadratureRuleCollection, tying_model, tying_qr)
+function AssembledNonlinearOperator(dh::AbstractDofHandler, element_model, element_qrc::QuadratureRuleCollection, boundary_model, boundary_qrc::FacetQuadratureRuleCollection, tying_model, tying_qr)
     AssembledNonlinearOperator(
         allocate_matrix(dh),
         element_cache, element_qrc,
@@ -193,24 +193,20 @@ function update_linearization!(op::AssembledNonlinearOperator, u::AbstractVector
     @unpack face_model, face_qrc = op
     @unpack tying_model, tying_qrc = op
 
-    @assert length(dh.field_names) == 1 "Please use block operators for problems with multiple fields."
-    field_name = first(dh.field_names)
-
     grid = get_grid(dh)
 
     assembler = start_assemble(J)
 
     for sdh in dh.subdofhandlers
         # Prepare evaluation caches
-        ip          = Ferrite.getfieldinterpolation(sdh, field_name)
         element_qr  = getquadraturerule(element_qrc, sdh)
         face_qr     = face_model === nothing ? nothing : getquadraturerule(face_qrc, sdh)
         tying_qr    = tying_model === nothing ? nothing : getquadraturerule(tying_qrc, sdh)
 
         # Build evaluation caches
-        element_cache  = setup_element_cache(element_model, element_qr, ip, sdh)
-        face_cache     = setup_boundary_cache(face_model, face_qr, ip, sdh)
-        tying_cache    = setup_tying_cache(tying_model, tying_qr, ip, sdh)
+        element_cache  = setup_element_cache(element_model, element_qr, sdh)
+        face_cache     = setup_boundary_cache(face_model, face_qr, sdh)
+        tying_cache    = setup_tying_cache(tying_model, tying_qr, sdh)
 
         # Function barrier
         _update_linearization_on_subdomain_J!(assembler, sdh, element_cache, face_cache, tying_cache, u, time)
@@ -248,25 +244,20 @@ function update_linearization!(op::AssembledNonlinearOperator, residual::Abstrac
     @unpack face_model, face_qrc = op
     @unpack tying_model, tying_qrc = op
 
-    @assert length(dh.field_names) == 1 "Please use block operators for problems with multiple fields."
-    field_name = first(dh.field_names)
-
     grid = get_grid(dh)
 
     assembler = start_assemble(J, residual)
 
     for sdh in dh.subdofhandlers
         # Prepare evaluation caches
-        ip          = Ferrite.getfieldinterpolation(sdh, field_name)
-
         element_qr  = getquadraturerule(element_qrc, sdh)
         face_qr     = face_model === nothing ? nothing : getquadraturerule(face_qrc, sdh)
         tying_qr    = tying_model === nothing ? nothing : getquadraturerule(tying_qrc, sdh)
 
         # Build evaluation caches
-        element_cache  = setup_element_cache(element_model, element_qr, ip, sdh)
-        face_cache     = setup_boundary_cache(face_model, face_qr, ip, sdh)
-        tying_cache    = setup_tying_cache(tying_model, tying_qr, ip, sdh)
+        element_cache  = setup_element_cache(element_model, element_qr, sdh)
+        face_cache     = setup_boundary_cache(face_model, face_qr, sdh)
+        tying_cache    = setup_tying_cache(tying_model, tying_qr, sdh)
 
         # Function barrier
         _update_linearization_on_subdomain_Jr!(assembler, sdh, element_cache, face_cache, tying_cache, u, time)
@@ -325,21 +316,16 @@ end
 function update_operator!(op::AssembledBilinearOperator, time)
     @unpack A, A_, element_qrc, integrator, dh  = op
 
-    @assert length(dh.field_names) == 1 "Please use block operators for problems with multiple fields."
-    field_name = first(dh.field_names)
-
     grid = get_grid(dh)
 
     assembler = start_assemble(A_)
 
     for sdh in dh.subdofhandlers
         # Prepare evaluation caches
-        ip          = Ferrite.getfieldinterpolation(sdh, field_name)
-
         element_qr  = getquadraturerule(element_qrc, sdh)
 
         # Build evaluation caches
-        element_cache  = setup_element_cache(integrator, element_qr, ip, sdh)
+        element_cache  = setup_element_cache(integrator, element_qr, sdh)
 
         # Function barrier
         _update_bilinear_operator_on_subdomain!(assembler, sdh, element_cache, time)
@@ -438,20 +424,15 @@ end
 function update_operator!(op::LinearOperator, time)
     @unpack b, qrc, dh, integrand  = op
 
-    # assembler = start_assemble(b)
-    @assert length(dh.field_names) == 1 "Please use block operators for problems with multiple fields."
-    field_name = first(dh.field_names)
-
     grid = get_grid(dh)
 
     fill!(b, 0.0)
     for sdh in dh.subdofhandlers
         # Prepare evaluation caches
-        ip          = Ferrite.getfieldinterpolation(sdh, field_name)
         element_qr  = getquadraturerule(qrc, sdh)
 
         # Build evaluation caches
-        element_cache = setup_element_cache(integrand, element_qr, ip, sdh)
+        element_cache = setup_element_cache(integrand, element_qr, sdh)
 
         # Function barrier
         _update_linear_operator_on_subdomain!(b, sdh, element_cache, time)
@@ -496,18 +477,14 @@ end
 function _update_operator!(op::PEALinearOperator, b::Vector, time)
     @unpack qrc, dh, chunksize, protocol = op
 
-    @assert length(dh.field_names) == 1 "Please use block operators for problems with multiple fields."
-    field_name = first(dh.field_names)
-
     grid = get_grid(dh)
 
     @timeit_debug "assemble elements" for sdh in dh.subdofhandlers
         # Prepare evaluation caches
-        ip          = Ferrite.getfieldinterpolation(sdh, field_name)
         element_qr  = getquadraturerule(qrc, sdh)
 
         # Build evaluation caches
-        element_cache = setup_element_cache(protocol, element_qr, ip, sdh)
+        element_cache = setup_element_cache(protocol, element_qr, sdh)
 
         # Function barrier
         _update_pealinear_operator_on_subdomain!(op.beas, sdh, element_cache, time, chunksize)

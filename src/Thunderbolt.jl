@@ -73,7 +73,6 @@ include("modeling/problems.jl")
 include("discretization/interface.jl")
 include("discretization/fem.jl")
 include("discretization/operator.jl")
-include("discretization/new-operator.jl")
 
 include("solver/logging.jl")
 include("solver/interface.jl")

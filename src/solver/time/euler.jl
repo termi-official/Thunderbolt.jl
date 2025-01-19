@@ -44,7 +44,7 @@ mutable struct BackwardEulerAffineODEStageInfo{T, MassMatrixType, DiffusionMatri
     source_term::SourceTermType
     # Linear solver for (M - Δtₙ₋₁ K) uₙ = M uₙ₋₁  + f
     linear_solver::SolverCacheType
-    # Last time step length as a check if we have to update K
+    # Last time step length as a check if we have to update A
     Δt_last::T
 end
 
@@ -153,13 +153,119 @@ end
 #                     DAE Problems                      #
 #########################################################
 
-struct BackwardEulerDAEStageInfo{SolverType}
+struct BackwardEulerStageInfo{SolverType, MassMatrixType, JacobianMatrixType}
+    # Nonlinear solver for generic backward Euler discretizations
     nlsolver::SolverType
 end
 
-function perform_backward_euler_step!(f, cache::BackwardEulerSolverCache, stage_info::BackwardEulerDAEStageInfo, t, Δt)
-    # What to do here?
-    @warn "Not implemented yet."
+# This is an annotation to setup the operator in the inner nonlinear problem correctly.
+struct BackwardEulerStageAnnotation{F,U}
+    f::F
+    uprev::U
+end
+# This is the wrapper used to communicate solver info into the operator.
+mutable struct BackwardEulerStageFunctionWrapper{F,U,T,S}
+    const f::F
+    const uprev::U
+    Δt::T
+    inner_solver::S
+end
+
+# TODO generalize this
+function setup_solver_cache(wrapper::BackwardEulerStageAnnotation{<:AbstractQuasiStaticFunction}, solver::MultiLevelNewtonRaphsonSolver)
+    @unpack f = wrapper
+    @unpack dh, constitutive_model, face_models = f
+
+    # TODO pass this from outside
+    intorder = default_quadrature_order(f, first(dh.field_names))::Int
+    for sym in dh.field_names
+        intorder = max(intorder, default_quadrature_order(f, sym)::Int)
+    end
+    qr = QuadratureRuleCollection(intorder)
+    qr_face = FacetQuadratureRuleCollection(intorder)
+
+    solver_cache = MultiLevelNewtonRaphsonSolverCache(
+        setup_solver_cache(f, solver.global_newton),
+        setup_solver_cache(f.inner_model, solver.local_newton)
+    )
+
+    # TODO use composite elements for face_element
+    volume_element = BackwardEulerStageFunctionWrapper(
+        constitutive_model,
+        wrapper.uprev,
+        wrapper.Δt,
+        solver_cache.local_solver_cache,
+    )
+    face_element = BackwardEulerStageFunctionWrapper(
+        face_models,
+        wrapper.uprev,
+        wrapper.Δt,
+        nothing, # inner model is volume only
+    )
+    return AssembledNonlinearOperator(
+        dh, volume_element, qr, face_element, qr_face
+    )
+end
+
+# TODO Refactor the setup into generic parts and use multiple dispatch for the specifics.
+function setup_solver_cache(f::AbstractSemidiscreteFunction, solver::BackwardEulerSolver, t₀;
+        uprev = nothing,
+        u = nothing,
+        alias_uprev = true,
+        alias_u     = false,
+    )
+    vtype = Vector{Float64}
+
+    if u === nothing
+        _u = vtype(undef, solution_size(f))
+        @warn "Cannot initialize u for $(typeof(solver))."
+    else
+        _u = alias_u ? u : SciMLBase.recursivecopy(u)
+    end
+
+    if uprev === nothing
+        _uprev = vtype(undef, solution_size(f))
+        _uprev .= u
+    else
+        _uprev = alias_uprev ? uprev : SciMLBase.recursivecopy(uprev)
+    end
+
+    cache       = BackwardEulerSolverCache(
+        _u,
+        _uprev,
+        # tmp,
+        BackwardEulerStageInfo(
+            setup_solver_cache(BackwardEulerStageAnnotation(f, _uprev), solver.inner_solver)
+        ),
+        solver.monitor,
+    )
+
+    return cache
+end
+
+# The idea is simple. QuasiStaticModels always have the form
+#    0 = G(u,v)
+#    0 = L(u,v,dₜu,dₜv)     (or simpler dₜv = L(u,v))
+# so we pass the stage information into the interior.
+function setup_element_cache(wrapper::BackwardEulerStageFunctionWrapper{<:QuasiStaticModel}, qr::QuadratureRule, sdh)
+    @assert length(sdh.dh.field_names) == 1 "Support for multiple fields not yet implemented."
+    field_name = first(sdh.dh.field_names)
+    ip          = Ferrite.getfieldinterpolation(sdh, field_name)
+    ip_geo = geometric_subdomain_interpolation(sdh)
+    cv = CellValues(qr, ip, ip_geo)
+    return StructuralElementCache(
+        wrapper.f,
+        setup_coefficient_cache(wrapper.f, qr, sdh),
+        setup_internal_cache(wrapper, qr, sdh),
+        cv
+    )
+end
+
+function perform_backward_euler_step!(f::QuasiStaticODEFunction, cache::BackwardEulerSolverCache, stage_info::BackwardEulerStageInfo, t, Δt)
+    update_constraints!(f, cache, t + Δt)
+    if !nlsolve!(cache.uₙ, f, stage_info.inner_solver_cache, t + Δt)
+        return false
+    end
     return false
 end
 

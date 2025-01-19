@@ -48,9 +48,6 @@ function update_linearization!(op::AssembledRSAFDQ2022Operator, u_::AbstractVect
     @unpack boundary_model, boundary_qrc = op
     @unpack tying_model, tying_qrc = op
 
-    @assert length(dh.field_names) == 1 "Please use block operators for problems with multiple fields."
-    field_name = first(dh.field_names)
-
     bs = blocksizes(J)
     s1 = bs[1,1][1]
     s2 = bs[2,2][1]
@@ -70,14 +67,13 @@ function update_linearization!(op::AssembledRSAFDQ2022Operator, u_::AbstractVect
     @assert length(dh.subdofhandlers) == 1
     sdh = first(dh.subdofhandlers)
     #for sdh in dh.subdofhandlers
-        ip          = Ferrite.getfieldinterpolation(sdh, field_name)
         element_qr  = getquadraturerule(element_qrc, sdh)
         boundary_qr = getquadraturerule(boundary_qrc, sdh)
         tying_qr    = getquadraturerule(tying_qrc, sdh)
         
-        element_cache  = setup_element_cache(element_model, element_qr, ip, sdh)
-        boundary_cache = setup_boundary_cache(boundary_model, boundary_qr, ip, sdh)
-        tying_cache    = setup_tying_cache(tying_model, tying_qr, ip, sdh)
+        element_cache  = setup_element_cache(element_model, element_qr, sdh)
+        boundary_cache = setup_boundary_cache(boundary_model, boundary_qr, sdh)
+        tying_cache    = setup_tying_cache(tying_model, tying_qr, sdh)
 
         # Function barrier
         _update_linearization_on_subdomain_J!(assembler, sdh, element_cache, boundary_cache, tying_cache, u, time)
@@ -135,14 +131,13 @@ function update_linearization!(op::AssembledRSAFDQ2022Operator, residual_::Abstr
     @assert length(dh.subdofhandlers) == 1
     sdh = first(dh.subdofhandlers)
     #for sdh in dh.subdofhandlers
-        ip          = Ferrite.getfieldinterpolation(sdh, field_name)
         element_qr  = getquadraturerule(element_qrc, sdh)
         boundary_qr = getquadraturerule(boundary_qrc, sdh)
         tying_qr    = getquadraturerule(tying_qrc, sdh)
 
-        element_cache  = setup_element_cache(element_model, element_qr, ip, sdh)
-        boundary_cache = setup_boundary_cache(boundary_model, boundary_qr, ip, sdh)
-        tying_cache    = setup_tying_cache(tying_model, tying_qr, ip, sdh)
+        element_cache  = setup_element_cache(element_model, element_qr, sdh)
+        boundary_cache = setup_boundary_cache(boundary_model, boundary_qr, sdh)
+        tying_cache    = setup_tying_cache(tying_model, tying_qr, sdh)
 
         # Function barrier
         _update_linearization_on_subdomain_Jr!(assembler, sdh, element_cache, boundary_cache, tying_cache, u, time)

@@ -15,6 +15,22 @@ mutable struct HomotopyPathSolverCache{ISC, T, VT <: AbstractVector{T}, VTprev} 
     tmp::VT
 end
 
+function setup_operator(f::AbstractQuasiStaticFunction, solver::AbstractNonlinearSolver)
+    @unpack dh, constitutive_model, face_models = f
+
+    # TODO pass this from outside
+    intorder = default_quadrature_order(f, first(dh.field_names))::Int
+    for sym in dh.field_names
+        intorder = max(intorder, default_quadrature_order(f, sym)::Int)
+    end
+    qr = QuadratureRuleCollection(intorder)
+    qr_face = FacetQuadratureRuleCollection(intorder)
+
+    return AssembledNonlinearOperator(
+        dh, constitutive_model, qr, face_models, qr_face
+    )
+end
+
 function setup_solver_cache(f::AbstractSemidiscreteFunction, solver::HomotopyPathSolver, t₀;
         uprev = nothing,
         u = nothing,
@@ -99,9 +115,8 @@ function setup_solver_cache(f::AbstractSemidiscreteBlockedFunction, solver::Homo
 end
 
 function perform_step!(f::AbstractSemidiscreteFunction, solver_cache::HomotopyPathSolverCache, t, Δt)
-    solver_cache.uₙ₋₁ .= solver_cache.uₙ
     update_constraints!(f, solver_cache, t + Δt)
-    if !nlsolve!(solver_cache.uₙ, f, solver_cache.inner_solver_cache, t + Δt) # TODO remove ,,t'' here. But how?
+    if !nlsolve!(solver_cache.uₙ, f, solver_cache.inner_solver_cache, t + Δt)
         return false
     end
 

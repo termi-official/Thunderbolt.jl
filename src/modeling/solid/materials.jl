@@ -3,8 +3,9 @@
 abstract type QuasiStaticModel end
 
 
-function material_routine(constitutive_model::QuasiStaticModel, cc, F, internal_state, geometry_cache::Ferrite.CellCache, qp::QuadraturePoint, time)
-    coefficients = evaluate_coefficient(cc, geometry_cache, qp, time)
+function material_routine(constitutive_model::QuasiStaticModel, F::Tensor{2}, coefficient_cache, internal_cache, geometry_cache::Ferrite.CellCache, qp::QuadraturePoint, time)
+    coefficients = evaluate_coefficient(coefficient_cache, geometry_cache, qp, time)
+    internal_state = state(internal_cache, geometry_cache, qp, time)
     return material_routine(F, coefficients, internal_state, constitutive_model)
 end
 
@@ -33,7 +34,7 @@ function setup_coefficient_cache(m::PrestressedMechanicalModel, qr::QuadratureRu
     )
 end
 
-function material_routine(constitutive_model::PrestressedMechanicalModel, coefficient_cache::PrestressedMechanicalModelCoefficientCache, F, internal_state, geometry_cache::Ferrite.CellCache, qp::QuadraturePoint, time)
+function material_routine(constitutive_model::PrestressedMechanicalModel, F::Tensor{2}, coefficient_cache::PrestressedMechanicalModelCoefficientCache, internal_state, geometry_cache::Ferrite.CellCache, qp::QuadraturePoint, time)
     F₀inv = evaluate_coefficient(coefficient_cache.prestress_cache, geometry_cache, qp, time)
     Fᵉ = F ⋅ F₀inv
     ∂Ψᵉ∂Fᵉ, ∂²Ψᵉ∂Fᵉ² = material_routine(constitutive_model.inner_model, coefficient_cache.inner_cache, Fᵉ, internal_state, geometry_cache, qp, time)
@@ -47,7 +48,7 @@ function material_routine(constitutive_model::PrestressedMechanicalModel, coeffi
     return P, ∂P∂F
 end
 
-setup_internal_model_cache(constitutive_model::PrestressedMechanicalModel, qr::QuadratureRule, sdh::SubDofHandler) = setup_internal_model_cache(constitutive_model.inner_model, qr, sdh)
+setup_internal_cache(constitutive_model::PrestressedMechanicalModel, qr::QuadratureRule, sdh::SubDofHandler) = setup_internal_cache(constitutive_model.inner_model, qr, sdh)
 
 @doc raw"""
     PK1Model(material, coefficient_field)
@@ -63,14 +64,14 @@ struct PK1Model{PMat, IMod, CFType} <: QuasiStaticModel
     coefficient_field::CFType
 end
 
-PK1Model(material, coefficient_field) = PK1Model(material, EmptyInternalVariableModel(), coefficient_field)
+PK1Model(material, coefficient_field) = PK1Model(material, EmptyInternalModel(), coefficient_field)
 
 function setup_coefficient_cache(m::PK1Model, qr::QuadratureRule, sdh::SubDofHandler)
     return setup_coefficient_cache(m.coefficient_field, qr, sdh)
 end
 
-function material_routine(model::PK1Model, cc, F, internal_state, geometry_cache::Ferrite.CellCache, qp::QuadraturePoint, time)
-    coefficients = evaluate_coefficient(cc, geometry_cache, qp, time)
+function material_routine(model::PK1Model, F::Tensor{2}, coefficient_cache, internal_state, geometry_cache::Ferrite.CellCache, qp::QuadraturePoint, time)
+    coefficients = evaluate_coefficient(coefficient_cache, geometry_cache, qp, time)
     ∂²Ψ∂F², ∂Ψ∂F = Tensors.hessian(
             F_ad -> Ψ(F_ad, coefficients, model.material),
         F, :all
@@ -79,9 +80,9 @@ function material_routine(model::PK1Model, cc, F, internal_state, geometry_cache
     return ∂Ψ∂F, ∂²Ψ∂F²
 end
 
-setup_internal_model_cache(constitutive_model::PK1Model, qr::QuadratureRule, sdh::SubDofHandler) = setup_internal_model_cache(constitutive_model.internal_model, qr, sdh)
+setup_internal_cache(constitutive_model::PK1Model, qr::QuadratureRule, sdh::SubDofHandler) = setup_internal_cache(constitutive_model.internal_model, qr, sdh)
 
-function material_routine(F::Tensor{2}, coefficients, ::EmptyInternalVariable, model::PK1Model)
+function material_routine(F::Tensor{2}, coefficients, ::EmptyInternalModel, model::PK1Model)
     ∂²Ψ∂F², ∂Ψ∂F = Tensors.hessian(
         F_ad ->
               Ψ(F_ad, coefficients, model.material),
@@ -152,7 +153,7 @@ function setup_coefficient_cache(m::ExtendedHillModel, qr::QuadratureRule, sdh::
     return setup_coefficient_cache(m.microstructure_model, qr, sdh)
 end
 
-function material_routine(F::Tensor{2,dim}, coefficients, cell_state, model::ExtendedHillModel) where {dim}
+function material_routine(F::Tensor{2}, coefficients, cell_state, model::ExtendedHillModel)
     # TODO what is a good abstraction here?
     Fᵃ = compute_Fᵃ(cell_state, coefficients, model.contraction_model, model.active_deformation_gradient_model)
     N = 𝓝(cell_state, model.contraction_model)
@@ -189,7 +190,7 @@ function setup_coefficient_cache(m::ActiveStressModel, qr::QuadratureRule, sdh::
     return setup_coefficient_cache(m.microstructure_model, qr, sdh)
 end
 
-function material_routine(F::Tensor{2,dim}, coefficients, cell_state, model::ActiveStressModel) where {dim}
+function material_routine(F::Tensor{2}, coefficients, cell_state, model::ActiveStressModel)
     ∂²Ψ∂F², ∂Ψ∂F = Tensors.hessian(
         F_ad ->
               Ψ(F_ad, coefficients, model.material_model),
@@ -215,5 +216,5 @@ function setup_coefficient_cache(m::ElastodynamicsModel, qr::QuadratureRule, sdh
     return setup_coefficient_cache(m.rhs, qr, sdh)
 end
 
-setup_internal_model_cache(constitutive_model::Union{<:ActiveStressModel, <:ExtendedHillModel, <:GeneralizedHillModel}, qr::QuadratureRule, sdh::SubDofHandler) = setup_contraction_model_cache(constitutive_model.contraction_model, qr, sdh)
-setup_internal_model_cache(constitutive_model::Union{<:ElastodynamicsModel{<:ActiveStressModel}, <:ElastodynamicsModel{<:ExtendedHillModel}, <:ElastodynamicsModel{<:GeneralizedHillModel}}, qr::QuadratureRule, sdh::SubDofHandler) = setup_contraction_model_cache(constitutive_model.rhs.contraction_model, qr, sdh)
+setup_internal_cache(constitutive_model::Union{<:ActiveStressModel, <:ExtendedHillModel, <:GeneralizedHillModel}, qr::QuadratureRule, sdh::SubDofHandler) = setup_contraction_model_cache(constitutive_model.contraction_model, qr, sdh)
+setup_internal_cache(constitutive_model::Union{<:ElastodynamicsModel{<:ActiveStressModel}, <:ElastodynamicsModel{<:ExtendedHillModel}, <:ElastodynamicsModel{<:GeneralizedHillModel}}, qr::QuadratureRule, sdh::SubDofHandler) = setup_contraction_model_cache(constitutive_model.rhs.contraction_model, qr, sdh)

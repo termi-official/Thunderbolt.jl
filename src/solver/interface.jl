@@ -5,30 +5,8 @@ abstract type AbstractNonlinearSolverCache end
 
 abstract type AbstractTimeSolverCache end
 
-function setup_compatible_operator(operator, f, solver)
-    return setup_operator(f, solver)
-end
-
 function setup_operator(f::NullFunction, solver::AbstractSolver)
     return NullOperator{Float64,solution_size(f),solution_size(f)}()
-end
-
-function setup_operator(f::AbstractQuasiStaticFunction, solver::AbstractNonlinearSolver)
-    @unpack dh, constitutive_model, face_models = f
-    # @assert length(dh.field_names) == 1 "Multiple fields not yet supported in the nonlinear solver."
-
-    displacement_symbol = first(dh.field_names) # TODO FIXME
-
-    intorder = default_quadrature_order(f, displacement_symbol)::Int
-    qr = QuadratureRuleCollection(intorder)
-    qr_face = FacetQuadratureRuleCollection(intorder)
-
-    # return AssembledNonlinearOperator(
-    #     dh, displacement_symbol, constitutive_model, qr, face_models, qr_face
-    # )
-    return AssembledNonlinearOperator2(
-        dh, constitutive_model, qr, face_models, qr_face
-    )
 end
 
 function setup_operator(::NoStimulationProtocol, solver::AbstractSolver, dh::AbstractDofHandler, field_name::Symbol, qr)
