@@ -203,18 +203,5 @@ function material_routine(model::ActiveStressModel, F::Tensor{2}, coefficients, 
     return ∂Ψ∂F + N*∂(model.active_stress_model, cell_state, F, coefficients), ∂²Ψ∂F² + N*∂2
 end
 
-
-"""
-    ElastodynamicsModel(::AbstractMaterialModel, ρ::Coefficient)
-"""
-struct ElastodynamicsModel{RHSModel <: AbstractMaterialModel, CoefficientType}
-    rhs::RHSModel
-    ρ::CoefficientType
-end
-
-function setup_coefficient_cache(m::ElastodynamicsModel, qr::QuadratureRule, sdh::SubDofHandler)
-    return setup_coefficient_cache(m.rhs, qr, sdh)
-end
-
 setup_internal_cache(constitutive_model::Union{<:ActiveStressModel, <:ExtendedHillModel, <:GeneralizedHillModel}, qr::QuadratureRule, sdh::SubDofHandler) = setup_contraction_model_cache(constitutive_model.contraction_model, qr, sdh)
 setup_internal_cache(constitutive_model::Union{<:ElastodynamicsModel{<:ActiveStressModel}, <:ElastodynamicsModel{<:ExtendedHillModel}, <:ElastodynamicsModel{<:GeneralizedHillModel}}, qr::QuadratureRule, sdh::SubDofHandler) = setup_contraction_model_cache(constitutive_model.rhs.contraction_model, qr, sdh)

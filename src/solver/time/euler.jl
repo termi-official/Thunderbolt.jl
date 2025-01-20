@@ -243,7 +243,7 @@ end
 #    0 = G(u,v)
 #    0 = L(u,v,dₜu,dₜv)     (or simpler dₜv = L(u,v))
 # so we pass the stage information into the interior.
-function setup_element_cache(wrapper::BackwardEulerStageFunctionWrapper{<:QuasiStaticModel}, qr::QuadratureRule, sdh)
+function setup_element_cache(wrapper::BackwardEulerStageFunctionWrapper{<:QuasiStaticModel}, qr::QuadratureRule, sdh::SubDofHandler)
     @assert length(sdh.dh.field_names) == 1 "Support for multiple fields not yet implemented."
     field_name = first(sdh.dh.field_names)
     ip          = Ferrite.getfieldinterpolation(sdh, field_name)
