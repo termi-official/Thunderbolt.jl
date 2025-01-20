@@ -51,6 +51,7 @@ include("utils.jl")
 
 include("mesh/meshes.jl")
 
+include("ferrite-addons/LocalVariableHandler.jl")
 include("ferrite-addons/transfer_operators.jl")
 include("ferrite-addons/gpu/gpugrid.jl")
 include("ferrite-addons/gpu/gpudofhandler.jl")
@@ -130,7 +131,7 @@ export
     # Mechanics
     StructuralModel,
     QuasiStaticProblem,
-    QuasiStaticNonlinearFunction,
+    QuasiStaticFunction,
     PK1Model,
     PrestressedMechanicalModel,
     # Passive material models

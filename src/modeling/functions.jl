@@ -79,45 +79,19 @@ solution_size(f::AffineSteadyStateFunction) = ndofs(f.dh)
 abstract type AbstractQuasiStaticFunction <: AbstractSemidiscreteFunction end
 
 """
-    QuasiStaticNonlinearFunction{M <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler}
+    QuasiStaticFunction{...}
 
-A discrete problem with time dependent terms and no time derivatives w.r.t. any solution variable.
-Abstractly written we want to solve the problem F(u, t) = 0 on some time interval [t₁, t₂].
+A discrete nonlinear (possibly multi-level) problem with time dependent terms.
+Abstractly written we want to solve the problem G(u, q, t) = 0, L(u, q, dₜq, t) = 0 on some time interval [t₁, t₂].
 """
-struct QuasiStaticNonlinearFunction{CM <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler, FACE <: Tuple, CH <: ConstraintHandler} <: AbstractQuasiStaticFunction
+struct QuasiStaticFunction{I <: NonlinearIntegrator, DH <: Ferrite.AbstractDofHandler, CH <: ConstraintHandler, LVH <: LocalVariableHandler} <: AbstractQuasiStaticFunction
     dh::DH
     ch::CH
-    constitutive_model::CM
-    face_models::FACE
+    lvh::LVH
+    integrator::I
 end
 
-solution_size(f::QuasiStaticNonlinearFunction) = ndofs(f.dh)
+solution_size(f::QuasiStaticFunction) = ndofs(f.dh)+ndofs(f.lvh)
 
-"""
-    QuasiStaticODEFunction{M <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler}
-
-A problem with time dependent terms and time derivatives only w.r.t. internal solution variable.
-"""
-struct QuasiStaticODEFunction{CM <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler, QH, FACE <: Tuple, CH <: ConstraintHandler} <: AbstractQuasiStaticFunction #<: AbstractSemidiscreteODEFunction
-    dh::DH
-    qh::QH
-    ch::CH
-    constitutive_model::CM
-    face_models::FACE
-end
-
-solution_size(f::QuasiStaticODEFunction) = ndofs(f.dh)+ndofs(f.qh)
-
-# """
-#     QuasiStaticDAEFunction{M <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler}
-
-# A problem with time dependent terms and time derivatives only w.r.t. internal solution variable which can't be expressed as an ODE.
-
-# TODO implement.
-# """
-# struct QuasiStaticDAEFunction{CM <: QuasiStaticModel, DH <: Ferrite.AbstractDofHandler, FACE <: Tuple, CH <: ConstraintHandler} <: AbstractSemidiscreteDAEFunction
-#     dh::DH
-#     ch::CH
-#     constitutive_model::CM
-#     face_models::FACE
-# end
+# TODO fill me
+gather_internal_variable_infos(model::QuasiStaticModel) = InternalVariableInfo[]

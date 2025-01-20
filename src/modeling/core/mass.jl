@@ -3,8 +3,10 @@
 
 Represents the integrand of the bilinearform ``a(u,v) = \int \rho(x) v(x) u(x) dx`` for ``u,v`` from the same function space with some given density field $\rho(x)$.
 """
-struct BilinearMassIntegrator{CoefficientType} <: AbstractBilinearIntegrator
+struct BilinearMassIntegrator{CoefficientType, QRC <: QuadratureRuleCollection} <: AbstractBilinearIntegrator
     ρ::CoefficientType
+    qrc::QRC
+    sym::Symbol
 end
 
 """

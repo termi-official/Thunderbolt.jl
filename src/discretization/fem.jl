@@ -1,10 +1,13 @@
 """
 Descriptor for a finite element discretization of a part of a PDE over some subdomain.
+    
+!!! note
+    The current implementation is restricted to Bubnov-Galerkin methods. Petrov-Galerkin support will come in the future.
 """
 struct FiniteElementDiscretization
     """
     """
-    interpolations::Dict{Symbol, InterpolationCollection}
+    interpolations::Dict{Symbol}#, Union{<:InterpolationCollection, Pair{<:InterpolationCollection, <:QuadratureRuleCollection}}}
     """
     """
     dbcs::Vector{Dirichlet}
@@ -13,17 +16,42 @@ struct FiniteElementDiscretization
     subdomains::Vector{String}
     """
     """
-    function FiniteElementDiscretization(ips::Dict{Symbol, <: InterpolationCollection}, dbcs::Vector{Dirichlet} = Dirichlet[], subdomains::Vector{String} = [""])
-        new(ips, dbcs, subdomains)
+    mass_qrc::Union{<:QuadratureRuleCollection,Nothing} # TODO maybe an "extras" field should be used instead :)
+    """
+    """
+    function FiniteElementDiscretization(ips::Dict{Symbol, <: InterpolationCollection}, dbcs::Vector{Dirichlet} = Dirichlet[], subdomains::Vector{String} = [""], mass_qrc = nothing)
+        new(ips, dbcs, subdomains, mass_qrc)
     end
 end
+
+_extract_ipc(ipc::InterpolationCollection) = ipc
+_extract_ipc(p::Pair{<:InterpolationCollection, <:QuadratureRuleCollection}) = first(p)
+
+function _extract_qrc(ipc::InterpolationCollection)
+    intorder = getorder(ipc)
+    return QuadratureRuleCollection(max(2intorder-1,2))
+end
+_extract_qrc(p::Pair{<:InterpolationCollection, <:QuadratureRuleCollection}) = second(p)
 
 # Internal utility with proper error message
 function _get_interpolation_from_discretization(disc::FiniteElementDiscretization, sym::Symbol)
     if !haskey(disc.interpolations, sym)
         error("Finite element discretization does not have an interpolation for $sym. Available symbols: $(collect(keys(disc.interpolations))).")
     end
-    return disc.interpolations[sym]
+    return _extract_ipc(disc.interpolations[sym])
+end
+function _get_quadrature_from_discretization(disc::FiniteElementDiscretization, sym::Symbol)
+    if !haskey(disc.interpolations, sym)
+        error("Finite element discretization does not have an interpolation for $sym. Available symbols: $(collect(keys(disc.interpolations))).")
+    end
+    return _extract_qrc(disc.interpolations[sym])
+end
+function _get_facet_quadrature_from_discretization(disc::FiniteElementDiscretization, sym::Symbol)
+    if !haskey(disc.interpolations, sym)
+        error("Finite element discretization does not have an interpolation for $sym. Available symbols: $(collect(keys(disc.interpolations))).")
+    end
+    intorder = getorder(disc.interpolations[sym])
+    return FacetQuadratureRuleCollection(max(2intorder-1,2))
 end
 
 semidiscretize(::CoupledModel, discretization, mesh::AbstractGrid) = @error "No implementation for the generic discretization of coupled problems available yet."
@@ -33,6 +61,7 @@ function semidiscretize(model::TransientDiffusionModel, discretization::FiniteEl
 
     sym = model.solution_variable_symbol
     ipc = _get_interpolation_from_discretization(discretization, sym)
+    qrc = _get_quadrature_from_discretization(discretization, sym)
     dh = DofHandler(mesh)
     for name in discretization.subdomains
         add_subdomain!(dh, name, [ApproximationDescriptor(sym, ipc)])
@@ -42,19 +71,24 @@ function semidiscretize(model::TransientDiffusionModel, discretization::FiniteEl
     T = get_coordinate_eltype(get_grid(dh))
     return AffineODEFunction(
         BilinearMassIntegrator(
-            ConstantCoefficient(T(1.0))
+            ConstantCoefficient(T(1.0)),
+            discretization.mass_qrc === nothing ? qrc : mass_qrc, # Allow e.g. mass lumping for explicit integrators.
+            sym,
         ),
         BilinearDiffusionIntegrator(
-            model.κ
+            model.κ,
+            qrc,
+            sym,
         ),
-        model.source,
-        dh
+        model.source, # TODO qrc for source term
+        dh,
     )
 end
 
 function semidiscretize(model::SteadyDiffusionModel, discretization::FiniteElementDiscretization, mesh::AbstractGrid)
     sym = model.solution_variable_symbol
     ipc = _get_interpolation_from_discretization(discretization, sym)
+    qrc = _get_quadrature_from_discretization(discretization, sym)
     dh = DofHandler(mesh)
     for name in discretization.subdomains
         add_subdomain!(dh, name, [ApproximationDescriptor(sym, ipc)])
@@ -68,10 +102,14 @@ function semidiscretize(model::SteadyDiffusionModel, discretization::FiniteEleme
     close!(ch)
 
     return AffineSteadyStateFunction(
-        model.κ,
-        model.source,
+        BilinearDiffusionIntegrator(
+            model.κ,
+            qrc,
+            sym,
+        ),
+        model.source, # TODO qrc for source term
         dh,
-        ch
+        ch,
     )
 end
 
@@ -118,11 +156,15 @@ end
 function semidiscretize(model::StructuralModel{<:QuasiStaticModel}, discretization::FiniteElementDiscretization, mesh::AbstractGrid)
     sym = model.displacement_symbol
     ipc = _get_interpolation_from_discretization(discretization, sym)
+    qrc = _get_quadrature_from_discretization(discretization, sym)
     dh = DofHandler(mesh)
+    lvh = LocalVariableHandler(mesh)
     for name in discretization.subdomains
         add_subdomain!(dh, name, [ApproximationDescriptor(sym, ipc)])
+        add_subdomain!(lvh, name, gather_internal_variable_infos(model.mechanical_model), qrc, dh)
     end
     close!(dh)
+    close!(lvh)
 
     ch = ConstraintHandler(dh)
     for dbc ∈ discretization.dbcs
@@ -130,11 +172,17 @@ function semidiscretize(model::StructuralModel{<:QuasiStaticModel}, discretizati
     end
     close!(ch)
 
-    semidiscrete_problem = QuasiStaticNonlinearFunction(
+    semidiscrete_problem = QuasiStaticFunction(
         dh,
         ch,
-        model.mechanical_model,
-        model.face_models
+        lvh,
+        NonlinearIntegrator(
+            model.mechanical_model,
+            model.face_models,
+            [sym],
+            qrc,
+            _get_facet_quadrature_from_discretization(discretization, sym),
+        ),
     )
 
     return semidiscrete_problem

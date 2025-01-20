@@ -30,3 +30,4 @@ include("core/weak_boundary_conditions.jl")
 abstract type AbstractBilinearIntegrator end
 include("core/mass.jl")
 include("core/diffusion.jl")
+include("core/nonlinear.jl")

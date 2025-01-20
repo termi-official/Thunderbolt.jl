@@ -3,8 +3,10 @@
 
 Represents the integrand of the bilinear form ``a(u,v) = -\int \nabla v(x) \cdot D(x) \nabla u(x) dx`` for a given diffusion tensor ``D(x)`` and ``u,v`` from the same function space.
 """
-struct BilinearDiffusionIntegrator{CoefficientType} <: AbstractBilinearIntegrator
+struct BilinearDiffusionIntegrator{CoefficientType, QRC <: QuadratureRuleCollection} <: AbstractBilinearIntegrator
     D::CoefficientType
+    qrc::QRC
+    sym::Symbol
 end
 
 """

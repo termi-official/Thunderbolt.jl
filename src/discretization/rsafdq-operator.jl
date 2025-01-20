@@ -165,19 +165,15 @@ end
 
 function setup_operator(f::RSAFDQ20223DFunction, solver::AbstractNonlinearSolver)
     @unpack tying_info, structural_function = f
-    # @unpack dh, constitutive_model, face_models, displacement_symbol = structural_function
-    @unpack dh, constitutive_model, face_models = structural_function
+    @unpack dh, integrator = structural_function
+    @unpack fqrc, qrc, volume_model, face_model = integrator
     @assert length(dh.subdofhandlers) == 1 "Multiple subdomains not yet supported in the Newton solver."
     @assert length(dh.field_names) == 1 "Multiple fields not yet supported in the nonlinear solver."
 
     displacement_symbol = first(dh.field_names)
 
-    intorder = default_quadrature_order(structural_function, displacement_symbol)
-    qr = QuadratureRuleCollection(intorder)
-    qr_face = FacetQuadratureRuleCollection(intorder)
-
     return AssembledRSAFDQ2022Operator(
-        dh, displacement_symbol, constitutive_model, qr, face_models, qr_face, tying_info
+        dh, displacement_symbol, volume_model, qrc, face_model, fqrc, tying_info
     )
 end
 

@@ -102,23 +102,22 @@ function setup_solver_cache(f::AffineODEFunction, solver::BackwardEulerSolver, t
 
     T = eltype(u0)
 
-    qr = create_quadrature_rule(f, solver, field_name)
-
     # Left hand side ∫dₜu δu dV
     mass_operator = setup_operator(
         f.mass_term,
-        solver, dh, field_name, qr
+        solver, dh,
     )
 
     # Affine right hand side, e.g. ∫D grad(u) grad(δu) dV + ...
     bilinear_operator = setup_operator(
         f.bilinear_term,
-        solver, dh, field_name, qr
+        solver, dh,
     )
     # ... + ∫f δu dV
     source_operator    = setup_operator(
         f.source_term,
-        solver, dh, field_name, qr
+        solver, dh,
+        f.bilinear_term.qrc, # source follows linearity of diffusion for now...
     )
 
     inner_prob  = LinearSolve.LinearProblem(
@@ -168,21 +167,14 @@ mutable struct BackwardEulerStageFunctionWrapper{F,U,T,S}
     const f::F
     const uprev::U
     Δt::T
-    inner_solver::S
+    const inner_solver::S
 end
 
 # TODO generalize this
 function setup_solver_cache(wrapper::BackwardEulerStageAnnotation{<:AbstractQuasiStaticFunction}, solver::MultiLevelNewtonRaphsonSolver)
     @unpack f = wrapper
-    @unpack dh, constitutive_model, face_models = f
-
-    # TODO pass this from outside
-    intorder = default_quadrature_order(f, first(dh.field_names))::Int
-    for sym in dh.field_names
-        intorder = max(intorder, default_quadrature_order(f, sym)::Int)
-    end
-    qr = QuadratureRuleCollection(intorder)
-    qr_face = FacetQuadratureRuleCollection(intorder)
+    @unpack dh, integrator = f
+    @unpack volume_model, face_models = f
 
     solver_cache = MultiLevelNewtonRaphsonSolverCache(
         setup_solver_cache(f, solver.global_newton),
@@ -203,7 +195,7 @@ function setup_solver_cache(wrapper::BackwardEulerStageAnnotation{<:AbstractQuas
         nothing, # inner model is volume only
     )
     return AssembledNonlinearOperator(
-        dh, volume_element, qr, face_element, qr_face
+        dh, volume_element, integrator.qrc, face_element, integrator.fqrc,
     )
 end
 
@@ -261,8 +253,15 @@ function setup_element_cache(wrapper::BackwardEulerStageFunctionWrapper{<:QuasiS
     )
 end
 
-function perform_backward_euler_step!(f::QuasiStaticODEFunction, cache::BackwardEulerSolverCache, stage_info::BackwardEulerStageInfo, t, Δt)
+update_stage!(stage::BackwardEulerStageInfo, kΔt) = update_stage!(stage, stage.inner_solver_cache.op, kΔt)
+function update_stage!(stage::BackwardEulerStageInfo, op::AssembledNonlinearOperator, kΔt)
+    op.element_model.Δt = kΔt
+    op.face_model.Δt    = kΔt
+end
+
+function perform_backward_euler_step!(f, cache::BackwardEulerSolverCache, stage_info::BackwardEulerStageInfo, t, Δt)
     update_constraints!(f, cache, t + Δt)
+    update_stage!(stage_info, Δt)
     if !nlsolve!(cache.uₙ, f, stage_info.inner_solver_cache, t + Δt)
         return false
     end

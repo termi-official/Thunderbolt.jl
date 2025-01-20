@@ -134,7 +134,7 @@ end
 
 Generic description of the function associated with the RSAFDQModel.
 """
-struct RSAFDQ20223DFunction{MT <: QuasiStaticNonlinearFunction, TP <: RSAFDQ2022TyingInfo} <: AbstractSemidiscreteBlockedFunction
+struct RSAFDQ20223DFunction{MT <: QuasiStaticFunction, TP <: RSAFDQ2022TyingInfo} <: AbstractSemidiscreteBlockedFunction
     structural_function::MT
     tying_info::TP
 end
@@ -144,7 +144,7 @@ getch(f::AbstractSemidiscreteFunction) = f.ch
 getch(f::AbstractSemidiscreteBlockedFunction) = error("Overlaod getch to get the constraint handler for a blocked function")
 getch(f::RSAFDQ20223DFunction) = getch(f.structural_function)
 
-# struct RSAFDQ2022VolumeFunction{MT <: QuasiStaticNonlinearFunction, TP <: RSAFDQ2022TyingInfo} <: AbstractSemidiscreteBlockedFunction
+# struct RSAFDQ2022VolumeFunction{MT <: QuasiStaticFunction, TP <: RSAFDQ2022TyingInfo} <: AbstractSemidiscreteBlockedFunction
 #     structural_function::MT
 #     tying_info::TP
 # end

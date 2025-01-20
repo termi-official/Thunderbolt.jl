@@ -16,18 +16,11 @@ mutable struct HomotopyPathSolverCache{ISC, T, VT <: AbstractVector{T}, VTprev} 
 end
 
 function setup_operator(f::AbstractQuasiStaticFunction, solver::AbstractNonlinearSolver)
-    @unpack dh, constitutive_model, face_models = f
-
-    # TODO pass this from outside
-    intorder = default_quadrature_order(f, first(dh.field_names))::Int
-    for sym in dh.field_names
-        intorder = max(intorder, default_quadrature_order(f, sym)::Int)
-    end
-    qr = QuadratureRuleCollection(intorder)
-    qr_face = FacetQuadratureRuleCollection(intorder)
+    @unpack dh, integrator = f
+    @unpack qrc, fqrc, volume_model, face_model = integrator
 
     return AssembledNonlinearOperator(
-        dh, constitutive_model, qr, face_models, qr_face
+        dh, volume_model, qrc, face_model, fqrc
     )
 end
 
