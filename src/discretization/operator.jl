@@ -309,23 +309,19 @@ struct AssembledBilinearOperator{MatrixType, MatrixType2, IntegratorType, DHType
     A::MatrixType
     A_::MatrixType2 # FIXME we need this if we assemble on a different device type than we solve on (e.g. CPU and GPU)
     integrator::IntegratorType
-    element_qrc::QuadratureRuleCollection
     dh::DHType
 end
 
 function update_operator!(op::AssembledBilinearOperator, time)
-    @unpack A, A_, element_qrc, integrator, dh  = op
+    @unpack A, A_, integrator, dh  = op
 
     grid = get_grid(dh)
 
     assembler = start_assemble(A_)
 
     for sdh in dh.subdofhandlers
-        # Prepare evaluation caches
-        element_qr  = getquadraturerule(element_qrc, sdh)
-
         # Build evaluation caches
-        element_cache  = setup_element_cache(integrator, element_qr, sdh)
+        element_cache  = setup_element_cache(integrator, sdh)
 
         # Function barrier
         _update_bilinear_operator_on_subdomain!(assembler, sdh, element_cache, time)

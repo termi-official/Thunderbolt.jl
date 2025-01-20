@@ -5,7 +5,9 @@
     import Thunderbolt: CompositeVolumetricElementCache, CompositeSurfaceElementCache
 
     grid = generate_grid(Hexahedron, (1,1,1))
+    qrc  = QuadratureRuleCollection(3)
     qr   = QuadratureRule{RefHexahedron}(3)
+    qrcf = QuadratureRuleCollection(3)
     qrf  = FacetQuadratureRule{RefHexahedron}(3)
     ip   = Lagrange{RefHexahedron,1}()
 
@@ -68,16 +70,20 @@
     # No we check some examples for the implemented physics
     @testset "Scalar volumetric bilinear elements: $model" for model in (
         BilinearMassIntegrator(
-            ConstantCoefficient(1.0)
+            ConstantCoefficient(1.0),
+            qrc,
+            :unused_in_test,
         ),
         BilinearDiffusionIntegrator(
-            ConstantCoefficient(one(Tensor{2,3}))
+            ConstantCoefficient(one(Tensor{2,3})),
+            qrc,
+            :unused_in_test,
         )
     )
         Kₑ¹ = zeros(ndofs(dhs), ndofs(dhs))
         Kₑ² = zeros(ndofs(dhs), ndofs(dhs))
 
-        element_cache = setup_element_cache(model, qr, sdhs)
+        element_cache = setup_element_cache(model, sdhs)
 
         assemble_element!(Kₑ¹, cell_cache_s, element_cache, 0.0)
         @test !iszero(Kₑ¹)
