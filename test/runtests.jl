@@ -2,21 +2,7 @@ using Test, Tensors, Thunderbolt, StaticArrays
 
 import Thunderbolt: OrderedSet, to_mesh
 
-# Credits to Knut for the trick
-const RUN_JET_TESTS = VERSION >= v"1.9" && isempty(VERSION.prerelease)
-if RUN_JET_TESTS
-    using Pkg: Pkg
-    Pkg.add("JET")
-    using JET: @test_call, @test_opt
-else
-    # Just eat the macros on incompatible versions
-    macro test_call(args...)
-        nothing
-    end
-    macro test_opt(args...)
-        nothing
-    end
-end
+using JET: @test_call, @test_opt
 
 function generate_mixed_grid_2D()
     nodes = Node.([

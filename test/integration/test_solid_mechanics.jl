@@ -17,7 +17,7 @@ function test_solve_contractile_cuboid(mesh, constitutive_model, subdomains = ["
     ]
 
     quasistaticform = semidiscretize(
-        StructuralModel(:d, constitutive_model, (
+        QuasiStaticModel(:d, constitutive_model, (
             NormalSpringBC(0.0, "right"),
             ConstantPressureBC(0.0, "back"),
             PressureFieldBC(ConstantCoefficient(0.0),"top")
@@ -56,7 +56,7 @@ function test_solve_contractile_ideal_lv(mesh, constitutive_model)
     ]
 
     quasistaticform = semidiscretize(
-        StructuralModel(:d, constitutive_model, (
+        QuasiStaticModel(:d, constitutive_model, (
             NormalSpringBC(0.0, "Epicardium"),
             NormalSpringBC(0.0, "Base"),
             PressureFieldBC(ConstantCoefficient(0.01),"Endocardium")

@@ -1,11 +1,12 @@
 # TODO (FILE) I think we should change the design here. Instea of dispatching on Ψ we should make the material callable or equip it with a function.
 
-abstract type QuasiStaticModel end
+abstract type AbstractMaterialModel end
 
 
-function material_routine(constitutive_model::QuasiStaticModel, cc, F, internal_state, geometry_cache::Ferrite.CellCache, qp::QuadraturePoint, time)
-    coefficients = evaluate_coefficient(cc, geometry_cache, qp, time)
-    return material_routine(F, coefficients, internal_state, constitutive_model)
+function material_routine(constitutive_model::AbstractMaterialModel, F::Tensor{2}, coefficient_cache, internal_cache, geometry_cache::Ferrite.CellCache, qp::QuadraturePoint, time)
+    coefficients = evaluate_coefficient(coefficient_cache, geometry_cache, qp, time)
+    internal_state = state(internal_cache, geometry_cache, qp, time)
+    return material_routine(constitutive_model, F, coefficients, internal_state)
 end
 
 @doc raw"""
@@ -16,7 +17,7 @@ of the deformation gradient $$F = F_{\textrm{e}} F_{0}$$ where we compute $$P(F_
 
 Please note that it is assumed that $$F^{-1}_{0}$$ is the quantity computed by `prestress_field`.
 """
-struct PrestressedMechanicalModel{MM, FF} <: QuasiStaticModel
+struct PrestressedMechanicalModel{MM, FF} <: AbstractMaterialModel
     inner_model::MM
     prestress_field::FF
 end
@@ -33,10 +34,10 @@ function setup_coefficient_cache(m::PrestressedMechanicalModel, qr::QuadratureRu
     )
 end
 
-function material_routine(constitutive_model::PrestressedMechanicalModel, coefficient_cache::PrestressedMechanicalModelCoefficientCache, F, internal_state, geometry_cache::Ferrite.CellCache, qp::QuadraturePoint, time)
+function material_routine(constitutive_model::PrestressedMechanicalModel, F::Tensor{2}, coefficient_cache::PrestressedMechanicalModelCoefficientCache, internal_state, geometry_cache::Ferrite.CellCache, qp::QuadraturePoint, time)
     F₀inv = evaluate_coefficient(coefficient_cache.prestress_cache, geometry_cache, qp, time)
     Fᵉ = F ⋅ F₀inv
-    ∂Ψᵉ∂Fᵉ, ∂²Ψᵉ∂Fᵉ² = material_routine(constitutive_model.inner_model, coefficient_cache.inner_cache, Fᵉ, internal_state, geometry_cache, qp, time)
+    ∂Ψᵉ∂Fᵉ, ∂²Ψᵉ∂Fᵉ² = material_routine(constitutive_model.inner_model, Fᵉ, coefficient_cache.inner_cache, internal_state, geometry_cache, qp, time)
     Pᵉ = ∂Ψᵉ∂Fᵉ # Elastic PK1
     P  = Pᵉ ⋅ transpose(F₀inv) # Obtained by Coleman-Noll procedure
     Aᵉ = ∂²Ψᵉ∂Fᵉ² # Elastic mixed modulus
@@ -47,7 +48,7 @@ function material_routine(constitutive_model::PrestressedMechanicalModel, coeffi
     return P, ∂P∂F
 end
 
-setup_internal_model_cache(constitutive_model::PrestressedMechanicalModel, qr::QuadratureRule, sdh::SubDofHandler) = setup_internal_model_cache(constitutive_model.inner_model, qr, sdh)
+setup_internal_cache(constitutive_model::PrestressedMechanicalModel, qr::QuadratureRule, sdh::SubDofHandler) = setup_internal_cache(constitutive_model.inner_model, qr, sdh)
 
 @doc raw"""
     PK1Model(material, coefficient_field)
@@ -57,20 +58,20 @@ Models the stress formulated in the 1st Piola-Kirchhoff stress tensor. If the ma
 then the term is formulated as follows:
 $$\int_{\Omega_0} P(u,s) \cdot \delta F dV = \int_{\Omega_0} \partial_{F} \psi(u,s) \cdot \delta \nabla u $$
 """
-struct PK1Model{PMat, IMod, CFType} <: QuasiStaticModel
+struct PK1Model{PMat, IMod, CFType} <: AbstractMaterialModel
     material::PMat
     internal_model::IMod
     coefficient_field::CFType
 end
 
-PK1Model(material, coefficient_field) = PK1Model(material, EmptyInternalVariableModel(), coefficient_field)
+PK1Model(material, coefficient_field) = PK1Model(material, EmptyInternalModel(), coefficient_field)
 
 function setup_coefficient_cache(m::PK1Model, qr::QuadratureRule, sdh::SubDofHandler)
     return setup_coefficient_cache(m.coefficient_field, qr, sdh)
 end
 
-function material_routine(model::PK1Model, cc, F, internal_state, geometry_cache::Ferrite.CellCache, qp::QuadraturePoint, time)
-    coefficients = evaluate_coefficient(cc, geometry_cache, qp, time)
+function material_routine(model::PK1Model, F::Tensor{2}, coefficient_cache, internal_state, geometry_cache::Ferrite.CellCache, qp::QuadraturePoint, time)
+    coefficients = evaluate_coefficient(coefficient_cache, geometry_cache, qp, time)
     ∂²Ψ∂F², ∂Ψ∂F = Tensors.hessian(
             F_ad -> Ψ(F_ad, coefficients, model.material),
         F, :all
@@ -79,9 +80,9 @@ function material_routine(model::PK1Model, cc, F, internal_state, geometry_cache
     return ∂Ψ∂F, ∂²Ψ∂F²
 end
 
-setup_internal_model_cache(constitutive_model::PK1Model, qr::QuadratureRule, sdh::SubDofHandler) = setup_internal_model_cache(constitutive_model.internal_model, qr, sdh)
+setup_internal_cache(constitutive_model::PK1Model, qr::QuadratureRule, sdh::SubDofHandler) = setup_internal_cache(constitutive_model.internal_model, qr, sdh)
 
-function material_routine(F::Tensor{2}, coefficients, ::EmptyInternalVariable, model::PK1Model)
+function material_routine(model::PK1Model, F::Tensor{2}, coefficients, ::EmptyInternalModel)
     ∂²Ψ∂F², ∂Ψ∂F = Tensors.hessian(
         F_ad ->
               Ψ(F_ad, coefficients, model.material),
@@ -102,7 +103,7 @@ $W(\mathbf{F}, \mathbf{F}^{\rm{a}}) = W_{\rm{passive}}(\mathbf{F}) + W_{\rm{acti
 Where $W_{\rm{passive}}$ is the passive material response and $W_{\rm{active}}$ the active response
 respectvely.
 """
-struct GeneralizedHillModel{PMat, AMat, ADGMod, CMod, MS} <: QuasiStaticModel
+struct GeneralizedHillModel{PMat, AMat, ADGMod, CMod, MS} <: AbstractMaterialModel
     passive_spring::PMat
     active_spring::AMat
     active_deformation_gradient_model::ADGMod
@@ -114,7 +115,7 @@ function setup_coefficient_cache(m::GeneralizedHillModel, qr::QuadratureRule, sd
     return setup_coefficient_cache(m.microstructure_model, qr, sdh)
 end
 
-function material_routine(F::Tensor{2}, coefficients, internal_state, model::GeneralizedHillModel)
+function material_routine(model::GeneralizedHillModel, F::Tensor{2}, coefficients, internal_state)
     # TODO what is a good abstraction here?
     Fᵃ = compute_Fᵃ(internal_state, coefficients, model.contraction_model, model.active_deformation_gradient_model)
 
@@ -140,7 +141,7 @@ $W(\mathbf{F}, \mathbf{F}^{\rm{a}}) = W_{\rm{passive}}(\mathbf{F}) + \mathcal{N}
 Where $W_{\rm{passive}}$ is the passive material response and $W_{\rm{active}}$ the active response
 respectvely. $\mathcal{N}$ is the amount of formed crossbridges. We refer to the original paper [OgiBalPer:2023:aeg](@cite) for more details.
 """
-struct ExtendedHillModel{PMat, AMat, ADGMod, CMod, MS} <: QuasiStaticModel
+struct ExtendedHillModel{PMat, AMat, ADGMod, CMod, MS} <: AbstractMaterialModel
     passive_spring::PMat
     active_spring::AMat
     active_deformation_gradient_model::ADGMod
@@ -152,7 +153,7 @@ function setup_coefficient_cache(m::ExtendedHillModel, qr::QuadratureRule, sdh::
     return setup_coefficient_cache(m.microstructure_model, qr, sdh)
 end
 
-function material_routine(F::Tensor{2,dim}, coefficients, cell_state, model::ExtendedHillModel) where {dim}
+function material_routine(model::ExtendedHillModel, F::Tensor{2}, coefficients, cell_state)
     # TODO what is a good abstraction here?
     Fᵃ = compute_Fᵃ(cell_state, coefficients, model.contraction_model, model.active_deformation_gradient_model)
     N = 𝓝(cell_state, model.contraction_model)
@@ -178,7 +179,7 @@ $\mathbf{P}(\mathbf{F},T^{\rm{a}}) := \partial_{\mathbf{F}} W_{\rm{passive}}(\ma
 
 where the passive material response can be described by an energy $W_{\rm{passive}$ and $T^{\rm{a}}$ the active tension generated by the contraction model.
 """
-struct ActiveStressModel{Mat, ASMod, CMod, MS} <: QuasiStaticModel
+struct ActiveStressModel{Mat, ASMod, CMod, MS} <: AbstractMaterialModel
     material_model::Mat
     active_stress_model::ASMod
     contraction_model::CMod
@@ -189,7 +190,7 @@ function setup_coefficient_cache(m::ActiveStressModel, qr::QuadratureRule, sdh::
     return setup_coefficient_cache(m.microstructure_model, qr, sdh)
 end
 
-function material_routine(F::Tensor{2,dim}, coefficients, cell_state, model::ActiveStressModel) where {dim}
+function material_routine(model::ActiveStressModel, F::Tensor{2}, coefficients, cell_state)
     ∂²Ψ∂F², ∂Ψ∂F = Tensors.hessian(
         F_ad ->
               Ψ(F_ad, coefficients, model.material_model),
@@ -204,9 +205,9 @@ end
 
 
 """
-    ElastodynamicsModel(::QuasiStaticModel, ρ::Coefficient)
+    ElastodynamicsModel(::AbstractMaterialModel, ρ::Coefficient)
 """
-struct ElastodynamicsModel{RHSModel <: QuasiStaticModel, CoefficientType}
+struct ElastodynamicsModel{RHSModel <: AbstractMaterialModel, CoefficientType}
     rhs::RHSModel
     ρ::CoefficientType
 end
@@ -215,5 +216,5 @@ function setup_coefficient_cache(m::ElastodynamicsModel, qr::QuadratureRule, sdh
     return setup_coefficient_cache(m.rhs, qr, sdh)
 end
 
-setup_internal_model_cache(constitutive_model::Union{<:ActiveStressModel, <:ExtendedHillModel, <:GeneralizedHillModel}, qr::QuadratureRule, sdh::SubDofHandler) = setup_contraction_model_cache(constitutive_model.contraction_model, qr, sdh)
-setup_internal_model_cache(constitutive_model::Union{<:ElastodynamicsModel{<:ActiveStressModel}, <:ElastodynamicsModel{<:ExtendedHillModel}, <:ElastodynamicsModel{<:GeneralizedHillModel}}, qr::QuadratureRule, sdh::SubDofHandler) = setup_contraction_model_cache(constitutive_model.rhs.contraction_model, qr, sdh)
+setup_internal_cache(constitutive_model::Union{<:ActiveStressModel, <:ExtendedHillModel, <:GeneralizedHillModel}, qr::QuadratureRule, sdh::SubDofHandler) = setup_contraction_model_cache(constitutive_model.contraction_model, qr, sdh)
+setup_internal_cache(constitutive_model::Union{<:ElastodynamicsModel{<:ActiveStressModel}, <:ElastodynamicsModel{<:ExtendedHillModel}, <:ElastodynamicsModel{<:GeneralizedHillModel}}, qr::QuadratureRule, sdh::SubDofHandler) = setup_contraction_model_cache(constitutive_model.rhs.contraction_model, qr, sdh)
