@@ -170,32 +170,36 @@ mutable struct BackwardEulerStageFunctionWrapper{F,U,T,S}
     const inner_solver::S
 end
 
-# TODO generalize this
-function setup_solver_cache(wrapper::BackwardEulerStageAnnotation{<:AbstractQuasiStaticFunction}, solver::MultiLevelNewtonRaphsonSolver)
-    @unpack f = wrapper
-    @unpack dh, integrator = f
-    @unpack volume_model, face_models = f
+# TODO how can we simplify this?
+function setup_solver_cache(wrapper::BackwardEulerStageAnnotation, solver::MultiLevelNewtonRaphsonSolver)
+    _setup_solver_cache(wrapper, wrapper.f, solver)
+end
+@inline function _setup_solver_cache(wrapper::BackwardEulerStageAnnotation, f::QuasiStaticFunction, solver::MultiLevelNewtonRaphsonSolver)
+    _setup_solver_cache(wrapper, f, f.integrator, solver)
+end
+function _setup_solver_cache(wrapper::BackwardEulerStageAnnotation, f::AbstractQuasiStaticFunction, integrator::NonlinearIntegrator, solver::MultiLevelNewtonRaphsonSolver)
+    @unpack dh = f
+    @unpack volume_model, face_model = integrator
 
     solver_cache = MultiLevelNewtonRaphsonSolverCache(
         setup_solver_cache(f, solver.global_newton),
         setup_solver_cache(f.inner_model, solver.local_newton)
     )
 
-    # TODO use composite elements for face_element
-    volume_element = BackwardEulerStageFunctionWrapper(
-        constitutive_model,
+    volume_wrapper = BackwardEulerStageFunctionWrapper(
+        volume_model,
         wrapper.uprev,
         wrapper.Δt,
         solver_cache.local_solver_cache,
     )
-    face_element = BackwardEulerStageFunctionWrapper(
-        face_models,
+    face_wrapper = BackwardEulerStageFunctionWrapper(
+        face_model,
         wrapper.uprev,
         wrapper.Δt,
-        nothing, # inner model is volume only
+        nothing, # inner model is volume only per construction
     )
     return AssembledNonlinearOperator(
-        dh, volume_element, integrator.qrc, face_element, integrator.fqrc,
+        NonlinearIntegrator(volume_wrapper, face_wrapper, integrator.syms, integrator.qrc, integrator.fqrc), dh,
     )
 end
 
@@ -245,7 +249,7 @@ function setup_element_cache(wrapper::BackwardEulerStageFunctionWrapper{<:QuasiS
     ip          = Ferrite.getfieldinterpolation(sdh, field_name)
     ip_geo = geometric_subdomain_interpolation(sdh)
     cv = CellValues(qr, ip, ip_geo)
-    return StructuralElementCache(
+    return QuasiStaticElementCache(
         wrapper.f,
         setup_coefficient_cache(wrapper.f, qr, sdh),
         setup_internal_cache(wrapper, qr, sdh),

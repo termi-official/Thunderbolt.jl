@@ -94,4 +94,5 @@ end
 solution_size(f::QuasiStaticFunction) = ndofs(f.dh)+ndofs(f.lvh)
 
 # TODO fill me
-gather_internal_variable_infos(model::QuasiStaticModel) = InternalVariableInfo[]
+gather_internal_variable_infos(model::QuasiStaticModel) = gather_internal_variable_infos(model.material_model)
+gather_internal_variable_infos(model::AbstractMaterialModel) = InternalVariableInfo[]

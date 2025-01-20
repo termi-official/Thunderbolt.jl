@@ -129,7 +129,7 @@ export
     PointwiseODEProblem,
     PointwiseODEFunction,
     # Mechanics
-    StructuralModel,
+    QuasiStaticModel,
     QuasiStaticProblem,
     QuasiStaticFunction,
     PK1Model,

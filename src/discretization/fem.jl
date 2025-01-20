@@ -153,7 +153,7 @@ function semidiscretize(split::ReactionDiffusionSplit{<:MonodomainModel}, discre
     return semidiscrete_ode
 end
 
-function semidiscretize(model::StructuralModel{<:QuasiStaticModel}, discretization::FiniteElementDiscretization, mesh::AbstractGrid)
+function semidiscretize(model::QuasiStaticModel, discretization::FiniteElementDiscretization, mesh::AbstractGrid)
     sym = model.displacement_symbol
     ipc = _get_interpolation_from_discretization(discretization, sym)
     qrc = _get_quadrature_from_discretization(discretization, sym)
@@ -161,7 +161,7 @@ function semidiscretize(model::StructuralModel{<:QuasiStaticModel}, discretizati
     lvh = LocalVariableHandler(mesh)
     for name in discretization.subdomains
         add_subdomain!(dh, name, [ApproximationDescriptor(sym, ipc)])
-        add_subdomain!(lvh, name, gather_internal_variable_infos(model.mechanical_model), qrc, dh)
+        add_subdomain!(lvh, name, gather_internal_variable_infos(model.material_model), qrc, dh)
     end
     close!(dh)
     close!(lvh)
@@ -177,7 +177,7 @@ function semidiscretize(model::StructuralModel{<:QuasiStaticModel}, discretizati
         ch,
         lvh,
         NonlinearIntegrator(
-            model.mechanical_model,
+            model,
             model.face_models,
             [sym],
             qrc,

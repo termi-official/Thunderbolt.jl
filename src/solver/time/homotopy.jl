@@ -16,11 +16,8 @@ mutable struct HomotopyPathSolverCache{ISC, T, VT <: AbstractVector{T}, VTprev} 
 end
 
 function setup_operator(f::AbstractQuasiStaticFunction, solver::AbstractNonlinearSolver)
-    @unpack dh, integrator = f
-    @unpack qrc, fqrc, volume_model, face_model = integrator
-
     return AssembledNonlinearOperator(
-        dh, volume_model, qrc, face_model, fqrc
+        f.integrator, f.dh,
     )
 end
 

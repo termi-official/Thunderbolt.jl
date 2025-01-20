@@ -72,12 +72,12 @@
         BilinearMassIntegrator(
             ConstantCoefficient(1.0),
             qrc,
-            :unused_in_test,
+            :u,
         ),
         BilinearDiffusionIntegrator(
             ConstantCoefficient(one(Tensor{2,3})),
             qrc,
-            :unused_in_test,
+            :u,
         )
     )
         Kₑ¹ = zeros(ndofs(dhs), ndofs(dhs))
@@ -114,7 +114,7 @@
         Kₑ¹ = zeros(ndofs(dhv), ndofs(dhv))
         Kₑ² = zeros(ndofs(dhv), ndofs(dhv))
 
-        element_cache = setup_element_cache(model, qr, sdhv)
+        element_cache = setup_element_cache(QuasiStaticModel(:u, model, ()), qr, sdhv)
 
         assemble_element!(Kₑ¹, rₑ¹, uₑv, cell_cache_v, element_cache, 0.0)
         @test !iszero(Kₑ¹)

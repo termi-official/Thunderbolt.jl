@@ -154,7 +154,7 @@ getch(f::RSAFDQ20223DFunction) = getch(f.structural_function)
 """
 The split model described by [RegSalAfrFedDedQar:2022:cem](@citet) alone.
 """
-struct RSAFDQ2022Model{SM <: StructuralModel, CM <: AbstractLumpedCirculatoryModel, CT <: LumpedFluidSolidCoupler}
+struct RSAFDQ2022Model{SM #=<: QuasiStaticModel =#, CM <: AbstractLumpedCirculatoryModel, CT <: LumpedFluidSolidCoupler}
     structural_model::SM
     circuit_model::CM
     coupler::CT

@@ -70,7 +70,7 @@ function update_linearization!(op::AssembledRSAFDQ2022Operator, u_::AbstractVect
         element_qr  = getquadraturerule(element_qrc, sdh)
         boundary_qr = getquadraturerule(boundary_qrc, sdh)
         tying_qr    = getquadraturerule(tying_qrc, sdh)
-        
+
         element_cache  = setup_element_cache(element_model, element_qr, sdh)
         boundary_cache = setup_boundary_cache(boundary_model, boundary_qr, sdh)
         tying_cache    = setup_tying_cache(tying_model, tying_qr, sdh)
