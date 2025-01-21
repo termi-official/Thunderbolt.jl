@@ -30,7 +30,7 @@ function Adapt.adapt_structure(to, dh::DofHandler{sdim}) where sdim
     cell_to_sdh      = adapt(to, dh.cell_to_subdofhandler .|> (i -> convert(Int32,i)) |> cu)
     #subdofhandlers   = Tuple(i->_convert_subdofhandler_to_gpu(cell_dofs, cell_dofs_offset, sdh) for sdh in dh.subdofhandlers)
     subdofhandlers   = adapt_structure(to,dh.subdofhandlers .|> (sdh -> Adapt.adapt_structure(to, sdh)) |> cu)
-    gpudata = GPUDofHandlerData(
+    gpudata = DeviceDofHandlerData(
         grid,
         subdofhandlers,
         # field_names,
@@ -39,8 +39,8 @@ function Adapt.adapt_structure(to, dh::DofHandler{sdim}) where sdim
         cell_to_sdh,
         convert(Int32,dh.ndofs),
     )
-    #return GPUDofHandler(dh, gpudata)
-    return GPUDofHandler(gpudata)
+    #return DeviceDofHandler(dh, gpudata)
+    return DeviceDofHandler(gpudata)
 end
 
 _symbols_to_int32(symbols) = 1:length(symbols) .|> (sym -> convert(Int32, sym))
@@ -50,7 +50,7 @@ function Adapt.adapt_structure(to, sdh::SubDofHandler)
     field_names = Adapt.adapt_structure(to, _symbols_to_int32(sdh.field_names) |> cu)
     field_interpolations = sdh.field_interpolations .|> (ip -> Adapt.adapt_structure(to, ip)) |> cu
     ndofs_per_cell = Adapt.adapt_structure(to, sdh.ndofs_per_cell)
-    return GPUSubDofHandlerData(cellset, field_names, field_interpolations, ndofs_per_cell)
+    return DeviceSubDofHandlerData(cellset, field_names, field_interpolations, ndofs_per_cell)
 end
 
 function Adapt.adapt_structure(to, grid::Grid{sdim, cell_type, T}) where {sdim, cell_type, T}
@@ -58,7 +58,7 @@ function Adapt.adapt_structure(to, grid::Grid{sdim, cell_type, T}) where {sdim, 
     cells = Adapt.adapt_structure(to, grid.cells .|> (x -> Int32.(x.nodes)) .|> eltype(grid.cells) |> cu)
     nodes = Adapt.adapt_structure(to, grid.nodes |> cu)
     #TODO subdomain info
-    return GPUGrid{sdim, cell_type, T, typeof(cells), typeof(nodes)}(cells, nodes)
+    return DeviceGrid{sdim, cell_type, T, typeof(cells), typeof(nodes)}(cells, nodes)
 end
 
 

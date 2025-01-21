@@ -1,17 +1,17 @@
 # Utility which holds partial information for assembly.
-struct GPUGrid{sdim, C<:Ferrite.AbstractCell, T<:Real, CellDataType <: AbstractVector{C}, NodeDataType <: AbstractVector} <: Ferrite.AbstractGrid{sdim}
+struct DeviceGrid{sdim, C<:Ferrite.AbstractCell, T<:Real, CellDataType <: AbstractVector{C}, NodeDataType <: AbstractVector} <: Ferrite.AbstractGrid{sdim}
     cells::CellDataType
     nodes::NodeDataType
     #TODO subdomain info
 end
 
-function Base.show(io::IO, mime::MIME"text/plain", data::GPUGrid)
+function Base.show(io::IO, mime::MIME"text/plain", data::DeviceGrid)
     _show(io, mime, data, 0)
 end
 
-function _show(io::IO, mime::MIME"text/plain", grid::GPUGrid{sdim, C, T}, indent) where {sdim, C, T}
+function _show(io::IO, mime::MIME"text/plain", grid::DeviceGrid{sdim, C, T}, indent) where {sdim, C, T}
     offset = " "^indent
-    print(io, offset, "GPUGrid{sdim=", sdim, ", T=", T, "}")
+    print(io, offset, "DeviceGrid{sdim=", sdim, ", T=", T, "}")
     if isconcretetype(eltype(grid.cells))
         typestrs = [repr(eltype(grid.cells))]
     else
@@ -28,13 +28,13 @@ end
 # end
 
 
-Ferrite.get_coordinate_type(::GPUGrid{sdim, <:Any, T,<:Any,<:Any}) where {sdim, T} = Vec{sdim, T} # Node is baked into the mesh type.
+Ferrite.get_coordinate_type(::DeviceGrid{sdim, <:Any, T,<:Any,<:Any}) where {sdim, T} = Vec{sdim, T} # Node is baked into the mesh type.
 
-@inline Ferrite.getcells(grid::GPUGrid, v::Ti) where {Ti <: Integer} = grid.cells[v]
-@inline Ferrite.getnodes(grid::GPUGrid, v::Ti) where {Ti<: Integer} = grid.nodes[v]
+@inline Ferrite.getcells(grid::DeviceGrid, v::Ti) where {Ti <: Integer} = grid.cells[v]
+@inline Ferrite.getnodes(grid::DeviceGrid, v::Ti) where {Ti<: Integer} = grid.nodes[v]
 
 
-function Ferrite.getcoordinates(grid::GPUGrid, e::Ti) where {Ti<: Integer}
+function Ferrite.getcoordinates(grid::DeviceGrid, e::Ti) where {Ti<: Integer}
     # e is the element index.
     CT = Ferrite.get_coordinate_type(grid)
     cell = getcells(grid, e)

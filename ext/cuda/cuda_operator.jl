@@ -8,7 +8,7 @@ struct CudaOperatorKernel{Operator, Ti <: Integer, MemAlloc,ELementsCaches} <: A
     eles_caches:: ELementsCaches
 end
 
-function Thunderbolt.init_linear_operator(::Type{CUDABackend},protocol::IntegrandType,qrc::QuadratureRuleCollection,dh::AbstractDofHandler ) where {IntegrandType}
+function Thunderbolt.init_linear_operator(::CUDABackend,protocol::IntegrandType,qrc::QuadratureRuleCollection,dh::AbstractDofHandler ) where {IntegrandType}
     if CUDA.functional()
         b = CUDA.zeros(Float32, ndofs(dh))
         linear_op =  LinearOperator(b, protocol, qrc, dh)
@@ -18,7 +18,7 @@ function Thunderbolt.init_linear_operator(::Type{CUDABackend},protocol::Integran
     end
 end
 
-function Thunderbolt.init_linear_operator(::Type{CUDABackend},linop::LinearOperator) 
+function Thunderbolt.init_linear_operator(::CUDABackend,linop::LinearOperator) 
     ## TODO: Dunno if this is useful or not
     if CUDA.functional()
         @unpack b, qrc, dh, integrand  = linop

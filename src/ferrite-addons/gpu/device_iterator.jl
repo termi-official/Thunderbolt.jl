@@ -35,7 +35,7 @@ struct NoCellMem <: AbstractCellMem end # mainly for testing purposes
 ncells(iterator::AbstractDeviceCellIterator) = iterator.n_cells ## any subtype has to have `n_cells` field
 
 
-struct DeviceCellIterator{DH <: GPUDofHandlerData, GRID <: GPUGrid, Ti <: Integer, CellMem<: AbstractCellMem} <: AbstractDeviceCellIterator
+struct DeviceCellIterator{DH <: DeviceDofHandlerData, GRID <: DeviceGrid, Ti <: Integer, CellMem<: AbstractCellMem} <: AbstractDeviceCellIterator
     dh::DH
     grid::GRID
     n_cells::Ti

@@ -41,8 +41,8 @@ using Ferrite
 import GPUArraysCore: AbstractGPUVector, AbstractGPUArray
 import Adapt
 
-include("ferrite-addons/gpu/gpudofhandler.jl")
-include("ferrite-addons/gpu/gpugrid.jl")
+include("ferrite-addons/gpu/devicedofhandler.jl")
+include("ferrite-addons/gpu/devicegrid.jl")
 include("ferrite-addons/PR883.jl")
 include("ferrite-addons/gpu/memalloc.jl")
 include("ferrite-addons/gpu/device_iterator.jl")

@@ -21,7 +21,7 @@ import Thunderbolt.FerriteUtils:
     AbstractGlobalMemAlloc, AbstractSharedMemAlloc,
     StaticInterpolationValues,StaticCellValues, try_allocate_shared_mem,
     CellIterator,allocate_global_mem, RHSObject, mem_size,
-    GPUDofHandlerData, GPUSubDofHandlerData, GPUDofHandler, GPUGrid,
+    DeviceDofHandlerData, DeviceSubDofHandlerData, DeviceDofHandler, DeviceGrid,
     cellfe,celldofs, AbstractDeviceGlobalMemAlloc, AbstractDeviceSharedMemAlloc,
     RHSObject, JacobianObject, FullObject, DeviceCellIterator,DeviceOutOfBoundCellIterator,DeviceCellCache
 
@@ -34,7 +34,7 @@ import Adapt:
 # ---------------------- Generic part ------------------------
 
 
-# function Thunderbolt.setup_operator(protocol::Thunderbolt.AnalyticalTransmembraneStimulationProtocol, solver::Thunderbolt.AbstractSolver, dh::GPUDofHandler, field_name::Symbol, qr)
+# function Thunderbolt.setup_operator(protocol::Thunderbolt.AnalyticalTransmembraneStimulationProtocol, solver::Thunderbolt.AbstractSolver, dh::DeviceDofHandler, field_name::Symbol, qr)
 #     ip = dh.dh.subdofhandlers[1].field_interpolations[1]
 #     ip_g = Ferrite.geometric_interpolation(typeof(getcells(Ferrite.get_grid(dh), 1)))
 #     qr = QuadratureRule{Ferrite.getrefshape(ip_g)}(Ferrite.getorder(ip_g)+1)
@@ -68,8 +68,8 @@ function Thunderbolt._pointwise_step_outer_kernel!(f::AbstractPointwiseFunction,
     return true
 end
 
-_allocate_matrix(dh::GPUDofHandler, A::SparseMatrixCSR, ::CuVector) = CuSparseMatrixCSR(A)
-_allocate_matrix(dh::GPUDofHandler, A::SparseMatrixCSC, ::CuVector) = CuSparseMatrixCSC(A)
+_allocate_matrix(dh::DeviceDofHandler, A::SparseMatrixCSR, ::CuVector) = CuSparseMatrixCSR(A)
+_allocate_matrix(dh::DeviceDofHandler, A::SparseMatrixCSC, ::CuVector) = CuSparseMatrixCSC(A)
 
 Thunderbolt.create_system_vector(::Type{<:CuVector{T}}, f::AbstractSemidiscreteFunction) where T = CUDA.zeros(T, solution_size(f))
 Thunderbolt.create_system_vector(::Type{<:CuVector{T}}, dh::DofHandler) where T                  = CUDA.zeros(T, ndofs(dh))
