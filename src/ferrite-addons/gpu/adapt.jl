@@ -1,0 +1,15 @@
+############
+# adapt.jl #
+############
+Adapt.@adapt_structure QuadratureValuesIterator
+Adapt.@adapt_structure StaticQuadratureValues
+
+function Adapt.adapt_structure(to, cv::CellValues)
+    fv = Adapt.adapt(to, StaticInterpolationValues(cv.fun_values))
+    gm = Adapt.adapt(to, StaticInterpolationValues(cv.geo_mapping))
+    n_quadoints = cv.qr.weights |> length
+    weights = Adapt.adapt(to, ntuple(i -> cv.qr.weights[i], n_quadoints))
+    return StaticCellValues(fv, gm, weights)
+end
+
+

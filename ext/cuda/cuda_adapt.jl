@@ -1,25 +1,11 @@
+@adapt_structure GlobalMemAlloc
+@adapt_structure CUDACellIterator 
+
 function Adapt.adapt_structure(to, element_cache::AnalyticalCoefficientElementCache)
     cc = Adapt.adapt_structure(to, element_cache.cc)
     nz_intervals = Adapt.adapt_structure(to, element_cache.nonzero_intervals |> cu)
-    cv = element_cache.cv
-    fv = Adapt.adapt(to, StaticInterpolationValues(cv.fun_values))
-    gm = Adapt.adapt(to, StaticInterpolationValues(cv.geo_mapping))
-    n_quadoints = cv.qr.weights |> length
-    weights = Adapt.adapt(to, ntuple(i -> cv.qr.weights[i], n_quadoints))
-    sv = StaticCellValues(fv, gm, weights)
+    sv = Adapt.adapt_structure(to, element_cache.cv)
     return AnalyticalCoefficientElementCache(cc, nz_intervals, sv)
-end
-
-function Adapt.adapt_structure(to, coeff::AnalyticalCoefficientCache)
-    f = Adapt.adapt_structure(to, coeff.f)
-    coordinate_system_cache = Adapt.adapt_structure(to, coeff.coordinate_system_cache)
-    return AnalyticalCoefficientCache(f, coordinate_system_cache)
-end
-
-function Adapt.adapt_structure(to, cysc::CartesianCoordinateSystemCache)
-    cs = Adapt.adapt_structure(to, cysc.cs)
-    cv = Adapt.adapt_structure(to, cysc.cv)
-    return CartesianCoordinateSystemCache(cs, cv)
 end
 
 # TODO: not used in the current codebase
@@ -34,7 +20,6 @@ function _convert_subdofhandler_to_gpu(cell_dofs, cell_dof_soffset, sdh::SubDofH
     )
 end
 
-# TODO: here or in ferrite-addons?
 function Adapt.adapt_structure(to, dh::DofHandler{sdim}) where sdim
     grid             = adapt_structure(to, dh.grid)
     # field_names      = Tuple(sym for sym in dh.field_names)
@@ -58,8 +43,16 @@ function Adapt.adapt_structure(to, dh::DofHandler{sdim}) where sdim
     return GPUDofHandler(gpudata)
 end
 
+_symbols_to_int32(symbols) = 1:length(symbols) .|> (sym -> convert(Int32, sym))
 
-# TODO: here or in ferrite-addons?
+function Adapt.adapt_structure(to, sdh::SubDofHandler)
+    cellset = Adapt.adapt_structure(to, sdh.cellset |> collect .|> (x -> convert(Int32, x)) |> cu)
+    field_names = Adapt.adapt_structure(to, _symbols_to_int32(sdh.field_names) |> cu)
+    field_interpolations = sdh.field_interpolations .|> (ip -> Adapt.adapt_structure(to, ip)) |> cu
+    ndofs_per_cell = Adapt.adapt_structure(to, sdh.ndofs_per_cell)
+    return GPUSubDofHandlerData(cellset, field_names, field_interpolations, ndofs_per_cell)
+end
+
 function Adapt.adapt_structure(to, grid::Grid{sdim, cell_type, T}) where {sdim, cell_type, T}
     node_type = typeof(first(grid.nodes))
     cells = Adapt.adapt_structure(to, grid.cells .|> (x -> Int32.(x.nodes)) .|> eltype(grid.cells) |> cu)
@@ -68,6 +61,10 @@ function Adapt.adapt_structure(to, grid::Grid{sdim, cell_type, T}) where {sdim, 
     return GPUGrid{sdim, cell_type, T, typeof(cells), typeof(nodes)}(cells, nodes)
 end
 
+
+# Adapt Coefficients #
+@adapt_structure AnalyticalCoefficientCache
+@adapt_structure CartesianCoordinateSystemCache
 
 function Adapt.adapt_structure(to, cysc::FieldCoefficientCache)
     elementwise_data = Adapt.adapt_structure(to, cysc.elementwise_data |> cu)

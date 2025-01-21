@@ -39,12 +39,14 @@ end
 module FerriteUtils
 using Ferrite
 import GPUArraysCore: AbstractGPUVector, AbstractGPUArray
-using Adapt
+import Adapt
 
 include("ferrite-addons/gpu/gpudofhandler.jl")
 include("ferrite-addons/gpu/gpugrid.jl")
 include("ferrite-addons/PR883.jl")
-include("ferrite-addons/PR913.jl") 
+include("ferrite-addons/gpu/memalloc.jl")
+include("ferrite-addons/gpu/device_iterator.jl")
+include("ferrite-addons/gpu/adapt.jl")
 
 end
 

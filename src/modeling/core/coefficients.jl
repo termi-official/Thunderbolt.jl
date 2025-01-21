@@ -47,7 +47,7 @@ function evaluate_coefficient(cache::FieldCoefficientCache{T}, geometry_cache, q
     return val
 end
 # GPU coefficient evaluation!
-function evaluate_coefficient(cache::FieldCoefficientCache{T}, geometry_cache::FerriteUtils.GPUCellCache, qv::FerriteUtils.StaticQuadratureValues, t) where T
+function evaluate_coefficient(cache::FieldCoefficientCache{T}, geometry_cache::FerriteUtils.DeviceCellCache, qv::FerriteUtils.StaticQuadratureValues, t) where T
     @unpack elementwise_data, cv = cache
     val = zero(T)
     cellidx = FerriteUtils.cellid(geometry_cache)
@@ -75,7 +75,7 @@ function setup_coefficient_cache(coefficient::ConstantCoefficient, qr::Quadratur
 end
 
 evaluate_coefficient(coeff::ConstantCoefficient, cell_cache, qp, t) = coeff.val
-evaluate_coefficient(coeff::ConstantCoefficient, ::FerriteUtils.GPUCellCache, ::FerriteUtils.StaticQuadratureValues, t) = coeff.val
+evaluate_coefficient(coeff::ConstantCoefficient, ::FerriteUtils.DeviceCellCache, ::FerriteUtils.StaticQuadratureValues, t) = coeff.val
 
 
 
@@ -108,7 +108,7 @@ end
 evaluate_coefficient(coeff::ConductivityToDiffusivityCoefficientCache, cell_cache, qp::QuadraturePoint, t) = _evaluate_coefficient(coeff, cell_cache, qp, t)
 
 
-evaluate_coefficient(coeff::ConductivityToDiffusivityCoefficientCache, cell_cache::FerriteUtils.GPUCellCache, qp::FerriteUtils.StaticQuadratureValues, t) = _evaluate_coefficient(coeff, cell_cache, qp, t)
+evaluate_coefficient(coeff::ConductivityToDiffusivityCoefficientCache, cell_cache::FerriteUtils.DeviceCellCache, qp::FerriteUtils.StaticQuadratureValues, t) = _evaluate_coefficient(coeff, cell_cache, qp, t)
 
 
 function _evaluate_coefficient(coeff::ConductivityToDiffusivityCoefficientCache, cell_cache, qp, t)
@@ -186,7 +186,7 @@ function evaluate_coefficient(coeff::CartesianCoordinateSystemCache{<:CartesianC
     return x
 end
 
-function evaluate_coefficient(coeff::CartesianCoordinateSystemCache{<:CartesianCoordinateSystem{sdim}}, geometry_cache::FerriteUtils.GPUCellCache, qv::FerriteUtils.StaticQuadratureValues{T}, t) where {sdim,T}
+function evaluate_coefficient(coeff::CartesianCoordinateSystemCache{<:CartesianCoordinateSystem{sdim}}, geometry_cache::FerriteUtils.DeviceCellCache, qv::FerriteUtils.StaticQuadratureValues{T}, t) where {sdim,T}
     @unpack cv = coeff
     x          = zero(Vec{sdim, T})
     coords     = FerriteUtils.getcoordinates(geometry_cache) 
@@ -230,7 +230,7 @@ function evaluate_coefficient(coeff::LVCoordinateSystemCache, geometry_cache::Ce
 end
 
 # GPU coefficient evaluation!
-function evaluate_coefficient(coeff::LVCoordinateSystemCache, geometry_cache::FerriteUtils.GPUCellCache, qv::FerriteUtils.StaticQuadratureValues{T}, t) where {T}
+function evaluate_coefficient(coeff::LVCoordinateSystemCache, geometry_cache::FerriteUtils.DeviceCellCache, qv::FerriteUtils.StaticQuadratureValues{T}, t) where {T}
     @unpack cv, cs = coeff
     @unpack dh     = cs
     x1 = zero(T)
@@ -282,7 +282,7 @@ function evaluate_coefficient(cc::BiVCoordinateSystemCache, cell_cache, qp::Quad
 end
 
 # GPU coefficient evaluation!
-function evaluate_coefficient(cc::BiVCoordinateSystemCache, cell_cache::FerriteUtils.GPUCellCache, qv::FerriteUtils.StaticQuadratureValues{T}, t) where {T}
+function evaluate_coefficient(cc::BiVCoordinateSystemCache, cell_cache::FerriteUtils.DeviceCellCache, qv::FerriteUtils.StaticQuadratureValues{T}, t) where {T}
     @unpack cv, cs = cc
     @unpack dh     = cs
     dofs = celldofsview(dh, FerriteUtils.cellid(cell_cache))
@@ -332,7 +332,7 @@ end
 evaluate_coefficient(coeff::SpectralTensorCoefficientCache, cell_cache, qp::QuadraturePoint, t) = _evaluate_coefficient(coeff, cell_cache, qp, t)
 
 
-evaluate_coefficient(coeff::SpectralTensorCoefficientCache, cell_cache::FerriteUtils.GPUCellCache, qp::FerriteUtils.StaticQuadratureValues, t) = _evaluate_coefficient(coeff, cell_cache, qp, t)
+evaluate_coefficient(coeff::SpectralTensorCoefficientCache, cell_cache::FerriteUtils.DeviceCellCache, qp::FerriteUtils.StaticQuadratureValues, t) = _evaluate_coefficient(coeff, cell_cache, qp, t)
 
 
 function _evaluate_coefficient(coeff::SpectralTensorCoefficientCache, cell_cache, qp, t)
@@ -364,7 +364,7 @@ end
 Thunderbolt.evaluate_coefficient(coeff::SpatiallyHomogeneousDataField, ::CellCache, ::QuadraturePoint, t) = _evaluate_coefficient(coeff, t)
   
 
-Thunderbolt.evaluate_coefficient(coeff::SpatiallyHomogeneousDataField, ::FerriteUtils.GPUCellCache, ::FerriteUtils.StaticQuadratureValues, t) = _evaluate_coefficient(coeff, t)
+Thunderbolt.evaluate_coefficient(coeff::SpatiallyHomogeneousDataField, ::FerriteUtils.DeviceCellCache, ::FerriteUtils.StaticQuadratureValues, t) = _evaluate_coefficient(coeff, t)
 
 
 function _evaluate_coefficient(coeff::SpatiallyHomogeneousDataField, t)

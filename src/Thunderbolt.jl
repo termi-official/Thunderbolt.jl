@@ -45,8 +45,6 @@ import ModelingToolkit: @variables, @parameters, @component, @named,
 import GPUArraysCore: AbstractGPUVector, AbstractGPUArray
 import Adapt:
     Adapt, adapt_structure, adapt
-using CUDA
-
 
 include("utils.jl")
 

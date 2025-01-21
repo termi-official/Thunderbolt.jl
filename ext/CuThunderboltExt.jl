@@ -22,13 +22,14 @@ import Thunderbolt.FerriteUtils:
     StaticInterpolationValues,StaticCellValues, try_allocate_shared_mem,
     CellIterator,allocate_global_mem, RHSObject, mem_size,
     GPUDofHandlerData, GPUSubDofHandlerData, GPUDofHandler, GPUGrid,
-    cellfe,celldofs
+    cellfe,celldofs, AbstractDeviceGlobalMemAlloc, AbstractDeviceSharedMemAlloc,
+    RHSObject, JacobianObject, FullObject, DeviceCellIterator,DeviceOutOfBoundCellIterator,DeviceCellCache
 
 import Ferrite:
     AbstractDofHandler,get_grid,CellIterator
 
 import Adapt:
-    Adapt, adapt_structure, adapt
+    Adapt, adapt_structure, adapt, @adapt_structure
 
 # ---------------------- Generic part ------------------------
 
@@ -90,6 +91,8 @@ function Thunderbolt.adapt_vector_type(::Type{<:CuVector}, v::VT) where {VT <: V
 end
 
 include("cuda/cuda_operator.jl")
+include("cuda/cuda_memalloc.jl")
 include("cuda/cuda_adapt.jl")
+include("cuda/cuda_iterator.jl")
 
 end

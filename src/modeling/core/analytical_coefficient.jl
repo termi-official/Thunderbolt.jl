@@ -28,7 +28,7 @@ duplicate_for_parallel(cache::AnalyticalCoefficientCache) = AnalyticalCoefficien
     return coeff.f(x, t)
 end
 
-@inline function evaluate_coefficient(coeff::F, cell_cache::FerriteUtils.GPUCellCache, qp::FerriteUtils.StaticQuadratureValues, t) where {F <: AnalyticalCoefficientCache}
+@inline function evaluate_coefficient(coeff::F, cell_cache::FerriteUtils.DeviceCellCache, qp::FerriteUtils.StaticQuadratureValues, t) where {F <: AnalyticalCoefficientCache}
     x = evaluate_coefficient(coeff.coordinate_system_cache, cell_cache, qp, t)
     return coeff.f(x, t)
 end
@@ -51,7 +51,7 @@ duplicate_for_parallel(ec::AnalyticalCoefficientElementCache) = AnalyticalCoeffi
 end
 
 # # TODO: This is a duplicate of the CPU version, we can curcumvent that by define abstract type for CellCache or type parameter.
-# @inline function assemble_element!(bₑ::VectorType, geometry_cache::FerriteUtils.GPUCellCache, element_cache::AnalyticalCoefficientElementCache, time) where {VectorType}
+# @inline function assemble_element!(bₑ::VectorType, geometry_cache::FerriteUtils.DeviceCellCache, element_cache::AnalyticalCoefficientElementCache, time) where {VectorType}
 #     _assemble_element!(bₑ, geometry_cache, getcoordinates(geometry_cache), element_cache::AnalyticalCoefficientElementCache, time)
 # end
 
@@ -73,7 +73,7 @@ end
     end
 end
 
-@inline function _assemble_element!(bₑ, geometry_cache::FerriteUtils.GPUCellCache, coords, element_cache::AnalyticalCoefficientElementCache, time) 
+@inline function _assemble_element!(bₑ, geometry_cache::FerriteUtils.DeviceCellCache, coords, element_cache::AnalyticalCoefficientElementCache, time) 
     @unpack cc, cv = element_cache
     for qv in FerriteUtils.QuadratureValuesIterator(cv, coords)
         dΩ = FerriteUtils.getdetJdV(qv)
