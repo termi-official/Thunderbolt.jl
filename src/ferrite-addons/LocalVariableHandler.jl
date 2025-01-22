@@ -77,7 +77,7 @@ function Ferrite.reference_shape_value(ip::QuadratureInterpolation, ::Vec, i::In
     throw(ArgumentError("shape function evaluation for interpolation $ip not implemented yet"))
 end
 
-function add_subdomain!(lvh::LocalVariableHandler, name::String, ivis::Vector{InternalVariableInfo}, qrc::QuadratureRuleCollection, compatible_dh::DofHandler)
+function add_subdomain!(lvh::LocalVariableHandler, name::String, ivis #=::Vector{InternalVariableInfo}=#, qrc::QuadratureRuleCollection, compatible_dh::DofHandler)
     (; dh) = lvh
     mesh   = get_grid(dh)
     cells = mesh.grid.cells

@@ -20,15 +20,10 @@ struct MultiLevelNewtonRaphsonSolverCache{gCacheType, lCacheType} <: AbstractNon
     local_solver_cache::lCacheType
 end
 
-# function setup_solver_cache(f::AbstractSemidiscreteMultiLevelFunction, solver::MultiLevelNewtonRaphsonSolver)
-#     return MultiLevelNewtonRaphsonSolverCache(
-#         setup_solver_cache(f.G, solver.global_newton),
-#         setup_solver_cache(f.L, solver.local_newton),
-#     )
-# end
+function nlsolve!(u::AbstractVector, f::AbstractSemidiscreteFunction, mlcache::MultiLevelNewtonRaphsonSolverCache, t)
+    cache = mlcache.global_solver_cache
 
-function nlsolve!(u::AbstractVector, f::AbstractSemidiscreteFunction, cache::MultiLevelNewtonRaphsonSolverCache, t)
-    @unpack op, residual, linear_solver_cache, Θks = cache.global_newton
+    @unpack op, residual, linear_solver_cache, Θks = cache
     monitor = cache.parameters.monitor
     cache.iter = -1
     Δu = linear_solver_cache.u
@@ -59,7 +54,7 @@ function nlsolve!(u::AbstractVector, f::AbstractSemidiscreteFunction, cache::Mul
 
         eliminate_constraints_from_increment!(Δu, f, cache)
 
-        u .-= Δu # Current guess
+        u[1:ndofs(op.dh)] .-= Δu # Current guess
 
         if cache.iter > 0
             Θk =residualnorm/residualnormprev

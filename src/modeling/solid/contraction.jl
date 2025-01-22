@@ -3,6 +3,13 @@ TODO wrap the existing models into this one
 """
 abstract type SteadyStateSarcomereModel <: AbstractInternalModel end
 
+abstract type AbstractInternalMaterialStateCache end
+
+# Material states without evolution equations. I.e. the states variables are at most a function of space (reference) and time.
+abstract type TrivialInternalMaterialStateCache <: AbstractInternalMaterialStateCache end
+
+abstract type RateIndependentMaterialStateCache <: AbstractInternalMaterialStateCache end
+
 # Base.@kwdef struct SarcomereModel{ModelType, TCF, TSL}
 #     model::ModelType
 #     calcium_field::TCF
@@ -39,7 +46,7 @@ end
 
 """
 """
-struct PelceSunLangeveld1995Cache{CF}
+struct PelceSunLangeveld1995Cache{CF} <: TrivialInternalMaterialStateCache
     calcium_cache::CF
 end
 
@@ -66,7 +73,7 @@ Base.@kwdef struct ConstantStretchModel{TD, CF} <: SteadyStateSarcomereModel
 end
 compute_λᵃ(Ca, mp::ConstantStretchModel) = mp.λ
 
-struct ConstantStretchCache{CF}
+struct ConstantStretchCache{CF} <: TrivialInternalMaterialStateCache
     calcium_cache::CF
 end
 

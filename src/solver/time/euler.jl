@@ -152,7 +152,7 @@ end
 #                     DAE Problems                      #
 #########################################################
 
-struct BackwardEulerStageInfo{SolverType, MassMatrixType, JacobianMatrixType}
+struct BackwardEulerStageCache{SolverType}
     # Nonlinear solver for generic backward Euler discretizations
     nlsolver::SolverType
 end
@@ -160,14 +160,25 @@ end
 # This is an annotation to setup the operator in the inner nonlinear problem correctly.
 struct BackwardEulerStageAnnotation{F,U}
     f::F
+    u::U
     uprev::U
 end
 # This is the wrapper used to communicate solver info into the operator.
-mutable struct BackwardEulerStageFunctionWrapper{F,U,T,S}
+mutable struct BackwardEulerStageFunctionWrapper{F,U,T,S, LVH}
     const f::F
+    const u::U
     const uprev::U
     Δt::T
     const inner_solver::S
+    const lvh::LVH
+end
+
+function extract_global_function(f)
+    return f
+end
+
+function extract_local_function(f)
+    return f
 end
 
 # TODO how can we simplify this?
@@ -180,26 +191,59 @@ end
 function _setup_solver_cache(wrapper::BackwardEulerStageAnnotation, f::AbstractQuasiStaticFunction, integrator::NonlinearIntegrator, solver::MultiLevelNewtonRaphsonSolver)
     @unpack dh = f
     @unpack volume_model, face_model = integrator
+    @unpack local_newton, global_newton = solver
 
-    solver_cache = MultiLevelNewtonRaphsonSolverCache(
-        setup_solver_cache(f, solver.global_newton),
-        setup_solver_cache(f.inner_model, solver.local_newton)
-    )
+    # G = extract_global_function(f)
+    # L = extract_local_function(f)
 
+    # inner_solver_cache = MultiLevelNewtonRaphsonSolverCache(
+    #     # FIXME global_f and local_f :)
+    #     setup_solver_cache(G, solver.global_newton),
+    #     setup_solver_cache(L, solver.local_newton),
+    # )
+
+    # Extract condensable parts
+    Q     = @view wrapper.u[(ndofs(dh)+1):end]
+    Qprev = @view wrapper.uprev[(ndofs(dh)+1):end]
+    # TODO wrap_annotation(...) and unwrap_annotation ?
+     # Connect nonlinear problem and timestepper
     volume_wrapper = BackwardEulerStageFunctionWrapper(
         volume_model,
-        wrapper.uprev,
-        wrapper.Δt,
-        solver_cache.local_solver_cache,
+        Q, Qprev,
+        0.0,
+        nothing, # inner_solver_cache.local_solver_cache,
+        f.lvh,
     )
     face_wrapper = BackwardEulerStageFunctionWrapper(
         face_model,
-        wrapper.uprev,
-        wrapper.Δt,
+        Q, Qprev,
+        0.0,
         nothing, # inner model is volume only per construction
+        f.lvh,
     )
-    return AssembledNonlinearOperator(
+    # This is copy paste of setup_solver_cache(G, solver.global_newton)
+    op = AssembledNonlinearOperator(
         NonlinearIntegrator(volume_wrapper, face_wrapper, integrator.syms, integrator.qrc, integrator.fqrc), dh,
+    )
+    # op = setup_operator(f, solver)
+    T = Float64
+    residual = Vector{T}(undef, ndofs(dh))#solution_size(G))
+    Δu = Vector{T}(undef, ndofs(dh))#solution_size(G))
+
+    # Connect both solver caches
+    inner_prob = LinearSolve.LinearProblem(
+        getJ(op), residual; u0=Δu
+    )
+    inner_cache = init(inner_prob, global_newton.inner_solver; alias_A=true, alias_b=true)
+    @assert inner_cache.b === residual
+    @assert inner_cache.A === getJ(op)
+
+    global_newton_cache = NewtonRaphsonSolverCache(op, residual, global_newton, inner_cache, T[], 0)
+
+    return MultiLevelNewtonRaphsonSolverCache(
+        # FIXME global_f and local_f :)
+        global_newton_cache, # setup_solver_cache(G, solver.global_newton),
+        nothing, #setup_solver_cache(L, solver.local_newton), # FIXME pass
     )
 end
 
@@ -230,8 +274,8 @@ function setup_solver_cache(f::AbstractSemidiscreteFunction, solver::BackwardEul
         _u,
         _uprev,
         # tmp,
-        BackwardEulerStageInfo(
-            setup_solver_cache(BackwardEulerStageAnnotation(f, _uprev), solver.inner_solver)
+        BackwardEulerStageCache(
+            setup_solver_cache(BackwardEulerStageAnnotation(f, _u, _uprev), solver.inner_solver)
         ),
         solver.monitor,
     )
@@ -250,62 +294,45 @@ function setup_element_cache(wrapper::BackwardEulerStageFunctionWrapper{<:QuasiS
     ip_geo = geometric_subdomain_interpolation(sdh)
     cv = CellValues(qr, ip, ip_geo)
     return QuasiStaticElementCache(
-        wrapper.f,
-        setup_coefficient_cache(wrapper.f, qr, sdh),
+        wrapper.f.material_model,
+        setup_coefficient_cache(wrapper.f.material_model, qr, sdh),
         setup_internal_cache(wrapper, qr, sdh),
         cv
     )
 end
 
-update_stage!(stage::BackwardEulerStageInfo, kΔt) = update_stage!(stage, stage.inner_solver_cache.op, kΔt)
-function update_stage!(stage::BackwardEulerStageInfo, op::AssembledNonlinearOperator, kΔt)
-    op.element_model.Δt = kΔt
-    op.face_model.Δt    = kΔt
+# update_stage!(stage::BackwardEulerStageCache, kΔt) = update_stage!(stage, stage.nlsolver.local_solver_cache.op, kΔt)
+update_stage!(stage::BackwardEulerStageCache, kΔt) = update_stage!(stage, stage.nlsolver.global_solver_cache.op, kΔt)
+function update_stage!(stage::BackwardEulerStageCache, op::AssembledNonlinearOperator, kΔt)
+    op.integrator.volume_model.Δt = kΔt
+    op.integrator.face_model.Δt   = kΔt
 end
 
-function perform_backward_euler_step!(f, cache::BackwardEulerSolverCache, stage_info::BackwardEulerStageInfo, t, Δt)
+function perform_backward_euler_step!(f::QuasiStaticFunction, cache::BackwardEulerSolverCache, stage_info::BackwardEulerStageCache, t, Δt)
     update_constraints!(f, cache, t + Δt)
     update_stage!(stage_info, Δt)
-    if !nlsolve!(cache.uₙ, f, stage_info.inner_solver_cache, t + Δt)
+    if !nlsolve!(cache.uₙ, f, stage_info.nlsolver, t + Δt)
         return false
     end
     return false
 end
 
-function setup_solver_cache(f::MultiLevelFunction, solver::BackwardEulerSolver, t₀; u = nothing, uprev = nothing)
-    inner_solver_cache = setup_solver_cache(f, solver.inner_solver)
-
-    vtype = Vector{Float64}
-
-    if u === nothing
-        _u = vtype(undef, solution_size(f))
-        @warn "Cannot initialize u for $(typeof(solver))."
-    else
-        _u = alias_u ? u : SciMLBase.recursivecopy(u)
-    end
-
-    if uprev === nothing
-        _uprev = vtype(undef, solution_size(f))
-        _uprev .= u
-    else
-        _uprev = alias_uprev ? uprev : SciMLBase.recursivecopy(uprev)
-    end
-
-    cache = BackwardEulerSolverCache(
-        u0, # u
-        uprev,
-        # tmp,
-        BackwardEulerDAEStage(
-            # mass_operator,
-            # bilinear_operator,
-            # source_operator,
-            inner_solver_cache,
-            # T(0.0),
-        ),
-        solver.monitor,
+function setup_internal_cache(wrapper::BackwardEulerStageFunctionWrapper, qr::QuadratureRule, sdh::SubDofHandler)
+    n_ivs_per_qp = 9 # TODO compute
+    return GenericFirstOrderRateIndependentMaterialStateCache(
+        wrapper.f,
+        wrapper.u,
+        wrapper.uprev,
+        wrapper.Δt,
+        wrapper.lvh,
+        zeros(n_ivs_per_qp),
+        zeros(n_ivs_per_qp),
     )
+end
 
-    return cache
+function setup_boundary_cache(wrapper::BackwardEulerStageFunctionWrapper, fqr, sdh)
+    # TODO this technically unlocks differential boundary conditions, if done correctly.
+    setup_boundary_cache(wrapper.f, fqr, sdh)
 end
 
 #########################################################
