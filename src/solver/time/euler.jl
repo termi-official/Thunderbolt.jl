@@ -314,7 +314,7 @@ function perform_backward_euler_step!(f::QuasiStaticFunction, cache::BackwardEul
     if !nlsolve!(cache.uₙ, f, stage_info.nlsolver, t + Δt)
         return false
     end
-    return false
+    return true
 end
 
 function setup_internal_cache(wrapper::BackwardEulerStageFunctionWrapper, qr::QuadratureRule, sdh::SubDofHandler)

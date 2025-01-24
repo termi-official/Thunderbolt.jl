@@ -19,7 +19,7 @@ struct FiniteElementDiscretization
     mass_qrc::Union{<:QuadratureRuleCollection,Nothing} # TODO maybe an "extras" field should be used instead :)
     """
     """
-    function FiniteElementDiscretization(ips::Dict{Symbol, <: InterpolationCollection}, dbcs::Vector{Dirichlet} = Dirichlet[], subdomains::Vector{String} = [""], mass_qrc = nothing)
+    function FiniteElementDiscretization(ips::Dict{Symbol}, dbcs::Vector{Dirichlet} = Dirichlet[], subdomains::Vector{String} = [""], mass_qrc = nothing)
         new(ips, dbcs, subdomains, mass_qrc)
     end
 end
@@ -28,10 +28,10 @@ _extract_ipc(ipc::InterpolationCollection) = ipc
 _extract_ipc(p::Pair{<:InterpolationCollection, <:QuadratureRuleCollection}) = first(p)
 
 function _extract_qrc(ipc::InterpolationCollection)
-    intorder = getorder(ipc)
-    return QuadratureRuleCollection(max(2intorder-1,2))
+    ansatzorder = getorder(ipc)
+    return QuadratureRuleCollection(max(2ansatzorder-1,2))
 end
-_extract_qrc(p::Pair{<:InterpolationCollection, <:QuadratureRuleCollection}) = second(p)
+_extract_qrc(p::Pair{<:InterpolationCollection, <:QuadratureRuleCollection}) = last(p)
 
 # Internal utility with proper error message
 function _get_interpolation_from_discretization(disc::FiniteElementDiscretization, sym::Symbol)
@@ -50,8 +50,8 @@ function _get_facet_quadrature_from_discretization(disc::FiniteElementDiscretiza
     if !haskey(disc.interpolations, sym)
         error("Finite element discretization does not have an interpolation for $sym. Available symbols: $(collect(keys(disc.interpolations))).")
     end
-    intorder = getorder(disc.interpolations[sym])
-    return FacetQuadratureRuleCollection(max(2intorder-1,2))
+    intorder = getorder(_extract_ipc(disc.interpolations[sym]))
+    return FacetQuadratureRuleCollection(intorder)
 end
 
 semidiscretize(::CoupledModel, discretization, mesh::AbstractGrid) = @error "No implementation for the generic discretization of coupled problems available yet."

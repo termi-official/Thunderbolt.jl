@@ -282,9 +282,10 @@ end
 function material_routine(material_model::LinearMaxwellMaterial, F::Tensor{2}, coefficients, εᵛ)
     function stress_function(material::LinearMaxwellMaterial, ε, εᵛ)
         (; E₀, E₁, μ, η₁, ν) = material_model
-        I = one(F)
+        I = one(ε)
         c₁ = ν / ((ν + 1)*(1-2ν)) * I ⊗ I
-        ℂ = c₁ + 1 / (1+ν) * one(c₁)
+        c₂ = 1 / (1+ν) * one(c₁)
+        ℂ = c₁ + c₂
         return (E₀ + E₁)* ℂ , E₀ * ℂ ⊡ ε + E₁ * ℂ ⊡ (ε - εᵛ)
     end
 

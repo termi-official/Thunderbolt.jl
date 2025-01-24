@@ -57,7 +57,7 @@ function nlsolve!(u::AbstractVector, f::AbstractSemidiscreteFunction, mlcache::M
         u[1:ndofs(op.dh)] .-= Δu # Current guess
 
         if cache.iter > 0
-            Θk =residualnorm/residualnormprev
+            Θk = residualnorm/residualnormprev
             push!(Θks, isnan(Θk) ? Inf : Θk)
             if Θk ≥ 1.0
                 @debug "Newton-Raphson diverged. Aborting. ||r|| = $residualnorm" _group=:nlsolve

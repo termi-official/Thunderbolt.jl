@@ -162,7 +162,7 @@ end
 end
 
 @testset "Viscoelasticity" begin
-    mesh = generate_mesh(Hexahedron, (2,1,1))
+    mesh = generate_mesh(Hexahedron, (1,1,1))
     material = Thunderbolt.LinearMaxwellMaterial(
         E₀ = 70e3,
         E₁ = 20e3,
@@ -182,11 +182,12 @@ end
     quasistaticform = semidiscretize(
         QuasiStaticModel(:d, material, ()),
         FiniteElementDiscretization(
-            Dict(:d => LagrangeCollection{1}()^3),
+            Dict(:d => (LagrangeCollection{1}()^3 => QuadratureRuleCollection(1))),
             dbcs,
         ),
         mesh
     )
+    @test solution_size(quasistaticform) == 3 * 8 + 1 * 9
     problem = QuasiStaticProblem(quasistaticform, tspan)
 
     # Create sparse matrix and residual vector
@@ -197,4 +198,6 @@ end
         )
     )
     integrator = init(problem, timestepper, dt=Δt, verbose=true)
+    solve!(integrator)
+    @test integrator.sol.retcode == Thunderbolt.SciMLBase.ReturnCode.Success
 end
