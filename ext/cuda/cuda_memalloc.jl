@@ -1,8 +1,14 @@
+# This file contains the cuda implementation for `device_memalloc.jl` in the `ferrite-addons` module.
 
-## shared memory allocation ##
+#############################
+# Shared Memory Allocation  #
+#############################
+
+# since shared memory allocation has to be done at the kernel level, 
+#we need to define a function that will be called at the kernel level
 struct DynamicSharedMemFunction{N, Tv <: Real, Ti <: Integer}
-    mem_size::NTuple{N, Ti}
-    offset::Ti
+    mem_size::NTuple{N, Ti} # e.g. (3rd order tensor, 2nd order tensor)
+    offset::Ti # nonzero when memory shape is of type KeFe 
 end
 
 
@@ -12,13 +18,23 @@ function (dsf::DynamicSharedMemFunction{N, Tv, Ti})() where {N, Tv, Ti}
     return CUDA.@cuDynamicSharedMem(Tv, mem_size, offset)
 end
 
-struct SharedMemAlloc{N, M, Tv <: Real, Ti <: Integer} <: AbstractDeviceSharedMemAlloc
+struct KeFeSharedMem{N, M, Tv <: Real, Ti <: Integer} <: AbstractDeviceSharedMem
     Ke::DynamicSharedMemFunction{N, Tv, Ti} ## block level allocation (i.e. each block will execute this function)
     fe::DynamicSharedMemFunction{M, Tv, Ti} ## block level allocation (i.e. each block will execute this function)
     tot_mem_size::Ti
 end
 
-Thunderbolt.FerriteUtils.mem_size(alloc::SharedMemAlloc) = alloc.tot_mem_size
+struct FeSharedMem{N, Tv <: Real, Ti <: Integer} <: AbstractDeviceSharedMem
+    fe::DynamicSharedMemFunction{N, Tv, Ti} ## block level allocation (i.e. each block will execute this function)
+    tot_mem_size::Ti
+end
+
+struct KeSharedMem{N, Tv <: Real, Ti <: Integer} <: AbstractDeviceSharedMem
+    Ke::DynamicSharedMemFunction{N, Tv, Ti} ## block level allocation (i.e. each block will execute this function)
+    tot_mem_size::Ti
+end
+
+FerriteUtils.mem_size(alloc::KeFeSharedMem) = alloc.tot_mem_size
 
 
 function _can_use_dynshmem(required_shmem::Integer)
@@ -28,56 +44,102 @@ function _can_use_dynshmem(required_shmem::Integer)
 end
 
 
-function Thunderbolt.FerriteUtils.try_allocate_shared_mem(::Type{FullObject{Tv}}, block_dim::Ti, n_basefuncs::Ti) where {Ti <: Integer, Tv <: Real}
+function FerriteUtils.try_allocate_shared_mem(::Type{KeFeMemShape{Tv}}, block_dim::Ti, n_basefuncs::Ti) where {Ti <: Integer, Tv <: Real}
     shared_mem = convert(Ti, sizeof(Tv) * (block_dim) * (n_basefuncs) * n_basefuncs + sizeof(Tv) * (block_dim) * n_basefuncs)
     _can_use_dynshmem(shared_mem) || return nothing
     Ke = DynamicSharedMemFunction{3, Tv, Ti}((block_dim, n_basefuncs, n_basefuncs), convert(Ti, 0))
     fe = DynamicSharedMemFunction{2, Tv, Ti}((block_dim, n_basefuncs), convert(Ti, sizeof(Tv) * block_dim * n_basefuncs * n_basefuncs))
-    return SharedMemAlloc(Ke, fe, shared_mem)
+    return KeFeSharedMem(Ke, fe, shared_mem)
 end
 
-struct SharedRHSMemAlloc{N, Tv <: Real, Ti <: Integer} <: AbstractDeviceSharedMemAlloc
-    fe::DynamicSharedMemFunction{N, Tv, Ti} ## block level allocation (i.e. each block will execute this function)
-    tot_mem_size::Ti
-end
 
-function Thunderbolt.FerriteUtils.try_allocate_shared_mem(::Type{RHSObject{Tv}}, block_dim::Ti, n_basefuncs::Ti) where {Ti <: Integer, Tv <: Real}
+function FerriteUtils.try_allocate_shared_mem(::Type{FeMemShape{Tv}}, block_dim::Ti, n_basefuncs::Ti) where {Ti <: Integer, Tv <: Real}
     shared_mem = convert(Ti, sizeof(Tv) * (block_dim) * n_basefuncs)
     _can_use_dynshmem(shared_mem) || return nothing
     fe = DynamicSharedMemFunction{2, Tv, Ti}((block_dim, n_basefuncs), convert(Ti, 0))
-    return SharedRHSMemAlloc( fe, shared_mem)
+    return FeSharedMem( fe, shared_mem)
 end
 
-function Thunderbolt.FerriteUtils.try_allocate_shared_mem(::Type{JacobianObject{Tv}}, block_dim::Ti, n_basefuncs::Ti) where {Ti <: Integer, Tv <: Real}
-    error("Not implemented")
+function FerriteUtils.try_allocate_shared_mem(::Type{KeMemShape{Tv}}, block_dim::Ti, n_basefuncs::Ti) where {Ti <: Integer, Tv <: Real}
+    shared_mem = convert(Ti, sizeof(Tv) * (block_dim) * (n_basefuncs) * n_basefuncs)
+    _can_use_dynshmem(shared_mem) || return nothing
+    Ke = DynamicSharedMemFunction{3, Tv, Ti}((block_dim, n_basefuncs, n_basefuncs), convert(Ti, 0))
+    return KeSharedMem(Ke, shared_mem)
 end
 
+#############################
+# Global Memory Allocation  #
+#############################
 
-## global memory allocation ##
-struct GlobalMemAlloc{LOCAL_MATRICES, LOCAL_VECTORS} <: AbstractDeviceGlobalMemAlloc
+struct KeFeGlobalMem{LOCAL_MATRICES, LOCAL_VECTORS} <: AbstractDeviceGlobalMem
     Kes::LOCAL_MATRICES ## global level allocation (i.e. memory for all blocks -> 3rd order tensor)
     fes::LOCAL_VECTORS  ## global level allocation (i.e. memory for all blocks -> 2nd order tensor)
 end
 
-Thunderbolt.FerriteUtils.cellke(alloc::GlobalMemAlloc, e::Ti) where {Ti <: Integer} = @view alloc.Kes[e, :, :]
-Thunderbolt.FerriteUtils.cellfe(alloc::GlobalMemAlloc, e::Ti) where {Ti <: Integer} = @view alloc.fes[e, :]
-
-
-function Thunderbolt.FerriteUtils.allocate_global_mem(::Type{FullObject{Tv}}, n_cells::Ti, n_basefuncs::Ti) where {Ti <: Integer, Tv <: Real}
-    Kes = CUDA.zeros(Tv, n_cells, n_basefuncs, n_basefuncs)
-    fes = CUDA.zeros(Tv, n_cells, n_basefuncs)
-    return GlobalMemAlloc(Kes, fes)
-end
-
-
-struct GlobalRHSMemAlloc{LOCAL_VECTORS} <: AbstractDeviceGlobalMemAlloc
+struct FeGlobalMem{LOCAL_VECTORS} <: AbstractDeviceGlobalMem
     fes::LOCAL_VECTORS  ## global level allocation (i.e. memory for all blocks -> 2nd order tensor)
 end
 
-Thunderbolt.FerriteUtils.cellfe(alloc::GlobalRHSMemAlloc, e::Ti) where {Ti <: Integer} = @view alloc.fes[e, :]
+struct KeGlobalMem{LOCAL_MATRICES} <: AbstractDeviceGlobalMem
+    Kes::LOCAL_MATRICES ## global level allocation (i.e. memory for all blocks -> 3rd order tensor)
+end
 
 
-function Thunderbolt.FerriteUtils.allocate_global_mem(::Type{RHSObject{Tv}}, n_cells::Ti, n_basefuncs::Ti) where {Ti <: Integer, Tv <: Real}
+function FerriteUtils.allocate_global_mem(::Type{KeFeMemShape{Tv}}, n_cells::Ti, n_basefuncs::Ti) where {Ti <: Integer, Tv <: Real}
+    ## FIXME: since we are using striding here, we only need to allocate memory for the the active threads only
+    Kes = CUDA.zeros(Tv, n_cells, n_basefuncs, n_basefuncs) 
     fes = CUDA.zeros(Tv, n_cells, n_basefuncs)
-    return GlobalRHSMemAlloc( fes)
+    return KeFeGlobalMem(Kes, fes)
+end
+
+function FerriteUtils.allocate_global_mem(::Type{FeMemShape{Tv}}, n_cells::Ti, n_basefuncs::Ti) where {Ti <: Integer, Tv <: Real}
+    ## FIXME: since we are using striding here, we only need to allocate memory for the the active threads only
+    fes = CUDA.zeros(Tv, n_cells, n_basefuncs)
+    return FeGlobalMem( fes)
+end
+
+function FerriteUtils.allocate_global_mem(::Type{KeMemShape{Tv}}, n_cells::Ti, n_basefuncs::Ti) where {Ti <: Integer, Tv <: Real}
+    ## FIXME: since we are using striding here, we only need to allocate memory for the the active threads only
+    Kes = CUDA.zeros(Tv, n_cells, n_basefuncs, n_basefuncs) 
+    return KeGlobalMem(Kes)
+end
+
+
+
+
+##########################
+# Cell Memory Allocation #
+##########################
+
+function FerriteUtils.cellmem(global_mem::KeFeGlobalMem, i::Integer)
+    ke = @view global_mem.Kes[i, :, :]
+    fe = @view global_mem.fes[i, :]
+    return KeFeCellMem(ke, fe)
+end
+function FerriteUtils.cellmem(global_mem::FeGlobalMem, i::Integer)
+    fe = @view global_mem.fes[i, :]
+    return FeCellMem(fe)
+end
+function FerriteUtils.cellmem(global_mem::KeGlobalMem, i::Integer)
+    ke = @view global_mem.Kes[i, :, :]
+    return KeCellMem(ke)
+end
+
+
+function FerriteUtils.cellmem(shared_mem::KeFeSharedMem, i::Integer)
+    block_ke = shared_mem.Ke()
+    block_fe = shared_mem.fe()
+    ke = @view block_ke[i, :, :] 
+    fe = @view block_fe[i, :]
+    return KeFeCellMem(ke, fe)
+end
+function FerriteUtils.cellmem(shared_mem::FeSharedMem, i::Integer)
+    block_fe = shared_mem.fe()
+    fe = @view block_fe[i, :]
+    return FeCellMem(fe)
+end
+function FerriteUtils.cellmem(shared_mem::KeSharedMem, i::Integer)
+    block_ke = shared_mem.Ke()
+    ke = @view block_ke[i, :, :] 
+    return KeCellMem(ke)
 end

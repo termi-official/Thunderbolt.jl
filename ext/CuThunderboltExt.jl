@@ -20,10 +20,10 @@ import Thunderbolt:
 import Thunderbolt.FerriteUtils:
     AbstractGlobalMemAlloc, AbstractSharedMemAlloc,
     StaticInterpolationValues,StaticCellValues, try_allocate_shared_mem,
-    CellIterator,allocate_global_mem, RHSObject, mem_size,
+    CellIterator,allocate_global_mem, mem_size, cellmem,
     DeviceDofHandlerData, DeviceSubDofHandlerData, DeviceDofHandler, DeviceGrid,
     cellfe,celldofs, AbstractDeviceGlobalMemAlloc, AbstractDeviceSharedMemAlloc,
-    RHSObject, JacobianObject, FullObject, DeviceCellIterator,DeviceOutOfBoundCellIterator,DeviceCellCache
+    FeMemShape, KeMemShape, KeFeMemShape, DeviceCellIterator,DeviceOutOfBoundCellIterator,DeviceCellCache
 
 import Ferrite:
     AbstractDofHandler,get_grid,CellIterator

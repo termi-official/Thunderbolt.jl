@@ -1,33 +1,10 @@
 
+# This file contains the cuda implementation for `device_iterator.jl` in the `ferrite-addons` module.
+# this iterator can iterates over all cells in the grid or in a subdomain depends on the subdomain index (sdh_idx = -1 -> all cells, otherwise index of the subdomain)
+# it takes in its constructor the `mem_alloc` which is the memory allocation for the entire group and 
+# from it extracts the `cell_mem` which is the memory allocation for each cell (i.e. memory per cell)
 
-_cellmem(buffer_alloc::AbstractDeviceSharedMemAlloc, ::Integer) = error("please provide concrete implementation for $(typeof(buffer_alloc))."))
-
-
-function _cellmem(buffer_alloc::GlobalMemAlloc, i::Integer)
-    ke = cellke(buffer_alloc, i)
-    fe = cellfe(buffer_alloc, i)
-    return FullCellMem(ke, fe)
-end
-function _cellmem(buffer_alloc::GlobalRHSMemAlloc, i::Integer)
-    fe = cellfe(buffer_alloc, i)
-    return RHSCellMem(fe)
-end
-
-_cellmem(buffer_alloc::AbstractDeviceGlobalMemAlloc, ::Integer) = error("please provide concrete implementation for $(typeof(buffer_alloc)).")
-
-function _cellmem(buffer_alloc::SharedMemAlloc, i::Integer)
-    block_ke = buffer_alloc.Ke()
-    block_fe = buffer_alloc.fe()
-    ke = @view block_ke[i, :, :]
-    fe = @view block_fe[i, :]
-    return FullCellMem(ke, fe)
-end
-function _cellmem(buffer_alloc::SharedRHSMemAlloc, i::Integer)
-    block_fe = buffer_alloc.fe()
-    fe = @view block_fe[i, :]
-    return RHSCellMem(fe)
-end
-
+# iterator with no memory allocation (for testing purposes)
 function _cell_iterator(dh::DeviceDofHandlerData,sdh_idx::Integer,n_cells::Integer)
     grid = dh.grid
     bd = blockDim().x
@@ -38,27 +15,31 @@ function _cell_iterator(dh::DeviceDofHandlerData,sdh_idx::Integer,n_cells::Integ
     return DeviceCellIterator(dh, grid, n_cells, cell_mem ,sdh_idx)
 end
 
-function _cell_iterator(dh::DeviceDofHandlerData,sdh_idx::Integer,n_cells::Integer, buffer_alloc::AbstractDeviceGlobalMemAlloc)
+# iterator with global memory allocation
+function _cell_iterator(dh::DeviceDofHandlerData,sdh_idx::Integer,n_cells::Integer, global_mem::AbstractDeviceGlobalMem)
     grid = get_grid(dh)
     bd = blockDim().x
     local_thread_id = threadIdx().x
-    global_thread_id = (blockIdx().x - Int32(1)) * bd + local_thread_id
+    global_thread_id = (blockIdx().x - Int32(1)) * bd + local_thread_id #  FIXME: don't use global thread id
     global_thread_id <= n_cells || return DeviceOutOfBoundCellIterator()
-    cell_mem = _cellmem(buffer_alloc, global_thread_id)
+    cell_mem = cellmem(global_mem, global_thread_id)
     return DeviceCellIterator(dh, grid, n_cells, cell_mem,sdh_idx)
 end
 
-function _cell_iterator(dh::DeviceDofHandlerData,sdh_idx::Integer,n_cells::Integer, buffer_alloc::AbstractDeviceSharedMemAlloc)
+# iterator with shared memory allocation
+function _cell_iterator(dh::DeviceDofHandlerData,sdh_idx::Integer,n_cells::Integer, buffer_alloc::AbstractDeviceSharedMem)
     grid = Ferrite.get_grid(dh)
     local_thread_id = threadIdx().x
-    cell_mem = _cellmem(buffer_alloc, local_thread_id)
+    cell_mem = cellmem(buffer_alloc, local_thread_id)
     return DeviceCellIterator(dh, grid, n_cells, cell_mem,sdh_idx)
 end
 
- 
-Ferrite.CellIterator(dh::DeviceDofHandlerData, buffer_alloc::AbstractDeviceGlobalMemAlloc) = _cell_iterator(dh, -1,  dh |> get_grid |> getncells |> Int32, buffer_alloc) ## iterate over all cells
+# iterator with global memory allocation over the whole grid
+Ferrite.CellIterator(dh::DeviceDofHandlerData, buffer_alloc::AbstractDeviceGlobalMem) = _cell_iterator(dh, -1,  dh |> get_grid |> getncells |> Int32, buffer_alloc) ## iterate over all cells
+# iterator with shared memory allocation over the whole grid
+Ferrite.CellIterator(dh::DeviceDofHandlerData, buffer_alloc::AbstractDeviceSharedMem) = _cell_iterator(dh, -1,dh |> get_grid |> getncells |> Int32, buffer_alloc) ## iterate over all cells
 
-function Ferrite.CellIterator(dh::DeviceDofHandlerData,sdh_idx::Ti, buffer_alloc::AbstractDeviceGlobalMemAlloc) where {Ti <: Integer}
+function Ferrite.CellIterator(dh::DeviceDofHandlerData,sdh_idx::Ti, buffer_alloc::AbstractDeviceGlobalMem) where {Ti <: Integer}
     ## iterate over all cells in the subdomain
     # check if the subdomain index is valid
     sdh_idx ∉ 1:length(dh.subdofhandlers) && return DeviceOutOfBoundCellIterator()
@@ -74,9 +55,6 @@ function Ferrite.CellIterator(dh::DeviceDofHandlerData,sdh_idx::Ti) where {Ti <:
     return _cell_iterator(dh, sdh_idx,n_cells)
 end
 
-Ferrite.CellIterator(dh::DeviceDofHandlerData, buffer_alloc::AbstractDeviceSharedMemAlloc) = _cell_iterator(dh, -1,dh |> get_grid |> getncells |> Int32, buffer_alloc) ## iterate over all cells
-   
-
 function Ferrite.CellIterator(dh::DeviceDofHandlerData,sdh_idx::Integer, buffer_alloc::AbstractDeviceSharedMemAlloc)
     ## iterate over all cells in the subdomain
     # check if the subdomain index is valid
@@ -84,7 +62,7 @@ function Ferrite.CellIterator(dh::DeviceDofHandlerData,sdh_idx::Integer, buffer_
     n_cells = dh.subdofhandlers[sdh_idx].cellset |> length |> (x -> convert(typeof(dh.ndofs), x))  
     return _cell_iterator(dh, sdh_idx,n_cells, buffer_alloc)
 end
-
+   
 
 function Base.iterate(iterator::DeviceCellIterator)
     i = (blockIdx().x - Int32(1)) * blockDim().x + threadIdx().x
@@ -104,8 +82,6 @@ end
 Base.iterate(::DeviceOutOfBoundCellIterator) = nothing
 
 Base.iterate(::DeviceOutOfBoundCellIterator, state) = nothing # I believe this is not necessary
-
-
 
 
 

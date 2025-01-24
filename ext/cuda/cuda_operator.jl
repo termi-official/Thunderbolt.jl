@@ -39,7 +39,7 @@ function _init_linop_cuda(linop::LinearOperator)
     mem_alloc = try_allocate_shared_mem(RHSObject{Float32}, threads, n_basefuncs)
     mem_alloc isa Nothing || return CudaOperatorKernel(linop, threads, blocks, mem_alloc,eles_caches)
 
-    mem_alloc =allocate_global_mem(RHSObject{Float32}, n_cells, n_basefuncs)
+    mem_alloc =allocate_global_mem(RHSObject{Float32}, n_cells, n_basefuncs) # FIXME: we should send threads * blocks instead of n_cells
     return CudaOperatorKernel(linop, threads, blocks, mem_alloc,eles_caches)
 end
 

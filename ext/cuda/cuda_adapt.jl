@@ -1,4 +1,4 @@
-@adapt_structure GlobalMemAlloc
+@adapt_structure KeFeGlobalMem
 @adapt_structure CUDACellIterator 
 
 function Adapt.adapt_structure(to, element_cache::AnalyticalCoefficientElementCache)
