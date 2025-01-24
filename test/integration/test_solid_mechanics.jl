@@ -170,8 +170,8 @@ end
         η₁ = 1e3,
         ν  = 0.3,
     )
-    tspan = (0.0,300.0)
-    Δt = 100.0
+    tspan = (0.0,1.0)
+    Δt = 0.1
 
     # Clamp three sides
     dbcs = [
@@ -187,7 +187,7 @@ end
         ),
         mesh
     )
-    @test solution_size(quasistaticform) == 3 * 8 + 1 * 9
+    @test solution_size(quasistaticform) == 3 * 8 + 1 * 6 # Symmetric Tensor has 6 components
     problem = QuasiStaticProblem(quasistaticform, tspan)
 
     # Create sparse matrix and residual vector
@@ -198,6 +198,14 @@ end
         )
     )
     integrator = init(problem, timestepper, dt=Δt, verbose=true)
-    solve!(integrator)
+    # This setup is essentially a creep test in x direction, so we check for the invariants in there
+    for (uprev, tprev, u, t) in Thunderbolt.SciMLBase.intervals(integrator)
+        # Monotonicity of the solution in x direction
+        @test uprev[3*8 + 1] ≤ u[3*8 + 1]
+        # Linear problem => check that Newton converges in 1 step.
+        @test length(integrator.cache.stage.nlsolver.global_solver_cache.Θks) == 1
+    end
     @test integrator.sol.retcode == Thunderbolt.SciMLBase.ReturnCode.Success
+    @test integrator.u[3*8 + 1] ≈ 0.05 atol=1e-5
+    @test integrator.u[(3*8 + 2) : end] ≈ zeros(5) atol=1e-5
 end

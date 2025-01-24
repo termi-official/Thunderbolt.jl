@@ -244,7 +244,7 @@ function _query_local_state(cache::GenericFirstOrderRateIndependentMaterialState
     dh = cache.lvh.dh
     dofs = Thunderbolt.celldofsview(dh, cellid(geometry_cache))
     # TODO properly via gather_internal_variable_infos :)
-    size = 9
+    size = 6
     range_begin = 1+(qp.i-1)*size
     range_end   = qp.i*size
     cache.localQ     .= cache.Q[range_begin:range_end]
@@ -253,11 +253,11 @@ function _query_local_state(cache::GenericFirstOrderRateIndependentMaterialState
     return cache.localQ, cache.localQprev
 end
 
-function _store_local_state!(cache::GenericFirstOrderRateIndependentMaterialStateCache, geometry_cache, qp, Q)
+function _store_local_state!(cache::GenericFirstOrderRateIndependentMaterialStateCache, geometry_cache, qp)
     dh = cache.lvh.dh
     dofs = Thunderbolt.celldofsview(dh, cellid(geometry_cache))
     # TODO properly via gather_internal_variable_infos :)
-    size = 9
+    size = 6
     range_begin = 1+(qp.i-1)*size
     range_end   = qp.i*size
     cache.Q[range_begin:range_end] .= cache.localQ
@@ -266,22 +266,75 @@ function _store_local_state!(cache::GenericFirstOrderRateIndependentMaterialStat
 end
 
 function solve_local_constraint(F::Tensor{2,dim}, coefficients, material_model::LinearMaxwellMaterial, state_cache::GenericFirstOrderRateIndependentMaterialStateCache, geometry_cache, qp, time) where dim
+    # Concept only for now.
+    function solve_internal_timestep(material::LinearMaxwellMaterial, state_cache::GenericFirstOrderRateIndependentMaterialStateCache, ε, εᵛflat, εᵛprevflat)
+        @unpack Δt = state_cache
+        εᵛ₁ = SymmetricTensor{2,dim}(εᵛflat)
+        εᵛ₀ = SymmetricTensor{2,dim}(εᵛprevflat)
+        #     dεᵛdt = E₁/η₁ c : (ε - εᵛ)
+        # <=> (εᵛ₁ - εᵛ₀) / Δt = E₁/η₁ c : (ε - εᵛ₁) = E₁/η₁ c : ε - E₁/η₁ c : εᵛ₁
+        # <=> εᵛ₁ / Δt + E₁/η₁ c : εᵛ₁ = εᵛ₀/Δt + E₁/η₁ c : ε
+        # <=> (𝐈 / Δt + E₁/η₁ c) : εᵛ₁ = εᵛ₀/Δt + E₁/η₁ c : ε
+
+        (; E₀, E₁, μ, η₁, ν) = material
+        I = one(ε)
+        c₁ = ν / ((ν + 1)*(1-2ν)) * I ⊗ I
+        c₂ = 1 / (1+ν) * one(c₁)
+        ℂ = c₁ + c₂
+
+        # FIXME non-allocating version by using state_cache nlsolver
+        A = tomandel(one(ℂ)/Δt + E₁/η₁ * ℂ)
+        b = tomandel(εᵛ₀/Δt + E₁/η₁ * ℂ ⊡ ε)
+        return frommandel(typeof(ε), A \ b)
+    end
+
     Qflat, Qprevflat = _query_local_state(state_cache, geometry_cache, qp)
+    ε = symmetric(F - one(F))
+    Q = solve_internal_timestep(material_model, state_cache, ε, Qflat, Qprevflat)
+    # FIXME non-allocating version
+    Qflat .= tovoigt(Q)
+    _store_local_state!(state_cache, geometry_cache, qp)
 
-    Q = Tensor{2,dim}(Qflat)
-    Qprev = Tensor{2,dim}(Qprevflat)
+    # Corrector
+    # Concept only for now.
+    function solve_internal_timestep_corrector(material::LinearMaxwellMaterial, state_cache::GenericFirstOrderRateIndependentMaterialStateCache, ε, εᵛflat, εᵛprevflat)
+        @unpack Δt = state_cache
+        εᵛ₁ = SymmetricTensor{2,dim}(εᵛflat)
+        εᵛ₀ = SymmetricTensor{2,dim}(εᵛprevflat)
+        # Local problem: (𝐈 / Δt + E₁/η₁ c) : εᵛ₁ = εᵛ₀/Δt + E₁/η₁ c : ε
+        # =>  dLdQ = 𝐈 / Δt + E₁/η₁ c   := A
+        # => -dLdF = E₁/η₁ c            := B
 
-    # TODO update Q and compute actual tangent
-    ∂P∂QdQdF = zero(Tensor{4,dim})
+        (; E₀, E₁, μ, η₁, ν) = material
+        I = one(ε)
+        c₁ = ν / ((ν + 1)*(1-2ν)) * I ⊗ I
+        c₂ = 1 / (1+ν) * one(c₁)
+        ℂ = c₁ + c₂
 
-    _store_local_state!(state_cache, geometry_cache, qp, Q)
+        # FIXME non-allocating version by using state_cache nlsolver
+        A = tomandel(one(ℂ)/Δt + E₁/η₁ * ℂ)
+        B = tomandel(E₁/η₁ * ℂ)
+        return frommandel(typeof(ℂ), A \ B)
+    end
+    dQdF = solve_internal_timestep_corrector(material_model, state_cache, ε, Qflat, Qprevflat)
 
-    return Q, ∂P∂QdQdF
+    function stress_function(material::LinearMaxwellMaterial, ε, εᵛ)
+        (; E₀, E₁, μ, η₁, ν) = material
+        I = one(ε)
+        c₁ = ν / ((ν + 1)*(1-2ν)) * I ⊗ I
+        c₂ = 1 / (1+ν) * one(c₁)
+        ℂ = c₁ + c₂
+        return E₀ * ℂ ⊡ ε + E₁ * ℂ ⊡ (ε - εᵛ)
+    end
+    ε = symmetric(F - one(F))
+    ∂P∂Q = Tensors.gradient(εᵛ->stress_function(material_model, ε, εᵛ), Q)
+
+    return Q, ∂P∂Q ⊡ dQdF
 end
 
 function material_routine(material_model::LinearMaxwellMaterial, F::Tensor{2}, coefficients, εᵛ)
     function stress_function(material::LinearMaxwellMaterial, ε, εᵛ)
-        (; E₀, E₁, μ, η₁, ν) = material_model
+        (; E₀, E₁, μ, η₁, ν) = material
         I = one(ε)
         c₁ = ν / ((ν + 1)*(1-2ν)) * I ⊗ I
         c₂ = 1 / (1+ν) * one(c₁)
@@ -301,5 +354,5 @@ function setup_coefficient_cache(m::LinearMaxwellMaterial, qr::QuadratureRule, s
 end
 
 function gather_internal_variable_infos(model::LinearMaxwellMaterial)
-    return (InternalVariableInfo(:εᵛ, 9),) # TODO iterator
+    return (InternalVariableInfo(:εᵛ, 6),) # TODO iterator and dimension info
 end
