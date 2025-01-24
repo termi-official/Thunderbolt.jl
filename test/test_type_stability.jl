@@ -34,7 +34,7 @@
                     PelceSunLangeveld1995Model(;calcium_field=ConstantCoefficient(1.0)),
                     fsncoeff,
                 )
-                @test_opt Thunderbolt.material_routine(model, F, fsneval, Caᵢ)
+                @test_opt Thunderbolt.stress_and_tangent(model, F, fsneval, Caᵢ)
             end
         end
 
@@ -58,7 +58,7 @@
                             contraction_model,
                             fsncoeff,
                         )
-                        @test_opt Thunderbolt.material_routine(model, F, fsneval, Caᵢ)
+                        @test_opt Thunderbolt.stress_and_tangent(model, F, fsneval, Caᵢ)
                     end
                 end
             end
