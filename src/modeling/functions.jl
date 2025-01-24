@@ -84,7 +84,7 @@ abstract type AbstractQuasiStaticFunction <: AbstractSemidiscreteFunction end
 A discrete nonlinear (possibly multi-level) problem with time dependent terms.
 Abstractly written we want to solve the problem G(u, q, t) = 0, L(u, q, dₜq, t) = 0 on some time interval [t₁, t₂].
 """
-struct QuasiStaticFunction{I <: NonlinearIntegrator, DH <: Ferrite.AbstractDofHandler, CH <: ConstraintHandler, LVH <: LocalVariableHandler} <: AbstractQuasiStaticFunction
+struct QuasiStaticFunction{I <: NonlinearIntegrator, DH <: Ferrite.AbstractDofHandler, CH <: ConstraintHandler, LVH <: InternalVariableHandler} <: AbstractQuasiStaticFunction
     dh::DH
     ch::CH
     lvh::LVH

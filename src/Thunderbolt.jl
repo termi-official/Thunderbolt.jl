@@ -51,7 +51,7 @@ include("utils.jl")
 
 include("mesh/meshes.jl")
 
-include("ferrite-addons/LocalVariableHandler.jl")
+include("ferrite-addons/InternalVariableHandler.jl")
 include("ferrite-addons/transfer_operators.jl")
 include("ferrite-addons/gpu/gpugrid.jl")
 include("ferrite-addons/gpu/gpudofhandler.jl")

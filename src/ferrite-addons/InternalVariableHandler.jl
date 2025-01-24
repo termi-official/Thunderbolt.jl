@@ -1,15 +1,15 @@
-struct LocalVariableInfo
+struct InternalVariableInfo
     name::Symbol
     size::Int
 end
 
-# struct SubLocalVariableHandler
+# struct SubInternalVariableHandler
 #     names::Vector{Symbol} # Contains symbols for all variables in the handler
 #     local_ranges::Vector{UnitRange{Int}} # Step at given point
 #     subdomain_ranges::Vector{StepRange{Int,Int}} # Full range of indices per subdomain per element
 # end
 
-# function add!(slvh::SubLocalVariableHandler, info::LocalVariableInfo, qr::QuadratureRule, nel::Int)
+# function add!(slvh::SubInternalVariableHandler, info::InternalVariableInfo, qr::QuadratureRule, nel::Int)
 #     @assert info.name ∉ slvh.names "Trying to register local variable $(info.name) twice. Registered variables: $(slvh.names)."
 
 #     push(slvh.names, info.name)
@@ -31,18 +31,18 @@ end
 # end
 
 # """
-#     LocalVariableHandler(...)
+#     InternalVariableHandler(...)
 
 # Handler for variables without associated field. Also called "internal variable".
 # """
-# struct LocalVariableHandler{M} #<: AbstractDofHandler
+# struct InternalVariableHandler{M} #<: AbstractDofHandler
 #     mesh::M
-#     sublvhandlers::Vector{SubLocalVariableHandler} # Must mirror corresponding SubDofHandler index structure
+#     sublvhandlers::Vector{SubInternalVariableHandler} # Must mirror corresponding SubDofHandler index structure
 # end
 
-# SubLocalVariableHandler() = SubLocalVariableHandler(Symbol[], Vector{Vector{Int}}(), Vector{StepRange{Int,Int}}(), Vector{Vector{Int}}())
-# LocalVariableHandler(mesh) = LocalVariableHandler(mesh, SubLocalVariableHandler[])
-# ndofs(lvh::LocalVariableHandler) = length(lvh.subdomain_ranges) > 0 ? last(last(lvh.subdomain_ranges)) : 0
+# SubInternalVariableHandler() = SubInternalVariableHandler(Symbol[], Vector{Vector{Int}}(), Vector{StepRange{Int,Int}}(), Vector{Vector{Int}}())
+# InternalVariableHandler(mesh) = InternalVariableHandler(mesh, SubInternalVariableHandler[])
+# ndofs(lvh::InternalVariableHandler) = length(lvh.subdomain_ranges) > 0 ? last(last(lvh.subdomain_ranges)) : 0
 
 # function local_dofrange(elementid::Int, sym::Symbol, qp::QuadraturePoint)
 #     # Well...
@@ -50,12 +50,12 @@ end
 
 # This is the easiest solution for now
 # TODO optimize.
-struct LocalVariableHandler{DH} <: AbstractDofHandler
+struct InternalVariableHandler{DH} <: AbstractDofHandler
     dh::DH
 end
-LocalVariableHandler(mesh::SimpleMesh) = LocalVariableHandler(DofHandler(mesh))
-Ferrite.close!(lvh::LocalVariableHandler) = close!(lvh.dh)
-Ferrite.ndofs(lvh::LocalVariableHandler) = ndofs(lvh.dh)
+InternalVariableHandler(mesh::SimpleMesh) = InternalVariableHandler(DofHandler(mesh))
+Ferrite.close!(lvh::InternalVariableHandler) = close!(lvh.dh)
+Ferrite.ndofs(lvh::InternalVariableHandler) = ndofs(lvh.dh)
 
 # Utils to visualize local variables
 struct QuadratureInterpolation{RefShape, QR <: QuadratureRule{RefShape}} <: Ferrite.ScalarInterpolation{RefShape, -1}
@@ -77,7 +77,7 @@ function Ferrite.reference_shape_value(ip::QuadratureInterpolation, ::Vec, i::In
     throw(ArgumentError("shape function evaluation for interpolation $ip not implemented yet"))
 end
 
-function add_subdomain!(lvh::LocalVariableHandler, name::String, ivis #=::Vector{LocalVariableInfo}=#, qrc::QuadratureRuleCollection, compatible_dh::DofHandler)
+function add_subdomain!(lvh::InternalVariableHandler, name::String, ivis #=::Vector{InternalVariableInfo}=#, qrc::QuadratureRuleCollection, compatible_dh::DofHandler)
     (; dh) = lvh
     mesh   = get_grid(dh)
     cells = mesh.grid.cells

@@ -158,7 +158,7 @@ function semidiscretize(model::QuasiStaticModel, discretization::FiniteElementDi
     ipc = _get_interpolation_from_discretization(discretization, sym)
     qrc = _get_quadrature_from_discretization(discretization, sym)
     dh = DofHandler(mesh)
-    lvh = LocalVariableHandler(mesh)
+    lvh = InternalVariableHandler(mesh)
     for name in discretization.subdomains
         add_subdomain!(dh, name, [ApproximationDescriptor(sym, ipc)])
         add_subdomain!(lvh, name, gather_internal_variable_infos(model.material_model), qrc, dh)
