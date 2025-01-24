@@ -317,8 +317,8 @@ function perform_backward_euler_step!(f::QuasiStaticFunction, cache::BackwardEul
     return true
 end
 
-function setup_internal_cache(wrapper::BackwardEulerStageFunctionWrapper, qr::QuadratureRule, sdh::SubDofHandler)
-    n_ivs_per_qp = 6 # TODO compute
+function setup_internal_cache(wrapper::BackwardEulerStageFunctionWrapper{<:QuasiStaticModel}, qr::QuadratureRule, sdh::SubDofHandler)
+    n_ivs_per_qp = local_function_size(wrapper.f.material_model)
     return GenericFirstOrderRateIndependentMaterialStateCache(
         wrapper.f,
         wrapper.u,

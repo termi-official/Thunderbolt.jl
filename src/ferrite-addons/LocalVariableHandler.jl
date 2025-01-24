@@ -1,4 +1,4 @@
-struct InternalVariableInfo
+struct LocalVariableInfo
     name::Symbol
     size::Int
 end
@@ -9,7 +9,7 @@ end
 #     subdomain_ranges::Vector{StepRange{Int,Int}} # Full range of indices per subdomain per element
 # end
 
-# function add!(slvh::SubLocalVariableHandler, info::InternalVariableInfo, qr::QuadratureRule, nel::Int)
+# function add!(slvh::SubLocalVariableHandler, info::LocalVariableInfo, qr::QuadratureRule, nel::Int)
 #     @assert info.name ∉ slvh.names "Trying to register local variable $(info.name) twice. Registered variables: $(slvh.names)."
 
 #     push(slvh.names, info.name)
@@ -77,7 +77,7 @@ function Ferrite.reference_shape_value(ip::QuadratureInterpolation, ::Vec, i::In
     throw(ArgumentError("shape function evaluation for interpolation $ip not implemented yet"))
 end
 
-function add_subdomain!(lvh::LocalVariableHandler, name::String, ivis #=::Vector{InternalVariableInfo}=#, qrc::QuadratureRuleCollection, compatible_dh::DofHandler)
+function add_subdomain!(lvh::LocalVariableHandler, name::String, ivis #=::Vector{LocalVariableInfo}=#, qrc::QuadratureRuleCollection, compatible_dh::DofHandler)
     (; dh) = lvh
     mesh   = get_grid(dh)
     cells = mesh.grid.cells

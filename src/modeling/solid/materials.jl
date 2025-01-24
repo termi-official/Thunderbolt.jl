@@ -240,27 +240,42 @@ struct GenericFirstOrderRateIndependentMaterialStateCache{LocalModelType, QType,
     localQprev::QType2
 end
 
-function _query_local_state(cache::GenericFirstOrderRateIndependentMaterialStateCache, geometry_cache, qp)
-    dh = cache.lvh.dh
-    dofs = Thunderbolt.celldofsview(dh, cellid(geometry_cache))
-    # TODO properly via gather_internal_variable_infos :)
-    size = 6
-    range_begin = 1+(qp.i-1)*size
-    range_end   = qp.i*size
-    cache.localQ     .= cache.Q[range_begin:range_end]
-    cache.localQprev .= cache.Qprev[range_begin:range_end]
-
-    return cache.localQ, cache.localQprev
+local_function_size(model::QuasiStaticModel) = local_function_size(model.material_model)
+function local_function_size(model::AbstractMaterialModel)
+    return _compute_local_function_size(0, gather_local_variable_infos(model))
 end
 
-function _store_local_state!(cache::GenericFirstOrderRateIndependentMaterialStateCache, geometry_cache, qp)
-    dh = cache.lvh.dh
-    dofs = Thunderbolt.celldofsview(dh, cellid(geometry_cache))
-    # TODO properly via gather_internal_variable_infos :)
-    size = 6
+function _compute_local_function_size(total, lvis::Tuple)
+    for lvi in lvis
+        total += _compute_local_function_size(total, lvi)
+    end
+    return total
+end
+
+function _compute_local_function_size(total, lvi::LocalVariableInfo)
+    return lvi.size
+end
+
+function _query_local_state(state_cache::GenericFirstOrderRateIndependentMaterialStateCache, geometry_cache, qp)
+    dh = state_cache.lvh.dh
+    dofs = celldofsview(dh, cellid(geometry_cache))
+    size = local_function_size(state_cache.model)
     range_begin = 1+(qp.i-1)*size
     range_end   = qp.i*size
-    cache.Q[range_begin:range_end] .= cache.localQ
+    state_cache.localQ     .= state_cache.Q[range_begin:range_end]
+    state_cache.localQprev .= state_cache.Qprev[range_begin:range_end]
+
+    return state_cache.localQ, state_cache.localQprev
+end
+
+function _store_local_state!(state_cache::GenericFirstOrderRateIndependentMaterialStateCache, geometry_cache, qp)
+    dh = state_cache.lvh.dh
+    dofs = celldofsview(dh, cellid(geometry_cache))
+    # TODO properly via gather_local_variable_infos :)
+    size = local_function_size(state_cache.model)
+    range_begin = 1+(qp.i-1)*size
+    range_end   = qp.i*size
+    state_cache.Q[range_begin:range_end] .= state_cache.localQ
 
     return nothing
 end
@@ -353,6 +368,6 @@ function setup_coefficient_cache(m::LinearMaxwellMaterial, qr::QuadratureRule, s
     return NoMicrostructureModel() # FIXME what should we do here? :)
 end
 
-function gather_internal_variable_infos(model::LinearMaxwellMaterial)
-    return (InternalVariableInfo(:εᵛ, 6),) # TODO iterator and dimension info
+function gather_local_variable_infos(model::LinearMaxwellMaterial)
+    return (LocalVariableInfo(:εᵛ, 6),) # TODO iterator and dimension info
 end
