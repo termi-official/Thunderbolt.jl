@@ -83,7 +83,7 @@ end
 
 (op_ker::CudaOperatorKernel)(time) = update_operator!(op_ker.op, time)
 
-function Thunderbolt.update_operator!(op_ker::CudaOperatorKernel, time)
+function Thunderbolt.update_operator!(op_ker::CudaOperatorKernel{<:LinearOperator}, time)
     @unpack op, threads, blocks, mem_alloc,eles_caches = op_ker
     @unpack b, qrc, dh, integrand  = op
     ker = () -> _update_linear_operator_kernel!(b, dh, eles_caches,mem_alloc, time)
