@@ -3,6 +3,7 @@
 ############
 Adapt.@adapt_structure QuadratureValuesIterator
 Adapt.@adapt_structure StaticQuadratureValues
+Adapt.@adapt_structure DeviceCellIterator 
 
 function Adapt.adapt_structure(to, cv::CellValues)
     fv = Adapt.adapt(to, StaticInterpolationValues(cv.fun_values))

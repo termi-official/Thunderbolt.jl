@@ -83,22 +83,20 @@ struct KeGlobalMem{LOCAL_MATRICES} <: AbstractDeviceGlobalMem
 end
 
 
-function Thunderbolt.FerriteUtils.allocate_global_mem(::Type{KeFeMemShape{Tv}}, n_cells::Ti, n_basefuncs::Ti) where {Ti <: Integer, Tv <: Real}
-    ## FIXME: since we are using striding here, we only need to allocate memory for the the active threads only
-    Kes = CUDA.zeros(Tv, n_cells, n_basefuncs, n_basefuncs) 
-    fes = CUDA.zeros(Tv, n_cells, n_basefuncs)
+function Thunderbolt.FerriteUtils.allocate_global_mem(::Type{KeFeMemShape{Tv}}, nactive_cells::Ti, n_basefuncs::Ti) where {Ti <: Integer, Tv <: Real}
+    # allocate memory for the active cells only (i.e. nblocks * threads)
+    Kes = CUDA.zeros(Tv, nactive_cells, n_basefuncs, n_basefuncs) 
+    fes = CUDA.zeros(Tv, nactive_cells, n_basefuncs)
     return KeFeGlobalMem(Kes, fes)
 end
 
-function Thunderbolt.FerriteUtils.allocate_global_mem(::Type{FeMemShape{Tv}}, n_cells::Ti, n_basefuncs::Ti) where {Ti <: Integer, Tv <: Real}
-    ## FIXME: since we are using striding here, we only need to allocate memory for the the active threads only
-    fes = CUDA.zeros(Tv, n_cells, n_basefuncs)
+function Thunderbolt.FerriteUtils.allocate_global_mem(::Type{FeMemShape{Tv}}, nactive_cells::Ti, n_basefuncs::Ti) where {Ti <: Integer, Tv <: Real}
+    fes = CUDA.zeros(Tv, nactive_cells, n_basefuncs)
     return FeGlobalMem( fes)
 end
 
-function Thunderbolt.FerriteUtils.allocate_global_mem(::Type{KeMemShape{Tv}}, n_cells::Ti, n_basefuncs::Ti) where {Ti <: Integer, Tv <: Real}
-    ## FIXME: since we are using striding here, we only need to allocate memory for the the active threads only
-    Kes = CUDA.zeros(Tv, n_cells, n_basefuncs, n_basefuncs) 
+function Thunderbolt.FerriteUtils.allocate_global_mem(::Type{KeMemShape{Tv}}, nactive_cells::Ti, n_basefuncs::Ti) where {Ti <: Integer, Tv <: Real}
+    Kes = CUDA.zeros(Tv, nactive_cells, n_basefuncs, n_basefuncs) 
     return KeGlobalMem(Kes)
 end
 

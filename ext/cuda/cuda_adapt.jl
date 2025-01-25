@@ -1,5 +1,6 @@
 @adapt_structure KeFeGlobalMem
-@adapt_structure DeviceCellIterator 
+@adapt_structure FeGlobalMem
+@adapt_structure KeGlobalMem
 
 function Adapt.adapt_structure(to, element_cache::AnalyticalCoefficientElementCache)
     cc = Adapt.adapt_structure(to, element_cache.cc)

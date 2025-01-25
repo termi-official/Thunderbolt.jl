@@ -20,7 +20,7 @@ function _cell_iterator(dh::DeviceDofHandlerData,sdh_idx::Integer,n_cells::Integ
     grid = get_grid(dh)
     bd = blockDim().x
     local_thread_id = threadIdx().x
-    global_thread_id = (blockIdx().x - Int32(1)) * bd + local_thread_id #  FIXME: don't use global thread id
+    global_thread_id = (blockIdx().x - Int32(1)) * bd + local_thread_id 
     global_thread_id <= n_cells || return DeviceOutOfBoundCellIterator()
     cell_mem = cellmem(global_mem, global_thread_id)
     return DeviceCellIterator(dh, grid, n_cells, cell_mem,sdh_idx)
