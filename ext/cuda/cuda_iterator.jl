@@ -47,15 +47,17 @@ function Ferrite.CellIterator(dh::DeviceDofHandlerData,sdh_idx::Ti, buffer_alloc
     return _cell_iterator(dh, sdh_idx,n_cells,buffer_alloc)
 end
 
+
 function Ferrite.CellIterator(dh::DeviceDofHandlerData,sdh_idx::Ti) where {Ti <: Integer}
     ## iterate over all cells in the subdomain
     # check if the subdomain index is valid
     sdh_idx ∉ 1:length(dh.subdofhandlers) && return DeviceOutOfBoundCellIterator()
-    n_cells = dh.subdofhandlers[sdh_idx].cellset |> length |> (x -> convert(Ti, x)) 
+    n_cells =dh.subdofhandlers[sdh_idx].cellset |> length |> (x -> convert(Ti, x)) 
     return _cell_iterator(dh, sdh_idx,n_cells)
 end
 
-function Ferrite.CellIterator(dh::DeviceDofHandlerData,sdh_idx::Integer, buffer_alloc::AbstractDeviceSharedMemAlloc)
+
+function Ferrite.CellIterator(dh::DeviceDofHandlerData,sdh_idx::Integer, buffer_alloc::AbstractDeviceSharedMem)
     ## iterate over all cells in the subdomain
     # check if the subdomain index is valid
     sdh_idx ∉ 1:length(dh.subdofhandlers) && return DeviceOutOfBoundCellIterator()
@@ -122,9 +124,9 @@ struct HasFe <: AbstractFeTrait end
 struct HasNoFe <: AbstractFeTrait end
 
 KeTrait(::Type{<:AbstractCellMem}) = HasKe()
-KeTrait(::Type{<:RHSCellMem}) = HasNoKe()
+KeTrait(::Type{<:FeMemShape}) = HasNoKe()
 FeTrait(::Type{<:AbstractCellMem}) = HasFe()
-FeTrait(::Type{<:JacobianCellMem}) = HasNoFe()
+FeTrait(::Type{<:KeMemShape}) = HasNoFe()
 
 @inline function _cellke(::HasKe, cc::DeviceCellCache)
     ke =  cc.cell_mem.ke
@@ -133,7 +135,7 @@ end
 
 _cellke(::HasNoKe, ::DeviceCellCache) = error("$(typeof(cc.cell_mem)) does not have ke field.")
 
-cellke(cc::DeviceCellCache) = _cellke(KeTrait(typeof(cc.cell_mem)), cc)
+Thunderbolt.FerriteUtils.cellke(cc::DeviceCellCache) = _cellke(KeTrait(typeof(cc.cell_mem)), cc)
 
 @inline function _cellfe(::HasFe, cc::DeviceCellCache)
     fe =  cc.cell_mem.fe
@@ -142,4 +144,4 @@ end
 
 _cellfe(::HasNoFe, ::DeviceCellCache) = error("$(typeof(cc.cell_mem)) does not have fe field.")
 
-cellfe(cc::DeviceCellCache) = _cellfe(FeTrait(typeof(cc.cell_mem)), cc)
+Thunderbolt.FerriteUtils.cellfe(cc::DeviceCellCache) = _cellfe(FeTrait(typeof(cc.cell_mem)), cc)

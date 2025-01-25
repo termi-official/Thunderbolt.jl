@@ -3,7 +3,7 @@ module CuThunderboltExt
 using Thunderbolt
 
 import CUDA:
-    CUDA, CuArray, CuVector, CUSPARSE,
+    CUDA, CuArray, CuVector, CUSPARSE,blockDim,blockIdx,gridDim,threadIdx,
     threadIdx, blockIdx, blockDim, @cuda, @cushow,
     CUDABackend, launch_configuration, device, cu
 
@@ -18,18 +18,23 @@ import Thunderbolt:
     setup_element_cache,update_operator!,init_linear_operator,FieldCoefficientCache
 
 import Thunderbolt.FerriteUtils:
-    AbstractGlobalMemAlloc, AbstractSharedMemAlloc,
     StaticInterpolationValues,StaticCellValues, try_allocate_shared_mem,
-    CellIterator,allocate_global_mem, mem_size, cellmem,
+    CellIterator,allocate_global_mem, mem_size, cellmem,ncells,
     DeviceDofHandlerData, DeviceSubDofHandlerData, DeviceDofHandler, DeviceGrid,
-    cellfe,celldofs, AbstractDeviceGlobalMemAlloc, AbstractDeviceSharedMemAlloc,
-    FeMemShape, KeMemShape, KeFeMemShape, DeviceCellIterator,DeviceOutOfBoundCellIterator,DeviceCellCache
+    cellfe,celldofs, AbstractDeviceGlobalMem, AbstractDeviceSharedMem,AbstractDeviceCellIterator,AbstractCellMem,
+    FeMemShape, KeMemShape, KeFeMemShape, DeviceCellIterator,DeviceOutOfBoundCellIterator,DeviceCellCache,
+    FeCellMem, KeCellMem, KeFeCellMem,NoCellMem
+
 
 import Ferrite:
-    AbstractDofHandler,get_grid,CellIterator
+    AbstractDofHandler,get_grid,CellIterator,get_node_coordinate,getcoordinates
 
+import StaticArrays:
+    SVector,MVector
+    
 import Adapt:
     Adapt, adapt_structure, adapt, @adapt_structure
+
 
 # ---------------------- Generic part ------------------------
 

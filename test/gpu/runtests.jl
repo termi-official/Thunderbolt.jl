@@ -1,4 +1,4 @@
-#using CUDA # Throws error (LoadError: UndefVarError: `backend` not defined in `GPUArrays`)
+using CUDA # Throws error (LoadError: UndefVarError: `backend` not defined in `GPUArrays`)
 using Thunderbolt
 using Test
 using StaticArrays

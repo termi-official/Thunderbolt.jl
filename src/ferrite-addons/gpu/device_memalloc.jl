@@ -23,7 +23,7 @@ abstract type AbstractDeviceSharedMem <: AbstractDeviceGroupMem end
 abstract type AbstractDeviceGlobalMem <: AbstractDeviceGroupMem end
 
 # interfaces
-mem_size(alloc::AbstractDeviceSharedMem) = error("please provide concrete implementation for $(typeof(alloc)).")
+mem_size(shared_mem::AbstractDeviceSharedMem) = shared_mem.tot_mem_size
 
 function try_allocate_shared_mem(::Type{AbstractMemShape{Tv}}, block_dim::Ti, n_basefuncs::Ti) where {Ti <: Integer, Tv <: Real}
     error("please provide concrete implementation for $(typeof(AbstractMemShape{Tv})).")

@@ -34,8 +34,6 @@ struct KeSharedMem{N, Tv <: Real, Ti <: Integer} <: AbstractDeviceSharedMem
     tot_mem_size::Ti
 end
 
-FerriteUtils.mem_size(alloc::KeFeSharedMem) = alloc.tot_mem_size
-
 
 function _can_use_dynshmem(required_shmem::Integer)
     dev = device()
@@ -44,7 +42,7 @@ function _can_use_dynshmem(required_shmem::Integer)
 end
 
 
-function FerriteUtils.try_allocate_shared_mem(::Type{KeFeMemShape{Tv}}, block_dim::Ti, n_basefuncs::Ti) where {Ti <: Integer, Tv <: Real}
+function Thunderbolt.FerriteUtils.try_allocate_shared_mem(::Type{KeFeMemShape{Tv}}, block_dim::Ti, n_basefuncs::Ti) where {Ti <: Integer, Tv <: Real}
     shared_mem = convert(Ti, sizeof(Tv) * (block_dim) * (n_basefuncs) * n_basefuncs + sizeof(Tv) * (block_dim) * n_basefuncs)
     _can_use_dynshmem(shared_mem) || return nothing
     Ke = DynamicSharedMemFunction{3, Tv, Ti}((block_dim, n_basefuncs, n_basefuncs), convert(Ti, 0))
@@ -53,14 +51,14 @@ function FerriteUtils.try_allocate_shared_mem(::Type{KeFeMemShape{Tv}}, block_di
 end
 
 
-function FerriteUtils.try_allocate_shared_mem(::Type{FeMemShape{Tv}}, block_dim::Ti, n_basefuncs::Ti) where {Ti <: Integer, Tv <: Real}
+function Thunderbolt.FerriteUtils.try_allocate_shared_mem(::Type{FeMemShape{Tv}}, block_dim::Ti, n_basefuncs::Ti) where {Ti <: Integer, Tv <: Real}
     shared_mem = convert(Ti, sizeof(Tv) * (block_dim) * n_basefuncs)
     _can_use_dynshmem(shared_mem) || return nothing
     fe = DynamicSharedMemFunction{2, Tv, Ti}((block_dim, n_basefuncs), convert(Ti, 0))
     return FeSharedMem( fe, shared_mem)
 end
 
-function FerriteUtils.try_allocate_shared_mem(::Type{KeMemShape{Tv}}, block_dim::Ti, n_basefuncs::Ti) where {Ti <: Integer, Tv <: Real}
+function Thunderbolt.FerriteUtils.try_allocate_shared_mem(::Type{KeMemShape{Tv}}, block_dim::Ti, n_basefuncs::Ti) where {Ti <: Integer, Tv <: Real}
     shared_mem = convert(Ti, sizeof(Tv) * (block_dim) * (n_basefuncs) * n_basefuncs)
     _can_use_dynshmem(shared_mem) || return nothing
     Ke = DynamicSharedMemFunction{3, Tv, Ti}((block_dim, n_basefuncs, n_basefuncs), convert(Ti, 0))
@@ -85,20 +83,20 @@ struct KeGlobalMem{LOCAL_MATRICES} <: AbstractDeviceGlobalMem
 end
 
 
-function FerriteUtils.allocate_global_mem(::Type{KeFeMemShape{Tv}}, n_cells::Ti, n_basefuncs::Ti) where {Ti <: Integer, Tv <: Real}
+function Thunderbolt.FerriteUtils.allocate_global_mem(::Type{KeFeMemShape{Tv}}, n_cells::Ti, n_basefuncs::Ti) where {Ti <: Integer, Tv <: Real}
     ## FIXME: since we are using striding here, we only need to allocate memory for the the active threads only
     Kes = CUDA.zeros(Tv, n_cells, n_basefuncs, n_basefuncs) 
     fes = CUDA.zeros(Tv, n_cells, n_basefuncs)
     return KeFeGlobalMem(Kes, fes)
 end
 
-function FerriteUtils.allocate_global_mem(::Type{FeMemShape{Tv}}, n_cells::Ti, n_basefuncs::Ti) where {Ti <: Integer, Tv <: Real}
+function Thunderbolt.FerriteUtils.allocate_global_mem(::Type{FeMemShape{Tv}}, n_cells::Ti, n_basefuncs::Ti) where {Ti <: Integer, Tv <: Real}
     ## FIXME: since we are using striding here, we only need to allocate memory for the the active threads only
     fes = CUDA.zeros(Tv, n_cells, n_basefuncs)
     return FeGlobalMem( fes)
 end
 
-function FerriteUtils.allocate_global_mem(::Type{KeMemShape{Tv}}, n_cells::Ti, n_basefuncs::Ti) where {Ti <: Integer, Tv <: Real}
+function Thunderbolt.FerriteUtils.allocate_global_mem(::Type{KeMemShape{Tv}}, n_cells::Ti, n_basefuncs::Ti) where {Ti <: Integer, Tv <: Real}
     ## FIXME: since we are using striding here, we only need to allocate memory for the the active threads only
     Kes = CUDA.zeros(Tv, n_cells, n_basefuncs, n_basefuncs) 
     return KeGlobalMem(Kes)
@@ -111,34 +109,34 @@ end
 # Cell Memory Allocation #
 ##########################
 
-function FerriteUtils.cellmem(global_mem::KeFeGlobalMem, i::Integer)
+function Thunderbolt.FerriteUtils.cellmem(global_mem::KeFeGlobalMem, i::Integer)
     ke = @view global_mem.Kes[i, :, :]
     fe = @view global_mem.fes[i, :]
     return KeFeCellMem(ke, fe)
 end
-function FerriteUtils.cellmem(global_mem::FeGlobalMem, i::Integer)
+function Thunderbolt.FerriteUtils.cellmem(global_mem::FeGlobalMem, i::Integer)
     fe = @view global_mem.fes[i, :]
     return FeCellMem(fe)
 end
-function FerriteUtils.cellmem(global_mem::KeGlobalMem, i::Integer)
+function Thunderbolt.FerriteUtils.cellmem(global_mem::KeGlobalMem, i::Integer)
     ke = @view global_mem.Kes[i, :, :]
     return KeCellMem(ke)
 end
 
 
-function FerriteUtils.cellmem(shared_mem::KeFeSharedMem, i::Integer)
+function Thunderbolt.FerriteUtils.cellmem(shared_mem::KeFeSharedMem, i::Integer)
     block_ke = shared_mem.Ke()
     block_fe = shared_mem.fe()
     ke = @view block_ke[i, :, :] 
     fe = @view block_fe[i, :]
     return KeFeCellMem(ke, fe)
 end
-function FerriteUtils.cellmem(shared_mem::FeSharedMem, i::Integer)
+function Thunderbolt.FerriteUtils.cellmem(shared_mem::FeSharedMem, i::Integer)
     block_fe = shared_mem.fe()
     fe = @view block_fe[i, :]
     return FeCellMem(fe)
 end
-function FerriteUtils.cellmem(shared_mem::KeSharedMem, i::Integer)
+function Thunderbolt.FerriteUtils.cellmem(shared_mem::KeSharedMem, i::Integer)
     block_ke = shared_mem.Ke()
     ke = @view block_ke[i, :, :] 
     return KeCellMem(ke)

@@ -36,10 +36,10 @@ function _init_linop_cuda(linop::LinearOperator)
     blocks = _calculate_nblocks(threads, n_cells)
     n_basefuncs = convert(Int32,ndofs_per_cell(dh)) 
     eles_caches = _setup_caches(linop)
-    mem_alloc = try_allocate_shared_mem(RHSObject{Float32}, threads, n_basefuncs)
+    mem_alloc = try_allocate_shared_mem(FeMemShape{Float32}, threads, n_basefuncs)
     mem_alloc isa Nothing || return CudaOperatorKernel(linop, threads, blocks, mem_alloc,eles_caches)
 
-    mem_alloc =allocate_global_mem(RHSObject{Float32}, n_cells, n_basefuncs) # FIXME: we should send threads * blocks instead of n_cells
+    mem_alloc =allocate_global_mem(FeMemShape{Float32}, n_cells, n_basefuncs) # FIXME: we should send threads * blocks instead of n_cells
     return CudaOperatorKernel(linop, threads, blocks, mem_alloc,eles_caches)
 end
 
@@ -70,12 +70,12 @@ function _setup_caches(op::LinearOperator)
 end
 
 
-function _launch_kernel!(ker, threads, blocks, ::AbstractGlobalMemAlloc)
+function _launch_kernel!(ker, threads, blocks, ::AbstractDeviceGlobalMem)
     CUDA.@cuda threads=threads blocks=blocks ker()
     return nothing
 end
 
-function _launch_kernel!(ker, threads, blocks, mem_alloc::AbstractSharedMemAlloc)
+function _launch_kernel!(ker, threads, blocks, mem_alloc::AbstractDeviceSharedMem)
     shmem_size = mem_size(mem_alloc)
     CUDA.@sync CUDA.@cuda threads=threads blocks=blocks  shmem = shmem_size ker()
     return nothing
@@ -95,7 +95,7 @@ function _update_linear_operator_kernel!(b, dh_, eles_caches,mem_alloc, time)
     dh = dh_.gpudata
     for sdh_idx in 1:length(dh.subdofhandlers)
         element_cache = eles_caches[sdh_idx]
-        for cell in CellIterator(dh, convert(Int32,sdh_idx) ,mem_alloc)
+        for cell in CellIterator(dh, convert(Int32,sdh_idx), mem_alloc)
             bₑ = cellfe(cell)
             assemble_element!(bₑ, cell, element_cache, time)
             dofs = celldofs(cell)
