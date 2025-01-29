@@ -46,7 +46,8 @@ function setup_coefficient_cache(m::PrestressedMechanicalModel, qr::QuadratureRu
 end
 
 material_routine(material_model::PrestressedMechanicalModel, F::Tensor{2}, coefficient_cache, state_cache::EmptyInternalCache, geometry_cache::Ferrite.CellCache, qp::QuadraturePoint, time) = prestressed_material_routine(material_model, F, coefficient_cache, state_cache, geometry_cache, qp, time)
-material_routine(material_model::PrestressedMechanicalModel, F::Tensor{2}, coefficient_cache, state_cache::AbstractInternalMaterialStateCache, geometry_cache::Ferrite.CellCache, qp::QuadraturePoint, time) = prestressed_material_routine(material_model, F, coefficient_cache, state_cache, geometry_cache, qp, time)
+material_routine(material_model::PrestressedMechanicalModel, F::Tensor{2}, coefficient_cache, state_cache::TrivialInternalMaterialStateCache, geometry_cache::Ferrite.CellCache, qp::QuadraturePoint, time) = prestressed_material_routine(material_model, F, coefficient_cache, state_cache, geometry_cache, qp, time)
+material_routine(material_model::PrestressedMechanicalModel, F::Tensor{2}, coefficient_cache, state_cache::RateIndependentMaterialStateCache, geometry_cache::Ferrite.CellCache, qp::QuadraturePoint, time) = prestressed_material_routine(material_model, F, coefficient_cache, state_cache, geometry_cache, qp, time)
 function prestressed_material_routine(material_model::PrestressedMechanicalModel, F::Tensor{2}, coefficient_cache, state_cache, geometry_cache::Ferrite.CellCache, qp::QuadraturePoint, time)
     F₀inv = evaluate_coefficient(coefficient_cache.prestress_cache, geometry_cache, qp, time)
     Fᵉ = F ⋅ F₀inv
@@ -343,7 +344,7 @@ function solve_local_constraint(F::Tensor{2,dim}, coefficients, material_model::
     return Q, ∂P∂Q ⊡ dQdF
 end
 
-function material_routine(material_model::LinearMaxwellMaterial, F::Tensor{2}, coefficients, εᵛ, geometry_cache::Ferrite.CellCache, qp::QuadraturePoint, time)
+function stress_and_tangent(material_model::LinearMaxwellMaterial, F::Tensor{2}, coefficients, εᵛ)
     function stress_function(material::LinearMaxwellMaterial, ε, εᵛ)
         (; E₀, E₁, μ, η₁, ν) = material
         I = one(ε)

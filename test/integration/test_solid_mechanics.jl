@@ -125,7 +125,7 @@ end
 end
 
 @testset "Idealized LV" begin
-    grid = generate_ideal_lv_mesh(4,1,1)
+    grid = generate_ideal_lv_mesh(5,5,3)
     cs = compute_lv_coordinate_system(grid)
     @test !any(isnan.(cs.u_apicobasal))
     @test !any(isnan.(cs.u_transmural))
