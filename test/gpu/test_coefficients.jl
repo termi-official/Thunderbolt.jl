@@ -17,6 +17,8 @@ end
     import Thunderbolt: setup_coefficient_cache, evaluate_coefficient,ConductivityToDiffusivityCoefficient
     import Thunderbolt.FerriteUtils:
         CellIterator, QuadratureValuesIterator, cellid, getcoordinates, getnbasefunctions
+    import CUDA: @cuda
+    import Adapt: adapt_structure 
 
 
     left = Tensor{1, 1, Float32}((-1.0,)) # define the left bottom corner of the grid.
@@ -32,12 +34,14 @@ end
     n_cells = grid.cells |> length
     sdh = first(dh.subdofhandlers)
 
+    cuda_strategy = Thunderbolt.CudaAssemblyStrategy(Float32, Int32)
+
     @testset "ConstantCoefficient($val" for val ∈ [1.f0]
         cc = ConstantCoefficient(val)
         coeff_cache = setup_coefficient_cache(cc, qr, sdh)
         correct_vals = ones(Float32, n_cells * getnbasefunctions(cellvalues))
         Vals = zeros(Float32, n_cells * getnbasefunctions(cellvalues)) |> cu
-        CUDA.@cuda blocks=1 threads=n_cells coeffs_kernel!(Vals,dh,coeff_cache,cellvalues,0.f0)
+        @cuda blocks=1 threads=n_cells coeffs_kernel!(Vals,dh,coeff_cache,cellvalues,0.f0)
         @test Vector(Vals) ≈ correct_vals
     end
 
@@ -61,7 +65,7 @@ end
         coeff_cache = setup_coefficient_cache(fcv, qr, sdh)
         correct_vals = [Vec((0.f0,0.f0)), Vec((-0.1f0,0.f0)),Vec((0.f0,-0.5f0)),Vec((0.f0,(0.1f0+1.f0)/2.f0-1.f0))]
         Vals = correct_vals |> similar  |> cu
-        CUDA.@cuda blocks=1 threads=n_cells coeffs_kernel!(Vals,dh,coeff_cache,cellvalues,0.f0)
+        @cuda blocks=1 threads=n_cells coeffs_kernel!(Vals,dh,coeff_cache,cellvalues,0.f0)
         @test Vector(Vals) ≈ correct_vals
     end
    
@@ -70,7 +74,7 @@ end
         coeff_cache = setup_coefficient_cache(ccsc, qr, sdh)
         correct_vals = [Vec((-0.5f0,)),Vec((-0.45f0,)),Vec((0.5f0,)),Vec((0.55f0,))]
         Vals = correct_vals |> similar  |> cu
-        CUDA.@cuda blocks=1 threads=n_cells coeffs_kernel!(Vals,dh,coeff_cache,cellvalues,0.f0)
+        @cuda blocks=1 threads=n_cells coeffs_kernel!(Vals,dh,coeff_cache,cellvalues,0.f0)
         @test Vector(Vals) ≈ correct_vals
     end
 
@@ -82,11 +86,11 @@ end
         coeff_cache = Thunderbolt.setup_coefficient_cache(ac, qr, sdh)
         correct_vals = [0.5f0,0.45f0,0.5f0,0.55f0]
         Vals = correct_vals |> similar  |> cu
-        CUDA.@cuda blocks=1 threads=n_cells coeffs_kernel!(Vals,dh,coeff_cache,cellvalues,0.f0)
+        @cuda blocks=1 threads=n_cells coeffs_kernel!(Vals,dh,coeff_cache,cellvalues,0.f0)
         @test Vector(Vals) ≈ correct_vals
         correct_vals = [1.5f0,1.45f0,1.5f0,1.55f0]
         Vals = correct_vals |> similar  |> cu
-        CUDA.@cuda blocks=1 threads=n_cells coeffs_kernel!(Vals,dh,coeff_cache,cellvalues,1.f0)
+        @cuda blocks=1 threads=n_cells coeffs_kernel!(Vals,dh,coeff_cache,cellvalues,1.f0)
         @test Vector(Vals) ≈ correct_vals
     end
 
@@ -101,7 +105,7 @@ end
         coeff_cache = setup_coefficient_cache(stc, qr, sdh)
         correct_vals = [st,st,st,st]
         Vals = correct_vals |> similar  |> cu
-        CUDA.@cuda blocks=1 threads=n_cells coeffs_kernel!(Vals,dh,coeff_cache,cellvalues,0.f0)
+        @cuda blocks=1 threads=n_cells coeffs_kernel!(Vals,dh,coeff_cache,cellvalues,0.f0)
         @test Vector(Vals) ≈ correct_vals
 
         st2 = Tensor{2,2,Float32}((-1.0,0.0,0.0,-1.0))
@@ -112,7 +116,7 @@ end
         coeff_cache = setup_coefficient_cache(stc2, qr, sdh)
         correct_vals = [st2,st2,st2,st2]
         Vals = correct_vals |> similar  |> cu
-        CUDA.@cuda blocks=1 threads=n_cells coeffs_kernel!(Vals,dh,coeff_cache,cellvalues,0.f0)
+        @cuda blocks=1 threads=n_cells coeffs_kernel!(Vals,dh,coeff_cache,cellvalues,0.f0)
         @test Vector(Vals) ≈ correct_vals
 
         stc3 = SpectralTensorCoefficient(
@@ -122,7 +126,7 @@ end
         coeff_cache = setup_coefficient_cache(stc3, qr, sdh)
         correct_vals = [st2,st2,st2,st2]
         Vals = correct_vals |> similar  |> cu
-        CUDA.@cuda blocks=1 threads=n_cells coeffs_kernel!(Vals,dh,coeff_cache,cellvalues,0.f0)
+        @cuda blocks=1 threads=n_cells coeffs_kernel!(Vals,dh,coeff_cache,cellvalues,0.f0)
         @test Vector(Vals) ≈ correct_vals
     end
 
@@ -134,23 +138,23 @@ end
         coeff_cache = Thunderbolt.setup_coefficient_cache(shdc, qr, sdh)
         correct_vals = [Vec((0.1f0,)),Vec((0.1f0,)),Vec((0.1f0,)),Vec((0.1f0,))]
         Vals = correct_vals |> similar  |> cu
-        CUDA.@cuda blocks=1 threads=n_cells coeffs_kernel!(Vals,dh,coeff_cache,cellvalues,0.f0)
+        @cuda blocks=1 threads=n_cells coeffs_kernel!(Vals,dh,coeff_cache,cellvalues,0.f0)
         @test Vector(Vals) ≈ correct_vals
         correct_vals = [Vec((0.1f0,)),Vec((0.1f0,)),Vec((0.1f0,)),Vec((0.1f0,))]
         Vals = correct_vals |> similar  |> cu
-        CUDA.@cuda blocks=1 threads=n_cells coeffs_kernel!(Vals,dh,coeff_cache,cellvalues,1.f0)
+        @cuda blocks=1 threads=n_cells coeffs_kernel!(Vals,dh,coeff_cache,cellvalues,1.f0)
         @test Vector(Vals) ≈ correct_vals
         correct_vals = [Vec((0.2f0,)),Vec((0.2f0,)),Vec((0.2f0,)),Vec((0.2f0,))]
         Vals = correct_vals |> similar  |> cu
-        CUDA.@cuda blocks=1 threads=n_cells coeffs_kernel!(Vals,dh,coeff_cache,cellvalues,1.1f0)
+        @cuda blocks=1 threads=n_cells coeffs_kernel!(Vals,dh,coeff_cache,cellvalues,1.1f0)
         @test Vector(Vals) ≈ correct_vals
         correct_vals = [Vec((0.2f0,)),Vec((0.2f0,)),Vec((0.2f0,)),Vec((0.2f0,))]
         Vals = correct_vals |> similar  |> cu
-        CUDA.@cuda blocks=1 threads=n_cells coeffs_kernel!(Vals,dh,coeff_cache,cellvalues,2.f0)
+        @cuda blocks=1 threads=n_cells coeffs_kernel!(Vals,dh,coeff_cache,cellvalues,2.f0)
         @test Vector(Vals) ≈ correct_vals
         correct_vals = [Vec((0.3f0,)),Vec((0.3f0,)),Vec((0.3f0,)),Vec((0.3f0,))]
         Vals = correct_vals |> similar  |> cu
-        CUDA.@cuda blocks=1 threads=n_cells coeffs_kernel!(Vals,dh,coeff_cache,cellvalues,2.1f0)
+        @cuda blocks=1 threads=n_cells coeffs_kernel!(Vals,dh,coeff_cache,cellvalues,2.1f0)
         @test Vector(Vals) ≈ correct_vals
     end
 
@@ -170,11 +174,11 @@ end
         coeff_cache = setup_coefficient_cache(ctdc, qr, sdh)
         correct_vals = [Tensor{2,2,Float32}((-1.0,0.0,0.0,0.0)),Tensor{2,2,Float32}((-1.0,0.0,0.0,0.0)),Tensor{2,2,Float32}((-1.0,0.0,0.0,0.0)),Tensor{2,2,Float32}((-1.0,0.0,0.0,0.0))]
         Vals = correct_vals |> similar  |> cu
-        CUDA.@cuda blocks=1 threads=n_cells coeffs_kernel!(Vals,dh,coeff_cache,cellvalues,0.f0)
+        @cuda blocks=1 threads=n_cells coeffs_kernel!(Vals,dh,coeff_cache,cellvalues,0.f0)
         @test Vector(Vals) ≈ correct_vals
         correct_vals = [Tensor{2,2,Float32}((-1.0,0.0,0.0,0.0)),Tensor{2,2,Float32}((-1.0,0.0,0.0,0.0)),Tensor{2,2,Float32}((-1.0,0.0,0.0,0.0)),Tensor{2,2,Float32}((-1.0,0.0,0.0,0.0))]
         Vals = correct_vals |> similar  |> cu
-        CUDA.@cuda blocks=1 threads=n_cells coeffs_kernel!(Vals,dh,coeff_cache,cellvalues,1.f0)
+        @cuda blocks=1 threads=n_cells coeffs_kernel!(Vals,dh,coeff_cache,cellvalues,1.f0)
         @test Vector(Vals) ≈ correct_vals
         
     end

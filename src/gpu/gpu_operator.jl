@@ -8,11 +8,11 @@
 # Concrete implementations for the following abstract types can be found in the corresponding extension.
 abstract type AbstractOperatorKernel{BKD} end
 
-function init_linear_operator(::Type{BKD},::IntegrandType,::QuadratureRuleCollection,::AbstractDofHandler ) where {BKD,IntegrandType}
+function init_linear_operator(::AbstractAssemblyStrategy,::IntegrandType,::QuadratureRuleCollection,::AbstractDofHandler ) where {IntegrandType}
     error("Not implemented")
 end
 
-function init_linear_operator(::Type{BKD}, ::LinearOperator) where {BKD}
+function init_linear_operator(::AbstractAssemblyStrategy, ::LinearOperator) 
     error("Not implemented")
 end
 

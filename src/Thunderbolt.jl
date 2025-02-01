@@ -92,8 +92,8 @@ include("discretization/rsafdq-operator.jl")
 
 
 ## GPU stuf ##
-include("gpu/gpu_operator.jl")
 include("gpu/assemble_strategy.jl")
+include("gpu/gpu_operator.jl")
 
 
 # TODO put exports into the individual submodules above!
