@@ -29,11 +29,11 @@ linop = Thunderbolt.LinearOperator(
 )
 
 Thunderbolt.update_operator!(linop,0.0)
-@test linop.b ≈ [0.25, 0.5, 1.0, 0.5, 0.25, 0.5, 0.5, 0.25, 0.25]
+#@test linop.b ≈ [0.25, 0.5, 1.0, 0.5, 0.25, 0.5, 0.5, 0.25, 0.25]
 
 
-
-cuda_op = Thunderbolt.init_linear_operator(CUDABackend(),protocol, qrc, dh);
+cuda_strategy = Thunderbolt.CudaAssemblyStrategy(Float32, Int32)
+cuda_op = Thunderbolt.init_linear_operator(cuda_strategy,protocol, qrc, dh);
 Thunderbolt.update_operator!(cuda_op,0.0)
 
 

@@ -130,7 +130,8 @@ FeTrait(::Type{<:KeMemShape}) = HasNoFe()
 
 @inline function _cellke(::HasKe, cc::DeviceCellCache)
     ke =  cc.cell_mem.ke
-    return CUDA.fill!(ke, 0.0f0)
+    FT = eltype(ke)
+    return CUDA.fill!(ke, zero(FT))
 end
 
 _cellke(::HasNoKe, ::DeviceCellCache) = error("$(typeof(cc.cell_mem)) does not have ke field.")
@@ -139,7 +140,8 @@ Thunderbolt.FerriteUtils.cellke(cc::DeviceCellCache) = _cellke(KeTrait(typeof(cc
 
 @inline function _cellfe(::HasFe, cc::DeviceCellCache)
     fe =  cc.cell_mem.fe
-    return CUDA.fill!(fe, 0.0f0)
+    FT = eltype(fe)
+    return CUDA.fill!(fe, zero(FT))
 end
 
 _cellfe(::HasNoFe, ::DeviceCellCache) = error("$(typeof(cc.cell_mem)) does not have fe field.")

@@ -15,7 +15,7 @@ import Thunderbolt:
     AbstractPointwiseSolverCache,assemble_element!,
     LinearOperator,AbstractOperatorKernel,QuadratureRuleCollection,
     AnalyticalCoefficientElementCache,AnalyticalCoefficientCache,CartesianCoordinateSystemCache,
-    setup_element_cache,update_operator!,init_linear_operator,FieldCoefficientCache
+    setup_element_cache,update_operator!,init_linear_operator,FieldCoefficientCache, CudaAssemblyStrategy, floattype,inttype
 
 import Thunderbolt.FerriteUtils:
     StaticInterpolationValues,StaticCellValues, try_allocate_shared_mem,
@@ -27,7 +27,7 @@ import Thunderbolt.FerriteUtils:
 
 
 import Ferrite:
-    AbstractDofHandler,get_grid,CellIterator,get_node_coordinate,getcoordinates
+    AbstractDofHandler,get_grid,CellIterator,get_node_coordinate,getcoordinates,get_coordinate_eltype
 
 import StaticArrays:
     SVector,MVector

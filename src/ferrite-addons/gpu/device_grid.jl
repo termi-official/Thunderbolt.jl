@@ -5,6 +5,13 @@ struct DeviceGrid{sdim, C<:Ferrite.AbstractCell, T<:Real, CellDataType <: Abstra
     #TODO subdomain info
 end
 
+function DeviceGrid(
+    cells::CellDataType,
+    nodes::NodeDataType
+) where {C <: Ferrite.AbstractCell, CellDataType <: AbstractArray{C, 1}, NodeDataType <: AbstractArray{Node{dim, T}}} where {dim, T}
+return DeviceGrid{dim,C,T, CellDataType, NodeDataType}(cells, nodes)
+end
+
 function Base.show(io::IO, mime::MIME"text/plain", data::DeviceGrid)
     _show(io, mime, data, 0)
 end

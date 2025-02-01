@@ -4,6 +4,10 @@
 Adapt.@adapt_structure QuadratureValuesIterator
 Adapt.@adapt_structure StaticQuadratureValues
 Adapt.@adapt_structure DeviceCellIterator 
+Adapt.@adapt_structure DeviceGrid
+Adapt.@adapt_structure DeviceDofHandler
+Adapt.@adapt_structure DeviceDofHandlerData
+Adapt.@adapt_structure DeviceSubDofHandlerData
 
 function Adapt.adapt_structure(to, cv::CellValues)
     fv = Adapt.adapt(to, StaticInterpolationValues(cv.fun_values))
@@ -12,5 +16,4 @@ function Adapt.adapt_structure(to, cv::CellValues)
     weights = Adapt.adapt(to, ntuple(i -> cv.qr.weights[i], n_quadoints))
     return StaticCellValues(fv, gm, weights)
 end
-
 

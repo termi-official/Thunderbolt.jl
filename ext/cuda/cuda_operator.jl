@@ -1,46 +1,51 @@
 
 # CUDA backend concrete implementation #
-struct CudaOperatorKernel{Operator, Ti <: Integer, MemAlloc,ELementsCaches} <: AbstractOperatorKernel{CUDABackend} 
+struct CudaOperatorKernel{Operator, Ti <: Integer, MemAlloc,ELementsCaches,DHType<:AbstractDofHandler} <: AbstractOperatorKernel{CUDABackend} 
     op::Operator
     threads::Ti
     blocks::Ti
     mem_alloc::MemAlloc
     eles_caches:: ELementsCaches
+    device_dh::DHType
 end
 
-function Thunderbolt.init_linear_operator(::CUDABackend,protocol::IntegrandType,qrc::QuadratureRuleCollection,dh::AbstractDofHandler ) where {IntegrandType}
+function Thunderbolt.init_linear_operator(strategy::CudaAssemblyStrategy,protocol::IntegrandType,qrc::QuadratureRuleCollection,dh::AbstractDofHandler ) where {IntegrandType}
     if CUDA.functional()
-        b = CUDA.zeros(Float32, ndofs(dh))
+        FT = floattype(strategy)
+        b = CUDA.zeros(FT, ndofs(dh))
         linear_op =  LinearOperator(b, protocol, qrc, dh)
-        return _init_linop_cuda(linear_op)
+        return _init_linop_cuda(linear_op,strategy)
     else
         error("CUDA is not functional, please check your GPU driver and CUDA installation")
     end
 end
 
-function Thunderbolt.init_linear_operator(::CUDABackend,linop::LinearOperator) 
+function Thunderbolt.init_linear_operator(strategy::CudaAssemblyStrategy,linop::LinearOperator) 
     ## TODO: Dunno if this is useful or not
     if CUDA.functional()
         @unpack b, qrc, dh, integrand  = linop
         linear_op =  LinearOperator(b |> cu, protocol, qrc, dh)
-        return _init_linop_cuda(linear_op)
+        return _init_linop_cuda(linear_op,strategy)
     else
         error("CUDA is not functional, please check your GPU driver and CUDA installation")
     end
 end
 
-function _init_linop_cuda(linop::LinearOperator)
+function _init_linop_cuda(linop::LinearOperator,strategy::CudaAssemblyStrategy)
+    IT = inttype(strategy)
+    FT = floattype(strategy)
     @unpack dh  = linop
-    n_cells = dh |> get_grid |> getncells |> (x -> convert(Int32, x))
-    threads = convert(Int32, min(n_cells, 256))
+    n_cells = dh |> get_grid |> getncells |> (x -> convert(IT, x))
+    threads = convert(IT, min(n_cells, 256))
     blocks = _calculate_nblocks(threads, n_cells)
-    n_basefuncs = convert(Int32,ndofs_per_cell(dh)) 
+    n_basefuncs = convert(IT,ndofs_per_cell(dh)) 
     eles_caches = _setup_caches(linop)
-    mem_alloc = try_allocate_shared_mem(FeMemShape{Float32}, threads, n_basefuncs)
-    mem_alloc isa Nothing || return CudaOperatorKernel(linop, threads, blocks, mem_alloc,eles_caches)
+    device_dh = adapt_structure(CUDA.KernelAdaptor(), dh)
+    mem_alloc = try_allocate_shared_mem(FeMemShape{FT}, threads, n_basefuncs)
+    mem_alloc isa Nothing || return CudaOperatorKernel(linop, threads, blocks, mem_alloc,eles_caches,device_dh)
 
-    mem_alloc =allocate_global_mem(FeMemShape{Float32}, blocks * threads, n_basefuncs) # allocate global memory only for the active threads
-    return CudaOperatorKernel(linop, threads, blocks, mem_alloc,eles_caches)
+    mem_alloc =allocate_global_mem(FeMemShape{FT}, blocks * threads, n_basefuncs) # allocate global memory only for the active threads
+    return CudaOperatorKernel(linop, threads, blocks, mem_alloc,eles_caches,device_dh)
 end
 
 
@@ -54,7 +59,7 @@ end
 
 
 function _setup_caches(op::LinearOperator)
-    @unpack b, qrc, dh, integrand  = op
+    @unpack b, qrc,dh,  integrand  = op
     sdh_to_cache = sdh  -> 
     begin
         # Prepare evaluation caches
@@ -84,9 +89,9 @@ end
 (op_ker::CudaOperatorKernel)(time) = update_operator!(op_ker.op, time)
 
 function Thunderbolt.update_operator!(op_ker::CudaOperatorKernel{<:LinearOperator}, time)
-    @unpack op, threads, blocks, mem_alloc,eles_caches = op_ker
-    @unpack b, qrc, dh, integrand  = op
-    ker = () -> _update_linear_operator_kernel!(b, dh, eles_caches,mem_alloc, time)
+    @unpack op, threads, blocks, mem_alloc,eles_caches,device_dh = op_ker
+    @unpack b  = op
+    ker = () -> _update_linear_operator_kernel!(b, device_dh, eles_caches,mem_alloc, time)
     _launch_kernel!(ker, threads, blocks, mem_alloc)
 end
 
