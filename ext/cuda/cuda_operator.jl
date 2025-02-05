@@ -40,7 +40,7 @@ function _init_linop_cuda(linop::LinearOperator,strategy::CudaAssemblyStrategy)
     blocks = _calculate_nblocks(threads, n_cells)
     n_basefuncs = convert(IT,ndofs_per_cell(dh)) 
     eles_caches = _setup_caches(linop)
-    device_dh = adapt_structure(CUDA.KernelAdaptor(), dh)
+    device_dh = Adapt.adapt_structure(strategy, dh)
     mem_alloc = try_allocate_shared_mem(FeMemShape{FT}, threads, n_basefuncs)
     mem_alloc isa Nothing || return CudaOperatorKernel(linop, threads, blocks, mem_alloc,eles_caches,device_dh)
 

@@ -12,7 +12,7 @@ function _cell_iterator(dh::DeviceDofHandlerData,sdh_idx::Integer,n_cells::Integ
     global_thread_id = (blockIdx().x - Int32(1)) * bd + local_thread_id
     global_thread_id <= n_cells || return DeviceOutOfBoundCellIterator()
     cell_mem = NoCellMem()
-    return DeviceCellIterator(dh, grid, n_cells, cell_mem ,sdh_idx)
+    return  DeviceCellIterator(dh, grid, n_cells, cell_mem ,sdh_idx)
 end
 
 # iterator with global memory allocation
@@ -89,18 +89,20 @@ Base.iterate(::DeviceOutOfBoundCellIterator, state) = nothing # I believe this i
 
 # cuda cell cache #
 function _makecache(iterator::AbstractDeviceCellIterator, e::Ti) where {Ti <: Integer}
+    # NOTE: e is the global thread index, so in case of iterating over the whole cells in the grid, e is the cell index
+    # whereas in the case of we are only iterating over a subdomain, e is just the iterator index from 1:n_cells in subdomain
     dh = iterator.dh
     grid = iterator.grid
     sdh_idx = iterator.sdh_idx
     cellid = e
     sdh_idx <= 0 || (cellid = dh.subdofhandlers[sdh_idx].cellset[e])
-    cell = Ferrite.getcells(grid, e)
+    cell = Ferrite.getcells(grid, cellid)
 
-    # Extract the node IDs of the cell.
+    #Extract the node IDs of the cell.
     nodes = SVector(convert.(Ti, Ferrite.get_node_ids(cell))...)
 
     # Extract the degrees of freedom for the cell.
-    dofs = Ferrite.celldofs(dh, e)
+    dofs = Ferrite.celldofs(dh, cellid)
 
     # Get the coordinates of the nodes of the cell.
     CT = Ferrite.get_coordinate_type(grid)

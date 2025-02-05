@@ -46,6 +46,7 @@ import GPUArraysCore: AbstractGPUVector, AbstractGPUArray
 import Adapt:
     Adapt, adapt_structure, adapt
 
+
 include("utils.jl")
 
 include("mesh/meshes.jl")
@@ -91,8 +92,7 @@ include("modeling/rsafdq2022.jl")
 include("discretization/rsafdq-operator.jl")
 
 
-## GPU stuf ##
-include("gpu/assemble_strategy.jl")
+include("gpu/gpu_utils.jl")
 include("gpu/gpu_operator.jl")
 
 

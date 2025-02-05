@@ -17,3 +17,4 @@ function Adapt.adapt_structure(to, cv::CellValues)
     return StaticCellValues(fv, gm, weights)
 end
 
+

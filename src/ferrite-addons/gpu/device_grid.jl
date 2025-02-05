@@ -12,29 +12,6 @@ function DeviceGrid(
 return DeviceGrid{dim,C,T, CellDataType, NodeDataType}(cells, nodes)
 end
 
-function Base.show(io::IO, mime::MIME"text/plain", data::DeviceGrid)
-    _show(io, mime, data, 0)
-end
-
-function _show(io::IO, mime::MIME"text/plain", grid::DeviceGrid{sdim, C, T}, indent) where {sdim, C, T}
-    offset = " "^indent
-    print(io, offset, "DeviceGrid{sdim=", sdim, ", T=", T, "}")
-    if isconcretetype(eltype(grid.cells))
-        typestrs = [repr(eltype(grid.cells))]
-    else
-        typestrs = sort!(repr.(OrderedSet(typeof(x) for x in grid.cells)))
-    end
-    print(io, " with ")
-    join(io, typestrs, '/')
-    println(io, " cells and $(length(grid.nodes)) nodes")
-end
-
-# commented out because SimpleMesh is not defined in FerriteUtils module.
-# function Adapt.adapt_structure(to, grid::SimpleMesh)
-#     return adapt_structure(to, grid.grid)
-# end
-
-
 Ferrite.get_coordinate_type(::DeviceGrid{sdim, <:Any, T,<:Any,<:Any}) where {sdim, T} = Vec{sdim, T} # Node is baked into the mesh type.
 
 @inline Ferrite.getcells(grid::DeviceGrid, v::Ti) where {Ti <: Integer} = grid.cells[v]

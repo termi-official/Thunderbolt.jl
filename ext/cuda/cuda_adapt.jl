@@ -21,43 +21,41 @@ function _convert_subdofhandler_to_gpu(cell_dofs, cell_dof_soffset, sdh::SubDofH
     )
 end
 
-function Adapt.adapt_structure(to, dh::DofHandler{sdim}) where sdim
-    grid             = adapt_structure(to, dh.grid)
-    # field_names      = Tuple(sym for sym in dh.field_names)
-    #IndexType        = eltype(dh.cell_dofs)
-    #IndexVectorType  = CuVector{IndexType}
-    cell_dofs        = adapt(to, dh.cell_dofs .|> (i -> convert(Int32,i)) |> cu) # currently you cant create Dofhandler with Int32
-    cell_dofs_offset = adapt(to, dh.cell_dofs_offset .|> (i -> convert(Int32,i)) |> cu)
-    cell_to_sdh      = adapt(to, dh.cell_to_subdofhandler .|> (i -> convert(Int32,i)) |> cu)
-    #subdofhandlers   = Tuple(i->_convert_subdofhandler_to_gpu(cell_dofs, cell_dofs_offset, sdh) for sdh in dh.subdofhandlers)
-    subdofhandlers   = adapt_structure(to,dh.subdofhandlers .|> (sdh -> Adapt.adapt_structure(to, sdh)) |> cu)
+
+function Adapt.adapt_structure(strategy::CudaAssemblyStrategy, dh::DofHandler)
+    IT = inttype(strategy)
+    grid = _adapt(strategy, dh.grid)
+    cell_dofs = dh.cell_dofs .|> (i -> convert(IT,i)) |> cu
+    cell_dofs_offset = dh.cell_dofs_offset .|> (i -> convert(IT,i)) |> cu
+    cell_to_sdh = dh.cell_to_subdofhandler .|> (i -> convert(IT,i)) |> cu
+    subdofhandlers = dh.subdofhandlers .|> (sdh -> _adapt(strategy, sdh)) |> cu |> cudaconvert
     gpudata = DeviceDofHandlerData(
         grid,
         subdofhandlers,
-        # field_names,
         cell_dofs,
         cell_dofs_offset,
         cell_to_sdh,
-        convert(Int32,dh.ndofs),
+        convert(IT,dh.ndofs),
     )
-    #return DeviceDofHandler(dh, gpudata)
     return DeviceDofHandler(gpudata)
 end
 
-_symbols_to_int32(symbols) = 1:length(symbols) .|> (sym -> convert(Int32, sym))
+_symbols_to_int(symbols,IT::Type) = 1:length(symbols) .|> (sym -> convert(IT, sym))
 
-function Adapt.adapt_structure(to, sdh::SubDofHandler)
-    cellset = Adapt.adapt_structure(to, sdh.cellset |> collect .|> (x -> convert(Int32, x)) |> cu)
-    field_names = Adapt.adapt_structure(to, _symbols_to_int32(sdh.field_names) |> cu)
-    field_interpolations = sdh.field_interpolations .|> (ip -> Adapt.adapt_structure(to, ip)) |> cu
-    ndofs_per_cell = Adapt.adapt_structure(to, sdh.ndofs_per_cell)
+
+function _adapt(strategy::CudaAssemblyStrategy, sdh::SubDofHandler)
+    IT = inttype(strategy)
+    cellset =  sdh.cellset |> collect .|> (x -> convert(IT, x)) |> cu |> cudaconvert
+    field_names =  _symbols_to_int(sdh.field_names,IT) |> cu |> cudaconvert
+    field_interpolations = sdh.field_interpolations |> convert_vec_to_concrete |> cu |> cudaconvert
+    ndofs_per_cell =  sdh.ndofs_per_cell
     return DeviceSubDofHandlerData(cellset, field_names, field_interpolations, ndofs_per_cell)
 end
 
-function Adapt.adapt_structure(to, grid::Grid{sdim, cell_type, T}) where {sdim, cell_type, T}
+function _adapt(strategy::CudaAssemblyStrategy, grid::Grid{sdim, cell_type, T}) where {sdim, cell_type, T}
     node_type = typeof(first(grid.nodes))
-    cells = Adapt.adapt_structure(to, grid.cells .|> (x -> Int32.(x.nodes)) .|> eltype(grid.cells) |> cu)
-    nodes = Adapt.adapt_structure(to, grid.nodes |> cu)
+    cells =  grid.cells |> convert_vec_to_concrete  |> cu
+    nodes =  grid.nodes |> cu
     #TODO subdomain info
     return DeviceGrid{sdim, cell_type, T, typeof(cells), typeof(nodes)}(cells, nodes)
 end

@@ -8,9 +8,6 @@ qrc = QuadratureRuleCollection{2}()
 
 cs = CartesianCoordinateSystem(grid)
 
-propertynames(dh)
-
-
 
 protocol = AnalyticalTransmembraneStimulationProtocol(
                 AnalyticalCoefficient((x,t) -> 1.f0, CoordinateSystemCoefficient(cs)),
@@ -38,5 +35,6 @@ Thunderbolt.update_operator!(cuda_op,0.0)
 
 
 @test Vector(cuda_op.op.b) ≈ linop.b
+
 
 

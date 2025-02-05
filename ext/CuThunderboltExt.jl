@@ -5,7 +5,7 @@ using Thunderbolt
 import CUDA:
     CUDA, CuArray, CuVector, CUSPARSE,blockDim,blockIdx,gridDim,threadIdx,
     threadIdx, blockIdx, blockDim, @cuda, @cushow,
-    CUDABackend, launch_configuration, device, cu
+    CUDABackend, launch_configuration, device, cu,cudaconvert
 
 import Thunderbolt:
     UnPack.@unpack,
@@ -15,7 +15,8 @@ import Thunderbolt:
     AbstractPointwiseSolverCache,assemble_element!,
     LinearOperator,AbstractOperatorKernel,QuadratureRuleCollection,
     AnalyticalCoefficientElementCache,AnalyticalCoefficientCache,CartesianCoordinateSystemCache,
-    setup_element_cache,update_operator!,init_linear_operator,FieldCoefficientCache, CudaAssemblyStrategy, floattype,inttype
+    setup_element_cache,update_operator!,init_linear_operator,FieldCoefficientCache, CudaAssemblyStrategy, floattype,inttype, 
+    convert_vec_to_concrete
 
 import Thunderbolt.FerriteUtils:
     StaticInterpolationValues,StaticCellValues, try_allocate_shared_mem,
