@@ -16,7 +16,7 @@ import Thunderbolt:
     LinearOperator,AbstractOperatorKernel,QuadratureRuleCollection,
     AnalyticalCoefficientElementCache,AnalyticalCoefficientCache,CartesianCoordinateSystemCache,
     setup_element_cache,update_operator!,init_linear_operator,FieldCoefficientCache, CudaAssemblyStrategy, floattype,inttype, 
-    convert_vec_to_concrete
+    convert_vec_to_concrete,deep_adapt
 
 import Thunderbolt.FerriteUtils:
     StaticInterpolationValues,StaticCellValues, try_allocate_shared_mem,

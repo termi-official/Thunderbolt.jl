@@ -38,4 +38,8 @@ CudaDefaultAssemblyStrategy() = CudaAssemblyStrategy(Float32, Int32)
 
 function Adapt.adapt_structure(::AbstractAssemblyStrategy, dh::DofHandler)
     error("GPU specific implementation for `adapt_structure(to,dh::DofHandler)` is not implemented yet")
- end
+end
+
+function deep_adapt(::AbstractAssemblyStrategy, dh::Thunderbolt.FerriteUtils.DeviceDofHandlerData)
+    error("GPU specific implementation for `deep_adapt(strategy::CudaAssemblyStrategy, dh::DeviceDofHandlerData)` is not implemented yet")
+end

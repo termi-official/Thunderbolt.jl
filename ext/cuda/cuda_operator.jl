@@ -1,19 +1,20 @@
 
 # CUDA backend concrete implementation #
-struct CudaOperatorKernel{Operator, Ti <: Integer, MemAlloc,ELementsCaches,DHType<:AbstractDofHandler} <: AbstractOperatorKernel{CUDABackend} 
+struct CudaOperatorKernel{Operator, Ti <: Integer, MemAlloc,ELementsCaches} <: AbstractOperatorKernel{CUDABackend} 
     op::Operator
     threads::Ti
     blocks::Ti
     mem_alloc::MemAlloc
     eles_caches:: ELementsCaches
-    device_dh::DHType
+    strategy::CudaAssemblyStrategy
 end
 
 function Thunderbolt.init_linear_operator(strategy::CudaAssemblyStrategy,protocol::IntegrandType,qrc::QuadratureRuleCollection,dh::AbstractDofHandler ) where {IntegrandType}
     if CUDA.functional()
         FT = floattype(strategy)
         b = CUDA.zeros(FT, ndofs(dh))
-        linear_op =  LinearOperator(b, protocol, qrc, dh)
+        cu_dh = Adapt.adapt_structure(strategy, dh)
+        linear_op =  LinearOperator(b, protocol, qrc, cu_dh)
         return _init_linop_cuda(linear_op,strategy)
     else
         error("CUDA is not functional, please check your GPU driver and CUDA installation")
@@ -24,7 +25,8 @@ function Thunderbolt.init_linear_operator(strategy::CudaAssemblyStrategy,linop::
     ## TODO: Dunno if this is useful or not
     if CUDA.functional()
         @unpack b, qrc, dh, integrand  = linop
-        linear_op =  LinearOperator(b |> cu, protocol, qrc, dh)
+        cu_dh = Adapt.adapt_structure(strategy, dh)
+        linear_op =  LinearOperator(b |> cu, protocol, qrc, cu_dh)
         return _init_linop_cuda(linear_op,strategy)
     else
         error("CUDA is not functional, please check your GPU driver and CUDA installation")
@@ -34,18 +36,17 @@ end
 function _init_linop_cuda(linop::LinearOperator,strategy::CudaAssemblyStrategy)
     IT = inttype(strategy)
     FT = floattype(strategy)
-    @unpack dh  = linop
+    dh = linop.dh.dh # cpu dof handler
     n_cells = dh |> get_grid |> getncells |> (x -> convert(IT, x))
     threads = convert(IT, min(n_cells, 256))
     blocks = _calculate_nblocks(threads, n_cells)
     n_basefuncs = convert(IT,ndofs_per_cell(dh)) 
-    eles_caches = _setup_caches(linop)
-    device_dh = Adapt.adapt_structure(strategy, dh)
+    eles_caches = _setup_caches(linop,strategy)
     mem_alloc = try_allocate_shared_mem(FeMemShape{FT}, threads, n_basefuncs)
-    mem_alloc isa Nothing || return CudaOperatorKernel(linop, threads, blocks, mem_alloc,eles_caches,device_dh)
+    mem_alloc isa Nothing || return CudaOperatorKernel(linop, threads, blocks, mem_alloc,eles_caches,strategy)
 
     mem_alloc =allocate_global_mem(FeMemShape{FT}, blocks * threads, n_basefuncs) # allocate global memory only for the active threads
-    return CudaOperatorKernel(linop, threads, blocks, mem_alloc,eles_caches,device_dh)
+    return CudaOperatorKernel(linop, threads, blocks, mem_alloc,eles_caches,strategy)
 end
 
 
@@ -58,8 +59,9 @@ function _calculate_nblocks(threads::Ti, n_cells::Ti) where {Ti <: Integer}
 end
 
 
-function _setup_caches(op::LinearOperator)
-    @unpack b, qrc,dh,  integrand  = op
+function _setup_caches(op::LinearOperator,strategy::CudaAssemblyStrategy)
+    @unpack b, qrc,  integrand  = op
+    dh = op.dh.dh # cpu dof handler
     sdh_to_cache = sdh  -> 
     begin
         # Prepare evaluation caches
@@ -67,7 +69,7 @@ function _setup_caches(op::LinearOperator)
         element_qr  = getquadraturerule(qrc, sdh)
         
         # Build evaluation caches
-        element_cache =  Adapt.adapt_structure(CuArray,setup_element_cache(integrand, element_qr, ip, sdh))
+        element_cache =  Adapt.adapt_structure(strategy,setup_element_cache(integrand, element_qr, ip, sdh))
         return element_cache
     end
     eles_caches  = dh.subdofhandlers .|> sdh_to_cache 
@@ -89,15 +91,19 @@ end
 (op_ker::CudaOperatorKernel)(time) = update_operator!(op_ker.op, time)
 
 function Thunderbolt.update_operator!(op_ker::CudaOperatorKernel{<:LinearOperator}, time)
-    @unpack op, threads, blocks, mem_alloc,eles_caches,device_dh = op_ker
-    @unpack b  = op
-    ker = () -> _update_linear_operator_kernel!(b, device_dh, eles_caches,mem_alloc, time)
-    _launch_kernel!(ker, threads, blocks, mem_alloc)
+    @unpack op, threads, blocks, mem_alloc,eles_caches,strategy = op_ker
+    @unpack b ,dh = op
+    gpu_data = dh.gpudata
+    device_dh = deep_adapt(strategy, gpu_data) # deep apdation
+    GC.@preserve gpu_data begin # preserve the parent CuArray
+        ker = () -> _update_linear_operator_kernel!(b, device_dh, eles_caches,mem_alloc, time)
+        _launch_kernel!(ker, threads, blocks, mem_alloc)
+    end
 end
 
 
-function _update_linear_operator_kernel!(b, dh_, eles_caches,mem_alloc, time)
-    dh = dh_.gpudata
+function _update_linear_operator_kernel!(b, dh, eles_caches,mem_alloc, time)
+    #dh = dh_.gpudata
     for sdh_idx in 1:length(dh.subdofhandlers)
         element_cache = eles_caches[sdh_idx]
         for cell in CellIterator(dh, convert(Int32,sdh_idx), mem_alloc)

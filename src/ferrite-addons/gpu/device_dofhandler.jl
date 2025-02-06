@@ -18,7 +18,8 @@ struct DeviceDofHandlerData{sdim, G<:Ferrite.AbstractGrid{sdim}, #=nfields,=# SD
     ndofs::Ti
 end
 
-struct DeviceDofHandler{ GPUDataType} <: Ferrite.AbstractDofHandler
+struct DeviceDofHandler{DHType <: Ferrite.AbstractDofHandler, GPUDataType} <: Ferrite.AbstractDofHandler
+    dh::DHType
     gpudata::GPUDataType
 end
 
