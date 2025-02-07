@@ -1,12 +1,36 @@
+
+"""
+    coeffs_kernel!(Vals, dh, coeff_cache, cv, t)
+
+Compute and store coefficient values at quadrature points for all cells in the grid 
+    (i.e. we store n_cells * n_quadoints values).
+
+# Arguments
+- `Vals::Vector{<:Any}`: Output vector to store computed coefficient values. This vector has length 
+    equal to n_cells * n_quadpoints. 
+- `dh::DeviceDofHandlerData`: DofHandler.
+- `coeff_cache`: Cache object used for coefficient evaluation.
+- `cv::CellValues`: CellValues object containing quadrature rule and basis function information.
+- `t::Real`: Current time (used for time-dependent coefficients).
+
+# Implementation Details
+1. Loops through each subdofhandler in the DofHandler
+2. For each cell in the subdofhandler:
+   - Retrieves cell coordinates and ID
+   - Iterates over quadrature points using `QuadratureValuesIterator`
+   - Evaluates coefficients at each quadrature point using `evaluate_coefficient`
+   - Stores results in `Vals` with cell-specific offset calculation
+"""
 function coeffs_kernel!(Vals, dh, coeff_cache, cv, t)
-    for sdh_idx in 1:length(dh.subdofhandlers)
-        for cell in CellIterator(dh, convert(Int32, sdh_idx))
+    for sdh_idx in 1:length(dh.subdofhandlers) # this actually is useless as we only have one subdofhandler
+        for cell in CellIterator(dh, convert(Int32, sdh_idx)) # iterate over all cells in the subdomain
             cell_id = cellid(cell)
             coords = getcoordinates(cell)
-            for (i, qv) in pairs(QuadratureValuesIterator(cv, coords))
-                n_basefuncs = getnbasefunctions(cv)
+            quadrature_iterator = QuadratureValuesIterator(cv, coords)
+            n_quad_points = length(quadrature_iterator) # number of quadrature points
+            for (i, qv) in pairs(quadrature_iterator) # pairs will fetch the current index (i) and the `StaticQuadratureValue` (qv)
                 fx = evaluate_coefficient(coeff_cache, cell, qv, t)
-                Vals[(cell_id-1)*n_basefuncs+i] = fx
+                Vals[(cell_id-1)*n_quad_points+i] = fx
             end
         end
     end
@@ -29,6 +53,7 @@ import Adapt: adapt_structure
     add!(dh, :u, getinterpolation(ip_collection, first(grid.cells)))
     close!(dh)
     qr = QuadratureRule{RefLine}([1.0f0, 1.0f0], [Vec{1}((0.0f0,)), Vec{1}((0.1f0,))])
+    n_quad = qr.weights |> length
     cellvalues = CellValues(Float32, qr, ip)
     n_cells = grid.cells |> length
     sdh = first(dh.subdofhandlers)
@@ -40,8 +65,8 @@ import Adapt: adapt_structure
         @testset "ConstantCoefficient($val" for val ∈ [1.0f0]
             cc = ConstantCoefficient(val)
             coeff_cache = setup_coefficient_cache(cc, qr, sdh)
-            correct_vals = ones(Float32, n_cells * getnbasefunctions(cellvalues))
-            Vals = zeros(Float32, n_cells * getnbasefunctions(cellvalues)) |> cu
+            correct_vals = ones(Float32, n_cells * n_quad)
+            Vals = zeros(Float32, n_cells * n_quad) |> cu
             cuda_strategy = Thunderbolt.CudaAssemblyStrategy(Float32, Int32)
 
             @cuda blocks = 1 threads = n_cells coeffs_kernel!(Vals, device_dh, coeff_cache, cellvalues, 0.0f0)

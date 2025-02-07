@@ -69,9 +69,6 @@ function Thunderbolt.deep_adapt(strategy::CudaAssemblyStrategy, dh::DeviceDofHan
     return device_dh
 end
 
-_symbols_to_int(symbols,IT::Type) = 1:length(symbols) .|> (sym -> convert(IT, sym))
-
-
 function _deep_adapt(::CudaAssemblyStrategy, sdh::DeviceSubDofHandlerData)
     # deep adaption
     cellset =  sdh.cellset  |> cudaconvert
@@ -85,13 +82,6 @@ end
 ######################
 ## adapt Coefficients ##
 ######################
-@adapt_structure AnalyticalCoefficientCache
-@adapt_structure CartesianCoordinateSystemCache
-@adapt_structure FieldCoefficientCache
-@adapt_structure AnalyticalCoefficientElementCache
-@adapt_structure SpatiallyHomogeneousDataField
-
-
 function Adapt.adapt_structure(::CudaAssemblyStrategy, element_cache::AnalyticalCoefficientElementCache)
     cc = adapt_structure(CuArray, element_cache.cc)
     nz_intervals = adapt(CuArray, element_cache.nonzero_intervals )

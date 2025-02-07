@@ -50,10 +50,10 @@ end
 function evaluate_coefficient(cache::FieldCoefficientCache{T}, geometry_cache::FerriteUtils.DeviceCellCache, qv::FerriteUtils.StaticQuadratureValues, t) where T
     @unpack elementwise_data, cv = cache
     val = zero(T)
-    cellidx = FerriteUtils.cellid(geometry_cache)
+    cellidx = Ferrite.cellid(geometry_cache)
 
     @inbounds for i in 1:getnbasefunctions(cv)
-        val += FerriteUtils.shape_value(qv, i) * elementwise_data[i, cellidx]
+        val += Ferrite.shape_value(qv, i) * elementwise_data[i, cellidx]
     end
     return val
 end
@@ -191,7 +191,7 @@ function evaluate_coefficient(coeff::CartesianCoordinateSystemCache{<:CartesianC
     x          = zero(Vec{sdim, T})
     coords     = FerriteUtils.getcoordinates(geometry_cache) 
     for i in 1:getnbasefunctions(cv)
-        x += FerriteUtils.shape_value(qv, i) * coords[i]
+        x += Ferrite.shape_value(qv, i) * coords[i]
     end
     return x
 end
@@ -236,9 +236,9 @@ function evaluate_coefficient(coeff::LVCoordinateSystemCache, geometry_cache::Fe
     x1 = zero(T)
     x2 = zero(T)
     x3 = zero(T)
-    dofs = celldofsview(dh, FerriteUtils.cellid(geometry_cache))
+    dofs = celldofsview(dh, Ferrite.cellid(geometry_cache))
     @inbounds for i in 1:getnbasefunctions(cv)
-        val = FerriteUtils.shape_value(qv, i)::T
+        val = Ferrite.shape_value(qv, i)::T
         x1 += val * cs.u_transmural[dofs[i]]
         x2 += val * cs.u_apicobasal[dofs[i]]
         x3 += val * cs.u_rotational[dofs[i]]
@@ -285,13 +285,13 @@ end
 function evaluate_coefficient(cc::BiVCoordinateSystemCache, cell_cache::FerriteUtils.DeviceCellCache, qv::FerriteUtils.StaticQuadratureValues{T}, t) where {T}
     @unpack cv, cs = cc
     @unpack dh     = cs
-    dofs = celldofsview(dh, FerriteUtils.cellid(cell_cache))
+    dofs = celldofsview(dh, Ferrite.cellid(cell_cache))
     x1 = zero(T)
     x2 = zero(T)
     x3 = zero(T)
     x4 = zero(T)
     @inbounds for i in 1:getnbasefunctions(cv)
-        val = FerriteUtils.shape_value(qv, i)::T
+        val = Ferrite.shape_value(qv, i)::T
         x1 += val * cs.u_transmural[dofs[i]]
         x2 += val * cs.u_apicobasal[dofs[i]]
         x3 += val * cs.u_rotational[dofs[i]]
@@ -380,4 +380,3 @@ function _evaluate_coefficient(coeff::SpatiallyHomogeneousDataField, t)
     end
     return data[i] # TODO interpolation
 end
-

@@ -23,6 +23,7 @@ end
 #######################
 abstract type AbstractAssemblyStrategy end
 
+# TODO decouple assembly strategy type from actual device type
 # encompass the all the required data types that needs to be worked with on the GPU
 struct CudaAssemblyStrategy <: AbstractAssemblyStrategy
     floattype::Type
@@ -35,6 +36,14 @@ inttype(strategy::CudaAssemblyStrategy) = strategy.inttype
 CudaDefaultAssemblyStrategy() = CudaAssemblyStrategy(Float32, Int32)
 
 
+##########################################
+## Thunderbolt general objects adaption ##
+##########################################
+Adapt.@adapt_structure AnalyticalCoefficientCache
+Adapt.@adapt_structure CartesianCoordinateSystemCache
+Adapt.@adapt_structure FieldCoefficientCache
+Adapt.@adapt_structure AnalyticalCoefficientElementCache
+Adapt.@adapt_structure SpatiallyHomogeneousDataField
 
 function Adapt.adapt_structure(::AbstractAssemblyStrategy, dh::DofHandler)
     error("GPU specific implementation for `adapt_structure(to,dh::DofHandler)` is not implemented yet")
@@ -42,4 +51,16 @@ end
 
 function deep_adapt(::AbstractAssemblyStrategy, dh::Thunderbolt.FerriteUtils.DeviceDofHandlerData)
     error("GPU specific implementation for `deep_adapt(strategy::CudaAssemblyStrategy, dh::DeviceDofHandlerData)` is not implemented yet")
+end
+
+function Adapt.adapt_structure(::AbstractAssemblyStrategy, element_cache::AnalyticalCoefficientElementCache)
+    error("GPU specific implementation for `adapt_structure(to, element_cache::AnalyticalCoefficientElementCache)` is not implemented yet")
+end
+
+function Adapt.adapt_structure(::AbstractAssemblyStrategy, cysc::FieldCoefficientCache)
+    error("GPU specific implementation for `adapt_structure(to, cysc::FieldCoefficientCache)` is not implemented yet")
+end
+
+function Adapt.adapt_structure(::AbstractAssemblyStrategy, sphdf::SpatiallyHomogeneousDataField)
+    error("GPU specific implementation for `adapt_structure(to, cysc::FieldCoefficientCache)` is not implemented yet")
 end

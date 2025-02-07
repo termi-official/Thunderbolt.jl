@@ -288,4 +288,3 @@ function _quadrature_point_values(fe_v::StaticCellValues, q_point::Int, cell_coo
         end
         return StaticQuadratureValues(detJdV, Nx, dNdx, M)
 end
-

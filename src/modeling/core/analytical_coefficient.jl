@@ -50,11 +50,6 @@ duplicate_for_parallel(ec::AnalyticalCoefficientElementCache) = AnalyticalCoeffi
     _assemble_element!(bₑ, geometry_cache, getcoordinates(geometry_cache), element_cache::AnalyticalCoefficientElementCache, time)
 end
 
-# # TODO: This is a duplicate of the CPU version, we can curcumvent that by define abstract type for CellCache or type parameter.
-# @inline function assemble_element!(bₑ::VectorType, geometry_cache::FerriteUtils.DeviceCellCache, element_cache::AnalyticalCoefficientElementCache, time) where {VectorType}
-#     _assemble_element!(bₑ, geometry_cache, getcoordinates(geometry_cache), element_cache::AnalyticalCoefficientElementCache, time)
-# end
-
 # We want this to be as fast as possible, so throw away everything unused
 @inline function _assemble_element!(bₑ::AbstractVector, geometry_cache::CellCache, coords::AbstractVector{<:Vec{dim,T}}, element_cache::AnalyticalCoefficientElementCache, time) where {dim,T}
     @unpack cc, cv = element_cache
@@ -84,4 +79,3 @@ end
         end
     end
 end
-

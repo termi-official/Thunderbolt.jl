@@ -5,7 +5,7 @@
 # from it extracts the `cell_mem` which is the memory allocation for each cell (i.e. memory per cell)
 
 # iterator with no memory allocation (for testing purposes)
-function _cell_iterator(dh::DeviceDofHandlerData,sdh_idx::Integer,n_cells::Integer)
+function _build_cell_iterator(dh::DeviceDofHandlerData,sdh_idx::Integer,n_cells::Integer)
     grid = dh.grid
     bd = blockDim().x
     local_thread_id = threadIdx().x
@@ -16,7 +16,7 @@ function _cell_iterator(dh::DeviceDofHandlerData,sdh_idx::Integer,n_cells::Integ
 end
 
 # iterator with global memory allocation
-function _cell_iterator(dh::DeviceDofHandlerData,sdh_idx::Integer,n_cells::Integer, global_mem::AbstractDeviceGlobalMem)
+function _build_cell_iterator(dh::DeviceDofHandlerData,sdh_idx::Integer,n_cells::Integer, global_mem::AbstractDeviceGlobalMem)
     grid = get_grid(dh)
     bd = blockDim().x
     local_thread_id = threadIdx().x
@@ -27,7 +27,7 @@ function _cell_iterator(dh::DeviceDofHandlerData,sdh_idx::Integer,n_cells::Integ
 end
 
 # iterator with shared memory allocation
-function _cell_iterator(dh::DeviceDofHandlerData,sdh_idx::Integer,n_cells::Integer, buffer_alloc::AbstractDeviceSharedMem)
+function _build_cell_iterator(dh::DeviceDofHandlerData,sdh_idx::Integer,n_cells::Integer, buffer_alloc::AbstractDeviceSharedMem)
     grid = Ferrite.get_grid(dh)
     local_thread_id = threadIdx().x
     cell_mem = cellmem(buffer_alloc, local_thread_id)
@@ -35,16 +35,16 @@ function _cell_iterator(dh::DeviceDofHandlerData,sdh_idx::Integer,n_cells::Integ
 end
 
 # iterator with global memory allocation over the whole grid
-Ferrite.CellIterator(dh::DeviceDofHandlerData, buffer_alloc::AbstractDeviceGlobalMem) = _cell_iterator(dh, -1,  dh |> get_grid |> getncells |> Int32, buffer_alloc) ## iterate over all cells
+Ferrite.CellIterator(dh::DeviceDofHandlerData, buffer_alloc::AbstractDeviceGlobalMem) = _build_cell_iterator(dh, -1,  dh |> get_grid |> getncells |> Int32, buffer_alloc) ## iterate over all cells
 # iterator with shared memory allocation over the whole grid
-Ferrite.CellIterator(dh::DeviceDofHandlerData, buffer_alloc::AbstractDeviceSharedMem) = _cell_iterator(dh, -1,dh |> get_grid |> getncells |> Int32, buffer_alloc) ## iterate over all cells
+Ferrite.CellIterator(dh::DeviceDofHandlerData, buffer_alloc::AbstractDeviceSharedMem) = _build_cell_iterator(dh, -1,dh |> get_grid |> getncells |> Int32, buffer_alloc) ## iterate over all cells
 
 function Ferrite.CellIterator(dh::DeviceDofHandlerData,sdh_idx::Ti, buffer_alloc::AbstractDeviceGlobalMem) where {Ti <: Integer}
     ## iterate over all cells in the subdomain
     # check if the subdomain index is valid
     sdh_idx ∉ 1:length(dh.subdofhandlers) && return DeviceOutOfBoundCellIterator()
     n_cells = dh.subdofhandlers[sdh_idx].cellset |> length |> (x -> convert(Ti, x)) 
-    return _cell_iterator(dh, sdh_idx,n_cells,buffer_alloc)
+    return _build_cell_iterator(dh, sdh_idx,n_cells,buffer_alloc)
 end
 
 
@@ -53,7 +53,7 @@ function Ferrite.CellIterator(dh::DeviceDofHandlerData,sdh_idx::Ti) where {Ti <:
     # check if the subdomain index is valid
     sdh_idx ∉ 1:length(dh.subdofhandlers) && return DeviceOutOfBoundCellIterator()
     n_cells =dh.subdofhandlers[sdh_idx].cellset |> length |> (x -> convert(Ti, x)) 
-    return _cell_iterator(dh, sdh_idx,n_cells)
+    return _build_cell_iterator(dh, sdh_idx,n_cells)
 end
 
 
@@ -62,7 +62,7 @@ function Ferrite.CellIterator(dh::DeviceDofHandlerData,sdh_idx::Integer, buffer_
     # check if the subdomain index is valid
     sdh_idx ∉ 1:length(dh.subdofhandlers) && return DeviceOutOfBoundCellIterator()
     n_cells = dh.subdofhandlers[sdh_idx].cellset |> length |> (x -> convert(typeof(dh.ndofs), x))  
-    return _cell_iterator(dh, sdh_idx,n_cells, buffer_alloc)
+    return _build_cell_iterator(dh, sdh_idx,n_cells, buffer_alloc)
 end
    
 
@@ -117,35 +117,22 @@ function _makecache(iterator::AbstractDeviceCellIterator, e::Ti) where {Ti <: In
     return DeviceCellCache(coords, dofs, cellid, nodes, iterator.cell_mem)
 end
 
-
-abstract type AbstractKeTrait end
-struct HasKe <: AbstractKeTrait end
-struct HasNoKe <: AbstractKeTrait end
-abstract type AbstractFeTrait end
-struct HasFe <: AbstractFeTrait end
-struct HasNoFe <: AbstractFeTrait end
-
-KeTrait(::Type{<:AbstractCellMem}) = HasKe()
-KeTrait(::Type{<:FeMemShape}) = HasNoKe()
-FeTrait(::Type{<:AbstractCellMem}) = HasFe()
-FeTrait(::Type{<:KeMemShape}) = HasNoFe()
-
-@inline function _cellke(::HasKe, cc::DeviceCellCache)
-    ke =  cc.cell_mem.ke
+@inline function _cellke(cell_mem::AbstractCellMem)
+    ke =  cell_mem.ke
     FT = eltype(ke)
     return CUDA.fill!(ke, zero(FT))
 end
 
-_cellke(::HasNoKe, ::DeviceCellCache) = error("$(typeof(cc.cell_mem)) does not have ke field.")
+_cellke(cell_mem::FeCellMem) = error("$(typeof(cell_mem)) does not have ke field.")
 
-Thunderbolt.FerriteUtils.cellke(cc::DeviceCellCache) = _cellke(KeTrait(typeof(cc.cell_mem)), cc)
+Thunderbolt.FerriteUtils.cellke(cc::DeviceCellCache) = _cellke(cc.cell_mem)
 
-@inline function _cellfe(::HasFe, cc::DeviceCellCache)
-    fe =  cc.cell_mem.fe
+@inline function _cellfe(cell_mem::AbstractCellMem)
+    fe =  cell_mem.fe
     FT = eltype(fe)
     return CUDA.fill!(fe, zero(FT))
 end
 
-_cellfe(::HasNoFe, ::DeviceCellCache) = error("$(typeof(cc.cell_mem)) does not have fe field.")
+_cellfe(cell_mem::KeCellMem) = error("$(typeof(cell_mem)) does not have fe field.")
 
-Thunderbolt.FerriteUtils.cellfe(cc::DeviceCellCache) = _cellfe(FeTrait(typeof(cc.cell_mem)), cc)
+Thunderbolt.FerriteUtils.cellfe(cc::DeviceCellCache) = _cellfe(cc.cell_mem)

@@ -16,5 +16,3 @@ function Adapt.adapt_structure(to, cv::CellValues)
     weights = Adapt.adapt(to, ntuple(i -> cv.qr.weights[i], n_quadoints))
     return StaticCellValues(fv, gm, weights)
 end
-
-
