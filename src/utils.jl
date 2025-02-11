@@ -50,10 +50,12 @@ include("ferrite-addons/gpu/adapt.jl")
 
 end
 
+import .FerriteUtils: QuadraturePoint
+
 include("ferrite-addons/collections.jl")
 include("ferrite-addons/quadrature_iterator.jl")
 
-function celldofsview(dh::Ferrite.AbstractDofHandler, i::Ti) where {Ti <: Integer}
+function celldofsview(dh::Ferrite.AbstractDofHandler, i::Integer) 
     ndofs = ndofs_per_cell(dh, i)
     offset = dh.cell_dofs_offset[i]
     return @views dh.cell_dofs[offset:(offset+ndofs-1)]

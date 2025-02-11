@@ -29,7 +29,8 @@ function coeffs_kernel!(Vals, dh, coeff_cache, cv, t)
             quadrature_iterator = QuadratureValuesIterator(cv, coords)
             n_quad_points = length(quadrature_iterator) # number of quadrature points
             for (i, qv) in pairs(quadrature_iterator) # pairs will fetch the current index (i) and the `StaticQuadratureValue` (qv)
-                fx = evaluate_coefficient(coeff_cache, cell, qv, t)
+                qp = qv.qp
+                fx = evaluate_coefficient(coeff_cache, cell, qp, t)
                 Vals[(cell_id-1)*n_quad_points+i] = fx
             end
         end
@@ -58,8 +59,8 @@ import Adapt: adapt_structure
     n_cells = grid.cells |> length
     sdh = first(dh.subdofhandlers)
 
-    cu_dh = adapt_structure(cuda_strategy, dh)
     strategy = Thunderbolt.CudaAssemblyStrategy(Float32, Int32)
+    cu_dh = adapt_structure(strategy, dh)
     device_dh = deep_adapt(strategy, cu_dh.gpudata)
     GC.@preserve cu_dh begin
         @testset "ConstantCoefficient($val" for val ∈ [1.0f0]

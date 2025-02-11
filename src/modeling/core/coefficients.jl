@@ -1,3 +1,5 @@
+Cell_Cache = Union{CellCache, FerriteUtils.DeviceCellCache}
+
 """
     FieldCoefficient(data, interpolation)
 
@@ -36,7 +38,7 @@ function _create_field_coefficient_cache(coefficient::FieldCoefficient{<:Vec{<:A
     return FieldCoefficientCache(coefficient.elementwise_data, FerriteUtils.StaticInterpolationValues(fv.ip, SMatrix{Nξs[1], Nξs[2]}(fv.Nξ), nothing))
 end
 
-function evaluate_coefficient(cache::FieldCoefficientCache{T}, geometry_cache, qp::QuadraturePoint, t) where T
+function evaluate_coefficient(cache::FieldCoefficientCache{T}, geometry_cache::Cell_Cache, qp::QuadraturePoint, t) where T
     @unpack elementwise_data, cv = cache
     val = zero(T)
     cellidx = cellid(geometry_cache)
@@ -46,17 +48,18 @@ function evaluate_coefficient(cache::FieldCoefficientCache{T}, geometry_cache, q
     end
     return val
 end
-# GPU coefficient evaluation!
-function evaluate_coefficient(cache::FieldCoefficientCache{T}, geometry_cache::FerriteUtils.DeviceCellCache, qv::FerriteUtils.StaticQuadratureValues, t) where T
-    @unpack elementwise_data, cv = cache
-    val = zero(T)
-    cellidx = Ferrite.cellid(geometry_cache)
 
-    @inbounds for i in 1:getnbasefunctions(cv)
-        val += Ferrite.shape_value(qv, i) * elementwise_data[i, cellidx]
-    end
-    return val
-end
+# # GPU coefficient evaluation!
+# function evaluate_coefficient(cache::FieldCoefficientCache{T}, geometry_cache::FerriteUtils.DeviceCellCache, qv::FerriteUtils.StaticQuadratureValues, t) where T
+#     @unpack elementwise_data, cv = cache
+#     val = zero(T)
+#     cellidx = Ferrite.cellid(geometry_cache)
+
+#     @inbounds for i in 1:getnbasefunctions(cv)
+#         val += Ferrite.shape_value(qv, i) * elementwise_data[i, cellidx]
+#     end
+#     return val
+# end
 
 
 """

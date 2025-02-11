@@ -29,11 +29,8 @@ function try_allocate_shared_mem(::Type{AbstractMemShape{Tv}}, block_dim::Ti, n_
     error("please provide concrete implementation for $(typeof(AbstractMemShape{Tv})).")
 end
 
-
-
 cellmem(shared_mem::AbstractDeviceSharedMem, ::Integer) = error("please provide concrete implementation for $(typeof(shared_mem)).")
 cellmem(shared_mem::AbstractDeviceGlobalMem, ::Integer) = error("please provide concrete implementation for $(typeof(shared_mem)).")
-
 
 function allocate_global_mem(::Type{AbstractMemShape{Tv}}, n_cells::Ti, n_basefuncs::Ti) where {Ti <: Integer, Tv <: Real}
    error("please provide concrete implementation for $(typeof(AbstractMemShape{Tv})).")

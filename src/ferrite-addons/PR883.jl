@@ -1,3 +1,16 @@
+
+"""
+    QuadraturePoint{dim, T}
+
+A simple helper to carry quadrature point information.
+"""
+struct QuadraturePoint{dim, T,VEC}
+    i::Int
+    ξ::VEC
+end
+
+QuadraturePoint(i::Int, ξ::VEC) where {dim, T,VEC} = QuadraturePoint{dim, T,VEC}(i, ξ)
+
 using Ferrite
 using StaticArrays
 import Base: @propagate_inbounds
@@ -152,6 +165,7 @@ struct StaticQuadratureValues{T, N_t, dNdx_t, M_t, NumN, NumM} <: AbstractQuadra
     N::SVector{NumN, N_t}
     dNdx::SVector{NumN, dNdx_t}
     M::SVector{NumM, M_t}
+    qp::QuadraturePoint
 end
 
 @propagate_inbounds Ferrite.getngeobasefunctions(qv::StaticQuadratureValues) = length(qv.M)
@@ -200,6 +214,8 @@ end
 
 Ferrite.shape_value(siv::StaticInterpolationValues, qp::Int, i::Int) = siv.Nξ[i, qp]
 Ferrite.getnbasefunctions(siv::StaticInterpolationValues) = getnbasefunctions(siv.ip)
+Ferrite.shape_value(cv::FerriteUtils.StaticInterpolationValues, qp::QuadraturePoint, base_fun_idx::Int) = Ferrite.shape_value(cv, qp.i, base_fun_idx)
+Ferrite.function_value(cv::FerriteUtils.StaticInterpolationValues, qp::QuadraturePoint, ue) = Ferrite.function_value(cv, qp.i, ue)
 
 # Dispatch on DiffOrder parameter? 
 # Reuse functions for GeometryMapping - same signature but need access functions
@@ -227,17 +243,16 @@ end
 struct StaticCellValues{FV, GM, Nqp, T}
     fv::FV # StaticInterpolationValues
     gm::GM # StaticInterpolationValues
-    #x::Tx  # AbstractVector{<:Vec} or Nothing
     weights::NTuple{Nqp, T}
+    qps::NTuple{Nqp,QuadraturePoint} # quadrature points
 end
 
 function StaticCellValues(cv::CellValues) 
     fv = StaticInterpolationValues(cv.fun_values)
     gm = StaticInterpolationValues(cv.geo_mapping)
-    #sdim = sdim_from_gradtype(shape_gradient_type(cv))
-    #x = SaveCoords ? fill(zero(Vec{sdim}), getngeobasefunctions(cv)) : nothing
     weights = ntuple(i -> getweights(cv.qr)[i], getnquadpoints(cv))
-    return StaticCellValues(fv, gm, weights)
+    qps = ntuple(i -> QuadraturePoint(i, getpoints(cv.qr)[i]), getnquadpoints(qr))
+    return StaticCellValues(fv, gm,weights, qps)
 end
 
 # function StaticCellValues(cv::CellValues, ::Val{SaveCoords}=Val(true)) where SaveCoords
@@ -285,6 +300,7 @@ function _quadrature_point_values(fe_v::StaticCellValues, q_point::Int, cell_coo
         
             Nx, dNdx = calculate_mapped_values(fe_v.fv, q_point, mapping)
             M = fe_v.gm.Nξ[:, q_point]
+            qp = fe_v.qps[q_point]
         end
-        return StaticQuadratureValues(detJdV, Nx, dNdx, M)
+        return StaticQuadratureValues(detJdV, Nx, dNdx, M,qp)
 end
