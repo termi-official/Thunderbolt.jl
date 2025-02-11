@@ -58,8 +58,8 @@ import Adapt: adapt_structure
     n_cells = grid.cells |> length
     sdh = first(dh.subdofhandlers)
 
-    cu_dh = adapt_structure(cuda_strategy, dh)
     strategy = Thunderbolt.CudaAssemblyStrategy(Float32, Int32)
+    cu_dh = adapt_structure(strategy, dh)
     device_dh = deep_adapt(strategy, cu_dh.gpudata)
     GC.@preserve cu_dh begin
         @testset "ConstantCoefficient($val" for val ∈ [1.0f0]
