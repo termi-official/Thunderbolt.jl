@@ -34,7 +34,7 @@ cuda_op = Thunderbolt.init_linear_operator(cuda_strategy,protocol, qrc, dh);
 Thunderbolt.update_operator!(cuda_op,0.0)
 
 
-@test Vector(cuda_op.op.b) ≈ linop.b
+@test Vector(cuda_op.b) ≈ linop.b
 
 
 

@@ -25,21 +25,14 @@ abstract type AbstractDeviceGlobalMem <: AbstractDeviceGroupMem end
 # interfaces
 mem_size(shared_mem::AbstractDeviceSharedMem) = shared_mem.tot_mem_size
 
-function try_allocate_shared_mem(::Type{AbstractMemShape{Tv}}, block_dim::Ti, n_basefuncs::Ti) where {Ti <: Integer, Tv <: Real}
-    error("please provide concrete implementation for $(typeof(AbstractMemShape{Tv})).")
-end
-
-
-
 cellmem(shared_mem::AbstractDeviceSharedMem, ::Integer) = error("please provide concrete implementation for $(typeof(shared_mem)).")
 cellmem(shared_mem::AbstractDeviceGlobalMem, ::Integer) = error("please provide concrete implementation for $(typeof(shared_mem)).")
 
 
-function allocate_global_mem(::Type{AbstractMemShape{Tv}}, n_cells::Ti, n_basefuncs::Ti) where {Ti <: Integer, Tv <: Real}
-   error("please provide concrete implementation for $(typeof(AbstractMemShape{Tv})).")
+function allocate_device_mem(mem_shape::Type{AbstractMemShape{Tv}}, n_cells::Ti, n_basefuncs::Ti) where {Ti <: Integer, Tv <: Real}
+    error("please provide concrete implementation for $(typeof(mem_shape)).")
 end
-
-
+   
 ##########################
 # Cell Memory Allocation #
 ##########################
