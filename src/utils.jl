@@ -50,8 +50,6 @@ include("ferrite-addons/gpu/adapt.jl")
 
 end
 
-import .FerriteUtils: QuadraturePoint
-
 include("ferrite-addons/collections.jl")
 include("ferrite-addons/quadrature_iterator.jl")
 

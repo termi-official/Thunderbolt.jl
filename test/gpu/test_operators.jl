@@ -35,6 +35,3 @@ Thunderbolt.update_operator!(cuda_op,0.0)
 
 
 @test Vector(cuda_op.b) ≈ linop.b
-
-
-

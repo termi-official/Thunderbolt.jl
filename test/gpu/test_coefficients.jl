@@ -28,18 +28,20 @@ function coeffs_kernel!(Vals, sdh, coeff_cache, cv, t)
         quadrature_iterator = QuadratureValuesIterator(cv, coords)
         n_quad_points = length(quadrature_iterator) # number of quadrature points
         for (i, qv) in pairs(quadrature_iterator) # pairs will fetch the current index (i) and the `StaticQuadratureValue` (qv)
-            fx = evaluate_coefficient(coeff_cache, cell, qv, t)
+            qp = QuadraturePoint(i, Vec(qv.position))
+            fx = evaluate_coefficient(coeff_cache, cell, qp, t)
             Vals[(cell_id-1)*n_quad_points+i] = fx
         end
     end
     return nothing
 end
 
-import Thunderbolt: setup_coefficient_cache, evaluate_coefficient, ConductivityToDiffusivityCoefficient, deep_adapt
+import Thunderbolt: setup_coefficient_cache, evaluate_coefficient, ConductivityToDiffusivityCoefficient, deep_adapt,QuadraturePoint
 import Thunderbolt.FerriteUtils:
     CellIterator, QuadratureValuesIterator, cellid, getcoordinates, getnbasefunctions
 import CUDA: @cuda
 import Adapt: adapt_structure
+import Tensors: Vec
 
 @testset "Coefficient API" begin
     left = Tensor{1,1,Float32}((-1.0,)) # define the left bottom corner of the grid.

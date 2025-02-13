@@ -1,16 +1,3 @@
-
-"""
-    QuadraturePoint{dim, T}
-
-A simple helper to carry quadrature point information.
-"""
-struct QuadraturePoint{dim, T,VEC}
-    i::Int
-    ξ::VEC
-end
-
-QuadraturePoint(i::Int, ξ::VEC) where {dim, T,VEC} = QuadraturePoint{dim, T,VEC}(i, ξ)
-
 using Ferrite
 using StaticArrays
 import Base: @propagate_inbounds
@@ -160,12 +147,14 @@ https://github.com/termi-official/Thunderbolt.jl/pull/53/files#diff-2b486be5a947
 https://github.com/Ferrite-FEM/Ferrite.jl/compare/master...kam/StaticValues2
 =#
 
-struct StaticQuadratureValues{T, N_t, dNdx_t, M_t, NumN, NumM} <: AbstractQuadratureValues
+struct StaticQuadratureValues{T, N_t, dNdx_t, M_t, NumN, NumM,dim,Ti<:Integer} <: AbstractQuadratureValues
     detJdV::T
     N::SVector{NumN, N_t}
     dNdx::SVector{NumN, dNdx_t}
     M::SVector{NumM, M_t}
-    qp::QuadraturePoint
+    weight::T
+    position::NTuple{dim, T}
+    idx::Ti
 end
 
 @propagate_inbounds Ferrite.getngeobasefunctions(qv::StaticQuadratureValues) = length(qv.M)
@@ -214,8 +203,7 @@ end
 
 Ferrite.shape_value(siv::StaticInterpolationValues, qp::Int, i::Int) = siv.Nξ[i, qp]
 Ferrite.getnbasefunctions(siv::StaticInterpolationValues) = getnbasefunctions(siv.ip)
-Ferrite.shape_value(cv::FerriteUtils.StaticInterpolationValues, qp::QuadraturePoint, base_fun_idx::Int) = Ferrite.shape_value(cv, qp.i, base_fun_idx)
-Ferrite.function_value(cv::FerriteUtils.StaticInterpolationValues, qp::QuadraturePoint, ue) = Ferrite.function_value(cv, qp.i, ue)
+
 
 # Dispatch on DiffOrder parameter? 
 # Reuse functions for GeometryMapping - same signature but need access functions
@@ -240,19 +228,19 @@ end
     return Nx, dNdx
 end
 
-struct StaticCellValues{FV, GM, Nqp, T}
+struct StaticCellValues{FV, GM, Nqp, T,Pos_Type}
     fv::FV # StaticInterpolationValues
     gm::GM # StaticInterpolationValues
     weights::NTuple{Nqp, T}
-    qps::NTuple{Nqp,QuadraturePoint} # quadrature points
+    positions::NTuple{Nqp,Pos_Type} # quadrature points
 end
 
 function StaticCellValues(cv::CellValues) 
     fv = StaticInterpolationValues(cv.fun_values)
     gm = StaticInterpolationValues(cv.geo_mapping)
     weights = ntuple(i -> getweights(cv.qr)[i], getnquadpoints(cv))
-    qps = ntuple(i -> QuadraturePoint(i, getpoints(cv.qr)[i]), getnquadpoints(qr))
-    return StaticCellValues(fv, gm,weights, qps)
+    positions = ntuple(i ->  getpoints(cv.qr)[i].data, getnquadpoints(qr))
+    return StaticCellValues(fv, gm,weights, positions)
 end
 
 # function StaticCellValues(cv::CellValues, ::Val{SaveCoords}=Val(true)) where SaveCoords
@@ -296,11 +284,12 @@ function _quadrature_point_values(fe_v::StaticCellValues, q_point::Int, cell_coo
         
             detJ = Ferrite.calculate_detJ(Ferrite.getjacobian(mapping))
             detJ > 0.0f0 || neg_detJ_err_fun(detJ) # Cannot throw error on GPU, TODO: return error code instead
-            detJdV = detJ * fe_v.weights[q_point]
+            weight = fe_v.weights[q_point]
+            detJdV = detJ * weight
         
             Nx, dNdx = calculate_mapped_values(fe_v.fv, q_point, mapping)
             M = fe_v.gm.Nξ[:, q_point]
-            qp = fe_v.qps[q_point]
+            position = fe_v.positions[q_point]
         end
-        return StaticQuadratureValues(detJdV, Nx, dNdx, M,qp)
+        return StaticQuadratureValues(detJdV, Nx, dNdx, M, weight, position, q_point)
 end

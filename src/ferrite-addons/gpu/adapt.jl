@@ -1,7 +1,6 @@
 ############
 # adapt.jl #
 ############
-import Tensors: Vec
 Adapt.@adapt_structure QuadratureValuesIterator
 Adapt.@adapt_structure StaticQuadratureValues
 Adapt.@adapt_structure DeviceCellIterator 
@@ -15,19 +14,6 @@ function Adapt.adapt_structure(to, cv::CellValues)
     gm = Adapt.adapt(to, StaticInterpolationValues(cv.geo_mapping))
     n_quadoints = cv.qr.weights |> length
     weights = Adapt.adapt(to, ntuple(i -> cv.qr.weights[i], n_quadoints))
-    #qps = Adapt.adapt(to,ntuple(i -> Adapt.adapt_structure(to,QuadraturePoint(i, cv.qr.points[i])), n_quadoints))
-    qps = Adapt.adapt(to,ntuple(i -> QuadraturePoint(i, Adapt.adapt_structure(to,Vec{1}((0.0f0,)))), n_quadoints))
-    return StaticCellValues(fv, gm, weights,qps)
-end
-
-function Adapt.adapt_structure(to,qp::QuadraturePoint)
-    @show "A7a"
-    i = Adapt.adapt(to, qp.i)
-    ξ = Adapt.adapt_structure(to, qp.ξ)
-    return QuadraturePoint(i, ξ)
-end
-
-function Adapt.adapt_structure(to,qp::Vec{dim,T}) where {dim,T}
-    @show "A7a2"
-    return Vec{dim,T}(Adapt.adapt(to, qp.data))
+    positions = Adapt.adapt(to,ntuple(i -> Adapt.adapt(to,cv.qr.points[i].data), n_quadoints))
+    return StaticCellValues(fv, gm,weights,positions)
 end

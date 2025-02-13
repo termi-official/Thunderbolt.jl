@@ -23,12 +23,7 @@ end
 
 duplicate_for_parallel(cache::AnalyticalCoefficientCache) = AnalyticalCoefficientCache(cache.f, duplicate_for_parallel(cache.coordinate_system_cache))
 
-@inline function evaluate_coefficient(coeff::F, cell_cache::CellCache, qp::QuadraturePoint{<:Any,T}, t) where {F <: AnalyticalCoefficientCache, T}
-    x = evaluate_coefficient(coeff.coordinate_system_cache, cell_cache, qp, t)
-    return coeff.f(x, t)
-end
-
-@inline function evaluate_coefficient(coeff::F, cell_cache::FerriteUtils.DeviceCellCache, qp::FerriteUtils.StaticQuadratureValues, t) where {F <: AnalyticalCoefficientCache}
+@inline function evaluate_coefficient(coeff::F, cell_cache::Cell_Cache, qp::QuadraturePoint{<:Any,T}, t) where {F <: AnalyticalCoefficientCache, T}
     x = evaluate_coefficient(coeff.coordinate_system_cache, cell_cache, qp, t)
     return coeff.f(x, t)
 end
@@ -72,8 +67,11 @@ end
     @unpack cc, cv = element_cache
     for qv in FerriteUtils.QuadratureValuesIterator(cv, coords)
         dΩ = FerriteUtils.getdetJdV(qv)
+        idx = qv.idx
+        position = qv.position
+        qp = QuadraturePoint(idx, Vec(position))
         @inbounds for j ∈ 1:getnbasefunctions(cv)
-            fx =  evaluate_coefficient(cc, geometry_cache, qv, time) 
+            fx =  evaluate_coefficient(cc, geometry_cache, qp, time) 
             δu = FerriteUtils.shape_value(qv, j)
             bₑ[j] += fx * δu * dΩ
         end
