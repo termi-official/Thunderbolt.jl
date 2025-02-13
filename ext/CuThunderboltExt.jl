@@ -13,22 +13,23 @@ import Thunderbolt:
     SparseMatrixCSR, SparseMatrixCSC,
     AbstractSemidiscreteFunction, AbstractPointwiseFunction, solution_size,
     AbstractPointwiseSolverCache,assemble_element!,
-    LinearOperator,AbstractOperatorKernel,QuadratureRuleCollection,
+    LinearOperator,QuadratureRuleCollection,
     AnalyticalCoefficientElementCache,AnalyticalCoefficientCache,CartesianCoordinateSystemCache,
     setup_element_cache,update_operator!,init_linear_operator,FieldCoefficientCache, CudaAssemblyStrategy, floattype,inttype, 
-    convert_vec_to_concrete,deep_adapt
+    convert_vec_to_concrete,deep_adapt,AbstractElementAssembly,GeneralLinearOperator
 
 import Thunderbolt.FerriteUtils:
-    StaticInterpolationValues,StaticCellValues, try_allocate_shared_mem,
-    CellIterator,allocate_global_mem, mem_size, cellmem,ncells,
-    DeviceDofHandlerData, DeviceSubDofHandlerData, DeviceDofHandler, DeviceGrid,
+    StaticInterpolationValues,StaticCellValues, allocate_device_mem,
+    CellIterator, mem_size, cellmem,ncells,
+    DeviceDofHandlerData, DeviceSubDofHandler, DeviceDofHandler, DeviceGrid,
     cellfe,celldofs, AbstractDeviceGlobalMem, AbstractDeviceSharedMem,AbstractDeviceCellIterator,AbstractCellMem,
     FeMemShape, KeMemShape, KeFeMemShape, DeviceCellIterator,DeviceOutOfBoundCellIterator,DeviceCellCache,
-    FeCellMem, KeCellMem, KeFeCellMem,NoCellMem
+    FeCellMem, KeCellMem, KeFeCellMem,NoCellMem,AbstractMemShape
 
 
 import Ferrite:
-    AbstractDofHandler,get_grid,CellIterator,get_node_coordinate,getcoordinates,get_coordinate_eltype
+    AbstractDofHandler,get_grid,CellIterator,get_node_coordinate,getcoordinates,get_coordinate_eltype,getcells,
+    get_node_ids,celldofs,get_coordinate_type,nnodes
 
 import StaticArrays:
     SVector,MVector
