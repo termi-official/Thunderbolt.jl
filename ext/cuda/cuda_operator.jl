@@ -53,7 +53,7 @@ function _setup_caches(strategy::CudaAssemblyStrategy,integrand::IntegrandType,q
         return element_cache
     end
     eles_caches  = dh.subdofhandlers .|> sdh_to_cache 
-    return eles_caches |> cu
+    return eles_caches
 end
 
 
@@ -71,24 +71,22 @@ end
 function Thunderbolt.update_operator!(op::GeneralLinearOperator{<:CudaElementAssembly}, time) 
     @unpack b, element_assembly = op
     @unpack threads, blocks, mem_alloc, eles_caches, strategy, dh = element_assembly
-    gpu_data = dh.gpudata
-    device_dh = deep_adapt(strategy, gpu_data) # deep apdation
-    GC.@preserve gpu_data begin # preserve the parent CuArray
-        ker = () -> _update_linear_operator_kernel!(b, device_dh, eles_caches,mem_alloc, time)
+    partial_ker = (sdh,ele_cache) -> _update_linear_operator_kernel!(b, sdh, ele_cache,mem_alloc, time)
+    for sdh_idx in 1:length(dh.subdofhandlers)
+        sdh = dh.subdofhandlers[sdh_idx]
+        ele_cache = eles_caches[sdh_idx]
+        ker = () -> partial_ker(sdh,ele_cache)
         _launch_kernel!(ker, threads, blocks, mem_alloc)
     end
 end
 
-function _update_linear_operator_kernel!(b, dh, eles_caches,mem_alloc, time)
-    for sdh_idx in 1:length(dh.subdofhandlers)
-        element_cache = eles_caches[sdh_idx]
-        for cell in CellIterator(dh, convert(Int32,sdh_idx), mem_alloc)
-            bₑ = cellfe(cell)
-            assemble_element!(bₑ, cell, element_cache, time)
-            dofs = celldofs(cell)
-            @inbounds for i in 1:length(dofs)
-                b[dofs[i]] += bₑ[i]
-            end
+function _update_linear_operator_kernel!(b, sdh, element_cache,mem_alloc, time)
+    for cell in CellIterator(sdh, mem_alloc)
+        bₑ = cellfe(cell)
+        assemble_element!(bₑ, cell, element_cache, time)
+        dofs = celldofs(cell)
+        @inbounds for i in 1:length(dofs)
+            b[dofs[i]] += bₑ[i]
         end
     end
     return nothing

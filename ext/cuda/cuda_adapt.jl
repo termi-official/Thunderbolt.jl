@@ -15,28 +15,26 @@ function Adapt.adapt_structure(strategy::CudaAssemblyStrategy, dh::DofHandler)
     cell_dofs = dh.cell_dofs .|> (i -> convert(IT,i)) |> cu
     cell_dofs_offset = dh.cell_dofs_offset .|> (i -> convert(IT,i)) |> cu
     cell_to_sdh = dh.cell_to_subdofhandler .|> (i -> convert(IT,i)) |> cu
-    subdofhandlers = dh.subdofhandlers .|> (sdh -> _adapt(strategy, sdh)) 
-    gpudata = DeviceDofHandlerData(
+    dh_data = DeviceDofHandlerData(
         grid,
-        subdofhandlers,
         cell_dofs,
         cell_dofs_offset,
         cell_to_sdh,
-        convert(IT,dh.ndofs),
-    )
-    return DeviceDofHandler(dh,gpudata)
+        convert(IT,dh.ndofs))
+    subdofhandlers = dh.subdofhandlers .|> (sdh -> _adapt(strategy, sdh,dh_data)) 
+    return DeviceDofHandler(dh,subdofhandlers)
 end
 
 _symbols_to_int(symbols,IT::Type) = 1:length(symbols) .|> (sym -> convert(IT, sym))
 
 
-function _adapt(strategy::CudaAssemblyStrategy, sdh::SubDofHandler)
+function _adapt(strategy::CudaAssemblyStrategy, sdh::SubDofHandler,dh_data::DeviceDofHandlerData)
     IT = inttype(strategy)
     cellset =  sdh.cellset |> collect .|> (x -> convert(IT, x)) |> cu 
     field_names =  _symbols_to_int(sdh.field_names,IT) |> cu 
     field_interpolations = sdh.field_interpolations |> convert_vec_to_concrete |> cu 
     ndofs_per_cell =  sdh.ndofs_per_cell
-    return DeviceSubDofHandlerData(cellset, field_names, field_interpolations, ndofs_per_cell)
+    return DeviceSubDofHandler(cellset, field_names, field_interpolations, ndofs_per_cell,dh_data)
 end
 
 function _adapt(::CudaAssemblyStrategy, grid::Grid{sdim, cell_type, T}) where {sdim, cell_type, T}
@@ -46,38 +44,6 @@ function _adapt(::CudaAssemblyStrategy, grid::Grid{sdim, cell_type, T}) where {s
     #TODO subdomain info
     return DeviceGrid{sdim, cell_type, T, typeof(cells), typeof(nodes)}(cells, nodes)
 end
-
-########################################
-## Deep adaption for DeviceDofHandler ##
-########################################
-function Thunderbolt.deep_adapt(strategy::CudaAssemblyStrategy, dh::DeviceDofHandlerData)
-    # here we need to perform deep adaption
-    grid = dh.grid
-    cell_dofs = dh.cell_dofs
-    cell_dofs_offset = dh.cell_dofs_offset 
-    cell_to_sdh = dh.cell_to_subdofhandler
-    subdofhandlers = dh.subdofhandlers .|> (sdh -> _deep_adapt(strategy, sdh)) |> cu
-    ndofs = dh.ndofs
-    device_dh = DeviceDofHandlerData(
-        grid,
-        subdofhandlers,
-        cell_dofs,
-        cell_dofs_offset,
-        cell_to_sdh,
-        ndofs,
-    )
-    return device_dh
-end
-
-function _deep_adapt(::CudaAssemblyStrategy, sdh::DeviceSubDofHandlerData)
-    # deep adaption
-    cellset =  sdh.cellset  |> cudaconvert
-    field_names =  sdh.field_names |> cudaconvert
-    field_interpolations = sdh.field_interpolations  |> cudaconvert
-    ndofs_per_cell =  sdh.ndofs_per_cell
-    return DeviceSubDofHandlerData(cellset, field_names, field_interpolations, ndofs_per_cell)
-end
-
 
 ######################
 ## adapt Coefficients ##

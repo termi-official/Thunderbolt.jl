@@ -7,7 +7,7 @@ Adapt.@adapt_structure DeviceCellIterator
 Adapt.@adapt_structure DeviceGrid
 Adapt.@adapt_structure DeviceDofHandler
 Adapt.@adapt_structure DeviceDofHandlerData
-Adapt.@adapt_structure DeviceSubDofHandlerData
+Adapt.@adapt_structure DeviceSubDofHandler
 
 function Adapt.adapt_structure(to, cv::CellValues)
     fv = Adapt.adapt(to, StaticInterpolationValues(cv.fun_values))
