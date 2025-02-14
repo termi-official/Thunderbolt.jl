@@ -228,11 +228,11 @@ end
     return Nx, dNdx
 end
 
-struct StaticCellValues{FV, GM, Nqp, T,Pos_Type}
+struct StaticCellValues{FV, GM, Nqp, T,dim}
     fv::FV # StaticInterpolationValues
     gm::GM # StaticInterpolationValues
     weights::NTuple{Nqp, T}
-    positions::NTuple{Nqp,Pos_Type} # quadrature points
+    positions::NTuple{Nqp,NTuple{dim,T}} # quadrature points
 end
 
 function StaticCellValues(cv::CellValues) 
