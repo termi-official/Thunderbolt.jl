@@ -45,3 +45,8 @@ Ferrite.getnodes(cc::DeviceCellCache) = cc.nodes
 Ferrite.getcoordinates(cc::DeviceCellCache) = cc.coords
 Ferrite.celldofs(cc::DeviceCellCache) = cc.dofs
 Ferrite.cellid(cc::DeviceCellCache) = cc.cellid
+
+######################
+# Unified Cell Cache #
+######################
+AnyCellCache = Union{CellCache, DeviceCellCache}

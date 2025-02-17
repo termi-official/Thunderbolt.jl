@@ -14,6 +14,6 @@ function Adapt.adapt_structure(to, cv::CellValues)
     gm = Adapt.adapt(to, StaticInterpolationValues(cv.geo_mapping))
     n_quadoints = cv.qr.weights |> length
     weights = Adapt.adapt(to, ntuple(i -> cv.qr.weights[i], n_quadoints))
-    positions = Adapt.adapt(to,ntuple(i -> Adapt.adapt(to,cv.qr.points[i].data), n_quadoints))
-    return StaticCellValues(fv, gm,weights,positions)
+    ξs = Adapt.adapt(to,ntuple(i -> Adapt.adapt_structure(to,cv.qr.points[i]), n_quadoints))
+    return StaticCellValues(fv, gm,weights,ξs)
 end

@@ -147,13 +147,13 @@ https://github.com/termi-official/Thunderbolt.jl/pull/53/files#diff-2b486be5a947
 https://github.com/Ferrite-FEM/Ferrite.jl/compare/master...kam/StaticValues2
 =#
 
-struct StaticQuadratureValues{T, N_t, dNdx_t, M_t, NumN, NumM,dim,Ti<:Integer} <: AbstractQuadratureValues
+struct StaticQuadratureValues{T, N_t, dNdx_t, M_t, NumN, NumM,dim ,Ti<:Integer} <: AbstractQuadratureValues
     detJdV::T
     N::SVector{NumN, N_t}
     dNdx::SVector{NumN, dNdx_t}
     M::SVector{NumM, M_t}
     weight::T
-    position::NTuple{dim, T}
+    ξ::Vec{dim,T}
     idx::Ti
 end
 
@@ -232,15 +232,16 @@ struct StaticCellValues{FV, GM, Nqp, T,dim}
     fv::FV # StaticInterpolationValues
     gm::GM # StaticInterpolationValues
     weights::NTuple{Nqp, T}
-    positions::NTuple{Nqp,NTuple{dim,T}} # quadrature points
+    ξs::NTuple{Nqp,Vec{dim,T}} # quadrature points
 end
 
 function StaticCellValues(cv::CellValues) 
     fv = StaticInterpolationValues(cv.fun_values)
     gm = StaticInterpolationValues(cv.geo_mapping)
     weights = ntuple(i -> getweights(cv.qr)[i], getnquadpoints(cv))
-    positions = ntuple(i ->  getpoints(cv.qr)[i].data, getnquadpoints(qr))
-    return StaticCellValues(fv, gm,weights, positions)
+    #positions = ntuple(i ->  getpoints(cv.qr)[i].data, getnquadpoints(qr))
+    ξs = ntuple(i ->  getpoints(cv.qr)[i], getnquadpoints(qr))
+    return StaticCellValues(fv, gm,weights, ξs)
 end
 
 # function StaticCellValues(cv::CellValues, ::Val{SaveCoords}=Val(true)) where SaveCoords
@@ -289,7 +290,7 @@ function _quadrature_point_values(fe_v::StaticCellValues, q_point::Int, cell_coo
         
             Nx, dNdx = calculate_mapped_values(fe_v.fv, q_point, mapping)
             M = fe_v.gm.Nξ[:, q_point]
-            position = fe_v.positions[q_point]
+            ξ = fe_v.ξs[q_point]
         end
-        return StaticQuadratureValues(detJdV, Nx, dNdx, M, weight, position, q_point)
+        return StaticQuadratureValues(detJdV, Nx, dNdx, M, weight, ξ, q_point)
 end

@@ -1,9 +1,9 @@
 # Encapsulates the CUDA backend specific data (e.g. element caches, memory allocation, etc.)
-struct CudaElementAssembly{Ti <: Integer, MemAlloc,ELementsCaches,DHType<:AbstractDofHandler} <: AbstractElementAssembly
+struct CudaElementAssembly{Ti <: Integer, MemAlloc,ElementsCaches,DHType<:AbstractDofHandler} <: AbstractElementAssembly
     threads::Ti
     blocks::Ti
     mem_alloc::MemAlloc
-    eles_caches:: ELementsCaches
+    eles_caches:: ElementsCaches
     strategy::CudaAssemblyStrategy
     dh::DHType
 end
@@ -41,18 +41,18 @@ function _calculate_nblocks(threads::Ti, n_cells::Ti) where {Ti <: Integer}
 end
 
 
-function _setup_caches(strategy::CudaAssemblyStrategy,integrand::IntegrandType,qrc::QuadratureRuleCollection,dh::AbstractDofHandler) where {IntegrandType}
-    sdh_to_cache = sdh  -> 
-    begin
-        # Prepare evaluation caches
-        ip          = Ferrite.getfieldinterpolation(sdh, sdh.field_names[1])
-        element_qr  = getquadraturerule(qrc, sdh)
-        
-        # Build evaluation caches
-        element_cache =  Adapt.adapt_structure(strategy,setup_element_cache(integrand, element_qr, ip, sdh))
-        return element_cache
-    end
-    eles_caches  = dh.subdofhandlers .|> sdh_to_cache 
+function _setup_caches(strategy::CudaAssemblyStrategy, integrand::IntegrandType, qrc::QuadratureRuleCollection, dh::AbstractDofHandler) where {IntegrandType}
+    sdh_to_cache = sdh ->
+        begin
+            # Prepare evaluation caches
+            ip = Ferrite.getfieldinterpolation(sdh, sdh.field_names[1])
+            element_qr = getquadraturerule(qrc, sdh)
+
+            # Build evaluation caches
+            element_cache = Adapt.adapt_structure(strategy, setup_element_cache(integrand, element_qr, ip, sdh))
+            return element_cache
+        end
+    eles_caches = dh.subdofhandlers .|> sdh_to_cache
     return eles_caches
 end
 
