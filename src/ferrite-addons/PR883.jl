@@ -10,7 +10,7 @@ struct QuadratureValuesIterator{VT,XT}
         return new{V, Nothing}(v, nothing)
     end
     function QuadratureValuesIterator(v::V, cell_coords::VT) where {V, VT <: AbstractArray}
-        #reinit!(v, cell_coords)
+        reinit!(v, cell_coords)
         return new{V, VT}(v, cell_coords)
     end
 end
@@ -257,11 +257,7 @@ Ferrite.getnquadpoints(cv::StaticCellValues) = length(cv.weights)
 Ferrite.getnbasefunctions(cv::StaticCellValues) = getnbasefunctions(cv.fv)
 Ferrite.getngeobasefunctions(cv::StaticCellValues) = getnbasefunctions(cv.gm)
 
-@inline function Ferrite.reinit!(cv::StaticCellValues{<:Any, <:Any, <:AbstractVector}, cell_coords::AbstractVector)
-    copyto!(cv.x, cell_coords)
-    #TODO: Also allow the cell::AbstracCell to be given and updated
-end
-@inline function Ferrite.reinit!(::StaticCellValues{<:Any, <:Any, Nothing}, ::AbstractVector)
+@inline function Ferrite.reinit!(::StaticCellValues, ::AbstractVector)
     nothing # Nothing to do on reinit if x is not saved.
 end
 
@@ -276,7 +272,6 @@ end
 @inline function quadrature_point_values(fe_v::StaticCellValues{<:Any, <:Any}, q_point::Int, cell_coords::StaticVector)
     return _quadrature_point_values(fe_v, q_point, cell_coords, detJ -> -1)
 end
-
 
 function _quadrature_point_values(fe_v::StaticCellValues, q_point::Int, cell_coords::AbstractVector, neg_detJ_err_fun::Function)
     #q_point bounds checked, ok to use @inbounds

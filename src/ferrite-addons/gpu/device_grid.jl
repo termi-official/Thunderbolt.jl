@@ -8,8 +8,8 @@ end
 function DeviceGrid(
     cells::CellDataType,
     nodes::NodeDataType
-) where {C <: Ferrite.AbstractCell, CellDataType <: AbstractArray{C, 1}, NodeDataType <: AbstractArray{Node{dim, T}}} where {dim, T}
-return DeviceGrid{dim,C,T, CellDataType, NodeDataType}(cells, nodes)
+) where {C<:Ferrite.AbstractCell,CellDataType<:AbstractArray{C,1},NodeDataType<:AbstractArray{Node{dim,T}}} where {dim,T}
+    return DeviceGrid{dim,C,T,CellDataType,NodeDataType}(cells, nodes)
 end
 
 Ferrite.get_coordinate_type(::DeviceGrid{sdim, <:Any, T,<:Any,<:Any}) where {sdim, T} = Vec{sdim, T} # Node is baked into the mesh type.

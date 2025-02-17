@@ -13,8 +13,7 @@ end
 
 
 function (dsf::DynamicSharedMemFunction{N, Tv, Ti})() where {N, Tv, Ti}
-    mem_size = dsf.mem_size
-    offset = dsf.offset
+    (; mem_size, offset) = dsf
     return CUDA.@cuDynamicSharedMem(Tv, mem_size, offset)
 end
 
@@ -69,17 +68,17 @@ end
 # Global Memory Allocation  #
 #############################
 
-struct KeFeGlobalMem{LOCAL_MATRICES, LOCAL_VECTORS} <: AbstractDeviceGlobalMem
-    Kes::LOCAL_MATRICES ## global level allocation (i.e. memory for all blocks -> 3rd order tensor)
-    fes::LOCAL_VECTORS  ## global level allocation (i.e. memory for all blocks -> 2nd order tensor)
+struct KeFeGlobalMem{MatricesType, VectorsType} <: AbstractDeviceGlobalMem
+    Kes::MatricesType ## global level allocation (i.e. memory for all blocks -> 3rd order tensor)
+    fes::VectorsType  ## global level allocation (i.e. memory for all blocks -> 2nd order tensor)
 end
 
-struct FeGlobalMem{LOCAL_VECTORS} <: AbstractDeviceGlobalMem
-    fes::LOCAL_VECTORS  ## global level allocation (i.e. memory for all blocks -> 2nd order tensor)
+struct FeGlobalMem{VectorsType} <: AbstractDeviceGlobalMem
+    fes::VectorsType  ## global level allocation (i.e. memory for all blocks -> 2nd order tensor)
 end
 
-struct KeGlobalMem{LOCAL_MATRICES} <: AbstractDeviceGlobalMem
-    Kes::LOCAL_MATRICES ## global level allocation (i.e. memory for all blocks -> 3rd order tensor)
+struct KeGlobalMem{MatricesType} <: AbstractDeviceGlobalMem
+    Kes::MatricesType ## global level allocation (i.e. memory for all blocks -> 3rd order tensor)
 end
 
 

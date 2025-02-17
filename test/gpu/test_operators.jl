@@ -10,14 +10,11 @@ cs = CartesianCoordinateSystem(grid)
 
 
 protocol = AnalyticalTransmembraneStimulationProtocol(
-                AnalyticalCoefficient((x,t) -> 1.f0, CoordinateSystemCoefficient(cs)),
+                AnalyticalCoefficient((x,t) -> sin(2π * t) * exp(-norm(x)^2), CoordinateSystemCoefficient(cs)),
                 [SVector((0.f0, 1.f0))]
             )
 
  
-
-
-
 linop = Thunderbolt.LinearOperator(
     zeros(ndofs(dh)),
     protocol,
@@ -26,12 +23,11 @@ linop = Thunderbolt.LinearOperator(
 )
 
 Thunderbolt.update_operator!(linop,0.0)
-#@test linop.b ≈ [0.25, 0.5, 1.0, 0.5, 0.25, 0.5, 0.5, 0.25, 0.25]
 
 
 cuda_strategy = Thunderbolt.CudaAssemblyStrategy(Float32, Int32)
 cuda_op = Thunderbolt.init_linear_operator(cuda_strategy,protocol, qrc, dh);
-Thunderbolt.update_operator!(cuda_op,0.0)
+Thunderbolt.update_operator!(cuda_op,0.f0)
 
 
 @test Vector(cuda_op.b) ≈ linop.b
