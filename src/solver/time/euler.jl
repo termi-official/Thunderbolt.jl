@@ -163,8 +163,12 @@ struct BackwardEulerStageAnnotation{F,U}
     u::U
     uprev::U
 end
+
+abstract type AbstractTimeDiscretizationAnnotation{T} end
+
 # This is the wrapper used to communicate solver info into the operator.
-mutable struct BackwardEulerStageFunctionWrapper{F,U,T,S, LVH}
+# In a nutshell this should contain all information to setup the evaluation of the nonlinear problem to make the backward Euler step.
+mutable struct BackwardEulerStageFunctionWrapper{F,U,T,S, LVH} <: AbstractTimeDiscretizationAnnotation{F}
     const f::F
     const u::U
     const uprev::U
@@ -181,32 +185,19 @@ function extract_local_function(f)
     return f
 end
 
-# TODO how can we simplify this?
-function setup_solver_cache(wrapper::BackwardEulerStageAnnotation, solver::MultiLevelNewtonRaphsonSolver)
+# We unpack to dispatch per function class
+function setup_solver_cache(wrapper::BackwardEulerStageAnnotation, solver::AbstractNonlinearSolver)
     _setup_solver_cache(wrapper, wrapper.f, solver)
 end
 @inline function _setup_solver_cache(wrapper::BackwardEulerStageAnnotation, f::QuasiStaticFunction, solver::MultiLevelNewtonRaphsonSolver)
-    _setup_solver_cache(wrapper, f, f.integrator, solver)
-end
-function _setup_solver_cache(wrapper::BackwardEulerStageAnnotation, f::AbstractQuasiStaticFunction, integrator::NonlinearIntegrator, solver::MultiLevelNewtonRaphsonSolver)
-    @unpack dh = f
+    @unpack integrator, dh = f
     @unpack volume_model, face_model = integrator
-    @unpack local_newton, global_newton = solver
-
-    # G = extract_global_function(f)
-    # L = extract_local_function(f)
-
-    # inner_solver_cache = MultiLevelNewtonRaphsonSolverCache(
-    #     # FIXME global_f and local_f :)
-    #     setup_solver_cache(G, solver.global_newton),
-    #     setup_solver_cache(L, solver.local_newton),
-    # )
+    @unpack local_solver, newton = solver
 
     # Extract condensable parts
     Q     = @view wrapper.u[(ndofs(dh)+1):end]
     Qprev = @view wrapper.uprev[(ndofs(dh)+1):end]
-    # TODO wrap_annotation(...) and unwrap_annotation ?
-     # Connect nonlinear problem and timestepper
+    # Connect nonlinear problem and timestepper
     volume_wrapper = BackwardEulerStageFunctionWrapper(
         volume_model,
         Q, Qprev,
@@ -287,7 +278,7 @@ end
 #    0 = G(u,v)
 #    0 = L(u,v,dₜu,dₜv)     (or simpler dₜv = L(u,v))
 # so we pass the stage information into the interior.
-function setup_element_cache(wrapper::BackwardEulerStageFunctionWrapper{<:QuasiStaticModel}, qr::QuadratureRule, sdh::SubDofHandler)
+function setup_element_cache(wrapper::AbstractTimeDiscretizationAnnotation{<:QuasiStaticModel}, qr::QuadratureRule, sdh::SubDofHandler)
     @assert length(sdh.dh.field_names) == 1 "Support for multiple fields not yet implemented."
     field_name = first(sdh.dh.field_names)
     ip          = Ferrite.getfieldinterpolation(sdh, field_name)

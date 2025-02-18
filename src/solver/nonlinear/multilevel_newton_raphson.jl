@@ -1,6 +1,11 @@
-struct MultiLevelFunction{G,L}
-    g::G # Global instance
-    l::L # Local instance helper
+struct GenericLocalNonlinearSolver <: AbstractNonlinearSolver
+end
+
+struct GenericLocalNonlinearSolverCache{JacobianType, ResidualType, CorrectorType}
+    J::JacobianType
+    residual::ResidualType
+    corrector_rhs::CorrectorType
+    corrector::CorrectorType
 end
 
 """
@@ -10,9 +15,9 @@ Multilevel Newton-Raphson solver [RabSanHsu:1979:mna](@ref) for nonlinear proble
 To use the Multilevel solver you have to dispatch on
 * [update_linearization!](@ref)
 """
-Base.@kwdef struct MultiLevelNewtonRaphsonSolver{gSolverType <: NewtonRaphsonSolver, lSolverType <: NewtonRaphsonSolver} <: AbstractNonlinearSolver
-    global_newton::gSolverType
-    local_newton::lSolverType
+Base.@kwdef struct MultiLevelNewtonRaphsonSolver{gSolverType <: NewtonRaphsonSolver, lSolverType} <: AbstractNonlinearSolver
+    newton::gSolverType = NewtonRaphsonSolver()
+    local_solver::lSolverType = GenericLocalNonlinearSolver()
 end
 
 struct MultiLevelNewtonRaphsonSolverCache{gCacheType, lCacheType} <: AbstractNonlinearSolverCache
