@@ -233,7 +233,11 @@ struct StaticCellValues{FV, GM, Nqp, T,dim}
     gm::GM # StaticInterpolationValues
     weights::NTuple{Nqp, T}
     ξs::NTuple{Nqp,Vec{dim,T}} # quadrature points
+    function StaticCellValues{FV, GM, Nqp, T, dim}(fv::FV, gm::GM, weights::NTuple{Nqp, T}, ξs::NTuple{Nqp, Vec{dim, T}}) where {FV, GM, Nqp, T, dim}
+        return new{FV, GM, Nqp, T, dim}(fv, gm, weights, ξs)
+    end
 end
+
 
 function StaticCellValues(cv::CellValues) 
     fv = StaticInterpolationValues(cv.fun_values)
@@ -253,7 +257,7 @@ end
 #     return StaticCellValues(fv, gm, x, weights)
 # end
 
-Ferrite.getnquadpoints(cv::StaticCellValues) = length(cv.weights)
+Ferrite.getnquadpoints(cv::StaticCellValues)  = length(cv.weights)
 Ferrite.getnbasefunctions(cv::StaticCellValues) = getnbasefunctions(cv.fv)
 Ferrite.getngeobasefunctions(cv::StaticCellValues) = getnbasefunctions(cv.gm)
 
@@ -261,15 +265,15 @@ Ferrite.getngeobasefunctions(cv::StaticCellValues) = getnbasefunctions(cv.gm)
     nothing # Nothing to do on reinit if x is not saved.
 end
 
-@inline function quadrature_point_values(fe_v::StaticCellValues{<:Any, <:Any, <:AbstractVector}, q_point::Int)
+@inline function quadrature_point_values(fe_v::StaticCellValues, q_point::Int)
     return _quadrature_point_values(fe_v, q_point, fe_v.x, detJ -> throw_detJ_not_pos(detJ))
 end
 
-@inline function quadrature_point_values(fe_v::StaticCellValues{<:Any, <:Any}, q_point::Int, cell_coords::AbstractVector)
+@inline function quadrature_point_values(fe_v::StaticCellValues, q_point::Int, cell_coords::AbstractVector)
     return _quadrature_point_values(fe_v, q_point, cell_coords, detJ -> throw_detJ_not_pos(detJ))
 end
 
-@inline function quadrature_point_values(fe_v::StaticCellValues{<:Any, <:Any}, q_point::Int, cell_coords::StaticVector)
+@inline function quadrature_point_values(fe_v::StaticCellValues, q_point::Int, cell_coords::StaticVector)
     return _quadrature_point_values(fe_v, q_point, cell_coords, detJ -> -1)
 end
 

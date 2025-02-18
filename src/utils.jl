@@ -53,6 +53,7 @@ end
 include("ferrite-addons/collections.jl")
 include("ferrite-addons/quadrature_iterator.jl")
 
+
 function celldofsview(dh::Ferrite.AbstractDofHandler, i::Integer) 
     ndofs = ndofs_per_cell(dh, i)
     offset = dh.cell_dofs_offset[i]

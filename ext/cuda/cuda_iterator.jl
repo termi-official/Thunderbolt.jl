@@ -82,7 +82,7 @@ function _makecache(iterator::AbstractDeviceCellIterator, e::Ti) where {Ti <: In
     nodes = SVector(convert.(Ti, get_node_ids(cell))...)
 
     # Extract the degrees of freedom for the cell.
-    dofs = celldofs(sdh, cellid)
+    dofs = celldofsview(sdh, cellid)
 
     # Get the coordinates of the nodes of the cell.
     CT = get_coordinate_type(grid)

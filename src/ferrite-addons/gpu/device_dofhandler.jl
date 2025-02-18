@@ -32,10 +32,10 @@ function Ferrite.ndofs_per_cell(dh::DeviceDofHandlerData, cell::Ti) where {Ti <:
 end
 Ferrite.ndofs_per_cell(sdh::DeviceSubDofHandler) = sdh.ndofs_per_cell
 Ferrite.get_grid(sdh::DeviceSubDofHandler) = sdh.dh_data.grid
-cell_dof_offset(dh::DeviceDofHandlerData, i::Ti) where {Ti<:Integer} = dh.cell_dofs_offset[i]
+cell_dof_offset(dh::DeviceDofHandlerData, i::Integer) = dh.cell_dofs_offset[i]
 Ferrite.get_grid(dh::DeviceDofHandlerData) = dh.grid
 
-function Ferrite.celldofs(sdh::DeviceSubDofHandler, i::Ti) where {Ti<:Integer}
+function celldofsview(sdh::DeviceSubDofHandler, i::Ti) where {Ti<:Integer}
     offset = cell_dof_offset(sdh.dh_data, i)
     ndofs = ndofs_per_cell(sdh)
     view = @view sdh.dh_data.cell_dofs[offset:(offset + ndofs - convert(Ti, 1))]

@@ -20,16 +20,16 @@ import Thunderbolt:
 
 import Thunderbolt.FerriteUtils:
     StaticInterpolationValues,StaticCellValues, allocate_device_mem,
-    CellIterator, mem_size, cellmem,ncells,
+    CellIterator, mem_size, cellmem,ncells,celldofsview,
     DeviceDofHandlerData, DeviceSubDofHandler, DeviceDofHandler, DeviceGrid,
-    cellfe,celldofs, AbstractDeviceGlobalMem, AbstractDeviceSharedMem,AbstractDeviceCellIterator,AbstractCellMem,
+    cellfe, AbstractDeviceGlobalMem, AbstractDeviceSharedMem,AbstractDeviceCellIterator,AbstractCellMem,
     FeMemShape, KeMemShape, KeFeMemShape, DeviceCellIterator,DeviceOutOfBoundCellIterator,DeviceCellCache,
     FeCellMem, KeCellMem, KeFeCellMem,NoCellMem,AbstractMemShape
 
 
 import Ferrite:
     AbstractDofHandler,get_grid,CellIterator,get_node_coordinate,getcoordinates,get_coordinate_eltype,getcells,
-    get_node_ids,celldofs,get_coordinate_type,nnodes
+    get_node_ids,get_coordinate_type,nnodes
 
 import StaticArrays:
     SVector,MVector
