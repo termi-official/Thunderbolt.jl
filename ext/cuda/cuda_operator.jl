@@ -16,18 +16,31 @@ function Thunderbolt.init_linear_operator(strategy::CudaAssemblyStrategy,protoco
     end
 end
 
-function _init_linop_cuda(strategy::CudaAssemblyStrategy,protocol::IntegrandType,qrc::QuadratureRuleCollection,dh::AbstractDofHandler) where {IntegrandType}
+function _init_linop_cuda(strategy::CudaAssemblyStrategy, protocol::IntegrandType, qrc::QuadratureRuleCollection, dh::AbstractDofHandler;
+    n_threads::Union{Int,Nothing}=nothing, n_blocks::Union{Int,Nothing}=nothing) where {IntegrandType}
     IT = inttype(strategy)
     FT = floattype(strategy)
     b = CUDA.zeros(FT, ndofs(dh))
     cu_dh = Adapt.adapt_structure(strategy, dh)
     n_cells = dh |> get_grid |> getncells |> (x -> convert(IT, x))
-    threads = convert(IT, min(n_cells, 256))
-    blocks = _calculate_nblocks(threads, n_cells)
-    n_basefuncs = convert(IT,ndofs_per_cell(dh)) 
-    eles_caches = _setup_caches(strategy,protocol,qrc,dh)
+
+    # Raise error if invalid thread or block count is provided
+    if !isnothing(n_threads) && n_threads == 0
+        error("n_threads must be greater than zero")
+    end
+    if !isnothing(n_blocks) && n_blocks == 0
+        error("n_blocks must be greater than zero")
+    end
+
+    # Determine threads and blocks if not provided
+    threads = isnothing(n_threads) ? convert(IT, min(n_cells, 256)) : convert(IT, n_threads)
+    blocks = isnothing(n_blocks) ? _calculate_nblocks(threads, n_cells) : convert(IT, n_blocks)
+
+    n_basefuncs = convert(IT, ndofs_per_cell(dh))
+    eles_caches = _setup_caches(strategy, protocol, qrc, dh)
     mem_alloc = allocate_device_mem(FeMemShape{FT}, threads, n_basefuncs)
-    element_assembly = CudaElementAssembly(threads, blocks, mem_alloc,eles_caches,strategy,cu_dh)
+    element_assembly = CudaElementAssembly(threads, blocks, mem_alloc, eles_caches, strategy, cu_dh)
+
     return GeneralLinearOperator(b, element_assembly)
 end
 
@@ -58,7 +71,7 @@ end
 
 
 function _launch_kernel!(ker, threads, blocks, ::AbstractDeviceGlobalMem)
-    CUDA.@cuda threads=threads blocks=blocks ker()
+    CUDA.@sync CUDA.@cuda threads=threads blocks=blocks ker()
     return nothing
 end
 

@@ -33,7 +33,7 @@ end
 floattype(strategy::CudaAssemblyStrategy) = strategy.floattype
 inttype(strategy::CudaAssemblyStrategy) = strategy.inttype
 
-CudaDefaultAssemblyStrategy() = CudaAssemblyStrategy(Float32, Int32)
+CudaAssemblyStrategy() = CudaAssemblyStrategy(Float32, Int32)
 
 
 ##########################################
