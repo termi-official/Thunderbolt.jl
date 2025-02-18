@@ -41,10 +41,11 @@ function implicit_euler_heat_solver_update_system_matrix!(cache::BackwardEulerSo
 end
 
 function _implicit_euler_heat_solver_update_system_matrix!(A, M, K, Δt)
-    # nonzeros(A) .= nonzeros(M.A) - Δt*nonzeros(K.A)
-    nonzeros(A) .= nonzeros(K.A)
-    nonzeros(A) .*= -Δt
-    nonzeros(A) .+= nonzeros(M.A)
+    # nonzeros(A) .= nonzeros(M.A) .- Δt.*nonzeros(K.A)
+    Anz = nonzeros(A)
+    Knz = nonzeros(K.A)
+    Mnz = nonzeros(M.A)
+    @inbounds @.. Anz = Mnz - Δt * Knz
 end
 
 function implicit_euler_heat_update_source_term!(cache::BackwardEulerSolverCache, t)
@@ -55,7 +56,7 @@ end
 function perform_step!(f::TransientDiffusionFunction, cache::BackwardEulerSolverCache, t, Δt)
     @unpack Δt_last, M, uₙ, uₙ₋₁, inner_solver = cache
     # Remember last solution
-    @inbounds uₙ₋₁ .= uₙ
+    @inbounds @.. uₙ₋₁ = uₙ
     # Update matrix if time step length has changed
     Δt ≈ Δt_last || implicit_euler_heat_solver_update_system_matrix!(cache, Δt)
     # Prepare right hand side b = M uₙ₋₁
@@ -155,7 +156,7 @@ function perform_step!(f::ODEFunction, solver_cache::ForwardEulerSolverCache, t:
     Δtsub = Δt/rate
     for i ∈ 1:rate
         @inbounds rhs!(du, uₙ, t, f.p)
-        @inbounds uₙ .= uₙ .+ Δtsub .* du
+        @inbounds @.. uₙ = uₙ + Δtsub * du
         t += Δtsub
     end
 
