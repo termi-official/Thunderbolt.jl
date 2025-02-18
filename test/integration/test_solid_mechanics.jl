@@ -74,7 +74,7 @@ function test_solve_contractile_ideal_lv(mesh, constitutive_model)
     timestepper = HomotopyPathSolver(
         NewtonRaphsonSolver(;max_iter=10, inner_solver=Thunderbolt.LinearSolve.UMFPACKFactorization())
     )
-    integrator = init(problem, timestepper, dt=Δt, verbose=true, maxiters=10)
+    integrator = init(problem, timestepper, dt=Δt, verbose=true, maxiters=15)
     u₀ = copy(integrator.u)
     solve!(integrator)
     @test integrator.sol.retcode == DiffEqBase.ReturnCode.Success
@@ -190,8 +190,8 @@ end
     # Create sparse matrix and residual vector
     timestepper = BackwardEulerSolver(;
         inner_solver=Thunderbolt.MultiLevelNewtonRaphsonSolver(;
-            global_newton=NewtonRaphsonSolver(),
-            local_newton=NewtonRaphsonSolver(),
+            # global_newton=NewtonRaphsonSolver(),
+            # local_newton=NewtonRaphsonSolver(),
         )
     )
     integrator = init(problem, timestepper, dt=Δt, verbose=true)

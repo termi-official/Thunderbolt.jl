@@ -212,7 +212,7 @@ end
         nothing, # inner model is volume only per construction
         f.lvh,
     )
-    # This is copy paste of setup_solver_cache(G, solver.global_newton)
+    # This is copy paste of setup_solver_cache(G, solver.newton)
     op = AssembledNonlinearOperator(
         NonlinearIntegrator(volume_wrapper, face_wrapper, integrator.syms, integrator.qrc, integrator.fqrc), dh,
     )
@@ -225,15 +225,15 @@ end
     inner_prob = LinearSolve.LinearProblem(
         getJ(op), residual; u0=Δu
     )
-    inner_cache = init(inner_prob, global_newton.inner_solver; alias_A=true, alias_b=true)
+    inner_cache = init(inner_prob, newton.inner_solver; alias_A=true, alias_b=true)
     @assert inner_cache.b === residual
     @assert inner_cache.A === getJ(op)
 
-    global_newton_cache = NewtonRaphsonSolverCache(op, residual, global_newton, inner_cache, T[], 0)
+    newton_cache = NewtonRaphsonSolverCache(op, residual, newton, inner_cache, T[], 0)
 
     return MultiLevelNewtonRaphsonSolverCache(
         # FIXME global_f and local_f :)
-        global_newton_cache, # setup_solver_cache(G, solver.global_newton),
+        newton_cache, # setup_solver_cache(G, solver.newton),
         nothing, #setup_solver_cache(L, solver.local_newton), # FIXME pass
     )
 end
