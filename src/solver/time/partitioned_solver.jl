@@ -10,7 +10,7 @@ SciMLBase.isadaptive(::AbstractPointwiseSolver) = false
 
 # Redirect to inner solve
 function perform_step!(f::PointwiseODEFunction, cache::AbstractPointwiseSolverCache, t::Real, Δt::Real)
-    _pointwise_step_outer_kernel!(f, t, Δt, cache, cache.uₙ)
+    @timeit_debug "reaction solve" _pointwise_step_outer_kernel!(f, t, Δt, cache, cache.uₙ)
 end
 
 # This controls the outer loop over the ODEs
