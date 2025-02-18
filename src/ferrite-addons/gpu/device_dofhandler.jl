@@ -1,14 +1,4 @@
 
-# # Utility which holds partial information for assembly.
-struct DeviceSubDofHandler{Ti<:Integer,IPVectorType,IndexType, IndexVectorType <: AbstractVector{IndexType},DHDataType} <: Ferrite.AbstractDofHandler
-    cellset::IndexVectorType
-    field_names::IndexVectorType
-    field_interpolations::IPVectorType 
-    ndofs_per_cell::Ti
-    dh_data::DHDataType #DeviceDofHandlerData
-end
-
-
 # Utility which holds partial information for assembly.
 struct DeviceDofHandlerData{sdim, GridType<:Ferrite.AbstractGrid{sdim}, IndexType, IndexVectorType <: AbstractVector{IndexType},Ti<: Integer} <: Ferrite.AbstractDofHandler
     grid::GridType
@@ -17,6 +7,17 @@ struct DeviceDofHandlerData{sdim, GridType<:Ferrite.AbstractGrid{sdim}, IndexTyp
     cell_to_subdofhandler::IndexVectorType
     ndofs::Ti
 end
+
+# # Utility which holds partial information for assembly.
+struct DeviceSubDofHandler{Ti<:Integer,IPVectorType,IndexType, IndexVectorType <: AbstractVector{IndexType},DHDataType<:DeviceDofHandlerData} <: Ferrite.AbstractDofHandler
+    cellset::IndexVectorType
+    field_names::IndexVectorType
+    field_interpolations::IPVectorType 
+    ndofs_per_cell::Ti
+    dh_data::DHDataType 
+end
+
+
 
 struct DeviceDofHandler{DHType <: Ferrite.AbstractDofHandler, SDHTupleType} <: Ferrite.AbstractDofHandler
     dh::DHType

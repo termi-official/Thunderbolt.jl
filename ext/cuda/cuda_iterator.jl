@@ -84,15 +84,10 @@ function _makecache(iterator::AbstractDeviceCellIterator, e::Ti) where {Ti <: In
     # Extract the degrees of freedom for the cell.
     dofs = celldofsview(sdh, cellid)
 
-    # Get the coordinates of the nodes of the cell.
-    CT = get_coordinate_type(grid)
+    
     N = nnodes(cell)
-    x = MVector{N, CT}(undef)
-    for i in eachindex(x)
-        x[i] = get_node_coordinate(grid, nodes[i])
-    end
-    coords = SVector(x...)
-
+    coords = SVector((get_node_coordinate(grid, nodes[i]) for i in 1:N)...)
+    
     # Return the DeviceCellCache containing the cell's data.
     return DeviceCellCache(coords, dofs, cellid, nodes, iterator.cell_mem)
 end
