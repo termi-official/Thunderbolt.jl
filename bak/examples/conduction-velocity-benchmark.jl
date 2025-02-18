@@ -65,7 +65,7 @@ steady_state_initializer!(u₀, odeform)
 
 # io = ParaViewWriter("spiral-wave-test")
 
-timestepper = Thunderbolt.ReactionTangentController(
+timestepper = #Thunderbolt.ReactionTangentController(
     OS.LieTrotterGodunov((
         BackwardEulerSolver(
             solution_vector_type=Vector{Float32},
@@ -76,17 +76,17 @@ timestepper = Thunderbolt.ReactionTangentController(
             solution_vector_type=Vector{Float32},
             reaction_threshold=0.1f0,
         )
-    )),
-    0.5, 1.0, (0.01, 0.3)
-)
+    ))
+#     0.5, 1.0, (0.01, 0.3)
+# )
 
 problem = OS.OperatorSplittingProblem(odeform, u₀, tspan)
 
 integrator = OS.init(problem, timestepper, dt=dt₀, verbose=true)
 
+TimerOutputs.enable_debug_timings(Thunderbolt)
 step!(integrator) # precompile for benchmark below
 
-# TimerOutputs.enable_debug_timings(Thunderbolt)
 TimerOutputs.reset_timer!()
 for (u, t) in OS.TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
     # dh = odeform.functions[1].dh

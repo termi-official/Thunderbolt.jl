@@ -83,9 +83,9 @@ problem = OS.OperatorSplittingProblem(odeform, u₀gpu, tspan)
 
 integrator = OS.init(problem, timestepper, dt=dt₀, verbose=true)
 
+TimerOutputs.enable_debug_timings(Thunderbolt)
 step!(integrator) # precompile for benchmark below
 
-# TimerOutputs.enable_debug_timings(Thunderbolt)
 TimerOutputs.reset_timer!()
 for (u, t) in OS.TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
     # dh = odeform.functions[1].dh

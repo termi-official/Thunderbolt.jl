@@ -55,8 +55,6 @@ end
 # Performs a backward Euler step
 function perform_step!(f::TransientDiffusionFunction, cache::BackwardEulerSolverCache, t, Δt)
     @unpack Δt_last, M, uₙ, uₙ₋₁, inner_solver = cache
-    # Remember last solution
-    @inbounds @.. uₙ₋₁ = uₙ
     # Update matrix if time step length has changed
     Δt ≈ Δt_last || implicit_euler_heat_solver_update_system_matrix!(cache, Δt)
     # Prepare right hand side b = M uₙ₋₁
