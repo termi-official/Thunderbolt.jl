@@ -2,7 +2,7 @@ using Thunderbolt
 
 struct TestCalciumHatField end
 Thunderbolt.setup_coefficient_cache(coeff::TestCalciumHatField, ::QuadratureRule, ::SubDofHandler) = coeff
-Thunderbolt.evaluate_coefficient(coeff::TestCalciumHatField, cell_cache::CellCache, qp::QuadraturePoint, t) = 0.0 # t/1000.0 < 0.5 ? 2.0*t/1000.0 : 2.0-2.0*t/1000.0
+Thunderbolt.evaluate_coefficient(coeff::TestCalciumHatField, cell_cache::CellCache, qp::QuadraturePoint, t) = t/1000.0 < 0.5 ? 2.0*t/1000.0 : 2.0-2.0*t/1000.0
 
 function test_solve_contractile_cuboid(mesh, constitutive_model, subdomains = [""])
     tspan = (0.0,300.0)
