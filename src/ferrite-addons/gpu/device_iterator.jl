@@ -49,4 +49,4 @@ Ferrite.cellid(cc::DeviceCellCache) = cc.cellid
 ######################
 # Unified Cell Cache #
 ######################
-AnyCellCache = Union{CellCache, DeviceCellCache}
+AnyCellCache = Union{CellCache, DeviceCellCache,Nothing} # nothing here for cpu test case that pass nothing for the cache
