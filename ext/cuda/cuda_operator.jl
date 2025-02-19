@@ -70,26 +70,25 @@ function _setup_caches(strategy::CudaAssemblyStrategy, integrand::IntegrandType,
 end
 
 
-function _launch_kernel!(ker, threads, blocks, ::AbstractDeviceGlobalMem)
-    CUDA.@sync CUDA.@cuda threads = threads blocks = blocks ker()
+function _launch_kernel!(ker,ker_args, threads, blocks, ::AbstractDeviceGlobalMem)
+    CUDA.@sync CUDA.@cuda threads = threads blocks = blocks ker(ker_args...)
     return nothing
 end
 
-function _launch_kernel!(ker, threads, blocks, mem_alloc::AbstractDeviceSharedMem)
+function _launch_kernel!(ker,ker_args, threads, blocks, mem_alloc::AbstractDeviceSharedMem)
     shmem_size = mem_size(mem_alloc)
-    CUDA.@sync CUDA.@cuda threads = threads blocks = blocks shmem = shmem_size ker()
+    CUDA.@sync CUDA.@cuda threads = threads blocks = blocks shmem = shmem_size ker(ker_args...)
     return nothing
 end
 
 function Thunderbolt.update_operator!(op::GeneralLinearOperator{<:CudaElementAssembly}, time)
     @unpack b, element_assembly = op
     @unpack threads, blocks, mem_alloc, eles_caches, strategy, dh = element_assembly
-    partial_ker = (sdh, ele_cache) -> _update_linear_operator_kernel!(b, sdh, ele_cache, mem_alloc, time)
     for sdh_idx in 1:length(dh.subdofhandlers)
         sdh = dh.subdofhandlers[sdh_idx]
         ele_cache = eles_caches[sdh_idx]
-        ker = () -> partial_ker(sdh, ele_cache)
-        _launch_kernel!(ker, threads, blocks, mem_alloc)
+        kernel_args = (b, sdh, ele_cache, mem_alloc, time)
+        _launch_kernel!(_update_linear_operator_kernel!,kernel_args, threads, blocks, mem_alloc)
     end
 end
 
