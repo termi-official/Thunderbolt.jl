@@ -40,23 +40,6 @@ import Adapt:
 
 # ---------------------- Generic part ------------------------
 
-
-# function Thunderbolt.setup_operator(protocol::Thunderbolt.AnalyticalTransmembraneStimulationProtocol, solver::Thunderbolt.AbstractSolver, dh::DeviceDofHandler, field_name::Symbol, qr)
-#     ip = dh.dh.subdofhandlers[1].field_interpolations[1]
-#     ip_g = Ferrite.geometric_interpolation(typeof(getcells(Ferrite.get_grid(dh), 1)))
-#     qr = QuadratureRule{Ferrite.getrefshape(ip_g)}(Ferrite.getorder(ip_g)+1)
-#     cv = CellValues(qr, ip, ip_g) # TODO replace with GPUCellValues
-#     return PEALinearOperator(
-#         zeros(ndofs(dh)),
-#         AnalyticalCoefficientElementCache(
-#             protocol.f,
-#             protocol.nonzero_intervals,
-#             cv,
-#         ),
-#         dh,
-#     )
-# end
-
 # Pointwise cuda solver wrapper
 function _gpu_pointwise_step_inner_kernel_wrapper!(f, t, Δt, cache::AbstractPointwiseSolverCache)
     i = (blockIdx().x - Int32(1)) * blockDim().x + threadIdx().x
