@@ -1,5 +1,8 @@
 module OS
 
+import TimerOutputs: @timeit_debug
+timeit_debug_enabled() = false
+
 import Unrolled: @unroll
 
 import SciMLBase, DiffEqBase, DataStructures

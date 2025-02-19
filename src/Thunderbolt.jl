@@ -3,6 +3,7 @@ module Thunderbolt
 using TimerOutputs
 
 import Unrolled: @unroll
+import FastBroadcast: @..
 
 using Reexport, UnPack
 import LinearAlgebra: mul!
