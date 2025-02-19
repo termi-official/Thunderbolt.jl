@@ -259,8 +259,10 @@ function _query_local_state(state_cache::GenericFirstOrderRateIndependentMateria
     size = local_function_size(state_cache.model)
     range_begin = 1+(qp.i-1)*size
     range_end   = qp.i*size
-    state_cache.localQ     .= state_cache.Q[range_begin:range_end]
-    state_cache.localQprev .= state_cache.Qprev[range_begin:range_end]
+    Qv  = @view state_cache.Q[range_begin:range_end]
+    Qpv = @view state_cache.Qprev[range_begin:range_end]
+    @inbounds @.. state_cache.localQ     = Qv
+    @inbounds @.. state_cache.localQprev = Qpv
 
     return state_cache.localQ, state_cache.localQprev
 end
@@ -272,7 +274,8 @@ function _store_local_state!(state_cache::GenericFirstOrderRateIndependentMateri
     size = local_function_size(state_cache.model)
     range_begin = 1+(qp.i-1)*size
     range_end   = qp.i*size
-    state_cache.Q[range_begin:range_end] .= state_cache.localQ
+    Qv  = @view state_cache.Q[range_begin:range_end]
+    @inbounds @.. Qv = state_cache.localQ
 
     return nothing
 end
@@ -295,16 +298,15 @@ function solve_local_constraint(F::Tensor{2,dim}, coefficients, material_model::
         ℂ = c₁ + c₂
 
         # FIXME non-allocating version by using state_cache nlsolver
-        A = tomandel(one(ℂ)/Δt + E₁/η₁ * ℂ)
-        b = tomandel(εᵛ₀/Δt + E₁/η₁ * ℂ ⊡ ε)
+        A = tomandel(SMatrix, one(ℂ)/Δt + E₁/η₁ * ℂ)
+        b = tomandel(SVector, εᵛ₀/Δt + E₁/η₁ * ℂ ⊡ ε)
         return frommandel(typeof(ε), A \ b)
     end
 
     Qflat, Qprevflat = _query_local_state(state_cache, geometry_cache, qp)
     ε = symmetric(F - one(F))
     Q = solve_internal_timestep(material_model, state_cache, ε, Qflat, Qprevflat)
-    # FIXME non-allocating version
-    Qflat .= tovoigt(Q)
+    Qflat .= Q.data
     _store_local_state!(state_cache, geometry_cache, qp)
 
     # Corrector
@@ -324,40 +326,28 @@ function solve_local_constraint(F::Tensor{2,dim}, coefficients, material_model::
         ℂ = c₁ + c₂
 
         # FIXME non-allocating version by using state_cache nlsolver
-        A = tomandel(one(ℂ)/Δt + E₁/η₁ * ℂ)
-        B = tomandel(E₁/η₁ * ℂ)
+        A = tomandel(SMatrix, one(ℂ)/Δt + E₁/η₁ * ℂ)
+        B = tomandel(SMatrix, E₁/η₁ * ℂ)
         return frommandel(typeof(ℂ), A \ B)
     end
     dQdF = solve_internal_timestep_corrector(material_model, state_cache, ε, Qflat, Qprevflat)
-
-    function stress_function(material::LinearMaxwellMaterial, ε, εᵛ)
-        (; E₀, E₁, μ, η₁, ν) = material
-        I = one(ε)
-        c₁ = ν / ((ν + 1)*(1-2ν)) * I ⊗ I
-        c₂ = 1 / (1+ν) * one(c₁)
-        ℂ = c₁ + c₂
-        return E₀ * ℂ ⊡ ε + E₁ * ℂ ⊡ (ε - εᵛ)
-    end
-    ε = symmetric(F - one(F))
-    ∂P∂Q = Tensors.gradient(εᵛ->stress_function(material_model, ε, εᵛ), Q)
+    ∂P∂Q = Tensors.gradient(εᵛ->stress_function(material_model, ε, coefficients, εᵛ), Q)
 
     return Q, ∂P∂Q ⊡ dQdF
 end
 
+function stress_function(material::LinearMaxwellMaterial, ε, coefficients, εᵛ)
+    (; E₀, E₁, μ, η₁, ν) = material
+    I = one(ε)
+    c₁ = ν / ((ν + 1)*(1-2ν)) * I ⊗ I
+    c₂ = 1 / (1+ν) * one(c₁)
+    ℂ = c₁ + c₂
+    return E₀ * ℂ ⊡ ε + E₁ * ℂ ⊡ (ε - εᵛ)
+end
+
 function stress_and_tangent(material_model::LinearMaxwellMaterial, F::Tensor{2}, coefficients, εᵛ)
-    function stress_function(material::LinearMaxwellMaterial, ε, εᵛ)
-        (; E₀, E₁, μ, η₁, ν) = material
-        I = one(ε)
-        c₁ = ν / ((ν + 1)*(1-2ν)) * I ⊗ I
-        c₂ = 1 / (1+ν) * one(c₁)
-        ℂ = c₁ + c₂
-        return (E₀ + E₁)* ℂ , E₀ * ℂ ⊡ ε + E₁ * ℂ ⊡ (ε - εᵛ)
-    end
-
     ε = symmetric(F - one(F))
-
-    ∂σ∂ε, σ = stress_function(material_model, ε, εᵛ)
-
+    ∂σ∂ε, σ = Tensors.gradient(ε->stress_function(material_model, ε, coefficients, εᵛ), ε, :all)
     return σ, ∂σ∂ε
 end
 
