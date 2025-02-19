@@ -57,6 +57,7 @@ function Base.iterate(iterator::DeviceCellIterator)
 end
 
 function Base.iterate(iterator::DeviceCellIterator, state)
+    # state is the global thread index
     stride = blockDim().x * gridDim().x
     i = state + stride
     i <= ncells(iterator) || return nothing
@@ -84,12 +85,11 @@ function _makecache(iterator::AbstractDeviceCellIterator, e::Ti) where {Ti <: In
     # Extract the degrees of freedom for the cell.
     dofs = celldofsview(sdh, cellid)
 
-    
     N = nnodes(cell)
     coords = SVector((get_node_coordinate(grid, nodes[i]) for i in 1:N)...)
     
     # Return the DeviceCellCache containing the cell's data.
-    return DeviceCellCache(coords, dofs, cellid, nodes, iterator.cell_mem)
+    return  DeviceCellCache(coords, dofs, cellid, nodes, iterator.cell_mem)
 end
 
 @inline function _cellke(cell_mem::AbstractCellMem)

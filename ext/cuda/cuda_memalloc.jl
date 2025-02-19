@@ -99,9 +99,9 @@ function _allocate_global_mem(::Type{KeMemShape{Tv}}, nactive_cells::Ti, n_basef
     return KeGlobalMem(Kes)
 end
 
-function Thunderbolt.FerriteUtils.allocate_device_mem(::Type{MemShape}, n_cells::Ti, n_basefuncs::Ti) where {Ti <: Integer, Tv <: Real,MemShape<:AbstractMemShape{Tv}}
-    shared_mem_alloc = _try_allocate_shared_mem(MemShape, n_cells, n_basefuncs)
-    shared_mem_alloc isa Nothing || return _allocate_global_mem(MemShape, n_cells, n_basefuncs)
+function Thunderbolt.FerriteUtils.allocate_device_mem(::Type{MemShape}, threads::Ti,blocks::Ti, n_basefuncs::Ti) where {Ti <: Integer, Tv <: Real,MemShape<:AbstractMemShape{Tv}}
+    shared_mem_alloc = _try_allocate_shared_mem(MemShape, threads, n_basefuncs)
+    shared_mem_alloc isa Nothing && return _allocate_global_mem(MemShape, threads*blocks, n_basefuncs)
     return shared_mem_alloc
 end
 
