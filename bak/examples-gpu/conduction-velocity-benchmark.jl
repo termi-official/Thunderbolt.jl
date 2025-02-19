@@ -3,10 +3,12 @@ using Thunderbolt.TimerOutputs
 
 using Thunderbolt.StaticArrays
 
+using LinearSolve
+
 function steady_state_initializer!(u₀, f::GenericSplitFunction)
     # TODO cleaner implementation. We need to extract this from the types or via dispatch.
     heatfun = f.functions[1]
-    heat_dofrange = f.dof_ranges[1]
+    heat_dofrange = f.solution_indices[1]
     odefun = f.functions[2]
     ionic_model = odefun.ode
 
@@ -58,7 +60,7 @@ odeform = semidiscretize(
     FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}())),
     mesh
 )
-u₀ = zeros(Float64, OS.function_size(odeform))
+u₀ = zeros(Float32, OS.function_size(odeform))
 steady_state_initializer!(u₀, odeform)
 
 # io = ParaViewWriter("spiral-wave-test")
@@ -81,9 +83,9 @@ problem = OS.OperatorSplittingProblem(odeform, u₀gpu, tspan)
 
 integrator = OS.init(problem, timestepper, dt=dt₀, verbose=true)
 
+TimerOutputs.enable_debug_timings(Thunderbolt)
 step!(integrator) # precompile for benchmark below
 
-# TimerOutputs.enable_debug_timings(Thunderbolt)
 TimerOutputs.reset_timer!()
 for (u, t) in OS.TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
     # dh = odeform.functions[1].dh

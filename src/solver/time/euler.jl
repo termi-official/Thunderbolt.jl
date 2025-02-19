@@ -79,10 +79,11 @@ function implicit_euler_heat_solver_update_system_matrix!(cache::BackwardEulerAf
 end
 
 function _implicit_euler_heat_solver_update_system_matrix!(A, M, K, Δt)
-    # nonzeros(A) .= nonzeros(M.A) - Δt*nonzeros(K.A)
-    nonzeros(A) .= nonzeros(K.A)
-    nonzeros(A) .*= -Δt
-    nonzeros(A) .+= nonzeros(M.A)
+    # nonzeros(A) .= nonzeros(M.A) .- Δt.*nonzeros(K.A)
+    Anz = nonzeros(A)
+    Knz = nonzeros(K.A)
+    Mnz = nonzeros(M.A)
+    @inbounds @.. Anz = Mnz - Δt * Knz
 end
 
 function implicit_euler_heat_update_source_term!(cache::BackwardEulerAffineODEStage, t)
@@ -349,7 +350,7 @@ function perform_step!(f::ODEFunction, solver_cache::ForwardEulerSolverCache, t:
     Δtsub = Δt/rate
     for i ∈ 1:rate
         @inbounds rhs!(du, uₙ, t, f.p)
-        @inbounds uₙ .= uₙ .+ Δtsub .* du
+        @inbounds @.. uₙ = uₙ + Δtsub * du
         t += Δtsub
     end
 

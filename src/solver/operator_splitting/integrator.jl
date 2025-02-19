@@ -202,7 +202,7 @@ end
 # either called directly (after init), or by DiffEqBase.solve (via __solve)
 function DiffEqBase.solve!(integrator::OperatorSplittingIntegrator)
     while !isempty(integrator.tstops)
-        DiffEqBase.check_error!(integrator) ∉ (SciMLBase.ReturnCode.Success, SciMLBase.ReturnCode.Default) && return
+        @timeit_debug "check_error" DiffEqBase.check_error!(integrator) ∉ (SciMLBase.ReturnCode.Success, SciMLBase.ReturnCode.Default) && return
         __step!(integrator)
     end
     DiffEqBase.finalize!(integrator.callback, integrator.u, integrator.t, integrator)
@@ -215,14 +215,14 @@ function DiffEqBase.solve!(integrator::OperatorSplittingIntegrator)
 end
 
 function DiffEqBase.step!(integrator::OperatorSplittingIntegrator)
-    if integrator.advance_to_tstop
+    @timeit_debug "step!" if integrator.advance_to_tstop
         tstop = first(integrator.tstops)
         while !reached_tstop(integrator, tstop)
-            DiffEqBase.check_error!(integrator) ∉ (SciMLBase.ReturnCode.Success, SciMLBase.ReturnCode.Default) && return
+            @timeit_debug "check_error" DiffEqBase.check_error!(integrator) ∉ (SciMLBase.ReturnCode.Success, SciMLBase.ReturnCode.Default) && return
             __step!(integrator)
         end
     else
-        DiffEqBase.check_error!(integrator) ∉ (SciMLBase.ReturnCode.Success, SciMLBase.ReturnCode.Default) && return
+        @timeit_debug "check_error" DiffEqBase.check_error!(integrator) ∉ (SciMLBase.ReturnCode.Success, SciMLBase.ReturnCode.Default) && return
         __step!(integrator)
     end
 end
@@ -259,14 +259,16 @@ function check_error_subintegrators(integrator, subintegrator::SciMLBase.DEInteg
 end
 
 function DiffEqBase.step!(integrator::OperatorSplittingIntegrator, dt, stop_at_tdt = false)
+    @timeit_debug "step!" begin
     # OridinaryDiffEq lets dt be negative if tdir is -1, but that's inconsistent
     dt <= zero(dt) && error("dt must be positive")
     stop_at_tdt && !integrator.dtchangeable && error("Cannot stop at t + dt if dtchangeable is false")
     tnext = integrator.t + tdir(integrator) * dt
     stop_at_tdt && DiffEqBase.add_tstop!(integrator, tnext)
     while !reached_tstop(integrator, tnext, stop_at_tdt)
-        DiffEqBase.check_error!(integrator) ∉ (SciMLBase.ReturnCode.Success, SciMLBase.ReturnCode.Default) && return
+        @timeit_debug "check_error" DiffEqBase.check_error!(integrator) ∉ (SciMLBase.ReturnCode.Success, SciMLBase.ReturnCode.Default) && return
         __step!(integrator)
+    end
     end
 end
 

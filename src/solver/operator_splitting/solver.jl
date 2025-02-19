@@ -39,12 +39,14 @@ end
         cache        = inner_caches[i]
 
         # prepare_local_step!(uparent, subinteg)
-        forward_sync_subintegrator!(outer_integrator, subinteg, idxs, synchronizer)
-        advance_solution_to!(outer_integrator, subinteg, idxs, synchronizer, cache, tnext)
-        if !(subinteg isa Tuple) && subinteg.sol.retcode ∉ (SciMLBase.ReturnCode.Default, SciMLBase.ReturnCode.Success)
-            return
+        @timeit_debug "suboperator $i" begin
+            @timeit_debug "sync ->" forward_sync_subintegrator!(outer_integrator, subinteg, idxs, synchronizer)
+            @timeit_debug "time solve" advance_solution_to!(outer_integrator, subinteg, idxs, synchronizer, cache, tnext)
+            if !(subinteg isa Tuple) && subinteg.sol.retcode ∉ (SciMLBase.ReturnCode.Default, SciMLBase.ReturnCode.Success)
+                return
+            end
+            # finalize_local_step!(uparent, subinteg)
+            @timeit_debug "sync <-" backward_sync_subintegrator!(outer_integrator, subinteg, idxs)
         end
-        # finalize_local_step!(uparent, subinteg)
-        backward_sync_subintegrator!(outer_integrator, subinteg, idxs)
     end
 end 
