@@ -98,7 +98,7 @@ The default parameters for the model are taken from the same paper for human car
 
 !!! note
     For this model in combination with active stress framework the assumption is
-    taken that the sarcomere length is exactly $\sqrt{I_4}$.
+    taken that the sarcomere stretch is exactly equivalent to $\sqrt{I^f_4}$.
 
 !!! note
     In ,,Active contraction of cardiac cells: a reduced model for sarcomere
@@ -136,7 +136,7 @@ end
 
 num_states(model::RDQ20MFModel) = 20
 
-function rhs_fast!(dRU, uRU::AbstractArray{T}, x, λ, Ca, t, p::RDQ20MFModel) where T
+function rhs_fast!(dRU, uRU::AbstractArray{T}, λ, Ca, t, p::RDQ20MFModel) where T
     dT_L = @MMatrix zeros(T,2,2)
     dT_R = @MMatrix zeros(T,2,2)
     ΦT_L = @MArray zeros(T,2,2,2,2)
@@ -207,13 +207,40 @@ function rhs_fast!(dRU, uRU::AbstractArray{T}, x, λ, Ca, t, p::RDQ20MFModel) wh
     @inbounds for TL ∈ 1:2, TC ∈ 1:2, TR ∈ 1:2, CC ∈ 1:2
         dRU[TL,TC,TR,CC] = 
             -ΦT_L[TL,TC,TR,CC] + ΦT_L[3 - TL,TC,TR,CC] -
-            ΦT_C[TL,TC,TR,CC] + ΦT_C[TL,3 - TC,TR,CC] -
-            ΦT_R[TL,TC,TR,CC] + ΦT_R[TL,TC,3 - TR,CC] -
-            ΦC_C[TL,TC,TR,CC] + ΦC_C[TL,TC,TR,3 - CC]
+             ΦT_C[TL,TC,TR,CC] + ΦT_C[TL,3 - TC,TR,CC] -
+             ΦT_R[TL,TC,TR,CC] + ΦT_R[TL,TC,3 - TR,CC] -
+             ΦC_C[TL,TC,TR,CC] + ΦC_C[TL,TC,TR,3 - CC]
     end
+
+    return dRU
 end
 
-function rhs!(du, u, x, t, p::RDQ20MFModel)
+function rhs_fast_dλ!(dRU, uRU::AbstractArray{T}, λ, Ca, t, p::RDQ20MFModel) where T
+    ΦC_C = @MArray zeros(T,2,2,2,2)
+    dC = @MMatrix zeros(T,2,2)
+
+    # Initialize helper rates
+    sarcomere_length = p.SL₀*λ
+    dC[1,1] = - p.SL₀*p.αKd * p.Koff / (p.Kd₀ - p.αKd * (2.15 - sarcomere_length))^2 * Ca
+    dC[1,2] = - p.SL₀*p.αKd * p.Koff / (p.Kd₀ - p.αKd * (2.15 - sarcomere_length))^2 * Ca
+    # dC[2,1] = 0.0
+    # dC[2,2] = 0.0
+
+    # Update RU
+    ## Compute fluxes associated with center unit
+    @inbounds for TL ∈ 1:2, TC ∈ 1:2, TR ∈ 1:2, CC ∈ 1:1
+        ΦC_C[TL,TC,TR,CC] = uRU[TL,TC,TR,CC] * dC[CC,TC]
+    end
+
+    # Store RU rates
+    @inbounds for TL ∈ 1:2, TC ∈ 1:2, TR ∈ 1:2, CC ∈ 1:2
+        dRU[TL,TC,TR,CC] = -ΦC_C[TL,TC,TR,CC] + ΦC_C[TL,TC,TR,3 - CC]
+    end
+
+    return dRU
+end
+
+function sarcomere_rhs!(du, u, λ, dλdt, Ca, t, p::RDQ20MFModel)
     # Direct translation from https://github.com/FrancescoRegazzoni/cardiac-activation/blob/master/models_cpp/model_RDQ20_MF.cpp
     uRU_flat = @view u[1:16]
     uRU = reshape(uRU_flat, (2,2,2,2))
@@ -223,7 +250,7 @@ function rhs!(du, u, x, t, p::RDQ20MFModel)
     dRU = reshape(dRU_flat, (2,2,2,2))
     dXB = @view du[17:20]
 
-    rhs_fast!(dRU, uRU, x, λ, Ca,  t, p)
+    rhs_fast!(dRU, uRU, λ, Ca, t, p)
 
     permissivity = 0.0
 
@@ -262,9 +289,9 @@ function rhs!(du, u, x, t, p::RDQ20MFModel)
 
     XB_A = @SMatrix [
         -diag_P      0.0     k_NP      0.0
-          -dλdt  -diag_P      0.0     k_NP
+           dλdt  -diag_P      0.0     k_NP
            k_PN      0.0  -diag_N      0.0
-            0.0     k_PN    -dλdt  -diag_N
+            0.0     k_PN     dλdt  -diag_N
     ];
 
     dXB .= XB_A*uXB
