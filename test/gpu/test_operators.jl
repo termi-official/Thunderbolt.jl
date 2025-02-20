@@ -10,7 +10,7 @@ cs = CartesianCoordinateSystem(grid)
 
 
 protocol = AnalyticalTransmembraneStimulationProtocol(
-                AnalyticalCoefficient((x,t) -> sin(2π * t) * exp(-norm(x)^2), CoordinateSystemCoefficient(cs)),
+                AnalyticalCoefficient((x,t) -> cos(2π * t) * exp(-norm(x)^2), CoordinateSystemCoefficient(cs)),
                 [SVector((0.f0, 1.f0))]
             )
 
@@ -25,7 +25,7 @@ linop = Thunderbolt.LinearOperator(
 Thunderbolt.update_operator!(linop,0.0)
 
 
-cuda_strategy = Thunderbolt.CudaAssemblyStrategy(Float32, Int32)
+cuda_strategy = Thunderbolt.CudaAssemblyStrategy()
 cuda_op = Thunderbolt.init_linear_operator(cuda_strategy,protocol, qrc, dh);
 Thunderbolt.update_operator!(cuda_op,0.f0)
 

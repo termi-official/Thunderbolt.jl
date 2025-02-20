@@ -4,7 +4,7 @@ using BenchmarkTools, Thunderbolt, StaticArrays,Ferrite , CUDA
 left = Tensor{1, 3, Float32}((-1.0, -1.0,-1.0)) 
 right = Tensor{1, 3, Float32}((1.0, 1.0, 1.0)) 
 
-grid = generate_grid(Hexahedron , (100,100,100),left,right)
+grid = generate_grid(Hexahedron , (500,100,100),left,right)
 
 ip_collection = LagrangeCollection{1}()
 qr_collection = QuadratureRuleCollection(2)
@@ -13,7 +13,7 @@ add!(dh, :u, getinterpolation(ip_collection, first(grid.cells)))
 close!(dh)
 cs = CartesianCoordinateSystem(grid)
 protocol = AnalyticalTransmembraneStimulationProtocol(
-                AnalyticalCoefficient((x,t) -> sin(2π * t) * exp(-norm(x)^2), CoordinateSystemCoefficient(cs)),
+                AnalyticalCoefficient((x,t) -> cos(2π * t) * exp(-norm(x)^2), CoordinateSystemCoefficient(cs)),
                 [SVector((0.f0, 1.f0))]
             )
 
@@ -22,6 +22,7 @@ protocol = AnalyticalTransmembraneStimulationProtocol(
 #############################
 # CPU operator Benchmarking #
 #############################
+
 linop = Thunderbolt.LinearOperator(
     zeros(ndofs(dh)),
     protocol,
@@ -35,6 +36,7 @@ linop = Thunderbolt.LinearOperator(
 #############################
 # GPU operator Benchmarking #
 #############################
+
 cuda_strategy = Thunderbolt.CudaAssemblyStrategy()
 # Notes on launch configuration:
 # These values are based on optimal occupancy of my GPU (Nvidia GeForce RTX 3050 Ti w 4GB VRAM) from Nsight Compute.
@@ -49,3 +51,17 @@ cuda_op = Thunderbolt.init_linear_operator(cuda_strategy,protocol, qr_collection
 # Note: run twice to get the correct time.
 Thunderbolt.update_operator!(cuda_op,0.f0) # warm up
 CUDA.@profile trace=true Thunderbolt.update_operator!(cuda_op,0.f0)
+
+
+######################################
+# CPU threaded operator Benchmarking #
+######################################
+
+plinop = Thunderbolt.PEALinearOperator(
+    zeros(ndofs(dh)),
+    qr_collection,
+    protocol,
+    dh,
+);
+
+@benchmark Thunderbolt.update_operator!($plinop,$0.0)
