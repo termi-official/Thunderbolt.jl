@@ -4,7 +4,7 @@ using BenchmarkTools, Thunderbolt, StaticArrays,Ferrite , CUDA
 left = Tensor{1, 3, Float32}((-1.0, -1.0,-1.0)) 
 right = Tensor{1, 3, Float32}((1.0, 1.0, 1.0)) 
 
-grid = generate_grid(Hexahedron , (10,10,10),left,right)
+grid = generate_grid(Hexahedron , (100,100,100),left,right)
 
 ip_collection = LagrangeCollection{1}()
 qr_collection = QuadratureRuleCollection(2)
@@ -29,17 +29,23 @@ linop = Thunderbolt.LinearOperator(
     dh,
 )
 
-@btime Thunderbolt.update_operator!($linop,$0.0)
+@benchmark Thunderbolt.update_operator!($linop,$0.0)
 
 
 #############################
 # GPU operator Benchmarking #
 #############################
 cuda_strategy = Thunderbolt.CudaAssemblyStrategy()
-cuda_op = Thunderbolt.init_linear_operator(cuda_strategy,protocol, qr_collection, dh);
+# Notes on launch configuration:
+# These values are based on optimal occupancy of my GPU (Nvidia GeForce RTX 3050 Ti w 4GB VRAM) from Nsight Compute.
+# The number of threads per block is 384, and the number of blocks (no. SMs) is 20.
+cuda_op = Thunderbolt.init_linear_operator(cuda_strategy,protocol, qr_collection, dh;n_threads = 384,n_blocks = 20);
 
 ## benchmark with BenchmarkTools
 @btime Thunderbolt.update_operator!($cuda_op,$0.f0)
 
-## benchmark with CUDA/Nvidia tools
-CUDA.@profile Thunderbolt.update_operator!(cuda_op,0.f0)
+# benchmark with CUDA/Nvidia tools
+# Nsight Compute command: ncu --mode=launch julia
+# Note: run twice to get the correct time.
+Thunderbolt.update_operator!(cuda_op,0.f0) # warm up
+CUDA.@profile trace=true Thunderbolt.update_operator!(cuda_op,0.f0)
