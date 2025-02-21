@@ -24,7 +24,7 @@ protocol = AnalyticalTransmembraneStimulationProtocol(
 #############################
 
 linop = Thunderbolt.LinearOperator(
-    zeros(ndofs(dh)),
+    zeros(Float32,ndofs(dh)),
     protocol,
     qr_collection,
     dh,
@@ -58,7 +58,7 @@ CUDA.@profile trace=true Thunderbolt.update_operator!(cuda_op,0.f0)
 ######################################
 
 plinop = Thunderbolt.PEALinearOperator(
-    zeros(ndofs(dh)),
+    zeros(Float32,ndofs(dh)),
     qr_collection,
     protocol,
     dh,
