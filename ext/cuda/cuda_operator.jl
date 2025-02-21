@@ -99,7 +99,7 @@ function _update_linear_operator_kernel!(b, sdh, element_cache, mem_alloc, time)
         assemble_element!(bₑ, cell, element_cache, time)
         dofs = celldofs(cell)
         @inbounds for i in 1:length(dofs)
-            b[dofs[i]] += bₑ[i]
+            CUDA.@atomic b[dofs[i]] += bₑ[i]
         end
     end
     return nothing

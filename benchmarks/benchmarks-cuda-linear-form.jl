@@ -1,8 +1,8 @@
 using BenchmarkTools, Thunderbolt, StaticArrays,Ferrite , CUDA
 
 # The Following is needed to enforce grid to use Float32.
-left = Tensor{1, 3, Float32}((-1.0, -1.0,-1.0)) 
-right = Tensor{1, 3, Float32}((1.0, 1.0, 1.0)) 
+left = Vec((-1.f0, -1.f0,-1.f0)) 
+right = Vec((1.f0, 1.f0, 1.f0)) 
 
 grid = generate_grid(Hexahedron , (500,100,100),left,right)
 
@@ -30,7 +30,7 @@ linop = Thunderbolt.LinearOperator(
     dh,
 )
 
-@benchmark Thunderbolt.update_operator!($linop,$0.0)
+@benchmark Thunderbolt.update_operator!($linop,$0.f0)
 
 
 #############################
@@ -64,4 +64,4 @@ plinop = Thunderbolt.PEALinearOperator(
     dh,
 );
 
-@benchmark Thunderbolt.update_operator!($plinop,$0.0)
+@benchmark Thunderbolt.update_operator!($plinop,$0.f0)

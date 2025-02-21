@@ -1,6 +1,6 @@
-left = Tensor{1, 2, Float32}((-1.0, -1.0)) # define the left bottom corner of the grid.
-right = Tensor{1, 2, Float32}((1.0, 1.0)) # define the right top corner of the grid.
-grid = generate_grid(Quadrilateral, (2,2),left,right)
+left  = Vec((-1.f0, -1.f0)) # define the left bottom corner of the grid.
+right = Vec((1.f0, 1.f0)) # define the right top corner of the grid.
+grid = generate_grid(Quadrilateral, (287,1),left,right)
 dh = DofHandler(grid)
 add!(dh, :u, Lagrange{RefQuadrilateral,1}())
 close!(dh)
@@ -16,13 +16,13 @@ protocol = AnalyticalTransmembraneStimulationProtocol(
 
  
 linop = Thunderbolt.LinearOperator(
-    zeros(ndofs(dh)),
+    zeros(Float32,ndofs(dh)),
     protocol,
     qrc,
     dh,
 )
 
-Thunderbolt.update_operator!(linop,0.0)
+Thunderbolt.update_operator!(linop,0.f0)
 
 
 cuda_strategy = Thunderbolt.CudaAssemblyStrategy()
