@@ -84,6 +84,7 @@ end
 function Thunderbolt.update_operator!(op::GeneralLinearOperator{<:CudaElementAssembly}, time)
     @unpack b, element_assembly = op
     @unpack threads, blocks, mem_alloc, eles_caches, strategy, dh = element_assembly
+    fill!(b, zero(eltype(b)))
     for sdh_idx in 1:length(dh.subdofhandlers)
         sdh = dh.subdofhandlers[sdh_idx]
         ele_cache = eles_caches[sdh_idx]
