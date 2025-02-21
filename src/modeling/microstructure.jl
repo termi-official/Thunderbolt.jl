@@ -165,15 +165,44 @@ function streeter_type_fsn(transmural_direction, circumferential_direction, apic
     return OrthotropicMicrostructure(f₀, s₀, n₀)
 end
 
+
+"""
+    abc_fsn(transmural_direction::Vec{3}, circumferential_direction::Vec{3}, apicobasal_direction::Vec{3}, α, β, γ, make_orthogonal=true)
+
+Compute fiber, sheetlet and normal direction from the transmural, circumferential, apicobasal directions
+in addition to given helix, transversal and sheetlet angles. The theory is based on the classical work by
+[StreSpoPatRosSon:1969:foc](@citet).
+"""
+function abc_fsn(transmural_direction, circumferential_direction, apicobasal_direction, α, β, γ, make_orthogonal=true)
+    # First we abc_fsn the helix rotation ...
+    f₀ = rotate_around(circumferential_direction, transmural_direction, α)
+    f₀ /= norm(f₀)
+    # ... followed by the transversal_angle ...
+    f₀ = rotate_around(f₀, apicobasal_direction, β)
+    f₀ /= norm(f₀)
+
+    # Then we construct the the orthogonal sheetlet vector ...
+    s₀ = rotate_around(circumferential_direction, transmural_direction, α+π/2.0)
+    s₀ /= norm(f₀)
+    if make_orthogonal
+        s₀ = orthogonalize(s₀/norm(s₀), f₀)
+    end
+    s₀ = rotate_around(s₀, f₀, γ)
+    s₀ /= norm(s₀)
+
+    # Compute normal :)
+    n₀ = f₀ × s₀
+    n₀ /= norm(n₀)
+
+    return OrthotropicMicrostructure(f₀, s₀, n₀)
+end
+
 """
     create_simple_microstructure_model(coordinate_system, ip_component::VectorInterpolationCollection; endo_helix_angle = deg2rad(80.0), epi_helix_angle = deg2rad(-65.0), endo_transversal_angle = 0.0, epi_transversal_angle = 0.0, sheetlet_angle = 0.0, make_orthogonal=true)
 
 Create a rotating fiber field by deducing the circumferential direction from apicobasal and transmural gradients.
-
-!!! note
-    FIXME! Sheetlet angle construction is broken (i.e. does not preserve input angle).
 """
-function create_simple_microstructure_model(coordinate_system, ip_collection::VectorizedInterpolationCollection{3}; endo_helix_angle = deg2rad(80.0), epi_helix_angle = deg2rad(-65.0), endo_transversal_angle = 0.0, epi_transversal_angle = 0.0, sheetlet_pseudo_angle = 0.0, make_orthogonal=true)
+function create_simple_microstructure_model(coordinate_system, ip_collection::VectorizedInterpolationCollection{3}; endo_helix_angle = deg2rad(80.0), epi_helix_angle = deg2rad(-65.0), endo_transversal_angle = 0.0, epi_transversal_angle = 0.0, endo_rot_angle = 0.0, epi_rot_angle = 0.0, make_orthogonal=true)
     @unpack dh = coordinate_system
 
     # TODO this storage is redundant, can we reduce the memory footprint?
@@ -202,7 +231,8 @@ function create_simple_microstructure_model(coordinate_system, ip_collection::Ve
                 apicobasal_direction /= norm(apicobasal_direction)
                 transmural_direction = function_gradient(cv, qp, coordinate_system.u_transmural[dof_indices])
                 transmural_direction /= norm(transmural_direction)
-                circumferential_direction = apicobasal_direction × transmural_direction
+                apicobasal_direction = apicobasal_direction - (apicobasal_direction ⋅ transmural_direction) * transmural_direction # We do this fix to ensure local orthogonality
+                circumferential_direction = transmural_direction × apicobasal_direction
                 circumferential_direction /= norm(circumferential_direction)
 
                 transmural  = function_value(cv, qp, coordinate_system.u_transmural[dof_indices])
@@ -210,8 +240,9 @@ function create_simple_microstructure_model(coordinate_system, ip_collection::Ve
                 # linear interpolation of rotation angle
                 helix_angle       = (1-transmural) * endo_helix_angle + (transmural) * epi_helix_angle
                 transversal_angle = (1-transmural) * endo_transversal_angle + (transmural) * epi_transversal_angle
+                rot_angle         = (1-transmural) * endo_rot_angle + (transmural) * epi_rot_angle
 
-                coeff = streeter_type_fsn(transmural_direction, circumferential_direction, apicobasal_direction, helix_angle, transversal_angle, sheetlet_pseudo_angle, make_orthogonal)
+                coeff = abc_fsn(transmural_direction, circumferential_direction, apicobasal_direction, helix_angle, transversal_angle, rot_angle, make_orthogonal)
                 f_buf[qp.i, cellindex] = Tv(coeff.f)
                 s_buf[qp.i, cellindex] = Tv(coeff.s)
                 n_buf[qp.i, cellindex] = Tv(coeff.n)

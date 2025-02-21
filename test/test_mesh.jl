@@ -119,4 +119,16 @@
             test_detJ(carp_grid)
         end
     end
+
+    @testset "Surface extraction" begin
+        LV_mesh = generate_ideal_lv_mesh(4,2,2)
+        surface_mesh = Thunderbolt.extract_outer_surface_mesh(LV_mesh)
+
+        @test length(surface_mesh.cellsets) == 3
+        @test length(surface_mesh.cellsets["Epicardium"]) == 3*4
+        @test length(surface_mesh.cellsets["Endocardium"]) == 3*4
+        @test length(surface_mesh.cellsets["Base"]) == 4*2
+        @test length(surface_mesh.nodes) == 2 + 3*2*4 + 4 # nodes at base + nodes on loopes endo&epi + node loop on base
+        @test length(surface_mesh.cells) == 2*4 + 2*4*(2+1) # cells at base + cells inside&outside
+    end
 end

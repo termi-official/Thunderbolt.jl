@@ -1,16 +1,65 @@
-# TODO remove these once they are merged
-module FerriteUtils
-include("ferrite-addons/PR883.jl")
+
+const DEBUG = Preferences.@load_preference("use_debug", false)
+
+"""
+    Thunderbolt.debug_mode(; enable=true)
+
+Helper to turn on (`enable=true`) or off (`enable=false`) debug expressions in Ferrite.
+
+Debug mode influences `Ferrite.@debug expr`: when debug mode is enabled, `expr` is
+evaluated, and when debug mode is disabled `expr` is ignored.
+"""
+function debug_mode(; enable = true)
+    if DEBUG == enable == true
+        @info "Debug mode already enabled."
+    elseif DEBUG == enable == false
+        @info "Debug mode already disabled."
+    else
+        Preferences.@set_preferences!("use_debug" => enable)
+        @info "Debug mode $(enable ? "en" : "dis")abled. Restart the Julia session for this change to take effect!"
+    end
+    return
 end
 
-include("collections.jl")
-include("quadrature_iterator.jl")
+@static if DEBUG
+    @eval begin
+        macro debugonly(ex)
+            return :($(esc(ex)))
+        end
+    end
+else
+    @eval begin
+        macro debugonly(ex)
+            return nothing
+        end
+    end
+end
 
-function celldofsview(dh::DofHandler, i::Int)
+# TODO remove these once they are merged
+module FerriteUtils
+using Ferrite
+import GPUArraysCore: AbstractGPUVector, AbstractGPUArray
+import Adapt
+
+include("ferrite-addons/gpu/device_dofhandler.jl")
+include("ferrite-addons/gpu/device_grid.jl")
+include("ferrite-addons/PR883.jl")
+include("ferrite-addons/gpu/device_memalloc.jl")
+include("ferrite-addons/gpu/device_iterator.jl")
+include("ferrite-addons/gpu/adapt.jl")
+
+end
+
+include("ferrite-addons/collections.jl")
+include("ferrite-addons/quadrature_iterator.jl")
+
+
+function celldofsview(dh::Ferrite.AbstractDofHandler, i::Integer) 
     ndofs = ndofs_per_cell(dh, i)
     offset = dh.cell_dofs_offset[i]
     return @views dh.cell_dofs[offset:(offset+ndofs-1)]
 end
+
 
 function calculate_element_volume(cell, cellvalues_u, uₑ)
     reinit!(cellvalues_u, cell)
@@ -51,9 +100,9 @@ resulting vector is `α` (given in radians).
          and `v \\cdot n = 0`.
 """
 @inline function unproject(v::Vec{dim,T}, n::Vec{dim,T}, α::T)::Vec{dim, T} where {dim, T}
-    @debug @assert norm(v) ≈ 1.0
-    @debug @assert norm(n) ≈ 1.0
-    @debug @assert v ⋅ n ≈ 0.0
+    @debugonly @assert norm(v) ≈ 1.0
+    @debugonly @assert norm(n) ≈ 1.0
+    @debugonly @assert v ⋅ n ≈ 0.0
 
     α ≈ π/2.0 && return n # special case to prevent division by 0
 
@@ -69,7 +118,7 @@ Perform a Rodrigues' rotation of the vector `v` around the axis `a` with `θ` ra
 !!! note It is assumed that the vectors are normalized, i.e. `||v|| = 1` and `||a|| = 1`.
 """
 @inline function rotate_around(v::Vec{dim,T}, a::Vec{dim,T}, θ::T)::Vec{dim,T} where {dim, T}
-    @debug @assert norm(n) ≈ 1.0
+    @debugonly @assert norm(n) ≈ 1.0
 
     return v * cos(θ) + (a × v) * sin(θ) + a * (a ⋅ v) * (1-cos(θ))
 end
@@ -221,7 +270,7 @@ function Ferrite.apply_zero!(K::SparseMatrixCSR, f::AbstractVector, ch::Constrai
 end
 
 function Ferrite.zero_out_rows!(K::SparseMatrixCSR, dofs::Vector{Int}) # can be removed in 0.7 with #24711 merged
-    Ferrite.@debug @assert issorted(dofs)
+    @debugonly @assert issorted(dofs)
     for col in dofs
         r = nzrange(K, col)
         K.nzval[r] .= 0.0
@@ -432,6 +481,8 @@ end
 # To handle embedded elements in the same code
 _inner_product_helper(a::Vec, B::Union{Tensor, SymmetricTensor}, c::Vec) = a ⋅ B ⋅ c
 _inner_product_helper(a::SVector, B::Union{Tensor, SymmetricTensor}, c::SVector) = Vec(a.data) ⋅ B ⋅ Vec(c.data)
+_inner_product_helper(a::Vec, B::AbstractFloat, c::Vec) = a ⋅ c * B
+_inner_product_helper(a::SVector, B::AbstractFloat, c::SVector) = Vec(a.data) ⋅ Vec(c.data) * B
 
 
 function geometric_subdomain_interpolation(sdh::SubDofHandler)
@@ -468,4 +519,64 @@ function get_closest_vertex(val::Vec, grid::AbstractGrid)
         end
     end
     return closest_vertex
+end
+
+@generated function dot_2_1(S1::FourthOrderTensor{dim}, S2::SecondOrderTensor{dim}) where {dim}
+    idxS1(i, j, k, l) = Tensors.compute_index(Tensors.get_base(S1), i, j, k, l)
+    idxS2(i, j) = Tensors.compute_index(Tensors.get_base(S2), i, j)
+    exps = Expr(:tuple)
+    for l in 1:dim, k in 1:dim, j in 1:dim, i in 1:dim
+        ex1 = Expr[:(Tensors.get_data(S1)[$(idxS1(i, m, k, l))]) for m in 1:dim]
+        ex2 = Expr[:(Tensors.get_data(S2)[$(idxS2(m, j))]) for m in 1:dim]
+        push!(exps.args, Tensors.reducer(ex1, ex2))
+    end
+    quote
+        $(Expr(:meta, :inline))
+        @inbounds return Tensor{4, dim}($exps)
+    end
+end
+
+@generated function dot_2_1t(S1::FourthOrderTensor{dim}, S2::SecondOrderTensor{dim}) where {dim}
+    idxS1(i, j, k, l) = Tensors.compute_index(Tensors.get_base(S1), i, j, k, l)
+    idxS2(i, j) = Tensors.compute_index(Tensors.get_base(S2), i, j)
+    exps = Expr(:tuple)
+    for l in 1:dim, k in 1:dim, j in 1:dim, i in 1:dim
+        ex1 = Expr[:(Tensors.get_data(S1)[$(idxS1(i, m, k, l))]) for m in 1:dim]
+        ex2 = Expr[:(Tensors.get_data(S2)[$(idxS2(j, m))]) for m in 1:dim]
+        push!(exps.args, Tensors.reducer(ex1, ex2))
+    end
+    quote
+        $(Expr(:meta, :inline))
+        @inbounds return Tensor{4, dim}($exps)
+    end
+end
+
+@generated function dot_3_1(S1::FourthOrderTensor{dim}, S2::SecondOrderTensor{dim}) where {dim}
+    idxS1(i, j, k, l) = Tensors.compute_index(Tensors.get_base(S1), i, j, k, l)
+    idxS2(i, j) = Tensors.compute_index(Tensors.get_base(S2), i, j)
+    exps = Expr(:tuple)
+    for l in 1:dim, k in 1:dim, j in 1:dim, i in 1:dim
+        ex1 = Expr[:(Tensors.get_data(S1)[$(idxS1(i, j, m, l))]) for m in 1:dim]
+        ex2 = Expr[:(Tensors.get_data(S2)[$(idxS2(m, j))]) for m in 1:dim]
+        push!(exps.args, Tensors.reducer(ex1, ex2))
+    end
+    quote
+        $(Expr(:meta, :inline))
+        @inbounds return Tensor{4, dim}($exps)
+    end
+end
+
+@generated function dot_3_1t(S1::FourthOrderTensor{dim}, S2::SecondOrderTensor{dim}) where {dim}
+    idxS1(i, j, k, l) = Tensors.compute_index(Tensors.get_base(S1), i, j, k, l)
+    idxS2(i, j) = Tensors.compute_index(Tensors.get_base(S2), i, j)
+    exps = Expr(:tuple)
+    for l in 1:dim, k in 1:dim, j in 1:dim, i in 1:dim
+        ex1 = Expr[:(Tensors.get_data(S1)[$(idxS1(i, j, m, l))]) for m in 1:dim]
+        ex2 = Expr[:(Tensors.get_data(S2)[$(idxS2(j, m))]) for m in 1:dim]
+        push!(exps.args, Tensors.reducer(ex1, ex2))
+    end
+    quote
+        $(Expr(:meta, :inline))
+        @inbounds return Tensor{4, dim}($exps)
+    end
 end
