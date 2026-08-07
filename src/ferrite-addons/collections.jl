@@ -140,6 +140,10 @@ getquadraturerule(
     qrc::FacetQuadratureRuleCollection{order},
     cell::AbstractCell{ref_shape},
 ) where {order, ref_shape} = FacetQuadratureRule{ref_shape}(order)
+getquadraturerule(
+    qrc::FacetQuadratureRuleCollection{order},
+    ::Type{ref_shape},
+) where {order, ref_shape <: Ferrite.AbstractRefShape} = FacetQuadratureRule{ref_shape}(order)
 getquadraturerule(qrc::FacetQuadratureRuleCollection, sdh::SubDofHandler) =
     getquadraturerule(qrc, get_first_cell(sdh))
 
