@@ -424,6 +424,22 @@ g_deuflhard(x) = √(1 + 4x) - 1
         @test integrator.dt < 0.4
     end
 
+    @testset "A linear stage has no contraction rate" begin
+        # These controllers are driven by how well Newton contracted. A `BackwardEulerAffineODEStage`
+        # solves one linear system and converges by construction, so there is no rate for it to read
+        # and the pairing is refused by naming the stage rather than by inventing one.
+        @test_throws MethodError solve!(
+            init(
+                transient_diffusion_problem(),
+                BackwardEulerSolver(),
+                dt = 0.1,
+                verbose = false,
+                controller = controllers[1],
+                dtmax = 0.5,
+            ),
+        )
+    end
+
     @testset "A multi-level cache reaches the global Newton cache" begin
         # The forwarding that lets these controllers run under MultiLevelNewtonRaphsonSolver.
         mlcache = Thunderbolt.MultiLevelNewtonRaphsonSolverCache(

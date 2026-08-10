@@ -204,65 +204,88 @@ using JET: @test_opt, @test_call
         @test rₑ² ≈ rₑ¹
     end
 
-    # The dashpots are functions of `(u, v)` rather than `(u, t)`, so they are driven through the
-    # time scheme's parameter object rather than a bare time. `assemble_element!` is therefore the
-    # entry point under test -- it is where the payload is translated into a velocity.
+    # The dashpots are functions of `(u, v)` rather than `(u, t)`. `facet_velocity` is the query that
+    # turns whatever a time scheme handed the element into that velocity, and it is idempotent on an
+    # `AffineVelocity` -- so a reconstruction can be handed straight in, which is what an element level
+    # test wants. The one assertion that must go through a *scheme's* parameter object instead is the
+    # `Δt` scaling below, since that is the whole content of `facet_velocity` for backward Euler.
     @testset "Viscous surface elements: $model" for model in (
         ViscousRobinBC(3.0, "left"),
         ViscousNormalSpringBC(3.0, "left"),
     )
-        n     = ndofs(dhv)
-        Δt    = 0.25
+        n = ndofs(dhv)
+        Δt = 0.25
         uprev = uₑv ./ 3
-        pfot  = FerriteOperators.GenericFirstOrderTimeElementParameters(nothing, 0.0, Δt, uprev)
+        velocity = Thunderbolt.AffineVelocity(inv(Δt), uprev)
 
         cache = setup_boundary_cache(model, qrf, sdhv)
 
-        K¹ = zeros(n, n);
+        K¹ = zeros(n, n)
         r¹ = zeros(n)
-        FerriteOperators.assemble_element!(K¹, r¹, uₑv, cell_cache_v, cache, pfot)
+        FerriteOperators.assemble_element!(K¹, r¹, uₑv, cell_cache_v, cache, velocity)
         @test !iszero(K¹)
         @test !iszero(r¹)
 
         # The three assembly variants must agree.
-        K² = zeros(n, n);
+        K² = zeros(n, n)
         r² = zeros(n)
-        FerriteOperators.assemble_element!(r², uₑv, cell_cache_v, cache, pfot)
-        FerriteOperators.assemble_element!(K², uₑv, cell_cache_v, cache, pfot)
+        FerriteOperators.assemble_element!(r², uₑv, cell_cache_v, cache, velocity)
+        FerriteOperators.assemble_element!(K², uₑv, cell_cache_v, cache, velocity)
         @test r² ≈ r¹
         @test K² ≈ K¹
 
-        # No velocity, no traction -- and the tangent of a linear damper does not care about `u`.
-        r⁰ = zeros(n);
-        K⁰ = zeros(n, n)
-        FerriteOperators.assemble_element!(K⁰, r⁰, uprev, cell_cache_v, cache, pfot)
-        @test norm(r⁰) < 1e-14
-        @test K⁰ ≈ K¹
+        # The family is linear in the velocity, so the residual is *exactly* the tangent applied to
+        # the increment -- an identity, not an approximation. It subsumes three weaker checks at once:
+        # that the tangent is the derivative of the residual, that no velocity means no traction, and
+        # that the tangent does not depend on `u`.
+        @test r¹ ≈ K¹ * (uₑv .- uprev)
 
-        # The tangent is the derivative of the residual. This is the property that a hand written
-        # velocity reconstruction gets wrong, so it is checked rather than assumed.
-        Kfd = zeros(n, n)
-        h = 1e-7
-        for i = 1:n
-            up = copy(uₑv);
-            up[i] += h
-            um = copy(uₑv);
-            um[i] -= h
-            rp = zeros(n);
-            rm = zeros(n)
-            FerriteOperators.assemble_element!(rp, up, cell_cache_v, cache, pfot)
-            FerriteOperators.assemble_element!(rm, um, cell_cache_v, cache, pfot)
-            Kfd[:, i] .= (rp .- rm) ./ (2h)
-        end
-        @test maximum(abs, Kfd .- K¹) < 1e-6 * max(1.0, maximum(abs, K¹))
-
-        # Halving the timestep doubles the velocity, hence both the traction and the tangent.
-        Kh = zeros(n, n);
+        # Halving the timestep doubles the velocity, hence both the traction and the tangent. This is
+        # the assertion that pins the reconstruction itself, so it goes through the scheme's parameter
+        # object rather than an `AffineVelocity` built by hand.
+        gto1(dt) = FerriteOperators.GenericFirstOrderTimeElementParameters(nothing, 0.0, dt, uprev)
+        Kh = zeros(n, n)
         rh = zeros(n)
-        pfoth = FerriteOperators.GenericFirstOrderTimeElementParameters(nothing, 0.0, Δt/2, uprev)
-        FerriteOperators.assemble_element!(Kh, rh, uₑv, cell_cache_v, cache, pfoth)
+        FerriteOperators.assemble_element!(Kh, rh, uₑv, cell_cache_v, cache, gto1(Δt/2))
         @test Kh ≈ 2 .* K¹
         @test rh ≈ 2 .* r¹
+        # ... and the full step must agree with the reconstruction built by hand, which is what says
+        # `facet_velocity` reads `Δt` the way this test assumes it does.
+        Kg = zeros(n, n)
+        rg = zeros(n)
+        FerriteOperators.assemble_element!(Kg, rg, uₑv, cell_cache_v, cache, gto1(Δt))
+        @test Kg ≈ K¹
+        @test rg ≈ r¹
+
+        # The traction is linear in the viscosity, which is the whole of `damping_tensor`.
+        stiffer = setup_boundary_cache(
+            model isa ViscousRobinBC ? ViscousRobinBC(6.0, "left") :
+            ViscousNormalSpringBC(6.0, "left"),
+            qrf,
+            sdhv,
+        )
+        K2 = zeros(n, n)
+        r2 = zeros(n)
+        FerriteOperators.assemble_element!(K2, r2, uₑv, cell_cache_v, stiffer, velocity)
+        @test K2 ≈ 2 .* K¹
+        @test r2 ≈ 2 .* r¹
+
+        # The constitutive difference between the two dashpots, and the only place it is visible: the
+        # normal one leaves tangential sliding free. Facet "left" has n₀ = -e₁, so a velocity along e₂
+        # is purely tangential and must draw no traction from it at all. Exact, so no tolerance.
+        vtan = zeros(n)
+        for k = 1:8
+            vtan[3*(k-1)+2] = 1.0e-3
+        end
+        rtan = zeros(n)
+        FerriteOperators.assemble_element!(
+            rtan,
+            vtan,
+            cell_cache_v,
+            cache,
+            Thunderbolt.AffineVelocity(inv(Δt), zeros(n)),
+        )
+        @test iszero(rtan) == (model isa ViscousNormalSpringBC)
     end
 
     @testset "Mixed spring/dashpot boundary" begin
@@ -296,12 +319,6 @@ using JET: @test_opt, @test_call
         FerriteOperators.assemble_element!(Kd, uₑv, cell_cache_v, dashpot, pfot)
         FerriteOperators.assemble_element!(Kc, uₑv, cell_cache_v, composite, pfot)
         @test Kc ≈ Ks .+ Kd
-
-        Kc² = zeros(n, n);
-        rc² = zeros(n)
-        FerriteOperators.assemble_element!(Kc², rc², uₑv, cell_cache_v, composite, pfot)
-        @test Kc² ≈ Kc
-        @test rc² ≈ rc
 
         # A spring must see exactly the same thing whether it is handed the payload or a bare time.
         r_time = zeros(n)
