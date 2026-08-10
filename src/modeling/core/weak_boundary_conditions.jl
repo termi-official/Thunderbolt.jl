@@ -13,6 +13,15 @@ Any boundary condition stated in the weak form
 """
 abstract type AbstractWeakBoundaryCondition end
 
+function field_name_of_weak_boundary_condition(bc::AbstractWeakBoundaryCondition, sdh::SubDofHandler)
+    return if hasfield(typeof(bc), :field_name) && bc.field_name != :auto
+        bc.field_name
+    else 
+        @assert length(sdh.field_names) == 1 "For problems with multiple fields please pass the field name into your weak boundary conditions via `field_name`"
+        first(sdh.field_names)
+    end
+end
+
 @doc raw"""
     RobinBC(α, boundary_name::String)
 
@@ -23,7 +32,9 @@ abstract type AbstractWeakBoundaryCondition end
 struct RobinBC <: AbstractWeakBoundaryCondition
     α::Float64
     boundary_name::String
+    field_name::Symbol
 end
+RobinBC(a,b) = RobinBC(a, b, :auto)
 
 @doc raw"""
     NormalSpringBC(kₛ boundary_name::String)
@@ -35,7 +46,9 @@ end
 struct NormalSpringBC <: AbstractWeakBoundaryCondition
     kₛ::Float64
     boundary_name::String
+    field_name::Symbol
 end
+NormalSpringBC(a,b) = NormalSpringBC(a, b, :auto)
 
 @doc raw"""
     BendingSpringBC(kᵇ, boundary_name::String)
@@ -47,7 +60,9 @@ end
 struct BendingSpringBC <: AbstractWeakBoundaryCondition
     kᵇ::Float64
     boundary_name::String
+    field_name::Symbol
 end
+BendingSpringBC(a,b) = BendingSpringBC(a, b, :auto)
 
 @doc raw"""
     ConstantPressureBC(p::Real, boundary_name::String)
@@ -59,7 +74,9 @@ end
 struct ConstantPressureBC <: AbstractWeakBoundaryCondition
     p::Float64
     boundary_name::String
+    field_name::Symbol
 end
+ConstantPressureBC(a,b) = ConstantPressureBC(a, b, :auto)
 
 @doc raw"""
     PressureFieldBC(pressure_field, boundary_name::String)
@@ -71,7 +88,9 @@ end
 struct PressureFieldBC{C} <: AbstractWeakBoundaryCondition
     pc::C
     boundary_name::String
+    field_name::Symbol
 end
+PressureFieldBC(a,b) = PressureFieldBC(a, b, :auto)
 
 """
 Standard cache for surface integrals.
@@ -79,9 +98,10 @@ Standard cache for surface integrals.
 struct SimpleFacetCache{MP, FV} <: AbstractSurfaceElementCache
     mp::MP
     fv::FV
+    dof_range::UnitRange{Int}
 end
 function duplicate_for_device(device, cache::SimpleFacetCache)
-    return SimpleFacetCache(cache.mp, duplicate_for_device(device, cache.fv))
+    return SimpleFacetCache(cache.mp, duplicate_for_device(device, cache.fv), cache.dof_range)
 end
 @inline is_facet_in_cache(facet::FacetIndex, cell::CellCache, facet_cache::SimpleFacetCache) =
     facet ∈ getfacetset(cell.grid, getboundaryname(facet_cache))
@@ -92,11 +112,11 @@ function setup_boundary_cache(
     qr::FacetQuadratureRule,
     sdh::SubDofHandler,
 )
-    @assert length(sdh.dh.field_names) == 1 "Support for multiple fields not yet implemented."
-    field_name = first(sdh.dh.field_names)
+    field_name = field_name_of_weak_boundary_condition(facet_model, sdh)
     ip         = Ferrite.getfieldinterpolation(sdh, field_name)
     ip_geo     = geometric_subdomain_interpolation(sdh)
-    return SimpleFacetCache(facet_model, FacetValues(qr, ip, ip_geo))
+    dof_range  = Ferrite.dof_range(sdh, field_name)
+    return SimpleFacetCache(facet_model, FacetValues(qr, ip, ip_geo), dof_range)
 end
 
 function assemble_facet!(
@@ -117,18 +137,18 @@ function assemble_facet!(
     for qp in QuadratureIterator(fv)
         dΓ = getdetJdV(fv, qp)
 
-        u_q = function_value(fv, qp, @view uₑ[1:getnbasefunctions(fv)])
+        u_q = function_value(fv, qp, @view uₑ[cache.dof_range])
         ∂²Ψ∂u², ∂Ψ∂u = Tensors.hessian(u -> α*u⋅u, u_q, :all)
 
         # Add contribution to the residual from this test function
         for i = 1:ndofs_facet
             δuᵢ = shape_value(fv, qp, i)
-            residualₑ[i] += δuᵢ ⋅ ∂Ψ∂u * dΓ
+            residualₑ[cache.dof_range[i]] += δuᵢ ⋅ ∂Ψ∂u * dΓ
 
             for j = 1:ndofs_facet
                 δuⱼ = shape_value(fv, qp, j)
                 # Add contribution to the tangent
-                Kₑ[i, j] += (δuᵢ ⋅ ∂²Ψ∂u² ⋅ δuⱼ) * dΓ
+                Kₑ[cache.dof_range[i], cache.dof_range[j]] += (δuᵢ ⋅ ∂²Ψ∂u² ⋅ δuⱼ) * dΓ
             end
         end
     end
@@ -151,7 +171,7 @@ function assemble_facet!(
     for qp in QuadratureIterator(fv)
         dΓ = getdetJdV(fv, qp)
 
-        u_q = function_value(fv, qp, @view uₑ[1:getnbasefunctions(fv)])
+        u_q = function_value(fv, qp, @view uₑ[cache.dof_range])
         ∂²Ψ∂u², ∂Ψ∂u = Tensors.hessian(u -> α*u⋅u, u_q, :all)
 
         # Add contribution to the residual from this test function
@@ -161,7 +181,7 @@ function assemble_facet!(
             for j = 1:ndofs_facet
                 δuⱼ = shape_value(fv, qp, j)
                 # Add contribution to the tangent
-                Kₑ[i, j] += (δuᵢ ⋅ ∂²Ψ∂u² ⋅ δuⱼ) * dΓ
+                Kₑ[cache.dof_range[i], cache.dof_range[j]] += (δuᵢ ⋅ ∂²Ψ∂u² ⋅ δuⱼ) * dΓ
             end
         end
     end
@@ -184,13 +204,13 @@ function assemble_facet!(
     for qp in QuadratureIterator(fv)
         dΓ = getdetJdV(fv, qp)
 
-        u_q = function_value(fv, qp, @view uₑ[1:getnbasefunctions(fv)])
+        u_q = function_value(fv, qp, @view uₑ[cache.dof_range])
         ∂Ψ∂u = Tensors.gradient(u -> α*u⋅u, u_q)
 
         # Add contribution to the residual from this test function
         for i = 1:ndofs_facet
             δuᵢ = shape_value(fv, qp, i)
-            residualₑ[i] += δuᵢ ⋅ ∂Ψ∂u * dΓ
+            residualₑ[cache.dof_range[i]] += δuᵢ ⋅ ∂Ψ∂u * dΓ
         end
     end
 end
@@ -216,18 +236,18 @@ function assemble_facet!(
         dΓ = getdetJdV(fv, qp)
         N = getnormal(fv, qp)
 
-        u_q = function_value(fv, qp, @view uₑ[1:getnbasefunctions(fv)])
+        u_q = function_value(fv, qp, @view uₑ[cache.dof_range])
         ∂²Ψ∂u², ∂Ψ∂u = Tensors.hessian(u -> 0.5*kₛ*(u⋅N)^2, u_q, :all)
 
         # Add contribution to the residual from this test function
         for i = 1:ndofs_facet
             δuᵢ = shape_value(fv, qp, i)
-            residualₑ[i] += δuᵢ ⋅ ∂Ψ∂u * dΓ
+            residualₑ[cache.dof_range[i]] += δuᵢ ⋅ ∂Ψ∂u * dΓ
 
             for j = 1:ndofs_facet
                 δuⱼ = shape_value(fv, qp, j)
                 # Add contribution to the tangent
-                Kₑ[i, j] += (δuᵢ ⋅ ∂²Ψ∂u² ⋅ δuⱼ) * dΓ
+                Kₑ[cache.dof_range[i], cache.dof_range[j]] += (δuᵢ ⋅ ∂²Ψ∂u² ⋅ δuⱼ) * dΓ
             end
         end
     end
@@ -251,7 +271,7 @@ function assemble_facet!(
         dΓ = getdetJdV(fv, qp)
         N = getnormal(fv, qp)
 
-        u_q = function_value(fv, qp, @view uₑ[1:getnbasefunctions(fv)])
+        u_q = function_value(fv, qp, @view uₑ[cache.dof_range])
         ∂²Ψ∂u², ∂Ψ∂u = Tensors.hessian(u -> 0.5*kₛ*(u⋅N)^2, u_q, :all)
 
         # Add contribution to the residual from this test function
@@ -261,7 +281,7 @@ function assemble_facet!(
             for j = 1:ndofs_facet
                 δuⱼ = shape_value(fv, qp, j)
                 # Add contribution to the tangent
-                Kₑ[i, j] += (δuᵢ ⋅ ∂²Ψ∂u² ⋅ δuⱼ) * dΓ
+                Kₑ[cache.dof_range[i], cache.dof_range[j]] += (δuᵢ ⋅ ∂²Ψ∂u² ⋅ δuⱼ) * dΓ
             end
         end
     end
@@ -285,13 +305,13 @@ function assemble_facet!(
         dΓ = getdetJdV(fv, qp)
         N = getnormal(fv, qp)
 
-        u_q = function_value(fv, qp, @view uₑ[1:getnbasefunctions(fv)])
+        u_q = function_value(fv, qp, @view uₑ[cache.dof_range])
         ∂Ψ∂u = Tensors.gradient(u -> 0.5*kₛ*(u⋅N)^2, u_q)
 
         # Add contribution to the residual from this test function
         for i = 1:ndofs_facet
             δuᵢ = shape_value(fv, qp, i)
-            residualₑ[i] += δuᵢ ⋅ ∂Ψ∂u * dΓ
+            residualₑ[cache.dof_range[i]] += δuᵢ ⋅ ∂Ψ∂u * dΓ
         end
     end
 end
@@ -317,7 +337,7 @@ function assemble_facet!(
         dΓ = getdetJdV(fv, qp)
         N = getnormal(fv, qp)
 
-        ∇u = function_gradient(fv, qp, @view uₑ[1:getnbasefunctions(fv)])
+        ∇u = function_gradient(fv, qp, @view uₑ[cache.dof_range])
         F = one(∇u) + ∇u
 
         ∂²Ψ∂F², ∂Ψ∂F = Tensors.hessian(
@@ -329,13 +349,13 @@ function assemble_facet!(
         # Add contribution to the residual from this test function
         for i = 1:ndofs_facet
             ∇δui = shape_gradient(fv, qp, i)
-            residualₑ[i] += ∇δui ⊡ ∂Ψ∂F * dΓ
+            residualₑ[cache.dof_range[i]] += ∇δui ⊡ ∂Ψ∂F * dΓ
 
             ∇δui∂P∂F = ∇δui ⊡ ∂²Ψ∂F² # Hoisted computation
             for j = 1:ndofs_facet
                 ∇δuj = shape_gradient(fv, qp, j)
                 # Add contribution to the tangent
-                Kₑ[i, j] += (∇δui∂P∂F ⊡ ∇δuj) * dΓ
+                Kₑ[cache.dof_range[i], cache.dof_range[j]] += (∇δui∂P∂F ⊡ ∇δuj) * dΓ
             end
         end
     end
@@ -359,7 +379,7 @@ function assemble_facet!(
         dΓ = getdetJdV(fv, qp)
         N = getnormal(fv, qp)
 
-        ∇u = function_gradient(fv, qp, @view uₑ[1:getnbasefunctions(fv)])
+        ∇u = function_gradient(fv, qp, @view uₑ[cache.dof_range])
         F = one(∇u) + ∇u
 
         ∂²Ψ∂F², ∂Ψ∂F = Tensors.hessian(
@@ -376,7 +396,7 @@ function assemble_facet!(
             for j = 1:ndofs_facet
                 ∇δuj = shape_gradient(fv, qp, j)
                 # Add contribution to the tangent
-                Kₑ[i, j] += (∇δui∂P∂F ⊡ ∇δuj) * dΓ
+                Kₑ[cache.dof_range[i], cache.dof_range[j]] += (∇δui∂P∂F ⊡ ∇δuj) * dΓ
             end
         end
     end
@@ -400,7 +420,7 @@ function assemble_facet!(
         dΓ = getdetJdV(fv, qp)
         N = getnormal(fv, qp)
 
-        ∇u = function_gradient(fv, qp, @view uₑ[1:getnbasefunctions(fv)])
+        ∇u = function_gradient(fv, qp, @view uₑ[cache.dof_range])
         F = one(∇u) + ∇u
 
         ∂Ψ∂F =
@@ -409,7 +429,7 @@ function assemble_facet!(
         # Add contribution to the residual from this test function
         for i = 1:ndofs_facet
             ∇δui = shape_gradient(fv, qp, i)
-            residualₑ[i] += ∇δui ⊡ ∂Ψ∂F * dΓ
+            residualₑ[cache.dof_range[i]] += ∇δui ⊡ ∂Ψ∂F * dΓ
         end
     end
 end
@@ -429,7 +449,7 @@ function assemble_facet_pressure_qp!(
     dΓ = getdetJdV(fv, qp)
     n₀ = getnormal(fv, qp)
 
-    ∇u = function_gradient(fv, qp, @view uₑ[1:getnbasefunctions(fv)])
+    ∇u = function_gradient(fv, qp, @view uₑ[cache.dof_range])
     F = one(∇u) + ∇u
 
     invF = inv(F)
@@ -440,7 +460,7 @@ function assemble_facet_pressure_qp!(
     # neumann_term = p * n₀
     for i = 1:ndofs_facet
         δuᵢ = shape_value(fv, qp, i)
-        residualₑ[i] += neumann_term ⋅ δuᵢ * dΓ
+        residualₑ[cache.dof_range[i]] += neumann_term ⋅ δuᵢ * dΓ
 
         for j = 1:ndofs_facet
             ∇δuⱼ = shape_gradient(fv, qp, j)
@@ -451,7 +471,7 @@ function assemble_facet_pressure_qp!(
             δcofF = -transpose(invF ⋅ ∇δuⱼ ⋅ invF)
             δJ = J * tr(∇δuⱼ ⋅ invF)
             δJcofF = δJ * cofF + J * δcofF
-            Kₑ[i, j] += p * (δJcofF ⋅ n₀) ⋅ δuᵢ * dΓ
+            Kₑ[cache.dof_range[i], cache.dof_range[j]] += p * (δJcofF ⋅ n₀) ⋅ δuᵢ * dΓ
         end
     end
 end
@@ -462,7 +482,7 @@ function assemble_facet_pressure_qp!(Kₑ::AbstractMatrix, uₑ::AbstractVector,
     dΓ = getdetJdV(fv, qp)
     n₀ = getnormal(fv, qp)
 
-    ∇u = function_gradient(fv, qp, @view uₑ[1:getnbasefunctions(fv)])
+    ∇u = function_gradient(fv, qp, @view uₑ[cache.dof_range])
     F = one(∇u) + ∇u
 
     invF = inv(F)
@@ -481,7 +501,7 @@ function assemble_facet_pressure_qp!(Kₑ::AbstractMatrix, uₑ::AbstractVector,
             δcofF = -transpose(invF ⋅ ∇δuⱼ ⋅ invF)
             δJ = J * tr(∇δuⱼ ⋅ invF)
             δJcofF = δJ * cofF + J * δcofF
-            Kₑ[i, j] += p * (δJcofF ⋅ n₀) ⋅ δuᵢ * dΓ
+            Kₑ[cache.dof_range[i], cache.dof_range[j]] += p * (δJcofF ⋅ n₀) ⋅ δuᵢ * dΓ
         end
     end
 end
@@ -498,7 +518,7 @@ function assemble_facet_pressure_qp!(
     dΓ = getdetJdV(fv, qp)
     n₀ = getnormal(fv, qp)
 
-    ∇u = function_gradient(fv, qp, @view uₑ[1:getnbasefunctions(fv)])
+    ∇u = function_gradient(fv, qp, @view uₑ[cache.dof_range])
     F = one(∇u) + ∇u
 
     invF = inv(F)
@@ -508,7 +528,7 @@ function assemble_facet_pressure_qp!(
     # neumann_term = p * n₀
     for i = 1:ndofs_facet
         δuᵢ = shape_value(fv, qp, i)
-        residualₑ[i] += neumann_term ⋅ δuᵢ * dΓ
+        residualₑ[cache.dof_range[i]] += neumann_term ⋅ δuᵢ * dΓ
     end
 end
 
