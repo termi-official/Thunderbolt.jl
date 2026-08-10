@@ -115,11 +115,9 @@ quasistaticform = semidiscretize(mechanical_model, spatial_discretization_method
 
 # The remaining code is very similar to how we use SciML solvers.
 # We first define our time domain, initial time step length and some dt for visualization.
-dt₀ = 10.0
+dt₀ = 5.0
 tspan = (0.0, 500.0)
-dtvis = 25.0;
-# This speeds up the CI # hide
-tspan = (0.0, dtvis);   # hide
+dtvis = 10.0;
 
 # Then we setup the problem.
 # Since we have no time dependence in our active stress model the correct problem here is a quasistatic problem.
@@ -146,11 +144,10 @@ integrator = init(problem, timestepper, dt=dt₀, verbose=true, adaptive=true, d
 
 # Finally we solve the problem in time.
 io = ParaViewWriter("CM01_simple_lv");
+d = solution_variable(quasistaticform, :displacement)
 for (u, t) in TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
-    @info t
-    (; dh) = problem.f
-    Thunderbolt.store_timestep!(io, t, dh.grid) do file
-    Thunderbolt.store_timestep_field!(io, t, dh, u, :displacement)
+    Thunderbolt.store_timestep!(io, t, mesh) do file
+    Thunderbolt.store_timestep_field!(io, t, u, d)
     end
 end;
 
@@ -171,7 +168,7 @@ end;
 # Pairing a spring with its dashpot is how a damped pericardium is written.
 weak_boundary_conditions_viscous = (
     NormalSpringBC(1.0, "Epicardium"),
-    NormalViscousSpringBC(0.1, "Epicardium"),
+    NormalViscousSpringBC(100.0, "Epicardium"),
 );
 
 # !!! note "Springs move the equilibrium, dashpots do not"
@@ -238,11 +235,10 @@ integrator_viscous = init(
 #     what a transient solve with a meaningful timescale wants.
 
 io_viscous = ParaViewWriter("CM01_simple_lv_viscous");
+d = solution_variable(quasistaticform_viscous, :displacement)
 for (u, t) in TimeChoiceIterator(integrator_viscous, tspan[1]:dtvis:tspan[2])
-    @info t
-    (; dh) = problem_viscous.f
-    Thunderbolt.store_timestep!(io_viscous, t, dh.grid) do file
-        Thunderbolt.store_timestep_field!(io_viscous, t, dh, u, :displacement)
+    Thunderbolt.store_timestep!(io_viscous, t, mesh) do file
+    Thunderbolt.store_timestep_field!(io_viscous, t, u, d)
     end
 end;
 
