@@ -60,7 +60,7 @@ active_material_model  = Guccione1993ActiveModel();
 # Furthermore we need to describe the calcium field and associate it with the sarcomere model.
 # To simplify this tutorial we will use an analytical calcium profile.
 # Note that we can also use experimental data or a precomputed calcium profile here, too, by simply changing the function implementation below.
-function calcium_profile_function(x::LVCoordinate,t)
+function calcium_profile_function(x #=::LVCoordinate=#,t)
     linear_interpolation(t,y1,y2,t1,t2) = y1 + (t-t1) * (y2-y1)/(t2-t1)
     ca_peak(x)                          = 1.0
     if 0 ≤ t ≤ 300.0
@@ -89,8 +89,8 @@ active_stress_model = ActiveStressModel(
 );
 
 # Next we define some boundary conditions.
-# In order to have a very rough approximation of the effect of the pericardium, we use a Robin boundary condition in normal direction.
-weak_boundary_conditions = (NormalSpringBC(1.0, "Epicardium"),)
+# In order to have a very rough approximation of the effect of the pericardium, we use a Robin boundary condition.
+weak_boundary_conditions = (RobinBC(1.0, "Epicardium"),)
 
 # The pericardium is not purely elastic, though — the sac is fluid filled, so it also resists *how fast*
 # the epicardial surface moves against it.
@@ -115,11 +115,9 @@ quasistaticform = semidiscretize(mechanical_model, spatial_discretization_method
 
 # The remaining code is very similar to how we use SciML solvers.
 # We first define our time domain, initial time step length and some dt for visualization.
-dt₀ = 10.0
+dt₀ = 5.0
 tspan = (0.0, 500.0)
-dtvis = 25.0;
-# This speeds up the CI # hide
-tspan = (0.0, dtvis);   # hide
+dtvis = 10.0;
 
 # Then we setup the problem.
 # Since we have no time dependence in our active stress model the correct problem here is a quasistatic problem.
@@ -146,11 +144,10 @@ integrator = init(problem, timestepper, dt=dt₀, verbose=true, adaptive=true, d
 
 # Finally we solve the problem in time.
 io = ParaViewWriter("CM01_simple_lv");
+d = solution_variable(quasistaticform, :displacement)
 for (u, t) in TimeChoiceIterator(integrator, tspan[1]:dtvis:tspan[2])
-    @info t
-    (; dh) = problem.f
-    Thunderbolt.store_timestep!(io, t, dh.grid) do file
-    Thunderbolt.store_timestep_field!(io, t, dh, u, :displacement)
+    Thunderbolt.store_timestep!(io, t, mesh) do file
+        Thunderbolt.store_timestep_field!(io, t, u, d)
     end
 end;
 
@@ -166,12 +163,12 @@ end;
 # speed at which it does so.
 # The real sac is fluid filled and resists the rate too, and Thunderbolt provides the rate analogue of
 # each Robin boundary condition — [`ViscousRobinBC`](@ref) resists the full velocity, the way
-# [`RobinBC`](@ref) resists the full displacement, and [`NormalViscousSpringBC`](@ref) resists only its
+# [`RobinBC`](@ref) resists the full displacement, and [`ViscousNormalSpringBC`](@ref) resists only its
 # normal component, the way [`NormalSpringBC`](@ref) does.
 # Pairing a spring with its dashpot is how a damped pericardium is written.
 weak_boundary_conditions_viscous = (
-    NormalSpringBC(1.0, "Epicardium"),
-    NormalViscousSpringBC(0.1, "Epicardium"),
+    RobinBC(1.0, "Epicardium"),
+    ViscousNormalSpringBC(0.1, "Epicardium"),
 );
 
 # !!! note "Springs move the equilibrium, dashpots do not"
@@ -238,11 +235,10 @@ integrator_viscous = init(
 #     what a transient solve with a meaningful timescale wants.
 
 io_viscous = ParaViewWriter("CM01_simple_lv_viscous");
+d = solution_variable(quasistaticform_viscous, :displacement)
 for (u, t) in TimeChoiceIterator(integrator_viscous, tspan[1]:dtvis:tspan[2])
-    @info t
-    (; dh) = problem_viscous.f
-    Thunderbolt.store_timestep!(io_viscous, t, dh.grid) do file
-        Thunderbolt.store_timestep_field!(io_viscous, t, dh, u, :displacement)
+    Thunderbolt.store_timestep!(io_viscous, t, mesh) do file
+        Thunderbolt.store_timestep_field!(io_viscous, t, u, d)
     end
 end;
 
