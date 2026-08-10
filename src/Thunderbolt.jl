@@ -356,6 +356,9 @@ export
     BackwardEulerSolver,
     NewmarkSolver,
     PIDController,
+    # Convergence driven step size control, usable with any solver answering `contraction_rate_cache`
+    Deuflhard2004DiscreteContinuationController,
+    Deuflhard2004_B_DiscreteContinuationControllerVariant,
     ForwardEulerCellSolver,
     AdaptiveForwardEulerSubstepper,
     # Integrator

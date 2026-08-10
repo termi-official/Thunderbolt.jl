@@ -451,17 +451,19 @@ end
         # subdomain drives its sarcomere from a time dependent calcium field, which is the ordinary
         # cardiac case.
         #
-        # STILL BROKEN, but no longer for the original reason. The parameter plumbing is fixed:
-        # `QuasiStaticElementCache` now has its own `query_element_parameters` for the `gto1`
-        # parameters, and the assembly asks for the time with `get_time` rather than assuming its
-        # trailing argument is one — so the calcium field receives a number. (Before, it received the
-        # whole `GenericFirstOrderTimeParameters` and threw `isless(::Int64, ::…Parameters)`.) The
-        # companion facet test below, which exercises the same fix, now passes.
+        # STILL BROKEN, but no longer for the original reason, and a time dependent coefficient on a
+        # rate-free subdomain is a legitimate thing to write — only a dependence on the *rate* is not.
         #
-        # What remains is a solve failure rather than a typing one: this converges nowhere, at any
-        # timestep — Δt = 0.02 fails as immediately as Δt = 0.25 — which points at the steady state
-        # local Newton for `PelceSunLangeveld1995Model` under a *varying* calcium, not at the time
-        # discretization. Every neighbouring case above passes with a constant field.
+        # The parameter plumbing is fixed: `QuasiStaticElementCache` now has its own
+        # `query_element_parameters` for the `gto1` parameters, and the assembly asks for the time with
+        # `get_time` rather than assuming its trailing argument is one, so the calcium field receives a
+        # number. (Before, it received the whole `GenericFirstOrderTimeParameters` and threw
+        # `isless(::Int64, ::…Parameters)`.) The companion facet test below, which exercises the same
+        # fix, now passes.
+        #
+        # What remains is a solve failure rather than a typing one, and it is reportedly flaky, so the
+        # marker stays until it is understood. It failed identically at Δt = 0.25 and Δt = 0.02 when
+        # last checked, which is at least evidence that shortening the step is not the answer.
         @testset "Time dependent coefficient on a rate-free subdomain" begin
             @test_broken (
                 solve_contractile_cuboid(
@@ -1339,4 +1341,143 @@ end
         NewtonRaphsonSolver(inner_solver = UMFPACKFactorization(), max_iter = 10, tol = 1e-8),
     )
     @test_throws "ViscousRobinBC" init(problem, timestepper, dt = 1.0, verbose = false)
+end
+
+@testset "Convergence driven step size control with backward Euler" begin
+    # The continuation controllers read Newton contraction rates, not a local error estimate, so they
+    # are usable by any solver that answers `contraction_rate_cache` — backward Euler included. That
+    # is the combination a viscously *regularized* problem wants: the rate term is there to give the
+    # solve something to contract against, so its temporal accuracy is not a quantity worth
+    # controlling, while the Newton convergence very much is.
+    function build(facet_models)
+        mesh = generate_mesh(Hexahedron, (2, 2, 2))
+        material =
+            Thunderbolt.LinearMaxwellMaterial(E₀ = 70e3, E₁ = 20e3, μ = 1e3, η₁ = 1e3, ν = 0.3)
+        dbcs = [Dirichlet(:d, getfacetset(mesh, "left"), (x, t) -> (0.0, 0.0, 0.0), [1, 2, 3])]
+        form = semidiscretize(
+            QuasiStaticModel(:d, material, facet_models),
+            FiniteElementDiscretization(Dict(:d => LagrangeCollection{1}()^3); dbcs),
+            mesh,
+        )
+        return QuasiStaticProblem(form, (0.0, 1.0))
+    end
+
+    timestepper = BackwardEulerSolver(
+        inner_solver = Thunderbolt.MultiLevelNewtonRaphsonSolver(
+            newton = NewtonRaphsonSolver(
+                inner_solver = UMFPACKFactorization(),
+                max_iter = 10,
+                tol = 1e-8,
+            ),
+        ),
+    )
+    bcs = (ConstantPressureBC(-1e3, "right"), ViscousRobinBC(5e3, "right"))
+
+    # Backward Euler merely *permits* a controller. Its default is the dummy, so an ordinary `init`
+    # still steps at the `dt` it was given — this is the regression guard on that, since declaring the
+    # algorithm adaptive is what makes passing a controller legal in the first place.
+    plain = init(build(bcs), timestepper, dt = 0.1, verbose = false)
+    @test !SciMLBase.isadaptive(plain)
+    solve!(plain)
+    @test plain.dt == 0.1
+
+    controlled = init(
+        build(bcs),
+        timestepper,
+        dt = 0.1,
+        verbose = false,
+        controller = Deuflhard2004_B_DiscreteContinuationControllerVariant(; Θmin = 1/8, p = 1),
+        dtmax = 0.5,
+    )
+    @test SciMLBase.isadaptive(controlled)
+    solve!(controlled)
+    @test controlled.sol.retcode == SciMLBase.ReturnCode.Success
+    # It has to actually control something, otherwise this passes for a solver that quietly ignores
+    # the controller.
+    @test controlled.dt != 0.1
+    @test controlled.stats.naccept != 10
+
+    # Both land in the same place to within the discretization error — but only loosely, and that is
+    # the honest bound rather than a tolerance tuned until it passed. This controller does not track
+    # the temporal error at all, so two different step sequences through a first order scheme reach
+    # `t = 1` with genuinely different amounts of it while the dashpot traction, which scales with
+    # `1/Δt`, is still non-zero. Demanding tight agreement here would be demanding accuracy from a
+    # regularizer.
+    @test norm(controlled.u) ≈ norm(plain.u) rtol=0.1
+
+    # A linear stage has no contraction rate to report — it converges in one solve by construction —
+    # so it deliberately has no method and the pairing fails by naming the stage rather than by
+    # inventing a rate. Asserted on the method table rather than by calling it, since the point is the
+    # *absence* of a method and a call would also "pass" for the wrong reason on a malformed instance.
+    @test !hasmethod(
+        Thunderbolt.contraction_rate_cache,
+        Tuple{Thunderbolt.BackwardEulerAffineODEStage},
+    )
+end
+
+@testset "Backward Euler with a plain Newton" begin
+    # A stage that condenses nothing needs no local solver, so it should be solvable by the plain
+    # `NewtonRaphsonSolver` — the multilevel wrapper is machinery for local problems that do not exist
+    # here. The setup used to reach into `solver.inner_solver.newton` unconditionally and die on a
+    # `FieldError` before it could say any of that.
+    mesh = generate_mesh(Hexahedron, (2, 2, 2))
+    microstructure = Thunderbolt.ConstantCoefficient(
+        Thunderbolt.OrthotropicMicrostructure(
+            Vec((1.0, 0.0, 0.0)),
+            Vec((0.0, 1.0, 0.0)),
+            Vec((0.0, 0.0, 1.0)),
+        ),
+    )
+    dbcs = [Dirichlet(:d, getfacetset(mesh, "left"), (x, t) -> (0.0, 0.0, 0.0), [1, 2, 3])]
+
+    # No internal variables, and a dashpot so that backward Euler has a rate to work with. Guccione
+    # rather than a fibre spring: the latter has a rank deficient tangent in 3D, so it fails for every
+    # solver and would prove nothing about the one under test.
+    rate_free = Thunderbolt.PK1Model(Guccione1991PassiveModel(), microstructure)
+    build(material) = QuasiStaticProblem(
+        semidiscretize(
+            QuasiStaticModel(
+                :d,
+                material,
+                (ConstantPressureBC(-1e2, "right"), ViscousRobinBC(5e2, "right")),
+            ),
+            FiniteElementDiscretization(Dict(:d => LagrangeCollection{1}()^3); dbcs),
+            mesh,
+        ),
+        (0.0, 1.0),
+    )
+
+    newton = NewtonRaphsonSolver(inner_solver = UMFPACKFactorization(), max_iter = 10, tol = 1e-8)
+
+    prob = build(rate_free)
+    @test ndofs(prob.f.lvh) == 0
+    plain = init(prob, BackwardEulerSolver(inner_solver = newton), dt = 0.1, verbose = false)
+    solve!(plain)
+    @test plain.sol.retcode == SciMLBase.ReturnCode.Success
+
+    # The two Newtons must agree on a problem both can solve — otherwise "it runs" would be the only
+    # thing this test established.
+    multilevel = init(
+        build(rate_free),
+        BackwardEulerSolver(
+            inner_solver = Thunderbolt.MultiLevelNewtonRaphsonSolver(newton = newton),
+        ),
+        dt = 0.1,
+        verbose = false,
+    )
+    solve!(multilevel)
+    @test multilevel.sol.retcode == SciMLBase.ReturnCode.Success
+    @test norm(plain.u) ≈ norm(multilevel.u) rtol=1e-6
+
+    # A material that *does* condense has local problems the plain Newton cannot close, so the pairing
+    # is refused at setup naming the count, rather than silently solving a system of the wrong size.
+    condensing = Thunderbolt.LinearMaxwellMaterial(E₀ = 70e3, E₁ = 20e3, μ = 1e3, η₁ = 1e3, ν = 0.3)
+    condensing_prob = build(condensing)
+    @test ndofs(condensing_prob.f.lvh) > 0
+    @test_throws "MultiLevelNewtonRaphsonSolver" init(
+        condensing_prob,
+        BackwardEulerSolver(inner_solver = newton),
+        dt = 0.1,
+        verbose = false,
+    )
 end

@@ -239,6 +239,22 @@ function perform_step!(
     return true
 end
 
+contraction_rate_cache(cache::HomotopyPathSolverCache) =
+    global_newton_cache(cache.inner_solver_cache)
+
+# --- convergence driven step size control --------------------------------------------------------
+#
+# The controllers below are Deuflhard's, and they read only how well Newton contracted — never a local
+# error estimate. They therefore dispatch on the *controller*, not on the solver cache, and ask for the
+# Newton cache through [`contraction_rate_cache`](@ref). Any scheme that answers that query can use
+# them; [`BackwardEulerSolver`](@ref) does.
+#
+# That combination is the point rather than an accident. When a rate term is present only to
+# regularize — a dashpot added so a quasi-static solve has something to contract against — the
+# temporal error is not a quantity anyone wants to control, and asking the step size to track the
+# Newton convergence instead is exactly right. Backward Euler brings no error estimate, so a
+# `PIDController` has nothing to work with there; these have everything they need.
+
 @doc raw"""
     Deuflhard2004DiscreteContinuationController(Θbar, p)
 
@@ -266,12 +282,12 @@ end
 
 function should_accept_step(
     integrator::ThunderboltTimeIntegrator,
-    cache::HomotopyPathSolverCache,
+    cache,
     controller::Deuflhard2004DiscreteContinuationController,
 )
-    (; Θks) = global_newton_cache(cache.inner_solver_cache)
+    (; Θks) = contraction_rate_cache(cache)
     (; Θreject) = controller
-    if global_newton_cache(cache.inner_solver_cache).parameters.enforce_monotonic_convergence
+    if contraction_rate_cache(cache).parameters.enforce_monotonic_convergence
         result = all(Θks .≤ Θreject)
         return result
     else
@@ -280,7 +296,7 @@ function should_accept_step(
 end
 function reject_step!(
     integrator::ThunderboltTimeIntegrator,
-    cache::HomotopyPathSolverCache,
+    cache,
     controller::Deuflhard2004DiscreteContinuationController,
 )
     # `dt` shrinks once per failed attempt: the step footer's `post_newton_controller!` owns the
@@ -291,7 +307,7 @@ function reject_step!(
     @inline g(x) = √(1+4x) - 1
 
     # Shorten dt according to (Eq. 5.24)
-    (; Θks) = global_newton_cache(cache.inner_solver_cache)
+    (; Θks) = contraction_rate_cache(cache)
     (; Θbar, Θreject, γ, Θmin, qmin, qmax, p) = controller
     for Θk in Θks
         if Θk > Θreject
@@ -304,13 +320,13 @@ end
 
 function adapt_dt!(
     integrator::ThunderboltTimeIntegrator,
-    cache::HomotopyPathSolverCache,
+    cache,
     controller::Deuflhard2004DiscreteContinuationController,
 )
     @inline g(x) = √(1+4x) - 1
 
     # Adapt dt with a priori estimate (Eq. 5.24)
-    (; Θks) = global_newton_cache(cache.inner_solver_cache)
+    (; Θks) = contraction_rate_cache(cache)
     (; Θbar, γ, Θmin, qmin, qmax, p) = controller
 
     Θ₀ = length(Θks) > 0 ? max(first(Θks), Θmin) : Θmin
@@ -330,12 +346,12 @@ end
 
 function should_accept_step(
     integrator::ThunderboltTimeIntegrator,
-    cache::HomotopyPathSolverCache,
+    cache,
     controller::Deuflhard2004_B_DiscreteContinuationControllerVariant,
 )
-    (; Θks) = global_newton_cache(cache.inner_solver_cache)
+    (; Θks) = contraction_rate_cache(cache)
     (; Θreject) = controller
-    if global_newton_cache(cache.inner_solver_cache).parameters.enforce_monotonic_convergence
+    if contraction_rate_cache(cache).parameters.enforce_monotonic_convergence
         result = all(Θks .≤ Θreject)
         return result
     else
@@ -344,7 +360,7 @@ function should_accept_step(
 end
 function reject_step!(
     integrator::ThunderboltTimeIntegrator,
-    cache::HomotopyPathSolverCache,
+    cache,
     controller::Deuflhard2004_B_DiscreteContinuationControllerVariant,
 )
     integrator.force_stepfail && return nothing
@@ -352,7 +368,7 @@ function reject_step!(
     @inline g(x) = √(1+4x) - 1
 
     # Shorten dt according to (Eq. 5.24)
-    (; Θks) = global_newton_cache(cache.inner_solver_cache)
+    (; Θks) = contraction_rate_cache(cache)
     (; Θbar, Θreject, γ, Θmin, qmin, qmax, p) = controller
     for Θk in Θks
         if Θk > Θreject
@@ -365,13 +381,13 @@ end
 
 function adapt_dt!(
     integrator::ThunderboltTimeIntegrator,
-    cache::HomotopyPathSolverCache,
+    cache,
     controller::Deuflhard2004_B_DiscreteContinuationControllerVariant,
 )
     @inline g(x) = √(1+4x) - 1
 
     # Adapt dt with a priori estimate (Eq. 5.24)
-    (; Θks) = global_newton_cache(cache.inner_solver_cache)
+    (; Θks) = contraction_rate_cache(cache)
     (; Θbar, γ, Θmin, qmin, qmax, p) = controller
 
     Θ₀ = length(Θks) > 0 ? max(first(Θks), Θmin) : Θmin
@@ -394,12 +410,12 @@ end
 
 function should_accept_step(
     integrator::ThunderboltTimeIntegrator,
-    cache::HomotopyPathSolverCache,
+    cache,
     controller::ExperimentalDiscreteContinuationController,
 )
-    (; Θks) = global_newton_cache(cache.inner_solver_cache)
+    (; Θks) = contraction_rate_cache(cache)
     (; Θreject) = controller
-    if global_newton_cache(cache.inner_solver_cache).parameters.enforce_monotonic_convergence
+    if contraction_rate_cache(cache).parameters.enforce_monotonic_convergence
         result = all(Θks .≤ Θreject)
         return result
     else
@@ -408,7 +424,7 @@ function should_accept_step(
 end
 function reject_step!(
     integrator::ThunderboltTimeIntegrator,
-    cache::HomotopyPathSolverCache,
+    cache,
     controller::ExperimentalDiscreteContinuationController,
 )
     integrator.force_stepfail && return nothing
@@ -416,7 +432,7 @@ function reject_step!(
     @inline g(x) = √(1+4x) - 1
 
     # Shorten dt according to (Eq. 5.24)
-    (; Θks) = global_newton_cache(cache.inner_solver_cache)
+    (; Θks) = contraction_rate_cache(cache)
     (; Θbar, γ, Θmin, qmin, qmax, p) = controller
     Θk = maximum(Θks)
     q = clamp(γ * (g(Θbar)/g(Θk))^(1/p), qmin, qmax)
@@ -425,13 +441,13 @@ end
 
 function adapt_dt!(
     integrator::ThunderboltTimeIntegrator,
-    cache::HomotopyPathSolverCache,
+    cache,
     controller::ExperimentalDiscreteContinuationController,
 )
     @inline g(x) = √(1+4x) - 1
 
     # Adapt dt with a priori estimate (Eq. 5.24)
-    (; Θks) = global_newton_cache(cache.inner_solver_cache)
+    (; Θks) = contraction_rate_cache(cache)
     (; Θbar, γ, Θmin, qmin, qmax, p) = controller
     Θ₀ = length(Θks) > 0 ? max(mean(Θks), Θmin) : Θmin
     q = clamp(γ * (g(Θbar)/(2Θ₀))^(1/p), qmin, qmax)

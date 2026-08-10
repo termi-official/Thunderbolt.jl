@@ -92,40 +92,10 @@ active_stress_model = ActiveStressModel(
 # In order to have a very rough approximation of the effect of the pericardium, we use a Robin boundary condition in normal direction.
 weak_boundary_conditions = (NormalSpringBC(1.0, "Epicardium"),)
 
-# The pericardium is not purely elastic, though.
-# The sac is fluid filled, so it also resists *how fast* the epicardial surface moves against it, and that
-# part of the interaction is a dashpot rather than a spring.
-# Thunderbolt provides the rate analogue of each Robin boundary condition:
-# [`ViscousRobinBC`](@ref) resists the full velocity, the way [`RobinBC`](@ref) resists the full
-# displacement, and [`NormalViscousSpringBC`](@ref) resists only its normal component, the way
-# [`NormalSpringBC`](@ref) does.
-# A damped pericardium is written by pairing the two:
-#
-# ```julia
-# weak_boundary_conditions = (
-#     NormalSpringBC(1.0, "Epicardium"),
-#     NormalViscousSpringBC(0.1, "Epicardium"),
-# )
-# ```
-#
-# !!! warning "A dashpot needs a time integrator"
-#     A velocity is not a property of the model — it is something a *time scheme* reconstructs from the
-#     unknown displacement, as ``\bm{v} = (\bm{u}_n - \bm{u}_{n-1}) / \Delta t_n`` under backward Euler.
-#     The homotopy path solver used below is load stepping rather than time stepping, so it has neither a
-#     previous solution nor a timestep and cannot form a rate at all.
-#     Adding a viscous boundary condition therefore also means moving to a time integrator such as
-#     `BackwardEulerSolver`; the combination with `HomotopyPathSolver` is refused during setup rather than
-#     silently ignored.
-#     Note that this tutorial's model has no rate dependence anywhere else, which is exactly why it is
-#     posed as a continuation problem in the first place.
-#
-# !!! note "Springs move the equilibrium, dashpots do not"
-#     Holding a load constant long enough drives the velocity to zero, and with it the dashpot traction, so
-#     a damped solution settles on the same equilibrium the undamped one would have reached — it only takes
-#     a different path to get there.
-#     That is what makes a dashpot the natural way to put hysteresis into a cardiac cycle without shifting
-#     the end-diastolic and end-systolic states, and it is worth checking against, since a spring with an
-#     accidentally rate-like magnitude would move them.
+# The pericardium is not purely elastic, though — the sac is fluid filled, so it also resists *how fast*
+# the epicardial surface moves against it.
+# We come back to that in the [second variant](@ref mechanics-tutorial_simple-active-stress-viscous) at
+# the end of this tutorial, once the undamped problem is solved.
 
 # We finalize the mechanical model by assigning a symbol to identify the unknown solution field and connect the active stress model with the weak boundary conditions.
 mechanical_model = QuasiStaticModel(:displacement, active_stress_model, weak_boundary_conditions)
@@ -189,6 +159,92 @@ end;
 #     ```
 #     JULIA_DEBUG=Thunderbolt julia --project --threads=auto my_simulation_runner.jl
 #     ```
+
+# ## [Variant: a viscously regularized pericardium](@id mechanics-tutorial_simple-active-stress-viscous)
+#
+# The Robin spring above is a crude pericardium: it resists the chamber pushing outwards, but not the
+# speed at which it does so.
+# The real sac is fluid filled and resists the rate too, and Thunderbolt provides the rate analogue of
+# each Robin boundary condition — [`ViscousRobinBC`](@ref) resists the full velocity, the way
+# [`RobinBC`](@ref) resists the full displacement, and [`NormalViscousSpringBC`](@ref) resists only its
+# normal component, the way [`NormalSpringBC`](@ref) does.
+# Pairing a spring with its dashpot is how a damped pericardium is written.
+weak_boundary_conditions_viscous = (
+    NormalSpringBC(1.0, "Epicardium"),
+    NormalViscousSpringBC(0.1, "Epicardium"),
+);
+
+# !!! note "Springs move the equilibrium, dashpots do not"
+#     Holding a load constant long enough drives the velocity to zero, and with it the dashpot traction,
+#     so a damped solution settles on the *same* equilibrium the undamped one would have reached — it
+#     only takes a different path to get there.
+#     That is what makes a dashpot the natural way to put hysteresis into a cardiac cycle without moving
+#     the end-diastolic and end-systolic states.
+
+mechanical_model_viscous = QuasiStaticModel(
+    :displacement,
+    active_stress_model,
+    weak_boundary_conditions_viscous,
+)
+quasistaticform_viscous =
+    semidiscretize(mechanical_model_viscous, spatial_discretization_method, mesh);
+
+# A velocity is not a property of the model — it is something a *time scheme* reconstructs from the
+# unknown displacement.
+# The homotopy path solver used above is load stepping rather than time stepping, so it has neither a
+# previous solution nor a timestep to form a rate from, and pairing it with a viscous boundary condition
+# is refused during setup rather than silently ignored.
+# We therefore switch to backward Euler, which reconstructs ``\bm{v} = (\bm{u}_n - \bm{u}_{n-1})/\Delta t_n``.
+problem_viscous = QuasiStaticProblem(quasistaticform_viscous, tspan)
+timestepper_viscous = BackwardEulerSolver(
+    inner_solver =  NewtonRaphsonSolver(
+        max_iter = 10,
+        inner_solver = LinearSolve.UMFPACKFactorization(),
+    ),
+);
+
+# !!! note "Which Newton does a stage need?"
+#     The sarcomere model used here is analytical — it carries no internal variables — so nothing is
+#     condensed at quadrature point level and the plain `NewtonRaphsonSolver` above solves the whole
+#     stage.
+#     A material that *does* carry an internal variable poses a local problem at every quadrature point
+#     on top of the global one, and closing those is what the local solver of a
+#     [`MultiLevelNewtonRaphsonSolver`](@ref) is for.
+#     Handing a plain Newton to such a stage is refused during setup, with the number of condensed
+#     unknowns named in the message, rather than quietly solving a system of the wrong size.
+
+# Now for the step size control, which is where this variant differs from an ordinary transient solve.
+# Nothing in this model has a genuine time derivative: the dashpot was added as a *regularizer*, to give
+# the solve something to contract against, not because the pericardium's viscosity is the physics under
+# study.
+# Controlling the temporal error would therefore be controlling the accuracy of an artefact.
+# What we want instead is the largest step the Newton solver can still handle, which is what the
+# convergence driven controllers of the homotopy path method measure — they read how well Newton
+# contracted, following Deuflhard's affine invariant theory, and need no error estimate at all.
+# Those controllers are not tied to continuation, so we can hand one to backward Euler directly.
+controller = Deuflhard2004_B_DiscreteContinuationControllerVariant(; Θmin = 1/8, p = 1)
+integrator_viscous = init(
+    problem_viscous,
+    timestepper_viscous,
+    dt = dt₀,
+    verbose = true,
+    controller = controller,
+    dtmax = 25.0,
+);
+
+# !!! tip "Backward Euler steps at a fixed dt unless you ask otherwise"
+#     Passing `controller` is what turns the adaptivity on.
+#     Without it `BackwardEulerSolver` uses the whole `dt` you gave it for every step, which is usually
+#     what a transient solve with a meaningful timescale wants.
+
+io_viscous = ParaViewWriter("CM01_simple_lv_viscous");
+for (u, t) in TimeChoiceIterator(integrator_viscous, tspan[1]:dtvis:tspan[2])
+    @info t
+    (; dh) = problem_viscous.f
+    Thunderbolt.store_timestep!(io_viscous, t, dh.grid) do file
+        Thunderbolt.store_timestep_field!(io_viscous, t, dh, u, :displacement)
+    end
+end;
 
 #md # ## References
 #md # ```@bibliography

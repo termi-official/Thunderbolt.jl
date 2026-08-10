@@ -10,6 +10,29 @@
 # not a stable interface and reads integrator fields (`success_iter`) that this integrator does not
 # carry, so the *default* configuration does not depend on it.
 
+"""
+    contraction_rate_cache(solver_cache)
+
+The global Newton cache whose contraction rates ``\\Theta_k`` a *convergence driven* controller reads.
+
+Two families of controller live in this package and they are driven by different things. The
+[`PIDController`](@ref) below reads a local error estimate and controls the temporal accuracy. The
+continuation controllers in `homotopy.jl` instead read how well Newton contracted, following
+Deuflhard's affine invariant convergence theory, and control the step size so that the *nonlinear
+solve* stays in its region of convergence.
+
+The second family is useful well beyond continuation. Whenever a rate term is present only to
+regularize a problem — a dashpot added so that a quasi-static solve has something to contract against
+— temporal accuracy is not the quantity of interest, and controlling the Newton convergence is exactly
+what is wanted. Such a controller therefore dispatches on the controller alone and asks the solver
+cache for its Newton cache here, rather than being tied to one time scheme.
+
+A cache with no meaningful contraction rate — a linear stage, which converges in one step by
+construction — deliberately has no method, so the mismatch surfaces as a missing method naming the
+cache instead of an invented rate.
+"""
+function contraction_rate_cache end
+
 @doc raw"""
     PIDController(β₁, β₂, β₃ = 0; accept_safety = 0.81, limiter = default_dt_factor_limiter)
 
