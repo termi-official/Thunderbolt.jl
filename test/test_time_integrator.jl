@@ -398,12 +398,9 @@ g_deuflhard(x) = √(1 + 4x) - 1
     end
 
     @testset "dtmax is respected" begin
-        # `adapt_dt!` is the only place these controllers *grow* the step, and it used to grow it
-        # unconditionally — so a `dtmax` handed to `init` was silently ignored and the solve could take
-        # steps far larger than the caller allowed. Only `PIDController` clamped.
-        #
-        # A near-zero convergence history asks for the largest growth the controller permits (`qmax`,
-        # a factor of five), so 0.4 would become 2.0 without the clamp.
+        # `adapt_dt!` is the only place these controllers *grow* the step, so it is the only place
+        # `dtmax` can be crossed. A near-zero convergence history asks for the largest growth a
+        # controller permits (`qmax`, a factor of five), which would take 0.4 to 2.0 unclamped.
         for controller in controllers
             integrator = init(
                 scalar_decay_problem(0.7, (0.0, 10.0)),

@@ -394,9 +394,6 @@ export
     RobinBC,
     ConstantPressureBC,
     #  Kinematic diagnostics
-    deformation_gradient_report,
-    displacement_symbols,
-    is_inverted,
     DeformationMonitor,
     #  Viscous (dashpot) BCs
     ViscousRobinBC,

@@ -451,19 +451,14 @@ end
         # subdomain drives its sarcomere from a time dependent calcium field, which is the ordinary
         # cardiac case.
         #
-        # STILL BROKEN, but no longer for the original reason, and a time dependent coefficient on a
-        # rate-free subdomain is a legitimate thing to write — only a dependence on the *rate* is not.
+        # A time dependent coefficient on a rate-free subdomain is legitimate — only a dependence on
+        # the *rate* is not — and the time reaches it correctly: `QuasiStaticElementCache` lowers the
+        # `gto1` parameters to their element local form and the assembly queries `get_time`. The
+        # companion facet test below exercises that same path and passes.
         #
-        # The parameter plumbing is fixed: `QuasiStaticElementCache` now has its own
-        # `query_element_parameters` for the `gto1` parameters, and the assembly asks for the time with
-        # `get_time` rather than assuming its trailing argument is one, so the calcium field receives a
-        # number. (Before, it received the whole `GenericFirstOrderTimeParameters` and threw
-        # `isless(::Int64, ::…Parameters)`.) The companion facet test below, which exercises the same
-        # fix, now passes.
-        #
-        # What remains is a solve failure rather than a typing one, and it is reportedly flaky, so the
-        # marker stays until it is understood. It failed identically at Δt = 0.25 and Δt = 0.02 when
-        # last checked, which is at least evidence that shortening the step is not the answer.
+        # This one fails in the *solve* rather than in the plumbing, and is reported to be flaky, so
+        # the marker stays until the mechanism is understood. Δt = 0.25 and Δt = 0.02 fail alike, so
+        # shortening the step is not the answer.
         @testset "Time dependent coefficient on a rate-free subdomain" begin
             @test_broken (
                 solve_contractile_cuboid(
@@ -504,13 +499,11 @@ end
             )
         end
 
-        # The same defect on the facet path: the surface element cache is handed whatever
-        # `query_element_parameters` produced for the *volumetric* cache of its subdomain, so on a
-        # rate-free subdomain that used to be the raw global parameter object.
-        #
-        # FIXED. The rate-free cache now lowers the parameters to their element local form like every
-        # other cache, and `PressureFieldBC` asks for the time with `get_time` instead of passing its
-        # trailing argument to `evaluate_coefficient` unexamined.
+        # The facet path reaches the time the same way: a surface cache is handed whatever
+        # `query_element_parameters` produced for the *volumetric* cache of its subdomain, and
+        # `PressureFieldBC` queries `get_time` on it rather than passing its trailing argument to
+        # `evaluate_coefficient` unexamined. On a rate-free subdomain that object is the element local
+        # form of the `gto1` parameters, not a bare time, which is what this pins.
         let facemodels_tdep = (
                 NormalSpringBC(0.0, "right"),
                 ConstantPressureBC(0.0, "back"),
@@ -1416,10 +1409,9 @@ end
 end
 
 @testset "Backward Euler with a plain Newton" begin
-    # A stage that condenses nothing needs no local solver, so it should be solvable by the plain
-    # `NewtonRaphsonSolver` — the multilevel wrapper is machinery for local problems that do not exist
-    # here. The setup used to reach into `solver.inner_solver.newton` unconditionally and die on a
-    # `FieldError` before it could say any of that.
+    # A stage that condenses nothing needs no local solver, so the plain `NewtonRaphsonSolver` solves
+    # it: the multilevel wrapper is machinery for local problems that do not exist here. Which cache a
+    # stage gets is chosen by `setup_stage_nlsolver_cache` from the solver type alone.
     mesh = generate_mesh(Hexahedron, (2, 2, 2))
     microstructure = Thunderbolt.ConstantCoefficient(
         Thunderbolt.OrthotropicMicrostructure(
@@ -1578,20 +1570,20 @@ end
     @testset "the two entry points agree" begin
         # `f + u` reads the displacement symbol off the model; `dh + u + fields` is told it. They must
         # describe the same configuration, otherwise one of them is differentiating the wrong field.
-        @test displacement_symbols(form) == (:d,)
-        from_f  = deformation_gradient_report(form, integrator.u)
-        from_dh = deformation_gradient_report(form.dh, integrator.u, :d)
+        @test Thunderbolt.displacement_symbols(form) == (:d,)
+        from_f  = Thunderbolt.deformation_gradient_report(form, integrator.u)
+        from_dh = Thunderbolt.deformation_gradient_report(form.dh, integrator.u, :d)
         @test from_f.minJ == from_dh.minJ
         @test from_f.max_strain == from_dh.max_strain
         @test from_f.n_subdomains == 1
 
         # A collection is accepted, so a multi-domain model whose subdomains name the displacement
         # differently can be covered in one call.
-        @test deformation_gradient_report(form.dh, integrator.u, (:displacement, :d, :u)).minJ ==
+        @test Thunderbolt.deformation_gradient_report(form.dh, integrator.u, (:displacement, :d, :u)).minJ ==
               from_f.minJ
 
         # This solve stretches the block, so it had better register as deformation rather than motion.
-        @test !is_inverted(from_f)
+        @test !Thunderbolt.is_inverted(from_f)
         @test from_f.minJ > 0
         @test from_f.max_strain > 1e-3
     end

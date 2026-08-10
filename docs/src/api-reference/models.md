@@ -58,10 +58,10 @@ free rigid mode both satisfy the residual. These report on the kinematics so tha
 unnoticed.
 
 ```@docs
-deformation_gradient_report
+Thunderbolt.deformation_gradient_report
 Thunderbolt.DeformationGradientReport
-is_inverted
-displacement_symbols
+Thunderbolt.is_inverted
+Thunderbolt.displacement_symbols
 DeformationMonitor
 ```
 

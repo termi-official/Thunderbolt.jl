@@ -16,9 +16,9 @@ end
 
 # Backward Euler *permits* a controller but does not bring one: the default below is the dummy, which
 # `SciMLBase.isadaptive(::ThunderboltTimeIntegrator)` reports as non-adaptive, so an ordinary
-# `init(prob, BackwardEulerSolver(), dt = …)` steps at a fixed `dt` exactly as before.
+# `init(prob, BackwardEulerSolver(), dt = …)` steps at a fixed `dt`.
 #
-# What this enables is passing `controller = ` explicitly. There is no local error estimate here to
+# Declaring it adaptive is what makes passing `controller = ` legal. There is no local error estimate here to
 # drive a `PIDController`, but the *convergence driven* controllers of `homotopy.jl` need none — they
 # read how well Newton contracted. That is the useful combination when a rate term exists only to
 # regularize a quasi-static problem: the step size then follows the nonlinear solve rather than an
@@ -371,9 +371,9 @@ end
 The nonlinear solver cache a time scheme's stage needs, chosen by the nonlinear solver it was handed.
 
 Which one is needed is a property of the *solver*, not of the scheme, so both `BackwardEulerSolver`
-and [`NewmarkSolver`](@ref) ask here rather than reaching into `solver.inner_solver.newton` — which
-silently assumed every stage is solved by a `MultiLevelNewtonRaphsonSolver` and failed on a plain
-`NewtonRaphsonSolver` before the setup got far enough to say why.
+and [`NewmarkSolver`](@ref) ask here instead of reaching for a field only one solver type has. A stage
+is solvable by a plain `NewtonRaphsonSolver` exactly when nothing is condensed, and by
+`MultiLevelNewtonRaphsonSolver` in either case.
 
 `ndofs_linear` is the size of the linear system. It is shorter than the stage unknowns exactly when the
 function condenses internal variables at quadrature point level, which is the one thing a plain Newton

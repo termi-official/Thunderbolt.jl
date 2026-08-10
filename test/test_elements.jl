@@ -266,11 +266,11 @@ using JET: @test_opt, @test_call
     end
 
     @testset "Mixed spring/dashpot boundary" begin
-        # Regression test for the element interface: FerriteOperators computes one element parameter
-        # object from the *volumetric* cache and hands it to the boundary cache too, so a composite
-        # mixing a spring (which wants the time) with a dashpot (which wants the velocity) has to
-        # route that one object two different ways. Stripping it to the time at the top -- as the
-        # boundary unwrapping used to do unconditionally -- makes the dashpot silently unassemblable.
+        # FerriteOperators computes one element parameter object from the *volumetric* cache and hands
+        # it to the boundary cache too, so a composite mixing a spring (which queries the time) with a
+        # dashpot (which queries the velocity) has to route that one object two different ways. Any
+        # scheme that reduces it to a single payload before the facets see it can serve only one of
+        # them, which is what this pins.
         n     = ndofs(dhv)
         uprev = uₑv ./ 3
         pfot  = FerriteOperators.GenericFirstOrderTimeElementParameters(nothing, 0.0, 0.25, uprev)

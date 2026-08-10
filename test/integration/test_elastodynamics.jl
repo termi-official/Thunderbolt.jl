@@ -621,3 +621,31 @@ end
         @test norm(wrapped.u[fe] - integrator.u[fe]) / norm(integrator.u[fe]) > 0.05
     end
 end
+
+@testset "Deformation gradient report reads the displacement, not the state" begin
+    # An elastodynamics handler carries the velocity alongside the displacement, so a report that took
+    # "the first field" or differentiated the raw state vector would be reading the wrong block. The
+    # displacement symbol comes from the model rather than from the handler for exactly this reason.
+    f = elastodynamic_bar()
+    @test Thunderbolt.displacement_symbols(f) == (:d,)
+    @test Set(first(f.dh.subdofhandlers).field_names) == Set((:d, :v))
+
+    # A uniaxial stretch on the displacement block, and a value the report must ignore on the velocity
+    # block: `det F` comes out exactly 1.25 only if the velocity is left out of the differentiation.
+    u = zeros(solution_size(f))
+    Thunderbolt.default_initial_condition!(u, f)
+    u[solution_indices(f, :v)] .= 1.0e3
+    sdh = first(f.dh.subdofhandlers)
+    dofrange = Ferrite.dof_range(sdh, :d)
+    for cc in CellIterator(f.dh)
+        dofs = celldofs(cc)
+        for (k, X) in enumerate(getcoordinates(cc))
+            u[dofs[dofrange[3*(k-1)+1]]] = 0.25 * X[1]
+        end
+    end
+    report = deformation_gradient_report(f, u)
+    @test report.n_subdomains == 1
+    @test report.minJ ≈ 1.25
+    @test report.maxJ ≈ 1.25
+    @test !Thunderbolt.is_inverted(report)
+end
