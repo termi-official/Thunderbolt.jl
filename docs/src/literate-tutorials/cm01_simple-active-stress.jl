@@ -92,6 +92,41 @@ active_stress_model = ActiveStressModel(
 # In order to have a very rough approximation of the effect of the pericardium, we use a Robin boundary condition in normal direction.
 weak_boundary_conditions = (NormalSpringBC(1.0, "Epicardium"),)
 
+# The pericardium is not purely elastic, though.
+# The sac is fluid filled, so it also resists *how fast* the epicardial surface moves against it, and that
+# part of the interaction is a dashpot rather than a spring.
+# Thunderbolt provides the rate analogue of each Robin boundary condition:
+# [`ViscousRobinBC`](@ref) resists the full velocity, the way [`RobinBC`](@ref) resists the full
+# displacement, and [`NormalViscousSpringBC`](@ref) resists only its normal component, the way
+# [`NormalSpringBC`](@ref) does.
+# A damped pericardium is written by pairing the two:
+#
+# ```julia
+# weak_boundary_conditions = (
+#     NormalSpringBC(1.0, "Epicardium"),
+#     NormalViscousSpringBC(0.1, "Epicardium"),
+# )
+# ```
+#
+# !!! warning "A dashpot needs a time integrator"
+#     A velocity is not a property of the model — it is something a *time scheme* reconstructs from the
+#     unknown displacement, as ``\bm{v} = (\bm{u}_n - \bm{u}_{n-1}) / \Delta t_n`` under backward Euler.
+#     The homotopy path solver used below is load stepping rather than time stepping, so it has neither a
+#     previous solution nor a timestep and cannot form a rate at all.
+#     Adding a viscous boundary condition therefore also means moving to a time integrator such as
+#     `BackwardEulerSolver`; the combination with `HomotopyPathSolver` is refused during setup rather than
+#     silently ignored.
+#     Note that this tutorial's model has no rate dependence anywhere else, which is exactly why it is
+#     posed as a continuation problem in the first place.
+#
+# !!! note "Springs move the equilibrium, dashpots do not"
+#     Holding a load constant long enough drives the velocity to zero, and with it the dashpot traction, so
+#     a damped solution settles on the same equilibrium the undamped one would have reached — it only takes
+#     a different path to get there.
+#     That is what makes a dashpot the natural way to put hysteresis into a cardiac cycle without shifting
+#     the end-diastolic and end-systolic states, and it is worth checking against, since a spring with an
+#     accidentally rate-like magnitude would move them.
+
 # We finalize the mechanical model by assigning a symbol to identify the unknown solution field and connect the active stress model with the weak boundary conditions.
 mechanical_model = QuasiStaticModel(:displacement, active_stress_model, weak_boundary_conditions)
 

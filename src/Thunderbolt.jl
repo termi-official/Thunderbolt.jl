@@ -386,5 +386,8 @@ export
     PressureFieldBC,
     BendingSpringBC,
     RobinBC,
-    ConstantPressureBC
+    ConstantPressureBC,
+    #  Viscous (dashpot) BCs
+    ViscousRobinBC,
+    NormalViscousSpringBC
 end

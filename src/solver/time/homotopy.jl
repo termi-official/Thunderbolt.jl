@@ -41,6 +41,42 @@ _volume_models(integrator::NonlinearIntegrator) = (integrator.volume_model,)
 _volume_models(integrator::NonlinearMultiDomainIntegrator2) =
     (subintegrator.volume_model for subintegrator in values(integrator.subintegrators))
 
+"""
+    check_weak_boundary_conditions_are_rate_free(f)
+
+Reject a dashpot boundary condition, which continuation cannot form a velocity for.
+
+The surface counterpart of [`check_internal_variables_are_rate_free`](@ref), and rejected for the same
+reason: `HomotopyPathSolver` is load stepping, so it offers neither a previous solution nor a timestep.
+Without this the combination fails inside the assembly loop, where the message is a missing field on a
+`Float64` rather than a named boundary condition.
+"""
+check_weak_boundary_conditions_are_rate_free(f) = nothing
+check_weak_boundary_conditions_are_rate_free(f::AbstractSemidiscreteBlockedFunction) =
+    foreach(check_weak_boundary_conditions_are_rate_free, blocks(f))
+check_weak_boundary_conditions_are_rate_free(f::QuasiStaticFunction) =
+    foreach(_check_facet_model_is_rate_free, _facet_models(get_volume_integrator(f)))
+
+_facet_models(integrator::NonlinearIntegrator) = (integrator.facet_model,)
+_facet_models(integrator::NonlinearMultiDomainIntegrator2) =
+    (subintegrator.facet_model for subintegrator in values(integrator.subintegrators))
+
+# A facet model is either one boundary condition or a tuple of them. Anything else -- a wrapper this
+# check does not know -- is passed over rather than guessed at; the assembly still refuses it, only
+# less legibly.
+_check_facet_model_is_rate_free(facet_model::Tuple) =
+    foreach(_check_facet_model_is_rate_free, facet_model)
+_check_facet_model_is_rate_free(bc::ConsistencyCheckWeakBoundaryCondition) =
+    _check_facet_model_is_rate_free(bc.bc)
+_check_facet_model_is_rate_free(bc) = nothing
+_check_facet_model_is_rate_free(bc::AbstractViscousWeakBoundaryCondition) = error(
+    "$(typeof(bc).name.name) on boundary \"$(bc.boundary_name)\" resists the velocity, which " *
+    "`HomotopyPathSolver` cannot supply: continuation is load stepping, so it has neither a " *
+    "previous solution nor a timestep. Use a time integrator instead — `BackwardEulerSolver` for a " *
+    "quasi-static problem, or `NewmarkSolver` when inertia matters. The corresponding spring " *
+    "(`RobinBC`, `NormalSpringBC`) resists the displacement and is accepted here.",
+)
+
 function _check_model_is_rate_free(model)
     evolution = internal_variable_evolution(model.material_model)
     is_rate_free(evolution) && return nothing
@@ -95,6 +131,7 @@ function setup_solver_cache(
     alias_u     = false,
 )
     check_internal_variables_are_rate_free(f)
+    check_weak_boundary_conditions_are_rate_free(f)
     # The stage carries the operator, so it is built before the solver cache that works on it. A
     # continuation offers neither a previous solution nor a timestep, so its parameters are the bare
     # pseudo-time.
@@ -142,6 +179,7 @@ function setup_solver_cache(
     alias_u     = false,
 )
     check_internal_variables_are_rate_free(f)
+    check_weak_boundary_conditions_are_rate_free(f)
     stage_function = FullStateStage(f, setup_stage_operator(f, solver, nothing, t₀), t₀)
     inner_solver_cache = setup_solver_cache(stage_function, solver.inner_solver)
 

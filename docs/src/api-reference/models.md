@@ -36,6 +36,21 @@ ConstantPressureBC
 PressureFieldBC
 ```
 
+### Viscous Boundary Conditions
+
+The rate analogues of the Robin family. These resist the velocity rather than the displacement, so they
+require a time integrator; see [`Thunderbolt.facet_velocity`](@ref) for how the reconstruction reaches
+the element.
+
+```@docs
+ViscousRobinBC
+NormalViscousSpringBC
+Thunderbolt.AbstractViscousWeakBoundaryCondition
+Thunderbolt.damping_tensor
+Thunderbolt.get_time
+Thunderbolt.facet_velocity
+```
+
 ## Solid Mechanics
 
 ```@docs

@@ -447,17 +447,21 @@ end
         )
 
         # A rate-free (`NoEvolution`) subdomain still has to be assembled by the time integrator when
-        # it sits next to a subdomain that carries an internal variable. Its element cache is a
-        # `QuasiStaticElementCache`, which is not a `gto1` cache, so FerriteOperators' generic
-        # `query_element_parameters(element, cell, ivh, p) = p` hands it the whole
-        # `GenericFirstOrderTimeParameters` where the assembly expects a time.
+        # it sits next to a subdomain that carries an internal variable. Below, the rate-free
+        # subdomain drives its sarcomere from a time dependent calcium field, which is the ordinary
+        # cardiac case.
         #
-        # Everything above passes only because no coefficient on a rate-free subdomain looks at `t`.
-        # Below, the rate-free subdomain drives its sarcomere from a time dependent calcium field,
-        # which is the ordinary cardiac case.
+        # STILL BROKEN, but no longer for the original reason. The parameter plumbing is fixed:
+        # `QuasiStaticElementCache` now has its own `query_element_parameters` for the `gto1`
+        # parameters, and the assembly asks for the time with `get_time` rather than assuming its
+        # trailing argument is one — so the calcium field receives a number. (Before, it received the
+        # whole `GenericFirstOrderTimeParameters` and threw `isless(::Int64, ::…Parameters)`.) The
+        # companion facet test below, which exercises the same fix, now passes.
         #
-        # BROKEN: to be fixed together with the parameter system, which is what decides how a
-        # subdomain asks for the time and for the parameters it is differentiated against.
+        # What remains is a solve failure rather than a typing one: this converges nowhere, at any
+        # timestep — Δt = 0.02 fails as immediately as Δt = 0.25 — which points at the steady state
+        # local Newton for `PelceSunLangeveld1995Model` under a *varying* calcium, not at the time
+        # discretization. Every neighbouring case above passes with a constant field.
         @testset "Time dependent coefficient on a rate-free subdomain" begin
             @test_broken (
                 solve_contractile_cuboid(
@@ -498,19 +502,20 @@ end
             )
         end
 
-        # Same defect on the facet path. The surface element cache is handed whatever
+        # The same defect on the facet path: the surface element cache is handed whatever
         # `query_element_parameters` produced for the *volumetric* cache of its subdomain, so on a
-        # rate-free subdomain that is again the raw parameter object. The unwrapping methods this
-        # branch adds are typed on `GenericFirstOrderTimeElementParameters` and never fire here.
+        # rate-free subdomain that used to be the raw global parameter object.
         #
-        # BROKEN, same fix as above.
+        # FIXED. The rate-free cache now lowers the parameters to their element local form like every
+        # other cache, and `PressureFieldBC` asks for the time with `get_time` instead of passing its
+        # trailing argument to `evaluate_coefficient` unexamined.
         let facemodels_tdep = (
                 NormalSpringBC(0.0, "right"),
                 ConstantPressureBC(0.0, "back"),
                 PressureFieldBC(TestRampField(), "top"),
             )
             @testset "Time dependent facet coefficient on a rate-free subdomain" begin
-                @test_broken (
+                @test (
                     solve_contractile_cuboid(
                         mesh,
                         Dict(
@@ -1255,4 +1260,83 @@ end
     # dependence but leaves `dₜQ = L(F, Q)`, so the rejection fires again. A substring test against
     # the remedy passed throughout.
     @test_throws "RateCoupledEvolution" init(problem, timestepper, dt = 1.0, verbose = false)
+end
+
+@testset "Viscous Robin boundary conditions" begin
+    # A block pushed by a constant pressure, held on one side, with a dashpot on the loaded facet.
+    # The dashpot resists the *rate*, so it slows the approach to equilibrium without changing the
+    # equilibrium itself — which is exactly the pair of properties asserted below.
+    function solve_with(facet_models; Δt = 0.1, tend = 1.0)
+        mesh = generate_mesh(Hexahedron, (2, 2, 2))
+        material =
+            Thunderbolt.LinearMaxwellMaterial(E₀ = 70e3, E₁ = 20e3, μ = 1e3, η₁ = 1e3, ν = 0.3)
+        dbcs = [Dirichlet(:d, getfacetset(mesh, "left"), (x, t) -> (0.0, 0.0, 0.0), [1, 2, 3])]
+        form = semidiscretize(
+            QuasiStaticModel(:d, material, facet_models),
+            FiniteElementDiscretization(Dict(:d => LagrangeCollection{1}()^3); dbcs),
+            mesh,
+        )
+        problem = QuasiStaticProblem(form, (0.0, tend))
+        timestepper = BackwardEulerSolver(
+            inner_solver = Thunderbolt.MultiLevelNewtonRaphsonSolver(
+                newton = NewtonRaphsonSolver(
+                    inner_solver = UMFPACKFactorization(),
+                    max_iter = 10,
+                    tol = 1e-8,
+                ),
+            ),
+        )
+        integrator = init(problem, timestepper, dt = Δt, verbose = false)
+        solve!(integrator)
+        @test integrator.sol.retcode == SciMLBase.ReturnCode.Success
+        return norm(@view integrator.u[1:ndofs(form.dh)])
+    end
+
+    load = (ConstantPressureBC(-1e3, "right"),)
+
+    u_undamped = solve_with(load)
+    u_full     = solve_with((load..., ViscousRobinBC(5e3, "right")))
+    u_normal   = solve_with((load..., NormalViscousSpringBC(5e3, "right")))
+
+    # Damping resists the motion, and resisting every direction resists at least as much as
+    # resisting the normal direction alone.
+    @test u_full < u_undamped
+    @test u_normal < u_undamped
+    @test u_full ≤ u_normal
+
+    # More viscosity, more resistance.
+    @test solve_with((load..., ViscousRobinBC(1e5, "right"))) <
+          solve_with((load..., ViscousRobinBC(1e3, "right")))
+
+    # Held long enough the velocity dies out, so the dashpot contributes nothing and the damped
+    # solution has to land on the undamped equilibrium. This is what distinguishes a dashpot from a
+    # spring: a spring would shift the equilibrium permanently.
+    @test solve_with((load..., ViscousRobinBC(5e3, "right")); Δt = 0.5, tend = 40.0) ≈
+          solve_with(load; Δt = 0.5, tend = 40.0) rtol=1e-6
+end
+
+@testset "Viscous Robin is rejected by continuation" begin
+    # `HomotopyPathSolver` is load stepping: it has no previous solution and no timestep, so there is
+    # no velocity for a dashpot to resist. Rejecting at setup keeps the report to one named boundary
+    # condition instead of a missing field deep inside the assembly loop.
+    mesh = generate_mesh(Hexahedron, (1, 1, 1))
+    microstructure = Thunderbolt.ConstantCoefficient(
+        Thunderbolt.OrthotropicMicrostructure(
+            Vec((1.0, 0.0, 0.0)),
+            Vec((0.0, 1.0, 0.0)),
+            Vec((0.0, 0.0, 1.0)),
+        ),
+    )
+    model = Thunderbolt.PK1Model(Thunderbolt.LinearSpringModel(), microstructure)
+    dbcs = [Dirichlet(:d, getfacetset(mesh, "left"), (x, t) -> (0.0, 0.0, 0.0), [1, 2, 3])]
+    quasistaticform = semidiscretize(
+        QuasiStaticModel(:d, model, (ViscousRobinBC(1.0, "right"),)),
+        FiniteElementDiscretization(Dict(:d => LagrangeCollection{1}()^3); dbcs),
+        mesh,
+    )
+    problem = QuasiStaticProblem(quasistaticform, (0.0, 1.0))
+    timestepper = HomotopyPathSolver(
+        NewtonRaphsonSolver(inner_solver = UMFPACKFactorization(), max_iter = 10, tol = 1e-8),
+    )
+    @test_throws "ViscousRobinBC" init(problem, timestepper, dt = 1.0, verbose = false)
 end
