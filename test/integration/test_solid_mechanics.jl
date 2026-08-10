@@ -1579,8 +1579,11 @@ end
 
         # A collection is accepted, so a multi-domain model whose subdomains name the displacement
         # differently can be covered in one call.
-        @test Thunderbolt.deformation_gradient_report(form.dh, integrator.u, (:displacement, :d, :u)).minJ ==
-              from_f.minJ
+        @test Thunderbolt.deformation_gradient_report(
+            form.dh,
+            integrator.u,
+            (:displacement, :d, :u),
+        ).minJ == from_f.minJ
 
         # This solve stretches the block, so it had better register as deformation rather than motion.
         @test !Thunderbolt.is_inverted(from_f)
