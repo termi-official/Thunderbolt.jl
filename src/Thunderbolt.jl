@@ -170,6 +170,9 @@ include("modeling/solution_variables.jl")
 include("modeling/functions.jl")
 include("modeling/problems.jl")
 
+# Diagnostics dispatch on the function layer, so they come after it.
+include("modeling/solid/diagnostics.jl")
+
 include("gpu/gpu_utils.jl")
 
 include("discretization/interface.jl")
@@ -356,6 +359,9 @@ export
     BackwardEulerSolver,
     NewmarkSolver,
     PIDController,
+    # Convergence driven step size control, usable with any solver answering `contraction_rate_cache`
+    Deuflhard2004DiscreteContinuationController,
+    Deuflhard2004_B_DiscreteContinuationControllerVariant,
     ForwardEulerCellSolver,
     AdaptiveForwardEulerSubstepper,
     # Integrator
@@ -386,5 +392,10 @@ export
     PressureFieldBC,
     BendingSpringBC,
     RobinBC,
-    ConstantPressureBC
+    ConstantPressureBC,
+    #  Kinematic diagnostics
+    DeformationMonitor,
+    #  Viscous (dashpot) BCs
+    ViscousRobinBC,
+    ViscousNormalSpringBC
 end

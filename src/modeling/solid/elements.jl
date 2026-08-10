@@ -180,11 +180,12 @@ function assemble_element!(
     uₑ::AbstractVector,
     geometry_cache::CellCache,
     element_cache::QuasiStaticElementCache,
-    time,
+    p,
 )
     @unpack constitutive_model, internal_cache, cv, coefficient_cache = element_cache
     ndofs = getnbasefunctions(cv)
     dₑ = @view uₑ[1:ndofs]
+    time = get_time(p)
 
     reinit!(cv, geometry_cache)
 
@@ -229,11 +230,12 @@ function assemble_element!(
     uₑ::AbstractVector,
     geometry_cache::CellCache,
     element_cache::QuasiStaticElementCache,
-    time,
+    p,
 )
     @unpack constitutive_model, internal_cache, cv, coefficient_cache = element_cache
     ndofs = getnbasefunctions(cv)
     dₑ = @view uₑ[1:ndofs]
+    time = get_time(p)
 
     reinit!(cv, geometry_cache)
 
@@ -277,11 +279,12 @@ function assemble_element!(
     uₑ::AbstractVector,
     geometry_cache::CellCache,
     element_cache::QuasiStaticElementCache,
-    time,
+    p,
 )
     @unpack constitutive_model, internal_cache, cv, coefficient_cache = element_cache
     ndofs = getnbasefunctions(cv)
     dₑ = @view uₑ[1:ndofs]
+    time = get_time(p)
 
     reinit!(cv, geometry_cache)
 
@@ -664,10 +667,8 @@ Element local form of [`NewmarkTimeParameters`](@ref), produced by `query_elemen
     uₑprev
 end
 
-# Every element parameter object that carries a time discretization. Facet caches read only the time
-# out of them, so they can be served by one set of unwrapping methods.
-const AnyTimeElementParameters =
-    Union{FerriteOperators.GenericFirstOrderTimeElementParameters, NewmarkElementParameters}
+@inline get_time(p::NewmarkElementParameters) = p.t
+@inline get_time(p::NewmarkTimeParameters) = p.t
 
 function FerriteOperators.query_element_parameters(
     element::QuasiStaticCondensedElementCache,
@@ -683,16 +684,47 @@ function FerriteOperators.query_element_parameters(
     return NewmarkElementParameters(pₑ, p.t, p.Δt, AffineVelocity(p.velocity.∂v∂u, uₑᵥ), uₑprev)
 end
 
-# A rate-free element has no use for any of it and expects the bare time, so it is unwrapped here
-# rather than being handed a parameter object it would pass to `evaluate_coefficient`. A mixed mesh
-# carrying one rate-free and one condensed subdomain is the ordinary case for this solver; the `gto1`
-# path has no equivalent unwrapping.
-FerriteOperators.query_element_parameters(
-    ::QuasiStaticElementCache,
+# A rate-free element itself has no use for any of this and wants the bare time. It is nevertheless
+# handed the full element local object, because FerriteOperators computes *one* parameter object from
+# the volumetric cache and gives it to the boundary cache too: discarding the rate here would discard
+# it for a dashpot boundary condition as well, and a rate-free bulk with a damped boundary is an
+# ordinary combination (a passive myocardium against the pericardium, say). The time is unwrapped one
+# level further down instead, by the volumetric `assemble_element!` methods below.
+#
+# The cost is the `uₑprev`/`uₑᵥ` load per element per assembly, which the condensed caches above
+# already pay. It buys uniformity: the same object reaches every cache, and each states what it wants
+# by dispatch rather than by hoping the volume asked for the right thing.
+function FerriteOperators.query_element_parameters(
+    element::QuasiStaticElementCache,
     cell,
     ivh,
     p::NewmarkTimeParameters,
-) = p.t
+)
+    uₑprev = FerriteOperators.allocate_element_unknown_vector(element, cell)
+    FerriteOperators.load_element_unknowns!(uₑprev, p.uprev, cell, ivh, element)
+    uₑᵥ = FerriteOperators.allocate_element_unknown_vector(element, cell)
+    FerriteOperators.load_element_unknowns!(uₑᵥ, p.velocity.uᵥ, cell, ivh, element)
+    pₑ = FerriteOperators.query_element_parameters(element, cell, ivh, p.p)
+    return NewmarkElementParameters(pₑ, p.t, p.Δt, AffineVelocity(p.velocity.∂v∂u, uₑᵥ), uₑprev)
+end
+
+# Same for `gto1`. Without this the FerriteOperators fallback `query_element_parameters(…, p) = p`
+# applies and the *global* parameter object reaches the element, where it is passed on as the time —
+# so a coefficient reading `t` (a calcium transient, a pressure ramp) silently receives a struct.
+function FerriteOperators.query_element_parameters(
+    element::QuasiStaticElementCache,
+    cell,
+    ivh,
+    p::FerriteOperators.GenericFirstOrderTimeParameters,
+)
+    uₑprev = FerriteOperators.allocate_element_unknown_vector(element, cell)
+    FerriteOperators.load_element_unknowns!(uₑprev, p.uprev, cell, ivh, element)
+    pₑ = FerriteOperators.query_element_parameters(element, cell, ivh, p.p)
+    return FerriteOperators.GenericFirstOrderTimeElementParameters(pₑ, p.t, p.Δt, uₑprev)
+end
+
+# The rate-free element takes the time back out with `get_time`, at the point of use rather than by a
+# layer of unwrapping methods.
 
 FerriteOperators.assemble_element!(
     Kₑ::AbstractMatrix,
@@ -750,90 +782,50 @@ FerriteOperators.assemble_element!(
     p.Δt,
 )
 
-# FerriteOperators computes a *single* element parameter object from the volumetric cache and passes
-# it to the boundary cache as well (`operators/nonlinear.jl`), whose generic `assemble_element!`
-# forwards it verbatim to `assemble_facet!`. Weak boundary conditions are functions of `(u, t)` only,
-# so the `gto1` payload is unwrapped to the time here rather than teaching every facet cache about it.
+# --- handing the time discretization to the boundary ---------------------------------------------
 #
-# CONSTRAINT: if a surface cache ever genuinely needs `uₑprev`/`Δt`, it must subtype
-# `FerriteOperators.AbstractGenericFirstOrderTimeSurfaceElementCache` *and* these methods must be
-# narrowed, because as written they would strip the payload before it reaches it.
+# FerriteOperators computes a *single* element parameter object from the volumetric cache and passes it
+# to the boundary cache as well (`operators/nonlinear.jl`), whose generic `assemble_element!` forwards
+# it verbatim to `assemble_facet!`. The surface `query_element_parameters` that FerriteOperators
+# defines is therefore never reached on this path: a facet cache does not get to ask for what it
+# wants, it gets whatever the volume asked for.
 #
-# These methods also discard `pfot.pₑ`, which is correct only for as long as the facet caches treat
-# their single trailing argument as the time — they pass it straight to `evaluate_coefficient`. This
-# is the surface half of the `t`/`p` conflation described in the `nlsolve!` docstring: once `p`
-# carries differentiable material parameters, boundary conditions that depend on such a parameter
-# (a pressure amplitude, say) will need it forwarded rather than dropped.
-# FerriteOperators computes a *single* element parameter object from the volumetric cache and passes
-# it to the boundary cache as well (`operators/nonlinear.jl:12,19`), whose generic `assemble_element!`
-# forwards it verbatim to `assemble_facet!`. Weak boundary conditions are functions of `(u, t)` only,
-# so the payload is unwrapped to the time here rather than teaching every facet cache about it.
+# Rather than decoding that object into a per-cache payload here, it is forwarded untouched and each
+# cache queries the part it needs at the point of use -- [`get_time`](@ref) for the springs and the
+# pressures, [`facet_velocity`](@ref) for the dashpots. That is what lets one object serve a composite
+# tuple mixing the two, which is the case no single unwrapping at the top could have handled.
 #
-# `CompositeSurfaceElementCache` needs its own copy of each method: FerriteOperators specializes
-# `assemble_element!` on it, so against the abstract-cache method neither signature would dominate
-# (one is more specific in the cache, the other in the parameters) and the pair would be ambiguous.
-#
-# CONSTRAINT: if a surface cache ever genuinely needs `uₑprev`/`Δt`, it must subtype
-# `FerriteOperators.AbstractGenericFirstOrderTimeSurfaceElementCache` *and* these methods must be
-# narrowed, because as written they strip the payload before it reaches it.
-#
-# These methods also discard `pfot.pₑ`, which is correct only while the facet caches treat their single
-# trailing argument as the time — they pass it straight to `evaluate_coefficient`. This is the surface
-# half of the `t`/`p` conflation described in the `nlsolve!` docstring: once `p` carries parameters
-# being optimized, a boundary condition depending on such a parameter needs it forwarded, not dropped.
+# Both queries discard `pₑ`, which is correct only while facet caches consume the time and the velocity
+# alone. This is the surface half of the `t`/`p` conflation described in the `nlsolve!` docstring: once
+# `p` carries parameters being optimized, a boundary condition depending on such a parameter (a
+# pressure amplitude, say) needs it forwarded, not dropped.
 #
 # The right long-term fix is upstream: `AssembleLinearizationJR` should query element parameters for
 # the boundary cache separately instead of reusing the volumetric one.
 
-FerriteOperators.assemble_element!(
-    Kₑ::AbstractMatrix,
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    geometry_cache::CellCache,
-    facet_cache::FerriteOperators.AbstractSurfaceElementCache,
-    pfot::AnyTimeElementParameters,
-) = FerriteOperators.assemble_element!(Kₑ, residualₑ, uₑ, geometry_cache, facet_cache, pfot.t)
+"""
+    facet_velocity(p)
 
-FerriteOperators.assemble_element!(
-    Kₑ::AbstractMatrix,
-    uₑ::AbstractVector,
-    geometry_cache::CellCache,
-    facet_cache::FerriteOperators.AbstractSurfaceElementCache,
-    pfot::AnyTimeElementParameters,
-) = FerriteOperators.assemble_element!(Kₑ, uₑ, geometry_cache, facet_cache, pfot.t)
+The velocity reconstruction a time scheme offers to a facet, as an [`AffineVelocity`](@ref).
 
-FerriteOperators.assemble_element!(
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    geometry_cache::CellCache,
-    facet_cache::FerriteOperators.AbstractSurfaceElementCache,
-    pfot::AnyTimeElementParameters,
-) = FerriteOperators.assemble_element!(residualₑ, uₑ, geometry_cache, facet_cache, pfot.t)
+The rate-side counterpart of [`get_time`](@ref), and the surface counterpart of what
+`compute_kinematic_quantities` reads in the volume. It exists so that a dashpot boundary condition is
+written once against the reconstruction rather than once per time scheme: reading `Δt` at the facet
+would hard code the backward Euler difference quotient and be silently wrong under Newmark, where the
+slope is `γ/(βΔt)`.
 
-FerriteOperators.assemble_element!(
-    Kₑ::AbstractMatrix,
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    geometry_cache::CellCache,
-    facet_cache::FerriteOperators.CompositeSurfaceElementCache,
-    pfot::AnyTimeElementParameters,
-) = FerriteOperators.assemble_element!(Kₑ, residualₑ, uₑ, geometry_cache, facet_cache, pfot.t)
+A scheme that offers no rate at all -- continuation -- has no method here on purpose; the combination
+is rejected during solver setup by `check_weak_boundary_conditions_are_rate_free`.
+"""
+function facet_velocity end
 
-FerriteOperators.assemble_element!(
-    Kₑ::AbstractMatrix,
-    uₑ::AbstractVector,
-    geometry_cache::CellCache,
-    facet_cache::FerriteOperators.CompositeSurfaceElementCache,
-    pfot::AnyTimeElementParameters,
-) = FerriteOperators.assemble_element!(Kₑ, uₑ, geometry_cache, facet_cache, pfot.t)
-
-FerriteOperators.assemble_element!(
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    geometry_cache::CellCache,
-    facet_cache::FerriteOperators.CompositeSurfaceElementCache,
-    pfot::AnyTimeElementParameters,
-) = FerriteOperators.assemble_element!(residualₑ, uₑ, geometry_cache, facet_cache, pfot.t)
+@inline facet_velocity(p::FerriteOperators.GenericFirstOrderTimeElementParameters) =
+    AffineVelocity(inv(p.Δt), p.uₑprev)
+@inline facet_velocity(p::NewmarkElementParameters) = p.velocity
+# Idempotent, so a reconstruction can be handed straight to a facet assembly — which is what a test
+# exercising the element in isolation wants. Deliberately *not* a `facet_velocity(p) = p` fallback:
+# handing a bare time to a dashpot has to fail, not be reinterpreted as a velocity.
+@inline facet_velocity(velocity::AffineVelocity) = velocity
 
 # ------------------------------------------------------------------------------------------------
 

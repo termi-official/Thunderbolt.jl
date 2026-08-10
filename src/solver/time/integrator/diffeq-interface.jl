@@ -58,7 +58,12 @@ function SciMLBase.set_proposed_dt!(integrator::ThunderboltTimeIntegrator, dt)
 end
 
 function SciMLBase.isadaptive(integrator::ThunderboltTimeIntegrator)
-    integrator.controller_cache === nothing && return false
+    # A dummy controller is the *absence* of control, so it answers like no controller at all. Without
+    # this an algorithm that merely *permits* a controller would report an adaptive integrator on its
+    # default configuration, which would change how a failed step is handled (`post_newton_controller!`
+    # shrinking `dt` instead of reporting `ConvergenceFailure`) for solves that never asked to adapt.
+    # `should_accept_step` and `adapt_dt!` already treat the two cases identically.
+    integrator.controller_cache isa Union{Nothing, DummyControllerCache} && return false
     if !SciMLBase.isadaptive(integrator.alg)
         error(
             "Algorithm $(integrator.alg) is not adaptive, but the integrator is trying to adapt. Aborting.",

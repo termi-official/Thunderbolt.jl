@@ -41,6 +41,42 @@ _volume_models(integrator::NonlinearIntegrator) = (integrator.volume_model,)
 _volume_models(integrator::NonlinearMultiDomainIntegrator2) =
     (subintegrator.volume_model for subintegrator in values(integrator.subintegrators))
 
+"""
+    check_weak_boundary_conditions_are_rate_free(f)
+
+Reject a dashpot boundary condition, which continuation cannot form a velocity for.
+
+The surface counterpart of [`check_internal_variables_are_rate_free`](@ref), and rejected for the same
+reason: `HomotopyPathSolver` is load stepping, so it offers neither a previous solution nor a timestep.
+Without this the combination fails inside the assembly loop, where the message is a missing field on a
+`Float64` rather than a named boundary condition.
+"""
+check_weak_boundary_conditions_are_rate_free(f) = nothing
+check_weak_boundary_conditions_are_rate_free(f::AbstractSemidiscreteBlockedFunction) =
+    foreach(check_weak_boundary_conditions_are_rate_free, blocks(f))
+check_weak_boundary_conditions_are_rate_free(f::QuasiStaticFunction) =
+    foreach(_check_facet_model_is_rate_free, _facet_models(get_volume_integrator(f)))
+
+_facet_models(integrator::NonlinearIntegrator) = (integrator.facet_model,)
+_facet_models(integrator::NonlinearMultiDomainIntegrator2) =
+    (subintegrator.facet_model for subintegrator in values(integrator.subintegrators))
+
+# A facet model is either one boundary condition or a tuple of them. Anything else -- a wrapper this
+# check does not know -- is passed over rather than guessed at; the assembly still refuses it, only
+# less legibly.
+_check_facet_model_is_rate_free(facet_model::Tuple) =
+    foreach(_check_facet_model_is_rate_free, facet_model)
+_check_facet_model_is_rate_free(bc::ConsistencyCheckWeakBoundaryCondition) =
+    _check_facet_model_is_rate_free(bc.bc)
+_check_facet_model_is_rate_free(bc) = nothing
+_check_facet_model_is_rate_free(bc::AbstractViscousWeakBoundaryCondition) = error(
+    "$(typeof(bc).name.name) on boundary \"$(bc.boundary_name)\" resists the velocity, which " *
+    "`HomotopyPathSolver` cannot supply: continuation is load stepping, so it has neither a " *
+    "previous solution nor a timestep. Use a time integrator instead — `BackwardEulerSolver` for a " *
+    "quasi-static problem, or `NewmarkSolver` when inertia matters. The corresponding spring " *
+    "(`RobinBC`, `NormalSpringBC`) resists the displacement and is accepted here.",
+)
+
 function _check_model_is_rate_free(model)
     evolution = internal_variable_evolution(model.material_model)
     is_rate_free(evolution) && return nothing
@@ -95,6 +131,7 @@ function setup_solver_cache(
     alias_u     = false,
 )
     check_internal_variables_are_rate_free(f)
+    check_weak_boundary_conditions_are_rate_free(f)
     # The stage carries the operator, so it is built before the solver cache that works on it. A
     # continuation offers neither a previous solution nor a timestep, so its parameters are the bare
     # pseudo-time.
@@ -142,6 +179,7 @@ function setup_solver_cache(
     alias_u     = false,
 )
     check_internal_variables_are_rate_free(f)
+    check_weak_boundary_conditions_are_rate_free(f)
     stage_function = FullStateStage(f, setup_stage_operator(f, solver, nothing, t₀), t₀)
     inner_solver_cache = setup_solver_cache(stage_function, solver.inner_solver)
 
@@ -201,6 +239,22 @@ function perform_step!(
     return true
 end
 
+contraction_rate_cache(cache::HomotopyPathSolverCache) =
+    global_newton_cache(cache.inner_solver_cache)
+
+# --- convergence driven step size control --------------------------------------------------------
+#
+# The controllers below are Deuflhard's, and they read only how well Newton contracted — never a local
+# error estimate. They therefore dispatch on the *controller*, not on the solver cache, and ask for the
+# Newton cache through [`contraction_rate_cache`](@ref). Any scheme that answers that query can use
+# them; [`BackwardEulerSolver`](@ref) does.
+#
+# That combination is the point rather than an accident. When a rate term is present only to
+# regularize — a dashpot added so a quasi-static solve has something to contract against — the
+# temporal error is not a quantity anyone wants to control, and asking the step size to track the
+# Newton convergence instead is exactly right. Backward Euler brings no error estimate, so a
+# `PIDController` has nothing to work with there; these have everything they need.
+
 @doc raw"""
     Deuflhard2004DiscreteContinuationController(Θbar, p)
 
@@ -228,12 +282,12 @@ end
 
 function should_accept_step(
     integrator::ThunderboltTimeIntegrator,
-    cache::HomotopyPathSolverCache,
+    cache,
     controller::Deuflhard2004DiscreteContinuationController,
 )
-    (; Θks) = global_newton_cache(cache.inner_solver_cache)
+    (; Θks) = contraction_rate_cache(cache)
     (; Θreject) = controller
-    if global_newton_cache(cache.inner_solver_cache).parameters.enforce_monotonic_convergence
+    if contraction_rate_cache(cache).parameters.enforce_monotonic_convergence
         result = all(Θks .≤ Θreject)
         return result
     else
@@ -242,7 +296,7 @@ function should_accept_step(
 end
 function reject_step!(
     integrator::ThunderboltTimeIntegrator,
-    cache::HomotopyPathSolverCache,
+    cache,
     controller::Deuflhard2004DiscreteContinuationController,
 )
     # `dt` shrinks once per failed attempt: the step footer's `post_newton_controller!` owns the
@@ -253,7 +307,7 @@ function reject_step!(
     @inline g(x) = √(1+4x) - 1
 
     # Shorten dt according to (Eq. 5.24)
-    (; Θks) = global_newton_cache(cache.inner_solver_cache)
+    (; Θks) = contraction_rate_cache(cache)
     (; Θbar, Θreject, γ, Θmin, qmin, qmax, p) = controller
     for Θk in Θks
         if Θk > Θreject
@@ -266,18 +320,18 @@ end
 
 function adapt_dt!(
     integrator::ThunderboltTimeIntegrator,
-    cache::HomotopyPathSolverCache,
+    cache,
     controller::Deuflhard2004DiscreteContinuationController,
 )
     @inline g(x) = √(1+4x) - 1
 
     # Adapt dt with a priori estimate (Eq. 5.24)
-    (; Θks) = global_newton_cache(cache.inner_solver_cache)
+    (; Θks) = contraction_rate_cache(cache)
     (; Θbar, γ, Θmin, qmin, qmax, p) = controller
 
     Θ₀ = length(Θks) > 0 ? max(first(Θks), Θmin) : Θmin
     q = clamp(γ * (g(Θbar)/(2Θ₀))^(1/p), qmin, qmax)
-    integrator.dt = q * integrator.dt
+    integrator.dt = min(q * integrator.dt, integrator.opts.dtmax)
 end
 
 Base.@kwdef struct Deuflhard2004_B_DiscreteContinuationControllerVariant
@@ -292,12 +346,12 @@ end
 
 function should_accept_step(
     integrator::ThunderboltTimeIntegrator,
-    cache::HomotopyPathSolverCache,
+    cache,
     controller::Deuflhard2004_B_DiscreteContinuationControllerVariant,
 )
-    (; Θks) = global_newton_cache(cache.inner_solver_cache)
+    (; Θks) = contraction_rate_cache(cache)
     (; Θreject) = controller
-    if global_newton_cache(cache.inner_solver_cache).parameters.enforce_monotonic_convergence
+    if contraction_rate_cache(cache).parameters.enforce_monotonic_convergence
         result = all(Θks .≤ Θreject)
         return result
     else
@@ -306,7 +360,7 @@ function should_accept_step(
 end
 function reject_step!(
     integrator::ThunderboltTimeIntegrator,
-    cache::HomotopyPathSolverCache,
+    cache,
     controller::Deuflhard2004_B_DiscreteContinuationControllerVariant,
 )
     integrator.force_stepfail && return nothing
@@ -314,7 +368,7 @@ function reject_step!(
     @inline g(x) = √(1+4x) - 1
 
     # Shorten dt according to (Eq. 5.24)
-    (; Θks) = global_newton_cache(cache.inner_solver_cache)
+    (; Θks) = contraction_rate_cache(cache)
     (; Θbar, Θreject, γ, Θmin, qmin, qmax, p) = controller
     for Θk in Θks
         if Θk > Θreject
@@ -327,18 +381,18 @@ end
 
 function adapt_dt!(
     integrator::ThunderboltTimeIntegrator,
-    cache::HomotopyPathSolverCache,
+    cache,
     controller::Deuflhard2004_B_DiscreteContinuationControllerVariant,
 )
     @inline g(x) = √(1+4x) - 1
 
     # Adapt dt with a priori estimate (Eq. 5.24)
-    (; Θks) = global_newton_cache(cache.inner_solver_cache)
+    (; Θks) = contraction_rate_cache(cache)
     (; Θbar, γ, Θmin, qmin, qmax, p) = controller
 
     Θ₀ = length(Θks) > 0 ? max(first(Θks), Θmin) : Θmin
     q = clamp(γ * (g(Θbar)/(g(Θ₀)))^(1/p), qmin, qmax)
-    integrator.dt = q * integrator.dt
+    integrator.dt = min(q * integrator.dt, integrator.opts.dtmax)
 end
 
 @doc raw"""
@@ -356,12 +410,12 @@ end
 
 function should_accept_step(
     integrator::ThunderboltTimeIntegrator,
-    cache::HomotopyPathSolverCache,
+    cache,
     controller::ExperimentalDiscreteContinuationController,
 )
-    (; Θks) = global_newton_cache(cache.inner_solver_cache)
+    (; Θks) = contraction_rate_cache(cache)
     (; Θreject) = controller
-    if global_newton_cache(cache.inner_solver_cache).parameters.enforce_monotonic_convergence
+    if contraction_rate_cache(cache).parameters.enforce_monotonic_convergence
         result = all(Θks .≤ Θreject)
         return result
     else
@@ -370,7 +424,7 @@ function should_accept_step(
 end
 function reject_step!(
     integrator::ThunderboltTimeIntegrator,
-    cache::HomotopyPathSolverCache,
+    cache,
     controller::ExperimentalDiscreteContinuationController,
 )
     integrator.force_stepfail && return nothing
@@ -378,26 +432,26 @@ function reject_step!(
     @inline g(x) = √(1+4x) - 1
 
     # Shorten dt according to (Eq. 5.24)
-    (; Θks) = global_newton_cache(cache.inner_solver_cache)
+    (; Θks) = contraction_rate_cache(cache)
     (; Θbar, γ, Θmin, qmin, qmax, p) = controller
     Θk = maximum(Θks)
     q = clamp(γ * (g(Θbar)/g(Θk))^(1/p), qmin, qmax)
-    integrator.dt = q * integrator.dt
+    integrator.dt = min(q * integrator.dt, integrator.opts.dtmax)
 end
 
 function adapt_dt!(
     integrator::ThunderboltTimeIntegrator,
-    cache::HomotopyPathSolverCache,
+    cache,
     controller::ExperimentalDiscreteContinuationController,
 )
     @inline g(x) = √(1+4x) - 1
 
     # Adapt dt with a priori estimate (Eq. 5.24)
-    (; Θks) = global_newton_cache(cache.inner_solver_cache)
+    (; Θks) = contraction_rate_cache(cache)
     (; Θbar, γ, Θmin, qmin, qmax, p) = controller
     Θ₀ = length(Θks) > 0 ? max(mean(Θks), Θmin) : Θmin
     q = clamp(γ * (g(Θbar)/(2Θ₀))^(1/p), qmin, qmax)
-    integrator.dt = q * integrator.dt
+    integrator.dt = min(q * integrator.dt, integrator.opts.dtmax)
 end
 
 

@@ -14,7 +14,17 @@ Base.@kwdef struct BackwardEulerSolver{
     monitor::MonitorType = DefaultProgressMonitor()
 end
 
-SciMLBase.isadaptive(::BackwardEulerSolver) = false
+# Backward Euler *permits* a controller but does not bring one: the default below is the dummy, which
+# `SciMLBase.isadaptive(::ThunderboltTimeIntegrator)` reports as non-adaptive, so an ordinary
+# `init(prob, BackwardEulerSolver(), dt = …)` steps at a fixed `dt`.
+#
+# Declaring it adaptive is what makes passing `controller = ` legal. There is no local error estimate here to
+# drive a `PIDController`, but the *convergence driven* controllers of `homotopy.jl` need none — they
+# read how well Newton contracted. That is the useful combination when a rate term exists only to
+# regularize a quasi-static problem: the step size then follows the nonlinear solve rather than an
+# accuracy target that the regularization makes meaningless anyway. See
+# [`contraction_rate_cache`](@ref).
+SciMLBase.isadaptive(::BackwardEulerSolver) = true
 OrdinaryDiffEqCore.default_controller(QT, ::BackwardEulerSolver) =
     OrdinaryDiffEqCore.DummyController()
 
@@ -190,6 +200,14 @@ struct BackwardEulerStageCache{StageType, SolverType}
     nlsolver::SolverType
 end
 
+# A convergence driven controller reads the contraction rates of *this* step's Newton, which for
+# backward Euler is the stage solver's. Routed through the stage rather than answered directly by the
+# solver cache, because only the nonlinear stage has a Newton at all: a `BackwardEulerAffineODEStage`
+# solves one linear system and deliberately gets no method, so pairing a continuation controller with
+# a linear problem fails by naming the stage instead of inventing a rate.
+contraction_rate_cache(cache::BackwardEulerSolverCache) = contraction_rate_cache(cache.stage)
+contraction_rate_cache(stage::BackwardEulerStageCache) = global_newton_cache(stage.nlsolver)
+
 # Marks a model tree rewritten to carry solver-side information down to the element caches.
 abstract type AbstractModelAnnotation{T} end
 
@@ -330,8 +348,6 @@ stage: it is the annotated one, carrying the local solver cache down to the elem
     uprev,
     t₀,
 )
-    newton = solver.inner_solver.newton
-
     local_solver_cache = setup_local_solver_cache(f, solver.inner_solver)
     op = setup_stage_operator(f, solver, local_solver_cache, t₀)
 
@@ -345,8 +361,49 @@ stage: it is the annotated one, carrying the local solver cache down to the elem
 
     return BackwardEulerStageCache(
         sf,
-        _setup_multilevel_newton_cache(sf, local_solver_cache, newton, ndofs(f.dh)),
+        setup_stage_nlsolver_cache(sf, solver.inner_solver, local_solver_cache, ndofs(f.dh)),
     )
+end
+
+"""
+    setup_stage_nlsolver_cache(sf, solver, local_solver_cache, ndofs_linear)
+
+The nonlinear solver cache a time scheme's stage needs, chosen by the nonlinear solver it was handed.
+
+Which one is needed is a property of the *solver*, not of the scheme, so both `BackwardEulerSolver`
+and [`NewmarkSolver`](@ref) ask here instead of reaching for a field only one solver type has. A stage
+is solvable by a plain `NewtonRaphsonSolver` exactly when nothing is condensed, and by
+`MultiLevelNewtonRaphsonSolver` in either case.
+
+`ndofs_linear` is the size of the linear system. It is shorter than the stage unknowns exactly when the
+function condenses internal variables at quadrature point level, which is the one thing a plain Newton
+cannot handle — it has no local solver to close those equations with. That equality is therefore the
+precondition checked below, rather than a proxy such as "does this material have state".
+"""
+setup_stage_nlsolver_cache(
+    sf,
+    solver::MultiLevelNewtonRaphsonSolver,
+    local_solver_cache,
+    ndofs_linear,
+) = _setup_multilevel_newton_cache(sf, local_solver_cache, solver.newton, ndofs_linear)
+
+function setup_stage_nlsolver_cache(
+    sf,
+    solver::NewtonRaphsonSolver,
+    local_solver_cache,
+    ndofs_linear,
+)
+    ncondensed = stage_size(sf) - ndofs_linear
+    ncondensed == 0 || error(
+        "A plain `NewtonRaphsonSolver` cannot solve this stage: the function condenses " *
+        "$(ncondensed) internal variable unknowns at quadrature point level, and closing those " *
+        "local problems is what the local solver of a `MultiLevelNewtonRaphsonSolver` does. Pass " *
+        "`MultiLevelNewtonRaphsonSolver(newton = <your NewtonRaphsonSolver>)` instead. A material " *
+        "without internal variables condenses nothing and is solved by the plain Newton.",
+    )
+    # Nothing is condensed, so the stage unknowns *are* the linear system and the plain Newton's own
+    # setup sizes it correctly from `stage_size`.
+    return setup_solver_cache(sf, solver)
 end
 
 """

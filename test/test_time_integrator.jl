@@ -397,6 +397,49 @@ g_deuflhard(x) = √(1 + 4x) - 1
         @test integrator.dt ≈ clamp(γ * (g_deuflhard(Θbar) / (2Θmin))^(1 / p), qmin, qmax) * 0.4
     end
 
+    @testset "dtmax is respected" begin
+        # `adapt_dt!` is the only place these controllers *grow* the step, so it is the only place
+        # `dtmax` can be crossed. A near-zero convergence history asks for the largest growth a
+        # controller permits (`qmax`, a factor of five), which would take 0.4 to 2.0 unclamped.
+        for controller in controllers
+            integrator = init(
+                scalar_decay_problem(0.7, (0.0, 10.0)),
+                ScalarForwardEuler(),
+                dt = 0.4,
+                dtmax = 0.5,
+            )
+            Thunderbolt.adapt_dt!(integrator, stub_homotopy_cache([1.0e-8, 1.0e-8]), controller)
+            @test integrator.dt ≤ 0.5
+        end
+
+        # Shrinking is left unclamped on purpose: `reject_step!` only ever multiplies by q < 1, so it
+        # cannot cross `dtmax` from below.
+        integrator = init(
+            scalar_decay_problem(0.7, (0.0, 10.0)),
+            ScalarForwardEuler(),
+            dt = 0.4,
+            dtmax = 0.5,
+        )
+        Thunderbolt.reject_step!(integrator, stub_homotopy_cache([0.1, 0.99]), controllers[1])
+        @test integrator.dt < 0.4
+    end
+
+    @testset "A linear stage has no contraction rate" begin
+        # These controllers are driven by how well Newton contracted. A `BackwardEulerAffineODEStage`
+        # solves one linear system and converges by construction, so there is no rate for it to read
+        # and the pairing is refused by naming the stage rather than by inventing one.
+        @test_throws MethodError solve!(
+            init(
+                transient_diffusion_problem(),
+                BackwardEulerSolver(),
+                dt = 0.1,
+                verbose = false,
+                controller = controllers[1],
+                dtmax = 0.5,
+            ),
+        )
+    end
+
     @testset "A multi-level cache reaches the global Newton cache" begin
         # The forwarding that lets these controllers run under MultiLevelNewtonRaphsonSolver.
         mlcache = Thunderbolt.MultiLevelNewtonRaphsonSolverCache(

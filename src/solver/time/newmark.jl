@@ -439,8 +439,6 @@ function setup_solver_cache(
         _uprev = alias_uprev ? uprev : recursivecopy(uprev)
     end
 
-    newton = solver.inner_solver.newton
-
     local_solver_cache = setup_local_solver_cache(f, solver.inner_solver)
     stage_op = setup_stage_operator(f, solver, local_solver_cache, t₀)
     stage_function = NewmarkStage(
@@ -456,7 +454,8 @@ function setup_solver_cache(
             zeros(solution_size(structural)),
         ),
     )
-    nlsolver = _setup_multilevel_newton_cache(stage_function, local_solver_cache, newton, nfe)
+    nlsolver =
+        setup_stage_nlsolver_cache(stage_function, solver.inner_solver, local_solver_cache, nfe)
 
     vₙ = view(_u, f.velocity_dofs)
     aₙ = _consistent_initial_acceleration(f, stage_op, _u, vₙ, t₀)

@@ -5,6 +5,7 @@ using Test
 using LinearAlgebra
 using LinearSolve
 using Logging
+import FerriteOperators
 
 const ORTHO_MS = ConstantCoefficient(
     OrthotropicMicrostructure(Vec((1.0, 0.0, 0.0)), Vec((0.0, 1.0, 0.0)), Vec((0.0, 0.0, 1.0))),
@@ -620,4 +621,130 @@ end
         @test wrapped.sol.retcode == SciMLBase.ReturnCode.Success
         @test norm(wrapped.u[fe] - integrator.u[fe]) / norm(integrator.u[fe]) > 0.05
     end
+end
+
+@testset "Deformation gradient report reads the displacement, not the state" begin
+    # An elastodynamics handler carries the velocity alongside the displacement, so a report that took
+    # "the first field" or differentiated the raw state vector would be reading the wrong block. The
+    # displacement symbol comes from the model rather than from the handler for exactly this reason.
+    f = elastodynamic_bar()
+    @test Thunderbolt.displacement_symbols(f) == (:d,)
+    @test Set(first(f.dh.subdofhandlers).field_names) == Set((:d, :v))
+
+    # A uniaxial stretch on the displacement block, and a value the report must ignore on the velocity
+    # block: `det F` comes out exactly 1.25 only if the velocity is left out of the differentiation.
+    u = zeros(solution_size(f))
+    Thunderbolt.default_initial_condition!(u, f)
+    u[solution_indices(f, :v)] .= 1.0e3
+    Ferrite.apply_analytical!(u, f.dh, :d, x -> Vec((0.25x[1], 0.0, 0.0)))
+    report = Thunderbolt.deformation_gradient_report(f, u)
+    @test report.n_subdomains == 1
+    @test report.minJ ≈ 1.25
+    @test report.maxJ ≈ 1.25
+    @test !Thunderbolt.is_inverted(report)
+end
+
+@testset "Newmark reconstructs the facet velocity with its own slope" begin
+    # `facet_velocity` exists so that a dashpot is written once against the reconstruction rather than
+    # once per scheme. Newmark's slope is `γ/(βΔt)`, not backward Euler's `1/Δt`, and the facet has to
+    # be handed *that* one.
+    #
+    # Asserted on the query rather than by comparing two solves at different `γ`: `γ` also changes the
+    # scheme's own velocity update and its numerical dissipation, so a displacement difference across
+    # `γ` measures the scheme at least as much as it measures the boundary condition.
+    Δt, β, γ = 0.05, 1 / 4, 1 / 2
+    uprev = zeros(4)
+    scheme_velocity = Thunderbolt.AffineVelocity(γ / (β * Δt), uprev)
+    p = Thunderbolt.NewmarkElementParameters(nothing, 0.0, Δt, scheme_velocity, uprev)
+
+    @test Thunderbolt.facet_velocity(p) === scheme_velocity
+    @test Thunderbolt.facet_velocity(p).∂v∂u ≈ γ / (β * Δt)
+    # The whole point: reading `Δt` at the facet would give the backward Euler quotient, which for
+    # these coefficients is off by a factor of two.
+    @test Thunderbolt.facet_velocity(p).∂v∂u ≉ inv(Δt)
+
+    # ... and backward Euler's own parameters still give exactly `1/Δt`, so the two schemes really are
+    # served by the one query.
+    gto1 = FerriteOperators.GenericFirstOrderTimeElementParameters(nothing, 0.0, Δt, uprev)
+    @test Thunderbolt.facet_velocity(gto1).∂v∂u ≈ inv(Δt)
+end
+
+@testset "A dashpot damps under Newmark" begin
+    # End to end on the second order scheme, at fixed `γ` so that only the boundary condition differs.
+    # The boundary condition names its field explicitly, which is the case the `dof_range` indexing
+    # exists for: this handler carries `:d` and `:v` in one `SubDofHandler`, so an offset error would
+    # write the traction into the velocity block instead of the displacement block.
+    bare = elastodynamic_bar()
+    damped = elastodynamic_bar(facet_models = (ViscousRobinBC(1.0e4, "right", :d),))
+    kick(f) = translation_velocity(f, Vec((0.3, 0.0, 0.0)))
+
+    undamped_integrator = solve_elastodynamic(bare, kick(bare), 0.05, 0.05)
+    damped_integrator   = solve_elastodynamic(damped, kick(damped), 0.05, 0.05)
+    @test undamped_integrator.sol.retcode == SciMLBase.ReturnCode.Success
+    @test damped_integrator.sol.retcode == SciMLBase.ReturnCode.Success
+
+    d = solution_indices_of_displacement(bare)
+    @test norm(damped_integrator.u[d]) < norm(undamped_integrator.u[d])
+
+    # How the traction scales with the viscosity is pinned exactly in `test_elements.jl`. It is not
+    # asserted here: damping one end of the bar changes which mode it deforms in, so the displacement
+    # norm is not monotone in the coefficient and any inequality would be reading the mode change.
+end
+
+@testset "Newmark with a plain Newton" begin
+    # `NewmarkSolver` chooses its stage solver cache through the same `setup_stage_nlsolver_cache` as
+    # backward Euler, so a function that condenses nothing is solvable by the plain Newton here too.
+    f = elastodynamic_bar()
+    @test ndofs(f.structural.lvh) == 0
+
+    u0 = zeros(solution_size(f))
+    Thunderbolt.default_initial_condition!(u0, f)
+    integrator = init(
+        ElastodynamicsProblem(f, u0, translation_velocity(f, Vec((0.3, 0.0, 0.0))), (0.0, 0.1)),
+        NewmarkSolver(;
+            β = 1 / 4,
+            γ = 1 / 2,
+            inner_solver = NewtonRaphsonSolver(
+                inner_solver = UMFPACKFactorization(),
+                max_iter = 10,
+                tol = 1e-8,
+            ),
+        ),
+        dt = 0.05,
+        adaptive = false,
+        verbose = false,
+    )
+    solve!(integrator)
+    @test integrator.sol.retcode == SciMLBase.ReturnCode.Success
+
+    # A condensing material does pose local problems, and the plain Newton has no local solver for
+    # them, so the pairing is refused at setup rather than solving a system of the wrong size.
+    condensing = elastodynamic_bar(
+        material = Thunderbolt.LinearMaxwellMaterial(
+            E₀ = 70e3,
+            E₁ = 20e3,
+            μ = 1e3,
+            η₁ = 1e3,
+            ν = 0.3,
+        ),
+    )
+    @test ndofs(condensing.structural.lvh) > 0
+    u0c = zeros(solution_size(condensing))
+    Thunderbolt.default_initial_condition!(u0c, condensing)
+    @test_throws "MultiLevelNewtonRaphsonSolver" init(
+        ElastodynamicsProblem(
+            condensing,
+            u0c,
+            translation_velocity(condensing, Vec((0.3, 0.0, 0.0))),
+            (0.0, 0.1),
+        ),
+        NewmarkSolver(;
+            β = 1 / 4,
+            γ = 1 / 2,
+            inner_solver = NewtonRaphsonSolver(inner_solver = UMFPACKFactorization()),
+        ),
+        dt = 0.05,
+        adaptive = false,
+        verbose = false,
+    )
 end

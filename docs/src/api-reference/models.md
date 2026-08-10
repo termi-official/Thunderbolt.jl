@@ -36,6 +36,35 @@ ConstantPressureBC
 PressureFieldBC
 ```
 
+### Viscous Boundary Conditions
+
+The rate analogues of the Robin family. These resist the velocity rather than the displacement, so they
+require a time integrator; see [`Thunderbolt.facet_velocity`](@ref) for how the reconstruction reaches
+the element.
+
+```@docs
+ViscousRobinBC
+ViscousNormalSpringBC
+Thunderbolt.AbstractViscousWeakBoundaryCondition
+Thunderbolt.damping_tensor
+Thunderbolt.get_time
+Thunderbolt.facet_velocity
+```
+
+## Kinematic Diagnostics
+
+A converged solve is not necessarily a valid deformation: a folded element and a body drifting along a
+free rigid mode both satisfy the residual. These report on the kinematics so that neither passes
+unnoticed.
+
+```@docs
+Thunderbolt.deformation_gradient_report
+Thunderbolt.DeformationGradientReport
+Thunderbolt.is_inverted
+Thunderbolt.displacement_symbols
+DeformationMonitor
+```
+
 ## Solid Mechanics
 
 ```@docs

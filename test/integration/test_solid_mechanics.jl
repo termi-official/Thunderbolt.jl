@@ -447,17 +447,18 @@ end
         )
 
         # A rate-free (`NoEvolution`) subdomain still has to be assembled by the time integrator when
-        # it sits next to a subdomain that carries an internal variable. Its element cache is a
-        # `QuasiStaticElementCache`, which is not a `gto1` cache, so FerriteOperators' generic
-        # `query_element_parameters(element, cell, ivh, p) = p` hands it the whole
-        # `GenericFirstOrderTimeParameters` where the assembly expects a time.
+        # it sits next to a subdomain that carries an internal variable. Below, the rate-free
+        # subdomain drives its sarcomere from a time dependent calcium field, which is the ordinary
+        # cardiac case.
         #
-        # Everything above passes only because no coefficient on a rate-free subdomain looks at `t`.
-        # Below, the rate-free subdomain drives its sarcomere from a time dependent calcium field,
-        # which is the ordinary cardiac case.
+        # A time dependent coefficient on a rate-free subdomain is legitimate — only a dependence on
+        # the *rate* is not — and the time reaches it correctly: `QuasiStaticElementCache` lowers the
+        # `gto1` parameters to their element local form and the assembly queries `get_time`. The
+        # companion facet test below exercises that same path and passes.
         #
-        # BROKEN: to be fixed together with the parameter system, which is what decides how a
-        # subdomain asks for the time and for the parameters it is differentiated against.
+        # This one fails in the *solve* rather than in the plumbing, and is reported to be flaky, so
+        # the marker stays until the mechanism is understood. Δt = 0.25 and Δt = 0.02 fail alike, so
+        # shortening the step is not the answer.
         @testset "Time dependent coefficient on a rate-free subdomain" begin
             @test_broken (
                 solve_contractile_cuboid(
@@ -498,19 +499,18 @@ end
             )
         end
 
-        # Same defect on the facet path. The surface element cache is handed whatever
-        # `query_element_parameters` produced for the *volumetric* cache of its subdomain, so on a
-        # rate-free subdomain that is again the raw parameter object. The unwrapping methods this
-        # branch adds are typed on `GenericFirstOrderTimeElementParameters` and never fire here.
-        #
-        # BROKEN, same fix as above.
+        # The facet path reaches the time the same way: a surface cache is handed whatever
+        # `query_element_parameters` produced for the *volumetric* cache of its subdomain, and
+        # `PressureFieldBC` queries `get_time` on it rather than passing its trailing argument to
+        # `evaluate_coefficient` unexamined. On a rate-free subdomain that object is the element local
+        # form of the `gto1` parameters, not a bare time, which is what this pins.
         let facemodels_tdep = (
                 NormalSpringBC(0.0, "right"),
                 ConstantPressureBC(0.0, "back"),
                 PressureFieldBC(TestRampField(), "top"),
             )
             @testset "Time dependent facet coefficient on a rate-free subdomain" begin
-                @test_broken (
+                @test (
                     solve_contractile_cuboid(
                         mesh,
                         Dict(
@@ -1255,4 +1255,375 @@ end
     # dependence but leaves `dₜQ = L(F, Q)`, so the rejection fires again. A substring test against
     # the remedy passed throughout.
     @test_throws "RateCoupledEvolution" init(problem, timestepper, dt = 1.0, verbose = false)
+end
+
+@testset "Viscous Robin boundary conditions" begin
+    # A block pushed by a constant pressure, held on one side, with a dashpot on the loaded facet.
+    # The dashpot resists the *rate*, so it slows the approach to equilibrium without changing the
+    # equilibrium itself — which is exactly the pair of properties asserted below.
+    function solve_with(facet_models; Δt = 0.1, tend = 1.0)
+        mesh = generate_mesh(Hexahedron, (2, 2, 2))
+        material =
+            Thunderbolt.LinearMaxwellMaterial(E₀ = 70e3, E₁ = 20e3, μ = 1e3, η₁ = 1e3, ν = 0.3)
+        dbcs = [Dirichlet(:d, getfacetset(mesh, "left"), (x, t) -> (0.0, 0.0, 0.0), [1, 2, 3])]
+        form = semidiscretize(
+            QuasiStaticModel(:d, material, facet_models),
+            FiniteElementDiscretization(Dict(:d => LagrangeCollection{1}()^3); dbcs),
+            mesh,
+        )
+        problem = QuasiStaticProblem(form, (0.0, tend))
+        timestepper = BackwardEulerSolver(
+            inner_solver = Thunderbolt.MultiLevelNewtonRaphsonSolver(
+                newton = NewtonRaphsonSolver(
+                    inner_solver = UMFPACKFactorization(),
+                    max_iter = 10,
+                    tol = 1e-8,
+                ),
+            ),
+        )
+        integrator = init(problem, timestepper, dt = Δt, verbose = false)
+        solve!(integrator)
+        @test integrator.sol.retcode == SciMLBase.ReturnCode.Success
+        return norm(@view integrator.u[1:ndofs(form.dh)])
+    end
+
+    load = (ConstantPressureBC(-1e3, "right"),)
+
+    # Damping resists the motion, and more of it resists more. Which *directions* a dashpot resists is
+    # pinned exactly in `test_elements.jl` rather than through a pair of nonlinear solves here.
+    @test solve_with((load..., ViscousRobinBC(5e3, "right"))) < solve_with(load)
+    @test solve_with((load..., ViscousRobinBC(1e5, "right"))) <
+          solve_with((load..., ViscousRobinBC(1e3, "right")))
+
+    # Held long enough the velocity dies out, so the dashpot contributes nothing and the damped
+    # solution lands on the undamped equilibrium. This is what distinguishes a dashpot from a spring:
+    # a spring would shift the equilibrium permanently.
+    #
+    # `tend` is set from the material rather than picked: the Maxwell branch relaxes with
+    # `η₁/E₁ = 0.05`, so five time units is a hundred relaxation times and the velocity is long gone.
+    @test solve_with((load..., ViscousRobinBC(5e3, "right")); Δt = 0.5, tend = 5.0) ≈
+          solve_with(load; Δt = 0.5, tend = 5.0) rtol=1e-6
+end
+
+@testset "Viscous Robin is rejected by continuation" begin
+    # `HomotopyPathSolver` is load stepping: it has no previous solution and no timestep, so there is
+    # no velocity for a dashpot to resist. Rejecting at setup keeps the report to one named boundary
+    # condition instead of a missing field deep inside the assembly loop.
+    mesh = generate_mesh(Hexahedron, (1, 1, 1))
+    microstructure = Thunderbolt.ConstantCoefficient(
+        Thunderbolt.OrthotropicMicrostructure(
+            Vec((1.0, 0.0, 0.0)),
+            Vec((0.0, 1.0, 0.0)),
+            Vec((0.0, 0.0, 1.0)),
+        ),
+    )
+    model = Thunderbolt.PK1Model(Thunderbolt.LinearSpringModel(), microstructure)
+    dbcs = [Dirichlet(:d, getfacetset(mesh, "left"), (x, t) -> (0.0, 0.0, 0.0), [1, 2, 3])]
+    quasistaticform = semidiscretize(
+        QuasiStaticModel(:d, model, (ViscousRobinBC(1.0, "right"),)),
+        FiniteElementDiscretization(Dict(:d => LagrangeCollection{1}()^3); dbcs),
+        mesh,
+    )
+    problem = QuasiStaticProblem(quasistaticform, (0.0, 1.0))
+    timestepper = HomotopyPathSolver(
+        NewtonRaphsonSolver(inner_solver = UMFPACKFactorization(), max_iter = 10, tol = 1e-8),
+    )
+    @test_throws "ViscousRobinBC" init(problem, timestepper, dt = 1.0, verbose = false)
+
+    # The rejection unwraps the debug wrapper too, so wrapping a dashpot does not smuggle it past the
+    # check and into the assembly loop.
+    wrapped = semidiscretize(
+        QuasiStaticModel(
+            :d,
+            model,
+            (
+                Thunderbolt.ConsistencyCheckWeakBoundaryCondition(
+                    ViscousRobinBC(1.0, "right"),
+                    1e-6,
+                ),
+            ),
+        ),
+        FiniteElementDiscretization(Dict(:d => LagrangeCollection{1}()^3); dbcs),
+        mesh,
+    )
+    @test_throws "ViscousRobinBC" init(
+        QuasiStaticProblem(wrapped, (0.0, 1.0)),
+        timestepper,
+        dt = 1.0,
+        verbose = false,
+    )
+end
+
+@testset "Convergence driven step size control with backward Euler" begin
+    # The continuation controllers read Newton contraction rates, not a local error estimate, so they
+    # are usable by any solver that answers `contraction_rate_cache` — backward Euler included. That
+    # is the combination a viscously *regularized* problem wants: the rate term is there to give the
+    # solve something to contract against, so its temporal accuracy is not a quantity worth
+    # controlling, while the Newton convergence very much is.
+    function build(facet_models)
+        mesh = generate_mesh(Hexahedron, (2, 2, 2))
+        material =
+            Thunderbolt.LinearMaxwellMaterial(E₀ = 70e3, E₁ = 20e3, μ = 1e3, η₁ = 1e3, ν = 0.3)
+        dbcs = [Dirichlet(:d, getfacetset(mesh, "left"), (x, t) -> (0.0, 0.0, 0.0), [1, 2, 3])]
+        form = semidiscretize(
+            QuasiStaticModel(:d, material, facet_models),
+            FiniteElementDiscretization(Dict(:d => LagrangeCollection{1}()^3); dbcs),
+            mesh,
+        )
+        return QuasiStaticProblem(form, (0.0, 1.0))
+    end
+
+    timestepper = BackwardEulerSolver(
+        inner_solver = Thunderbolt.MultiLevelNewtonRaphsonSolver(
+            newton = NewtonRaphsonSolver(
+                inner_solver = UMFPACKFactorization(),
+                max_iter = 10,
+                tol = 1e-8,
+            ),
+        ),
+    )
+    bcs = (ConstantPressureBC(-1e3, "right"), ViscousRobinBC(5e3, "right"))
+
+    # Backward Euler merely *permits* a controller. Its default is the dummy, so an ordinary `init`
+    # still steps at the `dt` it was given — this is the regression guard on that, since declaring the
+    # algorithm adaptive is what makes passing a controller legal in the first place.
+    plain = init(build(bcs), timestepper, dt = 0.1, verbose = false)
+    @test !SciMLBase.isadaptive(plain)
+    solve!(plain)
+    @test plain.dt == 0.1
+
+    controlled = init(
+        build(bcs),
+        timestepper,
+        dt = 0.1,
+        verbose = false,
+        controller = Deuflhard2004_B_DiscreteContinuationControllerVariant(; Θmin = 1/8, p = 1),
+        dtmax = 0.5,
+    )
+    @test SciMLBase.isadaptive(controlled)
+    solve!(controlled)
+    @test controlled.sol.retcode == SciMLBase.ReturnCode.Success
+
+    # These Newtons contract easily, so the controller grows the step -- and `adapt_dt!` clamps that
+    # growth to `dtmax`. Bigger steps mean fewer of them than the 10 a fixed `dt = 0.1` would take.
+    # `dtmax` is otherwise pinned only against a stub cache in `test_time_integrator.jl`, so this is
+    # where the clamp is exercised through a real solve.
+    @test controlled.dt > 0.1
+    @test controlled.dt ≤ 0.5
+    @test controlled.stats.naccept < 10
+end
+
+@testset "Backward Euler with a plain Newton" begin
+    # A stage that condenses nothing needs no local solver, so the plain `NewtonRaphsonSolver` solves
+    # it: the multilevel wrapper is machinery for local problems that do not exist here. Which cache a
+    # stage gets is chosen by `setup_stage_nlsolver_cache` from the solver type alone.
+    mesh = generate_mesh(Hexahedron, (2, 2, 2))
+    microstructure = Thunderbolt.ConstantCoefficient(
+        Thunderbolt.OrthotropicMicrostructure(
+            Vec((1.0, 0.0, 0.0)),
+            Vec((0.0, 1.0, 0.0)),
+            Vec((0.0, 0.0, 1.0)),
+        ),
+    )
+    dbcs = [Dirichlet(:d, getfacetset(mesh, "left"), (x, t) -> (0.0, 0.0, 0.0), [1, 2, 3])]
+
+    # No internal variables, and a dashpot so that backward Euler has a rate to work with. Guccione
+    # rather than a fibre spring: the latter has a rank deficient tangent in 3D, so it fails for every
+    # solver and would prove nothing about the one under test.
+    rate_free = Thunderbolt.PK1Model(Guccione1991PassiveModel(), microstructure)
+    build(material) = QuasiStaticProblem(
+        semidiscretize(
+            QuasiStaticModel(
+                :d,
+                material,
+                (ConstantPressureBC(-1e2, "right"), ViscousRobinBC(5e2, "right")),
+            ),
+            FiniteElementDiscretization(Dict(:d => LagrangeCollection{1}()^3); dbcs),
+            mesh,
+        ),
+        (0.0, 1.0),
+    )
+
+    newton = NewtonRaphsonSolver(inner_solver = UMFPACKFactorization(), max_iter = 10, tol = 1e-8)
+
+    prob = build(rate_free)
+    @test ndofs(prob.f.lvh) == 0
+    plain = init(prob, BackwardEulerSolver(inner_solver = newton), dt = 0.1, verbose = false)
+    solve!(plain)
+    @test plain.sol.retcode == SciMLBase.ReturnCode.Success
+
+    # The two Newtons must agree on a problem both can solve — otherwise "it runs" would be the only
+    # thing this test established.
+    multilevel = init(
+        build(rate_free),
+        BackwardEulerSolver(
+            inner_solver = Thunderbolt.MultiLevelNewtonRaphsonSolver(newton = newton),
+        ),
+        dt = 0.1,
+        verbose = false,
+    )
+    solve!(multilevel)
+    @test multilevel.sol.retcode == SciMLBase.ReturnCode.Success
+    @test norm(plain.u) ≈ norm(multilevel.u) rtol=1e-6
+
+    # A material that *does* condense has local problems the plain Newton cannot close, so the pairing
+    # is refused at setup naming the count, rather than silently solving a system of the wrong size.
+    condensing = Thunderbolt.LinearMaxwellMaterial(E₀ = 70e3, E₁ = 20e3, μ = 1e3, η₁ = 1e3, ν = 0.3)
+    condensing_prob = build(condensing)
+    @test ndofs(condensing_prob.f.lvh) > 0
+    @test_throws "MultiLevelNewtonRaphsonSolver" init(
+        condensing_prob,
+        BackwardEulerSolver(inner_solver = newton),
+        dt = 0.1,
+        verbose = false,
+    )
+end
+
+@testset "Deformation gradient report" begin
+    mesh = generate_mesh(Hexahedron, (2, 2, 2))
+    microstructure = Thunderbolt.ConstantCoefficient(
+        Thunderbolt.OrthotropicMicrostructure(
+            Vec((1.0, 0.0, 0.0)),
+            Vec((0.0, 1.0, 0.0)),
+            Vec((0.0, 0.0, 1.0)),
+        ),
+    )
+    form = semidiscretize(
+        QuasiStaticModel(:d, Thunderbolt.PK1Model(Guccione1991PassiveModel(), microstructure), ()),
+        FiniteElementDiscretization(Dict(:d => LagrangeCollection{1}()^3)),
+        mesh,
+    )
+
+    # Configurations written down analytically rather than solved for, so the report's numbers are
+    # known exactly and a solve tolerance never enters. A solve here would only produce *some*
+    # deformation, about which nothing sharp could be asserted.
+    function configuration(f)
+        u = zeros(solution_size(form))
+        Ferrite.apply_analytical!(u, form.dh, :d, f)
+        return u
+    end
+    stretched = configuration(x -> Vec((0.25x[1], 0.0, 0.0)))          # F₁₁ = 1.25
+    folded    = configuration(x -> Vec((-1.5x[1], 0.0, 0.0)))          # F₁₁ = -0.5
+    rotated   = let θ = π / 6                                          # rigid rotation about e₃
+        configuration(x -> Vec((cos(θ) * x[1] - sin(θ) * x[2] - x[1], sin(θ) * x[1] + cos(θ) * x[2] - x[2], 0.0)))
+    end
+
+    @testset "the two entry points agree" begin
+        # `f + u` reads the displacement symbol off the model; `dh + u + fields` is told it. They must
+        # describe the same configuration, otherwise one of them is differentiating the wrong field.
+        @test Thunderbolt.displacement_symbols(form) == (:d,)
+        from_f  = Thunderbolt.deformation_gradient_report(form, stretched)
+        from_dh = Thunderbolt.deformation_gradient_report(form.dh, stretched, :d)
+        @test from_f.minJ == from_dh.minJ
+        @test from_f.max_strain == from_dh.max_strain
+        @test from_f.n_subdomains == 1
+
+        # A collection is accepted, so a multi-domain model whose subdomains name the displacement
+        # differently can be covered in one call.
+        @test Thunderbolt.deformation_gradient_report(
+            form.dh,
+            stretched,
+            (:displacement, :d, :u),
+        ).minJ == from_f.minJ
+
+        # A uniform uniaxial stretch, so every quadrature point carries the same known `det F`.
+        @test from_f.minJ ≈ 1.25
+        @test from_f.maxJ ≈ 1.25
+        @test !Thunderbolt.is_inverted(from_f)
+    end
+
+    @testset "folded and rigid configurations are told apart" begin
+        # A fold is a valid solve and an invalid deformation; nothing but the kinematics can say so.
+        fold = Thunderbolt.deformation_gradient_report(form, folded)
+        @test fold.minJ ≈ -0.5
+        @test Thunderbolt.is_inverted(fold)
+        @test fold.n_nonpositive == fold.n_quadrature_points
+
+        # The motivating case for reporting the strain next to the determinant: a rigid rotation has
+        # `det F == 1` and no strain at all, however far it moves. A report that watched only `det F`
+        # would call this healthy, which is exactly how a solve drifting down a null space of the
+        # tangent escapes notice.
+        rigid = Thunderbolt.deformation_gradient_report(form, rotated)
+        @test rigid.minJ ≈ 1.0
+        @test rigid.maxJ ≈ 1.0
+        @test !Thunderbolt.is_inverted(rigid)
+        @test rigid.max_strain < 1.0e-12
+        @test rigid.max_deviation > 0.5          # 2 sin(θ/2) ≈ 0.52 for θ = π/6
+        # ... whereas straining moves the two together.
+        stretch = Thunderbolt.deformation_gradient_report(form, stretched)
+        @test stretch.max_strain > 0.1
+    end
+
+    @testset "non-mechanics subdomains are skipped" begin
+        # A handler carrying a scalar field next to the displacement: the scalar has no `det F`, and
+        # asking for the displacement must simply not look at it.
+        dh = DofHandler(mesh)
+        sdh = SubDofHandler(dh, Set(1:getncells(mesh)))
+        add!(sdh, :d, Lagrange{RefHexahedron, 1}()^3)
+        add!(sdh, :phi, Lagrange{RefHexahedron, 1}())
+        close!(dh)
+        @test Thunderbolt.deformation_gradient_report(dh, zeros(ndofs(dh)), :d).n_subdomains == 1
+        # Asking for the scalar itself is a user error, and the message says why rather than throwing
+        # from inside the tensor algebra.
+        @test_throws "det F" Thunderbolt.deformation_gradient_report(dh, zeros(ndofs(dh)), :phi)
+
+        # A subdomain with no displacement field at all -- the electrophysiology-next-to-mechanics
+        # case -- contributes nothing and does not prevent the report.
+        grid = generate_grid(Hexahedron, (2, 1, 1))
+        dh2 = DofHandler(grid)
+        mech = SubDofHandler(dh2, Set([1]))
+        add!(mech, :d, Lagrange{RefHexahedron, 1}()^3)
+        ep = SubDofHandler(dh2, Set([2]))
+        add!(ep, :phi, Lagrange{RefHexahedron, 1}())
+        close!(dh2)
+        report = Thunderbolt.deformation_gradient_report(dh2, zeros(ndofs(dh2)), :d)
+        @test report.n_subdomains == 1
+        @test report.n_quadrature_points == 8   # one cell, not two
+
+        # Nothing to report on is an error rather than a vacuous "all fine".
+        @test_throws "Fields present" Thunderbolt.deformation_gradient_report(
+            dh2,
+            zeros(ndofs(dh2)),
+            :nope,
+        )
+    end
+
+    @testset "DeformationMonitor warns on a degenerate iterate" begin
+        # The only user facing consumer of the report: it wraps an inner monitor and reports per Newton
+        # iteration, so a solve that folds an element says so at the iterate that did it rather than
+        # after the step has converged and hidden the evidence.
+        dbcs = [
+            Dirichlet(:d, getfacetset(mesh, "left"), (x, t) -> (0.0, 0.0, 0.0), [1, 2, 3]),
+            Dirichlet(:d, getfacetset(mesh, "right"), (x, t) -> (0.05, 0.0, 0.0), [1, 2, 3]),
+        ]
+        monitored = semidiscretize(
+            QuasiStaticModel(
+                :d,
+                Thunderbolt.PK1Model(Guccione1991PassiveModel(), microstructure),
+                (),
+            ),
+            FiniteElementDiscretization(Dict(:d => LagrangeCollection{1}()^3); dbcs),
+            mesh,
+        )
+        solve_monitored(warn_below) = solve!(
+            init(
+                QuasiStaticProblem(monitored, (0.0, 1.0)),
+                HomotopyPathSolver(
+                    NewtonRaphsonSolver(
+                        inner_solver = UMFPACKFactorization(),
+                        max_iter = 10,
+                        tol = 1e-8,
+                        monitor = DeformationMonitor(; warn_below),
+                    ),
+                ),
+                dt = 1.0,
+                verbose = false,
+            ),
+        )
+        # This solve never folds anything, so a threshold at zero must stay silent ...
+        @test_logs min_level = Logging.Warn solve_monitored(0.0)
+        # ... while a threshold above the healthy `det F` fires, which is what says the monitor is
+        # looking at the iterates at all rather than being wired up and never consulted.
+        @test_logs (:warn,) match_mode = :any solve_monitored(2.0)
+    end
 end

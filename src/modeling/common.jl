@@ -96,6 +96,29 @@ not infer it from the presence or absence of a reaction part.
 """
 is_coupling_model(model) = false
 
+"""
+    get_time(p)
+
+The time carried by an assembly parameter object.
+
+Assembly routines receive whatever the time scheme handed the element, and *what* that is depends on
+the scheme: continuation passes the bare pseudo-time, backward Euler a
+`FerriteOperators.GenericFirstOrderTimeElementParameters`, Newmark a [`NewmarkElementParameters`](@ref).
+Anything that needs the time — a coefficient evaluation, most often — asks for it here instead of
+assuming the trailing argument *is* the time.
+
+Asking rather than assuming is what lets one parameter object serve caches with different needs. It
+has to: FerriteOperators computes a single object from the volumetric cache and passes that same
+object to the boundary cache, so a spring wanting the time and a dashpot wanting the velocity (see
+[`facet_velocity`](@ref)) have to coexist behind it.
+
+The fallback treats an unrecognized object as the time itself, which is what makes the bare
+`assemble_element!(…, 0.0)` calls throughout the tests and the linear/bilinear operators keep working.
+"""
+get_time(p) = p
+get_time(p::FerriteOperators.GenericFirstOrderTimeParameters) = p.t
+get_time(p::FerriteOperators.GenericFirstOrderTimeElementParameters) = p.t
+
 include("core/heart_axes.jl")
 include("core/coordinate_systems.jl")
 
