@@ -170,6 +170,9 @@ include("modeling/solution_variables.jl")
 include("modeling/functions.jl")
 include("modeling/problems.jl")
 
+# Diagnostics dispatch on the function layer, so they come after it.
+include("modeling/solid/diagnostics.jl")
+
 include("gpu/gpu_utils.jl")
 
 include("discretization/interface.jl")
@@ -390,7 +393,12 @@ export
     BendingSpringBC,
     RobinBC,
     ConstantPressureBC,
+    #  Kinematic diagnostics
+    deformation_gradient_report,
+    displacement_symbols,
+    is_inverted,
+    DeformationMonitor,
     #  Viscous (dashpot) BCs
     ViscousRobinBC,
-    NormalViscousSpringBC
+    ViscousNormalSpringBC
 end

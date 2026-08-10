@@ -397,6 +397,36 @@ g_deuflhard(x) = √(1 + 4x) - 1
         @test integrator.dt ≈ clamp(γ * (g_deuflhard(Θbar) / (2Θmin))^(1 / p), qmin, qmax) * 0.4
     end
 
+    @testset "dtmax is respected" begin
+        # `adapt_dt!` is the only place these controllers *grow* the step, and it used to grow it
+        # unconditionally — so a `dtmax` handed to `init` was silently ignored and the solve could take
+        # steps far larger than the caller allowed. Only `PIDController` clamped.
+        #
+        # A near-zero convergence history asks for the largest growth the controller permits (`qmax`,
+        # a factor of five), so 0.4 would become 2.0 without the clamp.
+        for controller in controllers
+            integrator = init(
+                scalar_decay_problem(0.7, (0.0, 10.0)),
+                ScalarForwardEuler(),
+                dt = 0.4,
+                dtmax = 0.5,
+            )
+            Thunderbolt.adapt_dt!(integrator, stub_homotopy_cache([1.0e-8, 1.0e-8]), controller)
+            @test integrator.dt ≤ 0.5
+        end
+
+        # Shrinking is left unclamped on purpose: `reject_step!` only ever multiplies by q < 1, so it
+        # cannot cross `dtmax` from below.
+        integrator = init(
+            scalar_decay_problem(0.7, (0.0, 10.0)),
+            ScalarForwardEuler(),
+            dt = 0.4,
+            dtmax = 0.5,
+        )
+        Thunderbolt.reject_step!(integrator, stub_homotopy_cache([0.1, 0.99]), controllers[1])
+        @test integrator.dt < 0.4
+    end
+
     @testset "A multi-level cache reaches the global Newton cache" begin
         # The forwarding that lets these controllers run under MultiLevelNewtonRaphsonSolver.
         mlcache = Thunderbolt.MultiLevelNewtonRaphsonSolverCache(

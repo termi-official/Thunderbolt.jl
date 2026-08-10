@@ -209,7 +209,7 @@ using JET: @test_opt, @test_call
     # entry point under test -- it is where the payload is translated into a velocity.
     @testset "Viscous surface elements: $model" for model in (
         ViscousRobinBC(3.0, "left"),
-        NormalViscousSpringBC(3.0, "left"),
+        ViscousNormalSpringBC(3.0, "left"),
     )
         n     = ndofs(dhv)
         Δt    = 0.25

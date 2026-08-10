@@ -1298,7 +1298,7 @@ end
 
     u_undamped = solve_with(load)
     u_full     = solve_with((load..., ViscousRobinBC(5e3, "right")))
-    u_normal   = solve_with((load..., NormalViscousSpringBC(5e3, "right")))
+    u_normal   = solve_with((load..., ViscousNormalSpringBC(5e3, "right")))
 
     # Damping resists the motion, and resisting every direction resists at least as much as
     # resisting the normal direction alone.
@@ -1480,4 +1480,149 @@ end
         dt = 0.1,
         verbose = false,
     )
+end
+
+@testset "Viscous Robin is first order in time" begin
+    # The dt -> 0 limit, which is what says the velocity reaching the facet is the one that actually
+    # separates `uₙ` from `uₙ₋₁`. A reconstruction using the wrong Δt still *converges* — to the wrong
+    # thing — so the assertion is on the observed order, not merely on the differences shrinking.
+    #
+    # The drive is a smooth Dirichlet sine rather than a load with a kink: a rate discontinuity in the
+    # data destroys the observed order regardless of the scheme, so measuring across one would say
+    # nothing about the boundary condition.
+    mesh = generate_mesh(Hexahedron, (2, 2, 2))
+    microstructure = Thunderbolt.ConstantCoefficient(
+        Thunderbolt.OrthotropicMicrostructure(
+            Vec((1.0, 0.0, 0.0)),
+            Vec((0.0, 1.0, 0.0)),
+            Vec((0.0, 0.0, 1.0)),
+        ),
+    )
+    material = Thunderbolt.PK1Model(Guccione1991PassiveModel(), microstructure)
+
+    function solve_to_one(facet_models, Δt)
+        dbcs = [
+            Dirichlet(:d, getfacetset(mesh, "left"), (x, t) -> (0.0, 0.0, 0.0), [1, 2, 3]),
+            Dirichlet(
+                :d,
+                getfacetset(mesh, "right"),
+                (x, t) -> (0.1 * sinpi(2t), 0.0, 0.0),
+                [1, 2, 3],
+            ),
+        ]
+        form = semidiscretize(
+            QuasiStaticModel(:d, material, facet_models),
+            FiniteElementDiscretization(Dict(:d => LagrangeCollection{1}()^3); dbcs),
+            mesh,
+        )
+        integrator = init(
+            QuasiStaticProblem(form, (0.0, 1.0)),
+            BackwardEulerSolver(
+                inner_solver = NewtonRaphsonSolver(
+                    max_iter = 20,
+                    tol = 1e-10,
+                    inner_solver = UMFPACKFactorization(),
+                ),
+            ),
+            dt = Δt,
+            verbose = false,
+        )
+        solve!(integrator)
+        @test integrator.sol.retcode == SciMLBase.ReturnCode.Success
+        return norm(integrator.u)
+    end
+
+    Δts = (0.05, 0.025, 0.0125, 0.00625)
+    us = [solve_to_one((ViscousRobinBC(1.0, "top"),), Δt) for Δt in Δts]
+    diffs = [abs(us[i+1] - us[i]) for i = 1:(length(us)-1)]
+    ratios = [diffs[i] / diffs[i+1] for i = 1:(length(diffs)-1)]
+    # Backward Euler is first order, so halving the step halves the increment.
+    @test all(r -> 1.7 ≤ r ≤ 2.3, ratios)
+
+    # The drive returns to the undeformed configuration at t = 1, so without a dashpot the quasi-static
+    # answer there is exactly zero. The dashpot's lag is what makes it non-zero, and that lag *survives*
+    # refinement rather than being a coarse-step artefact — the two halves of "faithful".
+    @test solve_to_one((), 0.0125) < 1e-10
+    @test us[end] > 1e-2
+end
+
+@testset "Deformation gradient report" begin
+    mesh = generate_mesh(Hexahedron, (2, 2, 2))
+    microstructure = Thunderbolt.ConstantCoefficient(
+        Thunderbolt.OrthotropicMicrostructure(
+            Vec((1.0, 0.0, 0.0)),
+            Vec((0.0, 1.0, 0.0)),
+            Vec((0.0, 0.0, 1.0)),
+        ),
+    )
+    dbcs = [
+        Dirichlet(:d, getfacetset(mesh, "left"), (x, t) -> (0.0, 0.0, 0.0), [1, 2, 3]),
+        Dirichlet(:d, getfacetset(mesh, "right"), (x, t) -> (0.05, 0.0, 0.0), [1, 2, 3]),
+    ]
+    form = semidiscretize(
+        QuasiStaticModel(:d, Thunderbolt.PK1Model(Guccione1991PassiveModel(), microstructure), ()),
+        FiniteElementDiscretization(Dict(:d => LagrangeCollection{1}()^3); dbcs),
+        mesh,
+    )
+    integrator = init(
+        QuasiStaticProblem(form, (0.0, 1.0)),
+        HomotopyPathSolver(
+            NewtonRaphsonSolver(inner_solver = UMFPACKFactorization(), max_iter = 10, tol = 1e-8),
+        ),
+        dt = 1.0,
+        verbose = false,
+    )
+    solve!(integrator)
+    @test integrator.sol.retcode == SciMLBase.ReturnCode.Success
+
+    @testset "the two entry points agree" begin
+        # `f + u` reads the displacement symbol off the model; `dh + u + fields` is told it. They must
+        # describe the same configuration, otherwise one of them is differentiating the wrong field.
+        @test displacement_symbols(form) == (:d,)
+        from_f  = deformation_gradient_report(form, integrator.u)
+        from_dh = deformation_gradient_report(form.dh, integrator.u, :d)
+        @test from_f.minJ == from_dh.minJ
+        @test from_f.max_strain == from_dh.max_strain
+        @test from_f.n_subdomains == 1
+
+        # A collection is accepted, so a multi-domain model whose subdomains name the displacement
+        # differently can be covered in one call.
+        @test deformation_gradient_report(form.dh, integrator.u, (:displacement, :d, :u)).minJ ==
+              from_f.minJ
+
+        # This solve stretches the block, so it had better register as deformation rather than motion.
+        @test !is_inverted(from_f)
+        @test from_f.minJ > 0
+        @test from_f.max_strain > 1e-3
+    end
+
+    @testset "non-mechanics subdomains are skipped" begin
+        # A handler carrying a scalar field next to the displacement: the scalar has no `det F`, and
+        # asking for the displacement must simply not look at it.
+        dh = DofHandler(mesh)
+        sdh = SubDofHandler(dh, Set(1:getncells(mesh)))
+        add!(sdh, :d, Lagrange{RefHexahedron, 1}()^3)
+        add!(sdh, :phi, Lagrange{RefHexahedron, 1}())
+        close!(dh)
+        @test deformation_gradient_report(dh, zeros(ndofs(dh)), :d).n_subdomains == 1
+        # Asking for the scalar itself is a user error, and the message says why rather than throwing
+        # from inside the tensor algebra.
+        @test_throws "det F" deformation_gradient_report(dh, zeros(ndofs(dh)), :phi)
+
+        # A subdomain with no displacement field at all -- the electrophysiology-next-to-mechanics
+        # case -- contributes nothing and does not prevent the report.
+        grid = generate_grid(Hexahedron, (2, 1, 1))
+        dh2 = DofHandler(grid)
+        mech = SubDofHandler(dh2, Set([1]))
+        add!(mech, :d, Lagrange{RefHexahedron, 1}()^3)
+        ep = SubDofHandler(dh2, Set([2]))
+        add!(ep, :phi, Lagrange{RefHexahedron, 1}())
+        close!(dh2)
+        report = deformation_gradient_report(dh2, zeros(ndofs(dh2)), :d)
+        @test report.n_subdomains == 1
+        @test report.n_quadrature_points == 8   # one cell, not two
+
+        # Nothing to report on is an error rather than a vacuous "all fine".
+        @test_throws "Fields present" deformation_gradient_report(dh2, zeros(ndofs(dh2)), :nope)
+    end
 end

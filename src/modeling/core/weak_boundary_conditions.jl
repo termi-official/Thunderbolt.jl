@@ -48,7 +48,7 @@ RobinBC(a, b) = RobinBC(a, b, :auto)
 \bm{P}(\bm{u}) \cdot \bm{n}_0 = - k_s (\bm{u} \cdot \bm{n}_0) \bm{n}_0 \quad \textbf{x} \in \partial \Omega_0,
 ```
 
-See [`NormalViscousSpringBC`](@ref) for the dashpot which resists the *rate* instead of the
+See [`ViscousNormalSpringBC`](@ref) for the dashpot which resists the *rate* instead of the
 displacement.
 """
 struct NormalSpringBC <: AbstractWeakBoundaryCondition
@@ -113,7 +113,7 @@ positive semi-definite damping tensor [`damping_tensor`](@ref); it needs no asse
 
 Unlike the springs these need a velocity, which only a time scheme can supply. They are therefore
 assembled through the `gto1` protocol and are rejected by `HomotopyPathSolver`, which is load stepping
-and has no rate to offer. See [`ViscousRobinBC`](@ref) and [`NormalViscousSpringBC`](@ref).
+and has no rate to offer. See [`ViscousRobinBC`](@ref) and [`ViscousNormalSpringBC`](@ref).
 """
 abstract type AbstractViscousWeakBoundaryCondition <: AbstractWeakBoundaryCondition end
 
@@ -139,7 +139,7 @@ end
 ViscousRobinBC(a, b) = ViscousRobinBC(a, b, :auto)
 
 @doc raw"""
-    NormalViscousSpringBC(cₛ, boundary_name::String [, field_name::Symbol])
+    ViscousNormalSpringBC(cₛ, boundary_name::String [, field_name::Symbol])
 
 Dashpot resisting the normal velocity only, the rate analogue of [`NormalSpringBC`](@ref).
 
@@ -151,12 +151,12 @@ Tangential sliding is left free, which is what makes this the usual companion of
 [`NormalSpringBC`](@ref) when modelling the pericardium: the sac resists the chamber pushing against
 it, not the chamber sliding within it.
 """
-struct NormalViscousSpringBC <: AbstractViscousWeakBoundaryCondition
+struct ViscousNormalSpringBC <: AbstractViscousWeakBoundaryCondition
     cₛ::Float64
     boundary_name::String
     field_name::Symbol
 end
-NormalViscousSpringBC(a, b) = NormalViscousSpringBC(a, b, :auto)
+ViscousNormalSpringBC(a, b) = ViscousNormalSpringBC(a, b, :auto)
 
 @doc raw"""
     damping_tensor(bc::AbstractViscousWeakBoundaryCondition, n₀::Vec)
@@ -172,7 +172,7 @@ function damping_tensor end
 
 @inline damping_tensor(bc::ViscousRobinBC, ::Vec{dim, T}) where {dim, T} =
     bc.η * one(SymmetricTensor{2, dim, T})
-@inline damping_tensor(bc::NormalViscousSpringBC, n₀::Vec) = bc.cₛ * symmetric(n₀ ⊗ n₀)
+@inline damping_tensor(bc::ViscousNormalSpringBC, n₀::Vec) = bc.cₛ * symmetric(n₀ ⊗ n₀)
 
 """
 Standard cache for surface integrals.

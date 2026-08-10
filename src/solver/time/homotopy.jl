@@ -331,7 +331,7 @@ function adapt_dt!(
 
     Θ₀ = length(Θks) > 0 ? max(first(Θks), Θmin) : Θmin
     q = clamp(γ * (g(Θbar)/(2Θ₀))^(1/p), qmin, qmax)
-    integrator.dt = q * integrator.dt
+    integrator.dt = min(q * integrator.dt, integrator.opts.dtmax)
 end
 
 Base.@kwdef struct Deuflhard2004_B_DiscreteContinuationControllerVariant
@@ -392,7 +392,7 @@ function adapt_dt!(
 
     Θ₀ = length(Θks) > 0 ? max(first(Θks), Θmin) : Θmin
     q = clamp(γ * (g(Θbar)/(g(Θ₀)))^(1/p), qmin, qmax)
-    integrator.dt = q * integrator.dt
+    integrator.dt = min(q * integrator.dt, integrator.opts.dtmax)
 end
 
 @doc raw"""
@@ -436,7 +436,7 @@ function reject_step!(
     (; Θbar, γ, Θmin, qmin, qmax, p) = controller
     Θk = maximum(Θks)
     q = clamp(γ * (g(Θbar)/g(Θk))^(1/p), qmin, qmax)
-    integrator.dt = q * integrator.dt
+    integrator.dt = min(q * integrator.dt, integrator.opts.dtmax)
 end
 
 function adapt_dt!(
@@ -451,7 +451,7 @@ function adapt_dt!(
     (; Θbar, γ, Θmin, qmin, qmax, p) = controller
     Θ₀ = length(Θks) > 0 ? max(mean(Θks), Θmin) : Θmin
     q = clamp(γ * (g(Θbar)/(2Θ₀))^(1/p), qmin, qmax)
-    integrator.dt = q * integrator.dt
+    integrator.dt = min(q * integrator.dt, integrator.opts.dtmax)
 end
 
 

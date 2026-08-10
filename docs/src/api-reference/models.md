@@ -44,11 +44,25 @@ the element.
 
 ```@docs
 ViscousRobinBC
-NormalViscousSpringBC
+ViscousNormalSpringBC
 Thunderbolt.AbstractViscousWeakBoundaryCondition
 Thunderbolt.damping_tensor
 Thunderbolt.get_time
 Thunderbolt.facet_velocity
+```
+
+## Kinematic Diagnostics
+
+A converged solve is not necessarily a valid deformation: a folded element and a body drifting along a
+free rigid mode both satisfy the residual. These report on the kinematics so that neither passes
+unnoticed.
+
+```@docs
+deformation_gradient_report
+Thunderbolt.DeformationGradientReport
+is_inverted
+displacement_symbols
+DeformationMonitor
 ```
 
 ## Solid Mechanics
