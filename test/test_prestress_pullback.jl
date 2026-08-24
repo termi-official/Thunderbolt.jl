@@ -1,7 +1,13 @@
 using Test
 using Thunderbolt
-using Thunderbolt: material_routine, reduced_prestressed_material_routine, setup_coefficient_cache,
-    setup_internal_cache, QuadraturePoint, OrthotropicMicrostructure, ConstantCoefficient
+using Thunderbolt:
+    material_routine,
+    reduced_prestressed_material_routine,
+    setup_coefficient_cache,
+    setup_internal_cache,
+    QuadraturePoint,
+    OrthotropicMicrostructure,
+    ConstantCoefficient
 using Thunderbolt.Tensors
 import Ferrite
 
@@ -21,15 +27,15 @@ import Ferrite
     qr  = Ferrite.QuadratureRule{Ferrite.RefHexahedron}(2)
     cc  = Ferrite.CellCache(grid)
     Ferrite.reinit!(cc, 1)
-    qp  = QuadraturePoint(1, first(Ferrite.getpoints(qr)))
+    qp = QuadraturePoint(1, first(Ferrite.getpoints(qr)))
 
-    ms  = OrthotropicMicrostructure(Vec((1.0, 0.0, 0.0)), Vec((0.0, 1.0, 0.0)), Vec((0.0, 0.0, 1.0)))
+    ms = OrthotropicMicrostructure(Vec((1.0, 0.0, 0.0)), Vec((0.0, 1.0, 0.0)), Vec((0.0, 0.0, 1.0)))
     inner = PK1Model(HolzapfelOgden2009Model(), ConstantCoefficient(ms))
-    F = one(Tensor{2,3}) + Tensor{2,3}((0.05, 0.02, 0.0, -0.01, -0.03, 0.02, 0.01, 0.0, 0.04))
+    F = one(Tensor{2, 3}) + Tensor{2, 3}((0.05, 0.02, 0.0, -0.01, -0.03, 0.02, 0.01, 0.0, 0.04))
 
     # Non-isochoric F₀⁻¹ (det ≈ 0.969, the same field the integration tests use) and an isochoric
     # control, normalized so det = 1 exactly up to floating point.
-    F₀inv_aniso = Tensor{2,3}((1.1, 0.1, 0.0, 0.2, 0.9, 0.1, -0.1, 0.0, 1.0))
+    F₀inv_aniso = Tensor{2, 3}((1.1, 0.1, 0.0, 0.2, 0.9, 0.1, -0.1, 0.0, 1.0))
     F₀inv_iso   = F₀inv_aniso / cbrt(det(F₀inv_aniso))
 
     for F₀inv in (F₀inv_aniso, F₀inv_iso)
@@ -45,7 +51,8 @@ import Ferrite
         @test P ≈ P_ad
         @test A ≈ A_ad
 
-        P_red = reduced_prestressed_material_routine(model, F, coeff_cache, state_cache, cc, qp, 0.0)
+        P_red =
+            reduced_prestressed_material_routine(model, F, coeff_cache, state_cache, cc, qp, 0.0)
         @test P_red ≈ P_ad
     end
 end
