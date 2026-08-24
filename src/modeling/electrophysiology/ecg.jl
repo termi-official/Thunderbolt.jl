@@ -59,7 +59,7 @@ struct Plonsey1964ECGGaussCache{BufferType, OperatorType}
 end
 
 function Plonsey1964ECGGaussCache(op::BilinearFerriteOperator, φₘ::AbstractVector{T}) where {T}
-    @unpack dh, integrator = op
+    dh, integrator = op.engine.dh, op.integrator
     @assert length(dh.field_names) == 1 "Multiple fields detected. Problem setup might be broken..."
     grid = get_grid(dh)
     sdim = Ferrite.getspatialdim(grid)
@@ -80,7 +80,7 @@ For more information please read the docstring for [`Plonsey1964ECGGaussCache`](
 function evaluate_ecg(method::Plonsey1964ECGGaussCache, x::Vec, κₜ::Real)
     φₑ = 0.0
     @unpack κ∇φₘ, op = method
-    @unpack dh = op
+    dh = op.engine.dh
     @assert length(dh.field_names) == 1 "Multiple fields detected. Problem setup might be broken..."
     grid = get_grid(dh)
     sdim = getspatialdim(grid)
@@ -139,7 +139,7 @@ end
 
 function update_ecg!(cache::Plonsey1964ECGGaussCache, φₘ::AbstractVector{T}) where {T}
     @unpack op = cache
-    @unpack dh, integrator = op
+    dh, integrator = op.engine.dh, op.integrator
     grid = get_grid(dh)
     sdim = Ferrite.getspatialdim(grid)
     fill!(cache.κ∇φₘ.data, zero(eltype(cache.κ∇φₘ)))
@@ -266,7 +266,7 @@ function PoissonECGReconstructionCache(
         system_matrix_type,
         torso_dh,
     )
-    update_operator!(source_op, 0.0) # Trigger assembly
+    update_operator!(source_op, nothing, TimeIntegrationContext(0.0, 0.0, 0.0)) # Trigger assembly
 
     torso_op = setup_assembled_operator(
         strategy,
@@ -278,7 +278,7 @@ function PoissonECGReconstructionCache(
         system_matrix_type,
         torso_dh,
     )
-    update_operator!(torso_op, 0.0) # Trigger assembly
+    update_operator!(torso_op, nothing, TimeIntegrationContext(0.0, 0.0, 0.0)) # Trigger assembly
 
     # Setup electrodes
     ph = PointEvalHandler(torso_grid, electrode_positions; warn = false)
@@ -310,7 +310,7 @@ function PoissonECGReconstructionCache(
     linear_solver        = LinearSolve.KrylovJL_CG(),
     solution_vector_type = Vector{Float64},
 )
-    torso_dh = torso_op.dh
+    torso_dh = torso_op.engine.dh
     torso_ch = torso_fun.ch
     grid = get_grid(torso_dh)
     length(Ferrite.getfieldnames(torso_dh)) == 1 ||
@@ -354,7 +354,7 @@ end
 
 # Batch evaluate all electrodes
 function evaluate_ecg(cache::PoissonECGReconstructionCache)
-    dh = cache.torso_op.dh
+    dh = cache.torso_op.engine.dh
     return evaluate_at_points(cache.ph, dh, cache.ϕₑ, first(dh.field_names))
 end
 
@@ -510,7 +510,7 @@ function Geselowitz1989ECGLeadCache(
         system_matrix_type,
         sourcefun.dh,
     )
-    update_operator!(ϕₘ_op, 0.0) # Trigger assembly
+    update_operator!(ϕₘ_op, nothing, TimeIntegrationContext(0.0, 0.0, 0.0)) # Trigger assembly
 
     lead_op = setup_assembled_operator(
         strategy,
@@ -518,7 +518,7 @@ function Geselowitz1989ECGLeadCache(
         system_matrix_type,
         lead_field_fun.dh,
     )
-    update_operator!(lead_op, 0.0) # Trigger assembly
+    update_operator!(lead_op, nothing, TimeIntegrationContext(0.0, 0.0, 0.0)) # Trigger assembly
 
     lead_field_dh = lead_field_fun.dh
     heart_dh = heart_fun.dh
@@ -555,7 +555,7 @@ function Geselowitz1989ECGLeadCache(
     solution_vector_type = Vector{Float64},
     lead_field_sym       = :Z,
 )
-    lead_dh = lead_op.dh
+    lead_dh = lead_op.engine.dh
     length(Ferrite.getfieldnames(lead_dh)) == 1 ||
         @warn "Multiple fields detected. Setup might be broken..."
     nelectrodes = length(electrode_positions)

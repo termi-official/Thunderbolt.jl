@@ -100,7 +100,7 @@ setup_stage_operator(
     solver::HomotopyPathSolver,
     local_solver_cache,
     t₀,
-) = setup_operator(get_strategy(f), get_volume_integrator(f), f.dh)
+) = setup_operator(get_strategy(f), get_volume_integrator(f), f.dh; slots = THUNDERBOLT_STAGE_SLOTS)
 
 # A `NullFunction` matches both the null method (any solver) and the continuation method (any
 # function), and neither signature dominates. The answer is the null operator either way.
@@ -121,6 +121,10 @@ setup_stage_operator(
     "to the function. Pose the continuation on `f.structural` to solve for the static equilibrium.",
 )
 
+# Continuation is load stepping: there is no timestep and no rate to reconstruct, so the context
+# carries the pseudo-time alone and the scheme matrix is the plain `∂F/∂u`.
+_homotopy_stage_evaluation(t) = StageEvaluation(; ctx = TimeIntegrationContext(t, zero(t), zero(t)))
+
 function setup_solver_cache(
     f::AbstractSemidiscreteFunction,
     solver::HomotopyPathSolver,
@@ -135,7 +139,7 @@ function setup_solver_cache(
     # The stage carries the operator, so it is built before the solver cache that works on it. A
     # continuation offers neither a previous solution nor a timestep, so its parameters are the bare
     # pseudo-time.
-    stage_function = FullStateStage(f, setup_stage_operator(f, solver, nothing, t₀), t₀)
+    stage_function = FullStateStage(f, setup_stage_operator(f, solver, nothing, t₀), _homotopy_stage_evaluation(t₀))
     inner_solver_cache = setup_solver_cache(stage_function, solver.inner_solver)
 
     vtype = Vector{Float64}
@@ -180,7 +184,7 @@ function setup_solver_cache(
 )
     check_internal_variables_are_rate_free(f)
     check_weak_boundary_conditions_are_rate_free(f)
-    stage_function = FullStateStage(f, setup_stage_operator(f, solver, nothing, t₀), t₀)
+    stage_function = FullStateStage(f, setup_stage_operator(f, solver, nothing, t₀), _homotopy_stage_evaluation(t₀))
     inner_solver_cache = setup_solver_cache(stage_function, solver.inner_solver)
 
     vtype = Vector{Float64}
@@ -231,7 +235,7 @@ function perform_step!(
 )
     update_constraints!(f, solver_cache, t + Δt)
     sf = solver_cache.stage_function
-    set_stage_parameters!(sf, t + Δt)
+    set_stage_parameters!(sf, _homotopy_stage_evaluation(t + Δt))
     if !nlsolve!(solver_cache.uₙ, sf, solver_cache.inner_solver_cache, t + Δt)
         return false
     end

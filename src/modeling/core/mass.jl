@@ -25,9 +25,25 @@ function duplicate_for_device(device, cache::BilinearMassElementCache)
     )
 end
 
-function assemble_element!(Mₑ::AbstractMatrix, cell, element_cache::BilinearMassElementCache, time)
-    @unpack ρcache, cellvalues = element_cache
+Ferrite.getnquadpoints(element_cache::BilinearMassElementCache) =
+    getnquadpoints(element_cache.cellvalues)
+FerriteOperators.reinit_values!(element_cache::BilinearMassElementCache, cell) =
     reinit!(element_cache.cellvalues, cell)
+
+FerriteOperators.provides_analytic(
+    ::Type{<:BilinearMassElementCache},
+    ::FerriteOperators.JacobianKind{:u},
+) = true
+
+function FerriteOperators.assemble_cell!(
+    req::FerriteOperators.JacobianRequest{:u},
+    element_cache::BilinearMassElementCache,
+    args::FerriteOperators.CellArgs,
+)
+    @unpack ρcache, cellvalues = element_cache
+    Mₑ = req.K
+    cell = args.cell
+    time = FerriteOperators.evaluation_time(args.ctx)
     n_basefuncs = getnbasefunctions(cellvalues)
     for qp in QuadratureIterator(cellvalues)
         ρ = evaluate_coefficient(ρcache, cell, qp, time)
@@ -38,6 +54,30 @@ function assemble_element!(Mₑ::AbstractMatrix, cell, element_cache::BilinearMa
                 Nⱼ = shape_value(cellvalues, qp, j)
                 Mₑ[i, j] += ρ * (Nᵢ ⋅ Nⱼ) * dΩ
             end
+        end
+    end
+end
+
+# The bilinear form induces a linear operator, so its residual is the element mass matrix acting on
+# the element vector -- mandatory, so the element composes into nonlinear operators and AD-based
+# sensitivities.
+function FerriteOperators.assemble_cell!(
+    req::FerriteOperators.ResidualRequest,
+    element_cache::BilinearMassElementCache,
+    args::FerriteOperators.CellArgs,
+)
+    @unpack ρcache, cellvalues = element_cache
+    cell = args.cell
+    uₑ = args.states.u
+    time = FerriteOperators.evaluation_time(args.ctx)
+    n_basefuncs = getnbasefunctions(cellvalues)
+    for qp in QuadratureIterator(cellvalues)
+        ρ = evaluate_coefficient(ρcache, cell, qp, time)
+        dΩ = getdetJdV(cellvalues, qp)
+        u = function_value(cellvalues, qp, uₑ)
+        for i = 1:n_basefuncs
+            Nᵢ = shape_value(cellvalues, qp, i)
+            req.r[i] += ρ * (Nᵢ ⋅ u) * dΩ
         end
     end
 end

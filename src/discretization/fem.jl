@@ -554,7 +554,7 @@ during operator setup; that is setup-only cost.
 """
 function _setup_internal_variable_handler(integrator, dh)
     element_caches = [setup_element_cache(integrator, sdh) for sdh in dh.subdofhandlers]
-    return FerriteOperators.setup_internal_variable_handler(integrator, element_caches, dh)
+    return FerriteOperators.setup_internal_variable_handler(integrator, element_caches, nothing, dh)
 end
 
 """
@@ -576,7 +576,7 @@ function _rebase_internal_variable_handler(
     offsets = lvh.internal_variable_offsets
     offsets === nothing && return lvh # nothing is condensed, so there is nothing to rebase
     @assert lvh.base_offset == ndofs(from_dh) "The handler was not built for `from_dh`."
-    return InternalVariableHandler(offsets, ndofs(to_dh), ndofs(lvh))
+    return InternalVariableHandler(offsets, nothing, ndofs(to_dh), ndofs(lvh))
 end
 
 # Solid mechanics semidiscretize interface

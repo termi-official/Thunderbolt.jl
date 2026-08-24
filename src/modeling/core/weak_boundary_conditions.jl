@@ -111,9 +111,9 @@ displacement itself, i.e. the dashpots of the Robin family.
 The whole family is linear in the facet velocity ``\bm{v}``, so a subtype is fully described by its
 positive semi-definite damping tensor [`damping_tensor`](@ref); it needs no assembly code of its own.
 
-Unlike the springs these need a velocity, which only a time scheme can supply. They are therefore
-assembled through the `gto1` protocol and are rejected by `HomotopyPathSolver`, which is load stepping
-and has no rate to offer. See [`ViscousRobinBC`](@ref) and [`ViscousNormalSpringBC`](@ref).
+Unlike the springs these read the reconstructed velocity slot `:v`, which only a time scheme can
+supply. They are therefore rejected by `HomotopyPathSolver`, which is load stepping and has no rate to
+offer. See [`ViscousRobinBC`](@ref) and [`ViscousNormalSpringBC`](@ref).
 """
 abstract type AbstractViscousWeakBoundaryCondition <: AbstractWeakBoundaryCondition end
 
@@ -185,9 +185,29 @@ end
 function duplicate_for_device(device, cache::SimpleFacetCache)
     return SimpleFacetCache(cache.mp, duplicate_for_device(device, cache.fv), cache.dof_range)
 end
-@inline is_facet_in_cache(facet::FacetIndex, cell::CellCache, facet_cache::SimpleFacetCache) =
+@inline is_facet_in_cache(facet::FacetIndex, cell, facet_cache::SimpleFacetCache) =
     facet ∈ getfacetset(cell.grid, getboundaryname(facet_cache))
 @inline getboundaryname(facet_cache::SimpleFacetCache) = facet_cache.mp.boundary_name
+
+FerriteOperators.provides_analytic(
+    ::Type{<:SimpleFacetCache},
+    ::FerriteOperators.JacobianKind{:u},
+) = true
+FerriteOperators.provides_analytic(
+    ::Type{<:SimpleFacetCache},
+    ::FerriteOperators.JacobianResidualKind,
+) = true
+# Every boundary condition served by this cache is a function of `(u, t)` alone and never reads the
+# rate slot `:v` -- that is where the dashpots of `ViscousFacetCache` act -- so the `:u` weight is the
+# only one of a weighted Jacobian which acts here.
+FerriteOperators.provides_analytic(
+    ::Type{<:SimpleFacetCache},
+    ::FerriteOperators.WeightedJacobianKind,
+) = true
+
+# A weighted sweep which does not name `:u` weights no displacement sensitivity at all, so a
+# displacement-only boundary condition contributes nothing to it.
+@inline _u_weight(weights::NamedTuple) = haskey(weights, :u) ? weights.u : false
 
 function setup_boundary_cache(
     facet_model::AbstractWeakBoundaryCondition,
@@ -201,19 +221,17 @@ function setup_boundary_cache(
     return SimpleFacetCache(facet_model, FacetValues(qr, ip, ip_geo), dof_range)
 end
 
-function assemble_facet!(
-    Kₑ::AbstractMatrix,
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    cell,
-    local_facet_index::Int,
+function FerriteOperators.assemble_facet!(
+    req::FerriteOperators.JacobianResidualRequest,
     cache::SimpleFacetCache{<:RobinBC},
-    p,
+    args,
+    lfi::Int,
 )
     @unpack mp, fv = cache
     @unpack α = mp
+    uₑ = args.states.u
 
-    reinit!(fv, cell, local_facet_index)
+    reinit!(fv, args.cell, lfi)
 
     ndofs_facet = getnbasefunctions(fv)
     for qp in QuadratureIterator(fv)
@@ -225,29 +243,37 @@ function assemble_facet!(
         # Add contribution to the residual from this test function
         for i = 1:ndofs_facet
             δuᵢ = shape_value(fv, qp, i)
-            residualₑ[cache.dof_range[i]] += δuᵢ ⋅ ∂Ψ∂u * dΓ
+            req.r[cache.dof_range[i]] += δuᵢ ⋅ ∂Ψ∂u * dΓ
 
             for j = 1:ndofs_facet
                 δuⱼ = shape_value(fv, qp, j)
                 # Add contribution to the tangent
-                Kₑ[cache.dof_range[i], cache.dof_range[j]] += (δuᵢ ⋅ ∂²Ψ∂u² ⋅ δuⱼ) * dΓ
+                req.K[cache.dof_range[i], cache.dof_range[j]] += (δuᵢ ⋅ ∂²Ψ∂u² ⋅ δuⱼ) * dΓ
             end
         end
     end
 end
 
-function assemble_facet!(
-    Kₑ::AbstractMatrix,
-    uₑ::AbstractVector,
-    cell,
-    local_facet_index,
+FerriteOperators.assemble_facet!(
+    req::FerriteOperators.JacobianRequest{:u},
     cache::SimpleFacetCache{<:RobinBC},
-    p,
-)
+    args,
+    lfi::Int,
+) = _assemble_robin_jacobian!(req, cache, args, lfi, true)
+
+FerriteOperators.assemble_facet!(
+    req::FerriteOperators.WeightedJacobianRequest,
+    cache::SimpleFacetCache{<:RobinBC},
+    args,
+    lfi::Int,
+) = _assemble_robin_jacobian!(req, cache, args, lfi, _u_weight(req.weights))
+
+function _assemble_robin_jacobian!(req, cache::SimpleFacetCache{<:RobinBC}, args, lfi::Int, w)
     @unpack mp, fv = cache
     @unpack α = mp
+    uₑ = args.states.u
 
-    reinit!(fv, cell, local_facet_index)
+    reinit!(fv, args.cell, lfi)
 
     ndofs_facet = getnbasefunctions(fv)
     for qp in QuadratureIterator(fv)
@@ -256,31 +282,29 @@ function assemble_facet!(
         u_q = function_value(fv, qp, @view uₑ[cache.dof_range])
         ∂²Ψ∂u², ∂Ψ∂u = Tensors.hessian(u -> α*u⋅u, u_q, :all)
 
-        # Add contribution to the residual from this test function
         for i = 1:ndofs_facet
             δuᵢ = shape_value(fv, qp, i)
 
             for j = 1:ndofs_facet
                 δuⱼ = shape_value(fv, qp, j)
                 # Add contribution to the tangent
-                Kₑ[cache.dof_range[i], cache.dof_range[j]] += (δuᵢ ⋅ ∂²Ψ∂u² ⋅ δuⱼ) * dΓ
+                req.K[cache.dof_range[i], cache.dof_range[j]] += w * (δuᵢ ⋅ ∂²Ψ∂u² ⋅ δuⱼ) * dΓ
             end
         end
     end
 end
 
-function assemble_facet!(
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    cell,
-    local_facet_index::Int,
+function FerriteOperators.assemble_facet!(
+    req::FerriteOperators.ResidualRequest,
     cache::SimpleFacetCache{<:RobinBC},
-    p,
+    args,
+    lfi::Int,
 )
     @unpack mp, fv = cache
     @unpack α = mp
+    uₑ = args.states.u
 
-    reinit!(fv, cell, local_facet_index)
+    reinit!(fv, args.cell, lfi)
 
     ndofs_facet = getnbasefunctions(fv)
     for qp in QuadratureIterator(fv)
@@ -292,26 +316,24 @@ function assemble_facet!(
         # Add contribution to the residual from this test function
         for i = 1:ndofs_facet
             δuᵢ = shape_value(fv, qp, i)
-            residualₑ[cache.dof_range[i]] += δuᵢ ⋅ ∂Ψ∂u * dΓ
+            req.r[cache.dof_range[i]] += δuᵢ ⋅ ∂Ψ∂u * dΓ
         end
     end
 end
 
 
 
-function assemble_facet!(
-    Kₑ::AbstractMatrix,
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    cell,
-    local_facet_index,
+function FerriteOperators.assemble_facet!(
+    req::FerriteOperators.JacobianResidualRequest,
     cache::SimpleFacetCache{<:NormalSpringBC},
-    p,
+    args,
+    lfi::Int,
 )
     @unpack mp, fv = cache
     @unpack kₛ = mp
+    uₑ = args.states.u
 
-    reinit!(fv, cell, local_facet_index)
+    reinit!(fv, args.cell, lfi)
 
     ndofs_facet = getnbasefunctions(fv)
     for qp in QuadratureIterator(fv)
@@ -324,29 +346,43 @@ function assemble_facet!(
         # Add contribution to the residual from this test function
         for i = 1:ndofs_facet
             δuᵢ = shape_value(fv, qp, i)
-            residualₑ[cache.dof_range[i]] += δuᵢ ⋅ ∂Ψ∂u * dΓ
+            req.r[cache.dof_range[i]] += δuᵢ ⋅ ∂Ψ∂u * dΓ
 
             for j = 1:ndofs_facet
                 δuⱼ = shape_value(fv, qp, j)
                 # Add contribution to the tangent
-                Kₑ[cache.dof_range[i], cache.dof_range[j]] += (δuᵢ ⋅ ∂²Ψ∂u² ⋅ δuⱼ) * dΓ
+                req.K[cache.dof_range[i], cache.dof_range[j]] += (δuᵢ ⋅ ∂²Ψ∂u² ⋅ δuⱼ) * dΓ
             end
         end
     end
 end
 
-function assemble_facet!(
-    Kₑ::AbstractMatrix,
-    uₑ::AbstractVector,
-    cell,
-    local_facet_index,
+FerriteOperators.assemble_facet!(
+    req::FerriteOperators.JacobianRequest{:u},
     cache::SimpleFacetCache{<:NormalSpringBC},
-    p,
+    args,
+    lfi::Int,
+) = _assemble_normal_spring_jacobian!(req, cache, args, lfi, true)
+
+FerriteOperators.assemble_facet!(
+    req::FerriteOperators.WeightedJacobianRequest,
+    cache::SimpleFacetCache{<:NormalSpringBC},
+    args,
+    lfi::Int,
+) = _assemble_normal_spring_jacobian!(req, cache, args, lfi, _u_weight(req.weights))
+
+function _assemble_normal_spring_jacobian!(
+    req,
+    cache::SimpleFacetCache{<:NormalSpringBC},
+    args,
+    lfi::Int,
+    w,
 )
     @unpack mp, fv = cache
     @unpack kₛ = mp
+    uₑ = args.states.u
 
-    reinit!(fv, cell, local_facet_index)
+    reinit!(fv, args.cell, lfi)
 
     ndofs_facet = getnbasefunctions(fv)
     for qp in QuadratureIterator(fv)
@@ -356,31 +392,29 @@ function assemble_facet!(
         u_q = function_value(fv, qp, @view uₑ[cache.dof_range])
         ∂²Ψ∂u², ∂Ψ∂u = Tensors.hessian(u -> 0.5*kₛ*(u⋅N)^2, u_q, :all)
 
-        # Add contribution to the residual from this test function
         for i = 1:ndofs_facet
             δuᵢ = shape_value(fv, qp, i)
 
             for j = 1:ndofs_facet
                 δuⱼ = shape_value(fv, qp, j)
                 # Add contribution to the tangent
-                Kₑ[cache.dof_range[i], cache.dof_range[j]] += (δuᵢ ⋅ ∂²Ψ∂u² ⋅ δuⱼ) * dΓ
+                req.K[cache.dof_range[i], cache.dof_range[j]] += w * (δuᵢ ⋅ ∂²Ψ∂u² ⋅ δuⱼ) * dΓ
             end
         end
     end
 end
 
-function assemble_facet!(
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    cell,
-    local_facet_index,
+function FerriteOperators.assemble_facet!(
+    req::FerriteOperators.ResidualRequest,
     cache::SimpleFacetCache{<:NormalSpringBC},
-    p,
+    args,
+    lfi::Int,
 )
     @unpack mp, fv = cache
     @unpack kₛ = mp
+    uₑ = args.states.u
 
-    reinit!(fv, cell, local_facet_index)
+    reinit!(fv, args.cell, lfi)
 
     ndofs_facet = getnbasefunctions(fv)
     for qp in QuadratureIterator(fv)
@@ -393,26 +427,24 @@ function assemble_facet!(
         # Add contribution to the residual from this test function
         for i = 1:ndofs_facet
             δuᵢ = shape_value(fv, qp, i)
-            residualₑ[cache.dof_range[i]] += δuᵢ ⋅ ∂Ψ∂u * dΓ
+            req.r[cache.dof_range[i]] += δuᵢ ⋅ ∂Ψ∂u * dΓ
         end
     end
 end
 
 
 
-function assemble_facet!(
-    Kₑ::AbstractMatrix,
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    cell,
-    local_facet_index,
+function FerriteOperators.assemble_facet!(
+    req::FerriteOperators.JacobianResidualRequest,
     cache::SimpleFacetCache{<:BendingSpringBC},
-    p,
+    args,
+    lfi::Int,
 )
     @unpack mp, fv = cache
     @unpack kᵇ = mp
+    uₑ = args.states.u
 
-    reinit!(fv, cell, local_facet_index)
+    reinit!(fv, args.cell, lfi)
 
     ndofs_facet = getnbasefunctions(fv)
     for qp in QuadratureIterator(fv)
@@ -431,30 +463,44 @@ function assemble_facet!(
         # Add contribution to the residual from this test function
         for i = 1:ndofs_facet
             ∇δui = shape_gradient(fv, qp, i)
-            residualₑ[cache.dof_range[i]] += ∇δui ⊡ ∂Ψ∂F * dΓ
+            req.r[cache.dof_range[i]] += ∇δui ⊡ ∂Ψ∂F * dΓ
 
             ∇δui∂P∂F = ∇δui ⊡ ∂²Ψ∂F² # Hoisted computation
             for j = 1:ndofs_facet
                 ∇δuj = shape_gradient(fv, qp, j)
                 # Add contribution to the tangent
-                Kₑ[cache.dof_range[i], cache.dof_range[j]] += (∇δui∂P∂F ⊡ ∇δuj) * dΓ
+                req.K[cache.dof_range[i], cache.dof_range[j]] += (∇δui∂P∂F ⊡ ∇δuj) * dΓ
             end
         end
     end
 end
 
-function assemble_facet!(
-    Kₑ::AbstractMatrix,
-    uₑ::AbstractVector,
-    cell,
-    local_facet_index,
+FerriteOperators.assemble_facet!(
+    req::FerriteOperators.JacobianRequest{:u},
     cache::SimpleFacetCache{<:BendingSpringBC},
-    p,
+    args,
+    lfi::Int,
+) = _assemble_bending_spring_jacobian!(req, cache, args, lfi, true)
+
+FerriteOperators.assemble_facet!(
+    req::FerriteOperators.WeightedJacobianRequest,
+    cache::SimpleFacetCache{<:BendingSpringBC},
+    args,
+    lfi::Int,
+) = _assemble_bending_spring_jacobian!(req, cache, args, lfi, _u_weight(req.weights))
+
+function _assemble_bending_spring_jacobian!(
+    req,
+    cache::SimpleFacetCache{<:BendingSpringBC},
+    args,
+    lfi::Int,
+    w,
 )
     @unpack mp, fv = cache
     @unpack kᵇ = mp
+    uₑ = args.states.u
 
-    reinit!(fv, cell, local_facet_index)
+    reinit!(fv, args.cell, lfi)
 
     ndofs_facet = getnbasefunctions(fv)
     for qp in QuadratureIterator(fv)
@@ -470,7 +516,6 @@ function assemble_facet!(
             :all,
         )
 
-        # Add contribution to the residual from this test function
         for i = 1:ndofs_facet
             ∇δui = shape_gradient(fv, qp, i)
 
@@ -478,24 +523,23 @@ function assemble_facet!(
             for j = 1:ndofs_facet
                 ∇δuj = shape_gradient(fv, qp, j)
                 # Add contribution to the tangent
-                Kₑ[cache.dof_range[i], cache.dof_range[j]] += (∇δui∂P∂F ⊡ ∇δuj) * dΓ
+                req.K[cache.dof_range[i], cache.dof_range[j]] += w * (∇δui∂P∂F ⊡ ∇δuj) * dΓ
             end
         end
     end
 end
 
-function assemble_facet!(
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    cell,
-    local_facet_index,
+function FerriteOperators.assemble_facet!(
+    req::FerriteOperators.ResidualRequest,
     cache::SimpleFacetCache{<:BendingSpringBC},
-    p,
+    args,
+    lfi::Int,
 )
     @unpack mp, fv = cache
     @unpack kᵇ = mp
+    uₑ = args.states.u
 
-    reinit!(fv, cell, local_facet_index)
+    reinit!(fv, args.cell, lfi)
 
     ndofs_facet = getnbasefunctions(fv)
     for qp in QuadratureIterator(fv)
@@ -511,7 +555,7 @@ function assemble_facet!(
         # Add contribution to the residual from this test function
         for i = 1:ndofs_facet
             ∇δui = shape_gradient(fv, qp, i)
-            residualₑ[cache.dof_range[i]] += ∇δui ⊡ ∂Ψ∂F * dΓ
+            req.r[cache.dof_range[i]] += ∇δui ⊡ ∂Ψ∂F * dΓ
         end
     end
 end
@@ -519,8 +563,7 @@ end
 
 
 function assemble_facet_pressure_qp!(
-    Kₑ::AbstractMatrix,
-    residualₑ::AbstractVector,
+    req::FerriteOperators.JacobianResidualRequest,
     uₑ::AbstractVector,
     p,
     qp,
@@ -543,7 +586,7 @@ function assemble_facet_pressure_qp!(
     # neumann_term = p * n₀
     for i = 1:ndofs_facet
         δuᵢ = shape_value(fv, qp, i)
-        residualₑ[dof_range[i]] += neumann_term ⋅ δuᵢ * dΓ
+        req.r[dof_range[i]] += neumann_term ⋅ δuᵢ * dΓ
 
         for j = 1:ndofs_facet
             ∇δuⱼ = shape_gradient(fv, qp, j)
@@ -554,18 +597,19 @@ function assemble_facet_pressure_qp!(
             δcofF = -transpose(invF ⋅ ∇δuⱼ ⋅ invF)
             δJ = J * tr(∇δuⱼ ⋅ invF)
             δJcofF = δJ * cofF + J * δcofF
-            Kₑ[dof_range[i], dof_range[j]] += p * (δJcofF ⋅ n₀) ⋅ δuᵢ * dΓ
+            req.K[dof_range[i], dof_range[j]] += p * (δJcofF ⋅ n₀) ⋅ δuᵢ * dΓ
         end
     end
 end
 
-function assemble_facet_pressure_qp!(
-    Kₑ::AbstractMatrix,
+function assemble_facet_pressure_jacobian_qp!(
+    req,
     uₑ::AbstractVector,
     p,
     qp,
     fv::FacetValues,
     dof_range,
+    w,
 )
     ndofs_facet = getnbasefunctions(fv)
 
@@ -578,7 +622,6 @@ function assemble_facet_pressure_qp!(
     invF = inv(F)
     cofF = transpose(invF)
     J = det(F)
-    # neumann_term = p * J * cofF ⋅ n₀
     for i = 1:ndofs_facet
         δuᵢ = shape_value(fv, qp, i)
 
@@ -591,13 +634,13 @@ function assemble_facet_pressure_qp!(
             δcofF = -transpose(invF ⋅ ∇δuⱼ ⋅ invF)
             δJ = J * tr(∇δuⱼ ⋅ invF)
             δJcofF = δJ * cofF + J * δcofF
-            Kₑ[dof_range[i], dof_range[j]] += p * (δJcofF ⋅ n₀) ⋅ δuᵢ * dΓ
+            req.K[dof_range[i], dof_range[j]] += w * (p * (δJcofF ⋅ n₀) ⋅ δuᵢ) * dΓ
         end
     end
 end
 
 function assemble_facet_pressure_qp!(
-    residualₑ::AbstractVector,
+    req::FerriteOperators.ResidualRequest,
     uₑ::AbstractVector,
     p,
     qp,
@@ -619,126 +662,158 @@ function assemble_facet_pressure_qp!(
     # neumann_term = p * n₀
     for i = 1:ndofs_facet
         δuᵢ = shape_value(fv, qp, i)
-        residualₑ[dof_range[i]] += neumann_term ⋅ δuᵢ * dΓ
+        req.r[dof_range[i]] += neumann_term ⋅ δuᵢ * dΓ
     end
 end
 
 
-function assemble_facet!(
-    Kₑ::AbstractMatrix,
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    cell,
-    local_facet_index,
+function FerriteOperators.assemble_facet!(
+    req::FerriteOperators.JacobianResidualRequest,
     cache::SimpleFacetCache{<:PressureFieldBC},
-    p,
+    args,
+    lfi::Int,
 )
     @unpack mp, fv = cache
     @unpack pc = mp
-    t = get_time(p)
+    t = FerriteOperators.evaluation_time(args.ctx)
 
-    reinit!(fv, cell, local_facet_index)
+    reinit!(fv, args.cell, lfi)
 
     for qp in QuadratureIterator(fv)
-        pressure = evaluate_coefficient(pc, cell, qp, t)
-        assemble_facet_pressure_qp!(Kₑ, residualₑ, uₑ, pressure, qp, fv, cache.dof_range)
+        pressure = evaluate_coefficient(pc, args.cell, qp, t)
+        assemble_facet_pressure_qp!(req, args.states.u, pressure, qp, fv, cache.dof_range)
     end
 end
 
-function assemble_facet!(
-    Kₑ::AbstractMatrix,
-    uₑ::AbstractVector,
-    cell,
-    local_facet_index,
+FerriteOperators.assemble_facet!(
+    req::FerriteOperators.JacobianRequest{:u},
     cache::SimpleFacetCache{<:PressureFieldBC},
-    p,
+    args,
+    lfi::Int,
+) = _assemble_pressure_field_jacobian!(req, cache, args, lfi, true)
+
+FerriteOperators.assemble_facet!(
+    req::FerriteOperators.WeightedJacobianRequest,
+    cache::SimpleFacetCache{<:PressureFieldBC},
+    args,
+    lfi::Int,
+) = _assemble_pressure_field_jacobian!(req, cache, args, lfi, _u_weight(req.weights))
+
+function _assemble_pressure_field_jacobian!(
+    req,
+    cache::SimpleFacetCache{<:PressureFieldBC},
+    args,
+    lfi::Int,
+    w,
 )
     @unpack mp, fv = cache
     @unpack pc = mp
-    t = get_time(p)
+    t = FerriteOperators.evaluation_time(args.ctx)
 
-    reinit!(fv, cell, local_facet_index)
+    reinit!(fv, args.cell, lfi)
 
     for qp in QuadratureIterator(fv)
-        pressure = evaluate_coefficient(pc, cell, qp, t)
-        assemble_facet_pressure_qp!(Kₑ, uₑ, pressure, qp, fv, cache.dof_range)
+        pressure = evaluate_coefficient(pc, args.cell, qp, t)
+        assemble_facet_pressure_jacobian_qp!(
+            req,
+            args.states.u,
+            pressure,
+            qp,
+            fv,
+            cache.dof_range,
+            w,
+        )
     end
 end
 
-function assemble_facet!(
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    cell,
-    local_facet_index,
+function FerriteOperators.assemble_facet!(
+    req::FerriteOperators.ResidualRequest,
     cache::SimpleFacetCache{<:PressureFieldBC},
-    p,
+    args,
+    lfi::Int,
 )
     @unpack mp, fv = cache
     @unpack pc = mp
-    t = get_time(p)
+    t = FerriteOperators.evaluation_time(args.ctx)
 
-    reinit!(fv, cell, local_facet_index)
+    reinit!(fv, args.cell, lfi)
 
     for qp in QuadratureIterator(fv)
-        pressure = evaluate_coefficient(pc, cell, qp, t)
-        assemble_facet_pressure_qp!(residualₑ, uₑ, pressure, qp, fv, cache.dof_range)
+        pressure = evaluate_coefficient(pc, args.cell, qp, t)
+        assemble_facet_pressure_qp!(req, args.states.u, pressure, qp, fv, cache.dof_range)
     end
 end
 
 
 
-function assemble_facet!(
-    Kₑ::AbstractMatrix,
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    cell,
-    local_facet_index,
+function FerriteOperators.assemble_facet!(
+    req::FerriteOperators.JacobianResidualRequest,
     cache::SimpleFacetCache{<:ConstantPressureBC},
-    p,
+    args,
+    lfi::Int,
 )
     @unpack mp, fv = cache
     pressure = mp.p
 
-    reinit!(fv, cell, local_facet_index)
+    reinit!(fv, args.cell, lfi)
 
     for qp in QuadratureIterator(fv)
-        assemble_facet_pressure_qp!(Kₑ, residualₑ, uₑ, pressure, qp, fv, cache.dof_range)
+        assemble_facet_pressure_qp!(req, args.states.u, pressure, qp, fv, cache.dof_range)
     end
 end
 
-function assemble_facet!(
-    Kₑ::AbstractMatrix,
-    uₑ::AbstractVector,
-    cell,
-    local_facet_index,
+FerriteOperators.assemble_facet!(
+    req::FerriteOperators.JacobianRequest{:u},
     cache::SimpleFacetCache{<:ConstantPressureBC},
-    p,
+    args,
+    lfi::Int,
+) = _assemble_constant_pressure_jacobian!(req, cache, args, lfi, true)
+
+FerriteOperators.assemble_facet!(
+    req::FerriteOperators.WeightedJacobianRequest,
+    cache::SimpleFacetCache{<:ConstantPressureBC},
+    args,
+    lfi::Int,
+) = _assemble_constant_pressure_jacobian!(req, cache, args, lfi, _u_weight(req.weights))
+
+function _assemble_constant_pressure_jacobian!(
+    req,
+    cache::SimpleFacetCache{<:ConstantPressureBC},
+    args,
+    lfi::Int,
+    w,
 )
     @unpack mp, fv = cache
     pressure = mp.p
 
-    reinit!(fv, cell, local_facet_index)
+    reinit!(fv, args.cell, lfi)
 
     for qp in QuadratureIterator(fv)
-        assemble_facet_pressure_qp!(Kₑ, uₑ, pressure, qp, fv, cache.dof_range)
+        assemble_facet_pressure_jacobian_qp!(
+            req,
+            args.states.u,
+            pressure,
+            qp,
+            fv,
+            cache.dof_range,
+            w,
+        )
     end
 end
 
-function assemble_facet!(
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    cell,
-    local_facet_index,
+function FerriteOperators.assemble_facet!(
+    req::FerriteOperators.ResidualRequest,
     cache::SimpleFacetCache{<:ConstantPressureBC},
-    p,
+    args,
+    lfi::Int,
 )
     @unpack mp, fv = cache
     pressure = mp.p
 
-    reinit!(fv, cell, local_facet_index)
+    reinit!(fv, args.cell, lfi)
 
     for qp in QuadratureIterator(fv)
-        assemble_facet_pressure_qp!(residualₑ, uₑ, pressure, qp, fv, cache.dof_range)
+        assemble_facet_pressure_qp!(req, args.states.u, pressure, qp, fv, cache.dof_range)
     end
 end
 
@@ -746,17 +821,12 @@ end
 # --- viscous (dashpot) boundary conditions ------------------------------------------------------
 #
 # Same data as `SimpleFacetCache`, different type -- and the type is the whole point, since it is what
-# selects the assembly protocol. A dashpot is a function of `(u, v)` rather than of `(u, t)`, and a
-# `SimpleFacetCache` is handed the bare time, from which no rate can be formed. The same split, for the
-# same reason, distinguishes `QuasiStaticElementCache` from the condensed caches in
-# `solid/elements.jl`.
+# selects the kernel set. A dashpot is a function of the velocity rather than of `(u, t)`: its residual
+# reads the reconstructed `:v` slot, which only a time scheme supplies. The same split, for the same
+# reason, distinguishes `QuasiStaticElementCache` from the condensed caches in `solid/elements.jl`.
 #
-# NOT a `FerriteOperators.AbstractGenericFirstOrderTimeSurfaceElementCache`, despite needing the rate.
-# That supertype hands a facet `(uₑprev, t, Δt)`, from which the *only* velocity that can be
-# reconstructed is the backward Euler difference quotient -- which is wrong under Newmark, where the
-# reconstruction slope is `γ/(βΔt)` rather than `1/Δt`. The scheme-aware conversion happens instead in
-# `facet_velocity` (`solid/elements.jl`), which hands this cache an `AffineVelocity`. Subtyping would
-# additionally make our `assemble_facet!` methods ambiguous against that supertype's own.
+# The whole family is linear in the velocity, so `damping_tensor` is both the traction and the tangent
+# sensitivity and no automatic differentiation is involved. The tangent is independent of `uₑ`.
 
 struct ViscousFacetCache{MP, FV} <: AbstractSurfaceElementCache
     mp::MP
@@ -766,9 +836,22 @@ end
 function duplicate_for_device(device, cache::ViscousFacetCache)
     return ViscousFacetCache(cache.mp, duplicate_for_device(device, cache.fv), cache.dof_range)
 end
-@inline is_facet_in_cache(facet::FacetIndex, cell::CellCache, facet_cache::ViscousFacetCache) =
+@inline is_facet_in_cache(facet::FacetIndex, cell, facet_cache::ViscousFacetCache) =
     facet ∈ getfacetset(cell.grid, getboundaryname(facet_cache))
 @inline getboundaryname(facet_cache::ViscousFacetCache) = facet_cache.mp.boundary_name
+
+FerriteOperators.provides_analytic(
+    ::Type{<:ViscousFacetCache},
+    ::FerriteOperators.JacobianKind{:u},
+) = true
+FerriteOperators.provides_analytic(
+    ::Type{<:ViscousFacetCache},
+    ::FerriteOperators.JacobianResidualKind,
+) = true
+FerriteOperators.provides_analytic(
+    ::Type{<:ViscousFacetCache},
+    ::FerriteOperators.WeightedJacobianKind,
+) = true
 
 function setup_boundary_cache(
     facet_model::AbstractViscousWeakBoundaryCondition,
@@ -782,65 +865,60 @@ function setup_boundary_cache(
     return ViscousFacetCache(facet_model, FacetValues(qr, ip, ip_geo), dof_range)
 end
 
-# A dashpot asks the parameter object for the velocity reconstruction, exactly as a spring asks it for
-# the time with `get_time`. `facet_velocity` returns an `AffineVelocity` (`solid/elements.jl`), which
-# is deliberately *not* a timestep: the two coincide only under backward Euler, and reading `Δt` here
-# instead is what would make the dashpot silently wrong under Newmark.
-#
-# The whole family is linear in the velocity, so the damping tensor is both the traction sensitivity
-# and the tangent, and no automatic differentiation is needed. The tangent is independent of `uₑ`.
-@inline function _viscous_facet_velocity(cache::ViscousFacetCache, qp, uₑ, velocity)
-    u_q  = function_value(cache.fv, qp, @view uₑ[cache.dof_range])
-    uᵥ_q = function_value(cache.fv, qp, @view velocity.uᵥ[cache.dof_range])
-    return velocity.∂v∂u * (u_q - uᵥ_q)
-end
-
-function assemble_facet!(
-    Kₑ::AbstractMatrix,
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    cell,
-    local_facet_index::Int,
+function FerriteOperators.assemble_facet!(
+    req::FerriteOperators.ResidualRequest,
     cache::ViscousFacetCache,
-    p,
+    args,
+    lfi::Int,
 )
     @unpack mp, fv = cache
-    velocity = facet_velocity(p)
+    vₑ = args.states.v
 
-    reinit!(fv, cell, local_facet_index)
+    reinit!(fv, args.cell, lfi)
 
     ndofs_facet = getnbasefunctions(fv)
     for qp in QuadratureIterator(fv)
         dΓ = getdetJdV(fv, qp)
         D  = damping_tensor(mp, getnormal(fv, qp))
 
-        traction = D ⋅ _viscous_facet_velocity(cache, qp, uₑ, velocity)
+        traction = D ⋅ function_value(fv, qp, @view vₑ[cache.dof_range])
 
         for i = 1:ndofs_facet
             δuᵢ = shape_value(fv, qp, i)
-            residualₑ[cache.dof_range[i]] += δuᵢ ⋅ traction * dΓ
-
-            δuᵢD = δuᵢ ⋅ D # Hoisted computation
-            for j = 1:ndofs_facet
-                δuⱼ = shape_value(fv, qp, j)
-                Kₑ[cache.dof_range[i], cache.dof_range[j]] += velocity.∂v∂u * (δuᵢD ⋅ δuⱼ) * dΓ
-            end
+            req.r[cache.dof_range[i]] += δuᵢ ⋅ traction * dΓ
         end
     end
 end
 
-function assemble_facet!(
-    Kₑ::AbstractMatrix,
-    uₑ::AbstractVector,
-    cell,
-    local_facet_index::Int,
+# `:v` is a reconstructed slot and is frozen under a `:u` Jacobian, so a dashpot's `∂F/∂u` is zero;
+# the damping block belongs to the weighted kernel below.
+FerriteOperators.assemble_facet!(
+    req::FerriteOperators.JacobianRequest{:u},
     cache::ViscousFacetCache,
-    p,
+    args,
+    lfi::Int,
+) = nothing
+
+FerriteOperators.assemble_facet!(
+    req::FerriteOperators.JacobianResidualRequest,
+    cache::ViscousFacetCache,
+    args,
+    lfi::Int,
+) = FerriteOperators.assemble_facet!(FerriteOperators.ResidualRequest(req.r), cache, args, lfi)
+
+function FerriteOperators.assemble_facet!(
+    req::FerriteOperators.WeightedJacobianRequest,
+    cache::ViscousFacetCache,
+    args,
+    lfi::Int,
 )
     @unpack mp, fv = cache
-    velocity = facet_velocity(p)
+    haskey(req.weights, :v) || throw(ArgumentError(
+        "A dashpot boundary condition contributes `∂v∂u ⋅ D` to the `:v` slot, but the weighted " *
+        "Jacobian was requested with weights $(keys(req.weights)) and no `:v` entry."))
+    wv = req.weights.v
 
-    reinit!(fv, cell, local_facet_index)
+    reinit!(fv, args.cell, lfi)
 
     ndofs_facet = getnbasefunctions(fv)
     for qp in QuadratureIterator(fv)
@@ -851,35 +929,8 @@ function assemble_facet!(
             δuᵢD = shape_value(fv, qp, i) ⋅ D # Hoisted computation
             for j = 1:ndofs_facet
                 δuⱼ = shape_value(fv, qp, j)
-                Kₑ[cache.dof_range[i], cache.dof_range[j]] += velocity.∂v∂u * (δuᵢD ⋅ δuⱼ) * dΓ
+                req.K[cache.dof_range[i], cache.dof_range[j]] += wv * (δuᵢD ⋅ δuⱼ) * dΓ
             end
-        end
-    end
-end
-
-function assemble_facet!(
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    cell,
-    local_facet_index::Int,
-    cache::ViscousFacetCache,
-    p,
-)
-    @unpack mp, fv = cache
-    velocity = facet_velocity(p)
-
-    reinit!(fv, cell, local_facet_index)
-
-    ndofs_facet = getnbasefunctions(fv)
-    for qp in QuadratureIterator(fv)
-        dΓ = getdetJdV(fv, qp)
-        D  = damping_tensor(mp, getnormal(fv, qp))
-
-        traction = D ⋅ _viscous_facet_velocity(cache, qp, uₑ, velocity)
-
-        for i = 1:ndofs_facet
-            δuᵢ = shape_value(fv, qp, i)
-            residualₑ[cache.dof_range[i]] += δuᵢ ⋅ traction * dΓ
         end
     end
 end
@@ -891,6 +942,14 @@ struct ConsistencyCheckWeakBoundaryCondition{BC} <: AbstractWeakBoundaryConditio
     Δ::Float64
 end
 
+"""
+Finite-difference referee for the inner cache's tangent: assembles the inner cache's Jacobian and
+compares it against the difference quotient of the inner cache's residual under perturbations of the
+`:u` slot.
+
+Every other slot is held at the value the sweep gathered, so wrapping a `ViscousFacetCache` compares
+its `:u` Jacobian against zero.
+"""
 struct ConsistencyCheckWeakBoundaryConditionCache{IC} <: AbstractSurfaceElementCache
     inner_cache::IC
     Kₑfd::Matrix{Float64}
@@ -911,12 +970,23 @@ function duplicate_for_device(device, cache::ConsistencyCheckWeakBoundaryConditi
 end
 @inline is_facet_in_cache(
     facet::FacetIndex,
-    cell::CellCache,
+    cell,
     facet_cache::ConsistencyCheckWeakBoundaryConditionCache,
 ) = is_facet_in_cache(facet, cell, facet_cache.inner_cache)
 @inline getboundaryname(facet_cache::ConsistencyCheckWeakBoundaryConditionCache) =
     getboundaryname(facet_cache.inner_cache)
 @inline getboundaryname(check::ConsistencyCheckWeakBoundaryCondition) = getboundaryname(check.bc)
+
+FerriteOperators.provides_analytic(
+    ::Type{<:ConsistencyCheckWeakBoundaryConditionCache},
+    ::FerriteOperators.JacobianResidualKind,
+) = true
+# A weighted request carries no residual to difference the tangent against, so the weighted tangent
+# is the inner cache's alone -- including which slots it reads, `:v` among them for a dashpot.
+FerriteOperators.provides_analytic(
+    ::Type{<:ConsistencyCheckWeakBoundaryConditionCache},
+    ::FerriteOperators.WeightedJacobianKind,
+) = true
 
 function setup_boundary_cache(
     ccc::ConsistencyCheckWeakBoundaryCondition,
@@ -934,40 +1004,63 @@ function setup_boundary_cache(
     )
 end
 
-function assemble_facet!(
-    Kₑ::AbstractMatrix,
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    cell,
-    local_facet_index::Int,
+# A residual sweep carries no tangent to check, so it is the inner cache's alone.
+FerriteOperators.assemble_facet!(
+    req::FerriteOperators.ResidualRequest,
     cache::ConsistencyCheckWeakBoundaryConditionCache,
-    p,
+    args,
+    lfi::Int,
+) = FerriteOperators.assemble_facet!(req, cache.inner_cache, args, lfi)
+
+FerriteOperators.assemble_facet!(
+    req::FerriteOperators.WeightedJacobianRequest,
+    cache::ConsistencyCheckWeakBoundaryConditionCache,
+    args,
+    lfi::Int,
+) = FerriteOperators.assemble_facet!(req, cache.inner_cache, args, lfi)
+
+function FerriteOperators.assemble_facet!(
+    req::FerriteOperators.JacobianResidualRequest,
+    cache::ConsistencyCheckWeakBoundaryConditionCache,
+    args,
+    lfi::Int,
 )
     (; Δ, inner_cache, Kₑfd, uₑfd, residualₑfd, residualₑref) = cache
+    uₑ = args.states.u
 
     # The incoming element matrix might be non-empty, so we need to start by storing the offset.
-    Kₑfd .= Kₑ
+    Kₑfd .= req.K
 
     # The actual assembly is happening here
-    assemble_facet!(Kₑ, residualₑ, uₑ, cell, local_facet_index, inner_cache, p)
+    FerriteOperators.assemble_facet!(req, inner_cache, args, lfi)
 
     # Now we get a fresh reference state to pull the differences
     fill!(residualₑref, 0.0)
-    assemble_facet!(residualₑref, uₑ, cell, local_facet_index, inner_cache, p)
-    # Here we actually compute teh finite difference
+    FerriteOperators.assemble_facet!(
+        FerriteOperators.ResidualRequest(residualₑref),
+        inner_cache,
+        args,
+        lfi,
+    )
+    # Here we actually compute the finite difference
     for i = 1:length(uₑfd)
         fill!(residualₑfd, 0.0)
         uₑfd    .= uₑ
         uₑfd[i] += Δ
-        assemble_facet!(residualₑfd, uₑfd, cell, local_facet_index, inner_cache, p)
+        FerriteOperators.assemble_facet!(
+            FerriteOperators.ResidualRequest(residualₑfd),
+            inner_cache,
+            FerriteOperators.with_states(args, merge(args.states, (u = uₑfd,))),
+            lfi,
+        )
         residualₑfd .-= residualₑref
         residualₑfd /= Δ
         Kₑfd[:, i] .+= residualₑfd
     end
 
     # Finally we check for consistency
-    if maximum(abs.(Kₑfd .- Kₑ)) > Δ
-        @warn "Inconsistent element $(cellid(cell)) facet $(local_facet_index)! Jacobian difference: $(maximum(abs.(Kₑfd .- Kₑ)))"
+    if maximum(abs.(Kₑfd .- req.K)) > Δ
+        @warn "Inconsistent element $(cellid(args.cell)) facet $(lfi)! Jacobian difference: $(maximum(abs.(Kₑfd .- req.K)))"
         @info uₑ
     end
 end

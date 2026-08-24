@@ -111,25 +111,29 @@ end
 
 @inline FerriteOperators.is_facet_in_cache(
     facet::FacetIndex,
-    cell::CellCache,
+    cell,
     facet_cache::Pressure3D0DVolumeCouplerCache,
 ) = facet ∈ facet_cache.facets
 
+FerriteOperators.provides_analytic(
+    ::Type{<:Pressure3D0DVolumeCouplerCache},
+    ::FerriteOperators.JacobianResidualKind,
+) = true
+
 function FerriteOperators.assemble_facet!(
-    Kₑ::AbstractMatrix,
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    geometry_cache::CellCache,
-    local_facet_index::Int,
+    req::FerriteOperators.JacobianResidualRequest,
     element_cache::Pressure3D0DVolumeCouplerCache,
-    t,
+    args::FerriteOperators.FacetArgs,
+    local_facet_index::Int,
 )
     (; fv, displacement_range, pressure_index, volume_method) = element_cache
+    geometry_cache = args.cell
 
     reinit!(fv, geometry_cache, local_facet_index)
 
-    # Displacement
-    pdof = pressure_index # celldofs(geometry_cache)[pressure_index]
+    # The chamber pressure is the tail of the augmented local system, `[celldofs(cell); pressure]`.
+    uₑ = args.states.u
+    pdof = pressure_index
     dₑ = @view uₑ[displacement_range]
     p = uₑ[pdof]
     coords = getcoordinates(geometry_cache)
@@ -149,7 +153,7 @@ function FerriteOperators.assemble_facet!(
 
         for i ∈ 1:getnbasefunctions(fv)
             δuᵢ = shape_value(fv, qp, i)
-            residualₑ[displacement_range[i]] += p * J * n ⋅ δuᵢ * ∂Ω₀
+            req.r[displacement_range[i]] += p * J * n ⋅ δuᵢ * ∂Ω₀
             for j ∈ 1:getnbasefunctions(fv)
                 ∇δuⱼ = shape_gradient(fv, qp, j)
                 # Add contribution to the tangent
@@ -159,16 +163,16 @@ function FerriteOperators.assemble_facet!(
                 δcofF = -transpose(invF ⋅ ∇δuⱼ ⋅ invF)
                 δJ = J * tr(∇δuⱼ ⋅ invF)
                 δJcofF = δJ * cofF + J * δcofF
-                Kₑ[displacement_range[i], displacement_range[j]] += p * (δJcofF ⋅ n₀) ⋅ δuᵢ * ∂Ω₀
+                req.K[displacement_range[i], displacement_range[j]] += p * (δJcofF ⋅ n₀) ⋅ δuᵢ * ∂Ω₀
             end
-            Kₑ[displacement_range[i], pdof] += J * n ⋅ δuᵢ * ∂Ω₀
+            req.K[displacement_range[i], pdof] += J * n ⋅ δuᵢ * ∂Ω₀
         end
 
         # Part 2: Chamber volume constraint part
         d = function_value(fv, qp, dₑ)
         x = spatial_coordinate(fv, qp, coords)
 
-        residualₑ[pdof] += volume_integral(x, d, F, n₀, volume_method) * ∂Ω₀
+        req.r[pdof] += volume_integral(x, d, F, n₀, volume_method) * ∂Ω₀
 
         # Via chain rule we obtain:
         #   δV(u,F(u)) = δu ⋅ dVdu + δF : dVdF
@@ -177,9 +181,9 @@ function FerriteOperators.assemble_facet!(
         for j ∈ 1:getnbasefunctions(fv)
             δuⱼ = shape_value(fv, qp, j)
             ∇δuⱼ = shape_gradient(fv, qp, j)
-            Kₑ[pdof, displacement_range[j]] += (∂V∂u ⋅ δuⱼ + ∂V∂F ⊡ ∇δuⱼ) * ∂Ω₀
+            req.K[pdof, displacement_range[j]] += (∂V∂u ⋅ δuⱼ + ∂V∂F ⊡ ∇δuⱼ) * ∂Ω₀
         end
 
-        # Kₑ[pdof, pdof] += 0
+        # req.K[pdof, pdof] += 0
     end
 end

@@ -37,7 +37,7 @@ import Thunderbolt:
     AbstractPointwiseFunction,
     solution_size,
     AbstractPointwiseSolverCache,
-    assemble_element!,
+    assemble_cell!,
     LinearIntegrator,
     LinearOperator,
     QuadratureRuleCollection,

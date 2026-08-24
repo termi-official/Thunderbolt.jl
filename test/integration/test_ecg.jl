@@ -47,7 +47,9 @@ import Thunderbolt: to_mesh, OrderedSet
             Thunderbolt.SparseMatrixCSC,
             heart_fun.dh,
         )
-        Thunderbolt.update_operator!(op, 0.0) # trigger assembly
+        # Trigger assembly. The conductivity is stationary, so the sweep carries no step to integrate
+        # over; `p` is the user parameter bag.
+        Thunderbolt.update_operator!(op, nothing, Thunderbolt.TimeIntegrationContext(0.0, 0.0, 0.0))
 
         torso_grid_ =
             generate_grid(geo, nel_torso, Vec((-size, -size, -size)), Vec((size, size, size)))

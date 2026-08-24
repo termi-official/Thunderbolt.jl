@@ -66,7 +66,7 @@ FastBroadcast = "1"
 Ferrite = "1.6"
 FerriteInterfaceElements = "1.0.0"
 FerriteMultigrid = "0.2"
-FerriteOperators = "0.3.7"
+FerriteOperators = "0.4"
 ForwardDiff = "1"
 GPUArrays = "11.4.0"
 JET = "0.9, 0.11"
@@ -89,6 +89,12 @@ SciMLLogging = "2.0.0"
 SymbolicIndexingInterface = "0.3.46"
 UnPack = "1"
 julia = "1.10"
+
+# FerriteMultigrid is a weak dependency and a test extra, so `Pkg.develop` cannot record its path
+# without promoting it to a hard dependency. No registered version carries FerriteOperators 0.4
+# compat yet, so the local checkout is named here instead.
+[sources]
+FerriteMultigrid = {path = "../FerriteMultigrid.jl"}
 
 [extras]
 AlgebraicMultigrid = "2169fc97-5a83-5252-b627-83903c6c433c"

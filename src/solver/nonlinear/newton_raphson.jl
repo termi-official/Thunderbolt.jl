@@ -217,7 +217,6 @@ function nlsolve!(
 ) where {T}
     f = getfunction(sf)
     op = getoperator(sf)
-    p = stage_parameters(sf)
     @unpack residual, linear_solver_cache, Θks = cache
     monitor = cache.parameters.monitor
     simplified = cache.parameters.simplified_newton
@@ -231,11 +230,11 @@ function nlsolve!(
         fill!(residual, 0.0)
         if simplified && cache.iter > 0
             # Simplified Newton: reuse Jacobian and preconditioner from iter 0.
-            @timeit_debug "update residual" residual!(op, residual, u, p)
+            @timeit_debug "update residual" evaluate_stage_residual!(sf, residual, u) || return false
             @timeit_debug "elimination" eliminate_constraints_from_residual!(cache, sf)
             # Leave isfresh / precsisfresh false → reuse existing factorization.
         else
-            @timeit_debug "update operator" update_linearization!(op, residual, u, p)
+            @timeit_debug "update operator" update_stage_linearization!(sf, residual, u) || return false
             @timeit_debug "elimination" eliminate_constraints_from_linearization!(cache, sf)
             linear_solver_cache.isfresh = true        # Notify linear solver that both the matrix and the preconditioner need to be updated.
             linear_solver_cache.precsisfresh = true

@@ -286,7 +286,6 @@ function nlsolve!(
     cache = mlcache.global_solver_cache
     f = getfunction(sf)
     op = getoperator(sf)
-    p = stage_parameters(sf)
 
     @unpack residual, linear_solver_cache, Θks = cache
     monitor = cache.parameters.monitor
@@ -305,9 +304,9 @@ function nlsolve!(
             # Simplified Newton: reuse the Jacobian and preconditioner from iteration 0. The local
             # problems are still solved -- the condensed state is what the residual is a function of
             # -- only their sensitivities are not, since no tangent is requested.
-            @timeit_debug "update residual" residual!(op, residual, u, p)
+            @timeit_debug "update residual" evaluate_stage_residual!(sf, residual, u) || return false
         else
-            @timeit_debug "update operator" update_linearization!(op, residual, u, p)
+            @timeit_debug "update operator" update_stage_linearization!(sf, residual, u) || return false
         end
         # Check if local solve failed. The global residual is reported alongside, because a local
         # failure at a small global residual points somewhere very different than one far from the

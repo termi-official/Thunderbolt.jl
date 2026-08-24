@@ -1,20 +1,18 @@
 # The quasi-static element caches, one per problem class. All three hold the same data; they differ
-# only in their supertype, which is what selects the assembly protocol:
+# only in the kinematics their local problem consumes, which is what selects the slots they read and
+# the request kinds they serve:
 #
-# | cache                                  | local problem per quadrature point | resulting system            |
-# | :------------------------------------- | :--------------------------------- | :-------------------------- |
-# | `QuasiStaticElementCache`              | none, or algebraic `L(F, Q) = 0`   | rate free (e.g. homotopy)   |
-# | `QuasiStaticCondensedODEElementCache`  | `dₜQ = L(F, Q)`                    | ODE in mass matrix form     |
-# | `QuasiStaticCondensedDAEElementCache`  | `dₜQ = L(F, dₜF, Q)`               | true DAE                    |
+# | cache                                  | local problem per quadrature point | slots read              |
+# | :------------------------------------- | :--------------------------------- | :---------------------- |
+# | `QuasiStaticElementCache`              | none, or algebraic `L(F, Q) = 0`   | `u`                     |
+# | `QuasiStaticCondensedODEElementCache`  | `dₜQ = L(F, Q)`                    | `u`, `q`, `qprev`       |
+# | `QuasiStaticCondensedDAEElementCache`  | `dₜQ = L(F, dₜF, Q)`               | `u`, `q`, `qprev`, `v`  |
 #
-# Only the two condensed caches are `gto1` caches, so only they receive `uₑprev` and `Δt`. That is the
-# point of the split: `QuasiStaticElementCache` keeps its bare-`time` methods, and because the type
-# sets no longer overlap the dispatch ambiguity against FerriteOperators' `gto1` methods cannot arise
-# at all — previously it had to be resolved by hand in `src/disambiguation.jl`.
+# The DAE cache is the only one whose residual depends on the deformation rate, so it is the only one
+# whose tangent carries the scheme's rate chain rule — see `assemble_cell!(::WeightedJacobianRequest, …)`.
 #
-# Julia's single inheritance means these cannot also share a Thunderbolt abstract parent (their
-# FerriteOperators supertypes differ), hence the `AnyQuasiStaticElementCache` union below for the
-# methods that genuinely do not care.
+# Julia's single inheritance means these cannot also share a Thunderbolt abstract parent, hence the
+# `AnyQuasiStaticElementCache` union below for the methods that genuinely do not care.
 
 """
     QuasiStaticElementCache
@@ -43,11 +41,11 @@ end
     QuasiStaticCondensedODEElementCache
 
 Quasi-static element whose internal variable follows `dₜQ = L(F, Q)`. Together with the (singular)
-mass matrix of the internal variables this is an ODE in mass matrix form. Assembled through the `gto1`
-protocol, so it receives `uₑprev` and `Δt`.
+mass matrix of the internal variables this is an ODE in mass matrix form. Its local problem reads the
+deformation gradient alone, so its tangent is a plain `∂F/∂u`.
 """
 struct QuasiStaticCondensedODEElementCache{M, CCache, CMCache, CV} <:
-       FerriteOperators.AbstractGenericFirstOrderTimeVolumetricElementCache
+       FerriteOperators.AbstractVolumetricElementCache
     constitutive_model::M
     coefficient_cache::CCache
     internal_cache::CMCache
@@ -58,11 +56,11 @@ end
     QuasiStaticCondensedDAEElementCache
 
 Quasi-static element whose internal variable follows `dₜQ = L(F, dₜF, Q)`. The dependence on the rate
-of the deformation gradient makes this a genuine DAE rather than a mass matrix ODE. Assembled through
-the `gto1` protocol.
+of the deformation gradient makes this a genuine DAE rather than a mass matrix ODE, and it is what
+makes the `v` slot and the weighted tangent below part of this cache's contract.
 """
 struct QuasiStaticCondensedDAEElementCache{M, CCache, CMCache, CV} <:
-       FerriteOperators.AbstractGenericFirstOrderTimeVolumetricElementCache
+       FerriteOperators.AbstractVolumetricElementCache
     constitutive_model::M
     coefficient_cache::CCache
     internal_cache::CMCache
@@ -76,9 +74,18 @@ const AnyQuasiStaticElementCache = Union{
     QuasiStaticCondensedDAEElementCache,
 }
 
-# The two `gto1` caches, i.e. those that get `uₑprev` and `Δt`.
+# The two caches whose internal variable is condensed out of a *time dependent* local problem, i.e.
+# those that get `q`, `qprev` and a timestep.
 const QuasiStaticCondensedElementCache =
     Union{QuasiStaticCondensedODEElementCache, QuasiStaticCondensedDAEElementCache}
+
+FerriteOperators.reinit_values!(e::AnyQuasiStaticElementCache, cell) = reinit!(e.cv, cell)
+Ferrite.getnquadpoints(e::AnyQuasiStaticElementCache) = getnquadpoints(e.cv)
+
+# The condensed state is written by `condense_cell!` and gathered back as the `q` slot; declaring this
+# is what makes the sensitivity admissibility rules apply to these caches.
+FerriteOperators.has_internal_state(::Type{<:QuasiStaticCondensedODEElementCache}) = true
+FerriteOperators.has_internal_state(::Type{<:QuasiStaticCondensedDAEElementCache}) = true
 
 """
     get_number_of_internal_dofs_per_element(integrator, element_cache, sdh)
@@ -101,93 +108,50 @@ function FerriteOperators.get_number_of_internal_dofs_per_element(
     return Iterators.repeated(ndofs_per_qp*nqp, length(sdh.cellset))
 end
 
-# The condensed unknowns of a cell are appended after its finite element dofs, so the element
-# unknown vector is laid out as `[fe_dofs | internal_variables]`. Sizes are computed from the cache
-# rather than stored, which keeps `QuasiStaticElementCache` unchanged.
 _qs_nbase(e::AnyQuasiStaticElementCache) = getnbasefunctions(e.cv)
 # Multiplying one size by the quadrature count assumes every point of the cell carries the same amount of
 # state; see `internal_variable_size` for when that stops being true.
 _qs_ninternal(e::AnyQuasiStaticElementCache) =
     internal_variable_size(e.constitutive_model, nothing, nothing)*getnquadpoints(e.cv)
 
-FerriteOperators.allocate_element_unknown_vector(e::AnyQuasiStaticElementCache, _) =
-    zeros(_qs_nbase(e) + _qs_ninternal(e))
-
-# Absolute index range of this cell's condensed block in the global solution vector. Deliberately
-# shared by `load_element_unknowns!` and `store_condensed_element_unknowns!` so the two cannot drift
-# apart — mismatched load/store indexing is exactly the bug class that produced the "internal
-# variables only written for the first cell" defect.
-@inline function _qs_internal_index_range(cell, ivh, e::AnyQuasiStaticElementCache)
-    offset = internal_variable_offset(ivh, cellid(cell))
-    return (offset+1):(offset+_qs_ninternal(e))
-end
-
-function FerriteOperators.load_element_unknowns!(uₑ, u, cell, ivh, e::AnyQuasiStaticElementCache)
-    n, ni = _qs_nbase(e), _qs_ninternal(e)
-    @views uₑ[1:n] .= u[celldofs(cell)]
-    if ni > 0
-        @views uₑ[(n+1):(n+ni)] .= u[_qs_internal_index_range(cell, ivh, e)]
-    end
-    return nothing
-end
-
-# Counterpart of `load_element_unknowns!`: write the condensed block back after the element solved it
-# locally. Only correct because the `gto1` assembly writes the local solve result into `uₑ`'s tail; on
-# the older path the material wrote straight to the global vector and this would copy a stale tail
-# back over it.
-function FerriteOperators.store_condensed_element_unknowns!(
-    uₑ,
-    u,
-    cell,
-    ivh,
-    e::AnyQuasiStaticElementCache,
-)
-    n, ni = _qs_nbase(e), _qs_ninternal(e)
-    if ni > 0
-        @views u[_qs_internal_index_range(cell, ivh, e)] .= uₑ[(n+1):(n+ni)]
-    end
-    return nothing
-end
-
 """
-    _qs_split_unknowns(element_cache, uₑ)
+    _qs_internal_block(element_cache, Qₑ)
 
-Split an element unknown vector laid out `[fe_dofs | internal_variables]` into the displacement dofs
-and the internal variables reshaped as `(size_per_quadrature_point, nquadpoints)`, so a quadrature
-loop can address its own slice as `@view Qₑ[:, qp.i]`.
+View the cell's condensed unknowns as `(size_per_quadrature_point, nquadpoints)`, so a quadrature loop
+can address its own slice as `@view Qₑ[:, qp.i]`.
 
-The internal block is empty for materials without condensed state, in which case the reshape yields a
+The block is empty for materials without condensed state, in which case the reshape yields a
 `0 × nqp` array and every per-point slice is empty.
 
-The reshape is what makes "one size per quadrature point" a structural assumption of the element layout,
-not merely of the caller: a material whose state size varies between the points of a cell (FE², see
-[`internal_variable_size`](@ref)) has no rectangular block to reshape into. `_qs_ninternal` sizes the
-block by multiplying, so the division here is exact by construction.
+The reshape is what makes "one size per quadrature point" a structural assumption of the element
+layout, not merely of the caller: a material whose state size varies between the points of a cell
+(FE², see [`internal_variable_size`](@ref)) has no rectangular block to reshape into. `_qs_ninternal`
+sizes the block by multiplying, so the division here is exact by construction.
 """
-@inline function _qs_split_unknowns(e::AnyQuasiStaticElementCache, uₑ)
-    n, ni = _qs_nbase(e), _qs_ninternal(e)
-    nqp   = getnquadpoints(e.cv)
-    dₑ    = @view uₑ[1:n]
-    Qₑ    = @view uₑ[(n+1):(n+ni)]
-    return dₑ, reshape(Qₑ, (ni ÷ nqp, nqp))
+@inline function _qs_internal_block(e::AnyQuasiStaticElementCache, Qₑ)
+    nqp = getnquadpoints(e.cv)
+    return reshape(Qₑ, (length(Qₑ) ÷ nqp, nqp))
 end
 
-# TODO how to control dispatch on required input for the material routin?
+# A weighted sweep that does not name `:u` must contribute nothing from a displacement-only term.
+@inline _qs_state_weight(weights::NamedTuple) = haskey(weights, :u) ? weights.u : false
+
+# --- rate-free elements --------------------------------------------------------------------------
+
+FerriteOperators.provides_analytic(::Type{<:QuasiStaticElementCache}, ::FerriteOperators.JacobianKind{:u}) = true
+FerriteOperators.provides_analytic(::Type{<:QuasiStaticElementCache}, ::FerriteOperators.JacobianResidualKind) = true
+
+# TODO how to control dispatch on required input for the material routine?
 # TODO finer granularity on the dispatch here. depending on the evolution law of the internal variable this routine looks slightly different.
-function assemble_element!(
-    Kₑ::AbstractMatrix,
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    geometry_cache::CellCache,
+function FerriteOperators.assemble_cell!(
+    req::FerriteOperators.JacobianResidualRequest,
     element_cache::QuasiStaticElementCache,
-    p,
+    args::FerriteOperators.CellArgs,
 )
     @unpack constitutive_model, internal_cache, cv, coefficient_cache = element_cache
     ndofs = getnbasefunctions(cv)
-    dₑ = @view uₑ[1:ndofs]
-    time = get_time(p)
-
-    reinit!(cv, geometry_cache)
+    dₑ = args.states.u
+    time = FerriteOperators.evaluation_time(args.ctx)
 
     @inbounds for qp ∈ QuadratureIterator(cv)
         dΩ = getdetJdV(cv, qp)
@@ -202,7 +166,7 @@ function assemble_element!(
             kinematics,
             coefficient_cache,
             internal_cache,
-            geometry_cache,
+            args.cell,
             qp,
             time,
         )
@@ -213,31 +177,23 @@ function assemble_element!(
             ∇δui = shape_gradient(cv, qp, i)
 
             # Add contribution to the residual from this test function
-            residualₑ[i] += ∇δui ⊡ P * dΩ
+            req.r[i] += ∇δui ⊡ P * dΩ
 
             ∇δui_tangent = ∇δui ⊡ tangent # Hoisted computation
             for j = 1:ndofs
                 ∇δuj = shape_gradient(cv, qp, j)
                 # Add contribution to the tangent
-                Kₑ[i, j] += (∇δui_tangent ⊡ ∇δuj) * dΩ
+                req.K[i, j] += (∇δui_tangent ⊡ ∇δuj) * dΩ
             end
         end
     end
 end
 
-function assemble_element!(
-    Kₑ::AbstractMatrix,
-    uₑ::AbstractVector,
-    geometry_cache::CellCache,
-    element_cache::QuasiStaticElementCache,
-    p,
-)
+function _assemble_quasistatic_jacobian!(req, element_cache::QuasiStaticElementCache, args, w)
     @unpack constitutive_model, internal_cache, cv, coefficient_cache = element_cache
     ndofs = getnbasefunctions(cv)
-    dₑ = @view uₑ[1:ndofs]
-    time = get_time(p)
-
-    reinit!(cv, geometry_cache)
+    dₑ = args.states.u
+    time = FerriteOperators.evaluation_time(args.ctx)
 
     @inbounds for qp ∈ QuadratureIterator(cv)
         dΩ = getdetJdV(cv, qp)
@@ -251,42 +207,48 @@ function assemble_element!(
             kinematics,
             coefficient_cache,
             internal_cache,
-            geometry_cache,
+            args.cell,
             qp,
             time,
         )
         tangent = consistent_tangent(sensitivities)
 
-        # Loop over test functions
         for i = 1:ndofs
             ∇δui = shape_gradient(cv, qp, i)
-
-            # Add contribution to the residual from this test function
-            # residualₑ[i] += ∇δui ⊡ P * dΩ
 
             ∇δui_tangent = ∇δui ⊡ tangent # Hoisted computation
             for j = 1:ndofs
                 ∇δuj = shape_gradient(cv, qp, j)
-                # Add contribution to the tangent
-                Kₑ[i, j] += (∇δui_tangent ⊡ ∇δuj) * dΩ
+                req.K[i, j] += w * (∇δui_tangent ⊡ ∇δuj) * dΩ
             end
         end
     end
 end
 
-function assemble_element!(
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    geometry_cache::CellCache,
+# `true` rather than `1.0`: the unweighted path must not promote the element matrix' eltype.
+FerriteOperators.assemble_cell!(
+    req::FerriteOperators.JacobianRequest{:u},
     element_cache::QuasiStaticElementCache,
-    p,
+    args::FerriteOperators.CellArgs,
+) = _assemble_quasistatic_jacobian!(req, element_cache, args, true)
+
+# A rate-free element is a function of `(u, t)` alone, so only the `:u` weight acts on it.
+FerriteOperators.provides_analytic(::Type{<:QuasiStaticElementCache}, ::FerriteOperators.WeightedJacobianKind) = true
+FerriteOperators.assemble_cell!(
+    req::FerriteOperators.WeightedJacobianRequest,
+    element_cache::QuasiStaticElementCache,
+    args::FerriteOperators.CellArgs,
+) = _assemble_quasistatic_jacobian!(req, element_cache, args, _qs_state_weight(req.weights))
+
+function FerriteOperators.assemble_cell!(
+    req::FerriteOperators.ResidualRequest,
+    element_cache::QuasiStaticElementCache,
+    args::FerriteOperators.CellArgs,
 )
     @unpack constitutive_model, internal_cache, cv, coefficient_cache = element_cache
     ndofs = getnbasefunctions(cv)
-    dₑ = @view uₑ[1:ndofs]
-    time = get_time(p)
-
-    reinit!(cv, geometry_cache)
+    dₑ = args.states.u
+    time = FerriteOperators.evaluation_time(args.ctx)
 
     @inbounds for qp ∈ QuadratureIterator(cv)
         dΩ = getdetJdV(cv, qp)
@@ -300,83 +262,39 @@ function assemble_element!(
             kinematics,
             coefficient_cache,
             internal_cache,
-            geometry_cache,
+            args.cell,
             qp,
             time,
         )
 
-        # Loop over test functions
         for i = 1:ndofs
             ∇δui = shape_gradient(cv, qp, i)
-
-            # Add contribution to the residual from this test function
-            residualₑ[i] += ∇δui ⊡ P * dΩ
+            req.r[i] += ∇δui ⊡ P * dΩ
         end
     end
 end
 
-# --- gto1 ---------------------------------------------------------------------------------------
+# --- condensed elements --------------------------------------------------------------------------
 #
-# NOTE ON `t`: this is the time the step is solved *at*, i.e. `t + Δt` in the time integrator's own
-# naming (`perform_backward_euler_step!` passes `t + Δt` into `GenericFirstOrderTimeParameters`). The
-# argument is called `t` to match FerriteOperators' signature, but it is the END of the step, not its
-# beginning. Verified against a two-step solve: t = 0.1 then 0.2 for tspan (0.0, 0.2) with dt = 0.1.
+# The scheme hands the element **two** unrelated time quantities, and the context keeps them apart:
 #
-# The `gto1` ("generic time order 1") entry points take the previous element unknowns and the
-# timestep as arguments instead of reading them from a cache that a solver mutated. `Qₑ`/`Qₑprev` are
-# views into `uₑ`/`uₑprev` and therefore strictly cell-local — there is no global vector to offset
-# into. The local solve writes its result back into the `Qₑ` view; `store_condensed_element_unknowns!`
-# is what copies that tail back into the global solution vector.
-
-@doc raw"""
-    AffineVelocity(∂v∂u, uᵥ)
-
-How a time scheme reconstructs the end-of-step velocity from the unknown displacement,
-```math
-v(u) = \frac{\partial v}{\partial u}\,(u - u_v) .
-```
-
-Every single-stage scheme in this package makes the velocity an *affine* function of the unknown, so
-two numbers describe it completely: the slope, which is also the ``\partial\dot{F}/\partial u`` the
-element needs for the tangent, and the displacement at which the reconstructed velocity vanishes.
-
-| scheme | `∂v∂u` | `uᵥ` |
-| :----- | :----- | :--- |
-| backward Euler (`gto1`) | `1/Δt` | `uprev` |
-| Newmark | `γ/(βΔt)` | `ũ - ṽ/∂v∂u` |
-
-`uᵥ` is deliberately a displacement-shaped *vector* rather than the offset of the affine map: that is
-what lets it be sliced per cell by `load_element_unknowns!`, exactly like the previous solution. Under
-backward Euler it simply *is* the previous solution, which is why that scheme never needed the concept.
-
-The same type serves both granularities — global in the solver, element local after
-`query_element_parameters` — as `FerriteOperators.GenericFirstOrderTimeParameters` does with `uprev`.
-
-!!! note "This is not a timestep"
-    A scheme hands the element **two** unrelated time quantities: this reconstruction, and the `Δt`
-    that the *internal variable* integrates over. Backward Euler is the special case where the slope
-    happens to be the reciprocal of that `Δt`; under Newmark they differ by `γ/β`. Collapsing them is
-    what makes a rate-coupled material silently wrong under any scheme but backward Euler.
-"""
-struct AffineVelocity{T, VT}
-    ∂v∂u::T
-    uᵥ::VT
-end
-
-# Forming the rate and stating how it linearizes are the *scheme's* two contributions, and these are
-# the only places in the element layer that read the reconstruction. They are defined side by side
-# deliberately: a scheme that changes how the rate is formed must change its linearization in the same
-# breath, and splitting them across the file is how a stale coefficient quietly outlives the difference
-# quotient it belongs to.
+#  * `stage_scaling(ctx)` -- the interval the *internal variable* integrates over. `dₜQ = L(F, Q)` is
+#    first order no matter what the global scheme does with `u`, so its local problem is unchanged by
+#    the choice of global scheme.
+#  * the `v` slot -- how the deformation rate is formed. `AffineRate` reconstructs it from the
+#    unknown displacement at gather time, so the element never learns the scheme's coefficients.
 #
-# Dispatching on the cache means the ODE cache does not pay for the second gradient evaluation: its
-# local problem `dₜQ = L(F, Q)` cannot read a rate, so offering one would be dead work — and its
-# linearization correspondingly has no rate slot.
+# Collapsing the two is what makes a rate-coupled material silently wrong under any scheme but
+# backward Euler, where they happen to be reciprocals.
+
+# Forming the rate is the scheme's contribution, and this is the only place in the element layer that
+# reads the reconstruction. Dispatching on the cache means the ODE cache does not pay for the second
+# gradient evaluation: its local problem `dₜQ = L(F, Q)` cannot read a rate.
 @inline function compute_kinematic_quantities(
     e::QuasiStaticCondensedODEElementCache,
     qp,
     dₑ,
-    velocity::AffineVelocity,
+    states,
 )
     ∇u = function_gradient(e.cv, qp, dₑ)
     return DeformationGradient(one(∇u) + ∇u)
@@ -386,188 +304,207 @@ end
     e::QuasiStaticCondensedDAEElementCache,
     qp,
     dₑ,
-    velocity::AffineVelocity,
+    states,
 )
-    ∇u  = function_gradient(e.cv, qp, dₑ)
-    ∇uᵥ = function_gradient(e.cv, qp, velocity.uᵥ)
-    return DeformationGradientWithRate(one(∇u) + ∇u, velocity.∂v∂u * (∇u - ∇uᵥ))
+    ∇u = function_gradient(e.cv, qp, dₑ)
+    # The `v` slot already carries `∂v∂u (u - uᵥ)`, and `function_gradient` is linear, so its gradient
+    # is the deformation rate the material asks for.
+    ∇v = function_gradient(e.cv, qp, states.v)
+    return DeformationGradientWithRate(one(∇u) + ∇u, ∇v)
 end
 
-@inline compute_kinematic_linearization(
-    ::QuasiStaticCondensedODEElementCache,
-    velocity::AffineVelocity,
-) = KinematicLinearization(one(velocity.∂v∂u))
+# How the tangent weighs the two kinematic sensitivities. A reconstructed slot is frozen under
+# `JacobianKind{:u}`, so the rate weight is zero there and is the scheme's chain-rule scalar in a
+# weighted sweep.
+@inline _qs_linearization(::QuasiStaticCondensedODEElementCache, wu, wv) =
+    KinematicLinearization(wu)
+@inline _qs_linearization(::QuasiStaticCondensedDAEElementCache, wu, wv) =
+    KinematicLinearization(wu, wv)
 
-@inline compute_kinematic_linearization(
-    ::QuasiStaticCondensedDAEElementCache,
-    velocity::AffineVelocity,
-) = KinematicLinearization(one(velocity.∂v∂u), velocity.∂v∂u)
+"""
+    _qs_rate_weight(weights)
 
-# The three assembly variants below are the *only* element loop; the `assemble_element_gto1!` and
-# `assemble_element!(…, ::NewmarkElementParameters)` methods underneath them are thin adapters that
-# unpack their respective parameter protocol and call in here. Without them the loop would exist twice,
-# once per time scheme.
-#
-# `uₑprev` and `velocity` are separate arguments because they answer different questions: the first
-# supplies the known internal state `Qprev`, the second says how the velocity is reconstructed from the
-# unknown. They coincide under backward Euler and differ under Newmark.
-function _assemble_condensed_element_jr!(
-    Kₑ::AbstractMatrix,
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    uₑprev::AbstractVector,
-    velocity::AffineVelocity,
-    geometry_cache::CellCache,
+The scheme's `∂v/∂u`, read out of a weighted request's chain-rule scalars.
+
+A weighted sweep over a rate-coupled material must name the `v` slot: without it the local solve's
+rate sensitivity would be dropped silently, leaving a descent direction rather than a Newton one.
+"""
+@inline function _qs_rate_weight(weights::NamedTuple)
+    haskey(weights, :v) || throw(ArgumentError(
+        "A weighted Jacobian over a rate-coupled material must weigh the `v` slot; got slots " *
+        "$(keys(weights)). The rate sensitivity ∂P/∂Ḟ enters through it and through nothing else."))
+    return weights.v
+end
+
+"""
+    _qs_local_state(element_cache, args)
+
+The cell's condensed unknowns and the known state its local problem integrates from, as
+`(Qₑ, Qₑprev)` blocks addressable per quadrature point.
+
+`q` is the trial state [`FerriteOperators.condense_internal!`](@ref) wrote; `qprev` is the committed
+one. A kernel reads both and writes neither -- the local solve inside `material_routine` re-derives
+the same `Q` it was handed, warm started from it, which is what keeps the residual and the tangent
+posing one local problem.
+"""
+@inline function _qs_local_state(e::QuasiStaticCondensedElementCache, args)
+    Qₑ     = _qs_internal_block(e, similar(args.states.u, length(args.states.q)))
+    Qₑ    .= _qs_internal_block(e, args.states.q)
+    Qₑprev = _qs_internal_block(e, args.states.qprev)
+    return Qₑ, Qₑprev
+end
+
+FerriteOperators.provides_analytic(::Type{<:QuasiStaticCondensedODEElementCache}, ::FerriteOperators.JacobianKind{:u}) = true
+FerriteOperators.provides_analytic(::Type{<:QuasiStaticCondensedODEElementCache}, ::FerriteOperators.JacobianResidualKind) = true
+FerriteOperators.provides_analytic(::Type{<:QuasiStaticCondensedDAEElementCache}, ::FerriteOperators.JacobianKind{:u}) = true
+FerriteOperators.provides_analytic(::Type{<:QuasiStaticCondensedDAEElementCache}, ::FerriteOperators.JacobianResidualKind) = true
+FerriteOperators.provides_analytic(::Type{<:QuasiStaticCondensedDAEElementCache}, ::FerriteOperators.WeightedJacobianKind) = true
+
+"""
+    condense_cell!(cache, args, weights)
+
+Solve every quadrature point's local problem and write the trial internal state into `args.states.q`.
+
+This is the only hook that evolves the condensed state; the assembly kernels are pure evaluations at
+the state it wrote.
+"""
+function FerriteOperators.condense_cell!(
     element_cache::QuasiStaticCondensedElementCache,
-    p,
-    t,
-    Δt,
+    args::FerriteOperators.CellArgs,
+    weights::NamedTuple,
 )
     @unpack constitutive_model, internal_cache, cv, coefficient_cache = element_cache
-    ndofs = getnbasefunctions(cv)
-    dₑ, Qₑ = _qs_split_unknowns(element_cache, uₑ)
-    _, Qₑprev = _qs_split_unknowns(element_cache, uₑprev)
-    dvelocity, _ = _qs_split_unknowns(element_cache, velocity.uᵥ)
-    velocityₑ = AffineVelocity(velocity.∂v∂u, dvelocity)
+    dₑ     = args.states.u
+    Qₑ     = _qs_internal_block(element_cache, args.states.q)
+    Qₑprev = _qs_internal_block(element_cache, args.states.qprev)
+    t      = FerriteOperators.evaluation_time(args.ctx)
+    Δt     = FerriteOperators.stage_scaling(args.ctx)
 
-    reinit!(cv, geometry_cache)
+    @inbounds for qp ∈ QuadratureIterator(cv)
+        kinematics = compute_kinematic_quantities(element_cache, qp, dₑ, args.states)
+        # Through the residual entry point, so that the state written here is the solution of
+        # exactly the local problem the assembly kernels evaluate. The stress it returns is the
+        # kernels' business, not this hook's.
+        reduced_material_routine(
+            constitutive_model,
+            kinematics,
+            coefficient_cache,
+            internal_cache,
+            args.cell,
+            qp,
+            t,
+            @view(Qₑ[:, qp.i]),
+            @view(Qₑprev[:, qp.i]),
+            Δt,
+        )
+    end
+    return zero(FerriteOperators.CondensationReport{Float64})
+end
+
+function _assemble_condensed_cell!(
+    req,
+    element_cache::QuasiStaticCondensedElementCache,
+    args::FerriteOperators.CellArgs,
+    linearization,
+)
+    @unpack constitutive_model, internal_cache, cv, coefficient_cache = element_cache
+    ndofs  = getnbasefunctions(cv)
+    dₑ     = args.states.u
+    Qₑ, Qₑprev = _qs_local_state(element_cache, args)
+    t      = FerriteOperators.evaluation_time(args.ctx)
+    Δt     = FerriteOperators.stage_scaling(args.ctx)
 
     @inbounds for qp ∈ QuadratureIterator(cv)
         dΩ = getdetJdV(cv, qp)
 
-        kinematics = compute_kinematic_quantities(element_cache, qp, dₑ, velocityₑ)
+        kinematics = compute_kinematic_quantities(element_cache, qp, dₑ, args.states)
 
         P, sensitivities = material_routine(
             constitutive_model,
             kinematics,
             coefficient_cache,
             internal_cache,
-            geometry_cache,
+            args.cell,
             qp,
             t,
             @view(Qₑ[:, qp.i]),
             @view(Qₑprev[:, qp.i]),
             Δt,
         )
-        tangent = consistent_tangent(
-            sensitivities,
-            compute_kinematic_linearization(element_cache, velocityₑ),
-        )
+        tangent = consistent_tangent(sensitivities, linearization)
 
         for i = 1:ndofs
             ∇δui = shape_gradient(cv, qp, i)
-            residualₑ[i] += ∇δui ⊡ P * dΩ
+            _qs_accumulate_residual!(req, i, ∇δui ⊡ P * dΩ)
 
             ∇δui_tangent = ∇δui ⊡ tangent # Hoisted computation
             for j = 1:ndofs
                 ∇δuj = shape_gradient(cv, qp, j)
-                Kₑ[i, j] += (∇δui_tangent ⊡ ∇δuj) * dΩ
+                req.K[i, j] += (∇δui_tangent ⊡ ∇δuj) * dΩ
             end
         end
     end
 end
 
-FerriteOperators.assemble_element_gto1!(
-    Kₑ::AbstractMatrix,
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    uₑprev::AbstractVector,
-    geometry_cache::CellCache,
+@inline _qs_accumulate_residual!(req::FerriteOperators.JacobianResidualRequest, i, value) =
+    (req.r[i] += value)
+@inline _qs_accumulate_residual!(req, i, value) = nothing
+
+FerriteOperators.assemble_cell!(
+    req::FerriteOperators.JacobianResidualRequest,
     element_cache::QuasiStaticCondensedElementCache,
-    p,
-    t,
-    Δt,
-) = _assemble_condensed_element_jr!(
-    Kₑ,
-    residualₑ,
-    uₑ,
-    uₑprev,
-    AffineVelocity(inv(Δt), uₑprev),
-    geometry_cache,
+    args::FerriteOperators.CellArgs,
+) = _assemble_condensed_cell!(req, element_cache, args, _qs_linearization(element_cache, true, false))
+
+FerriteOperators.assemble_cell!(
+    req::FerriteOperators.JacobianRequest{:u},
+    element_cache::QuasiStaticCondensedElementCache,
+    args::FerriteOperators.CellArgs,
+) = _assemble_condensed_cell!(req, element_cache, args, _qs_linearization(element_cache, true, false))
+
+FerriteOperators.provides_analytic(::Type{<:QuasiStaticCondensedODEElementCache}, ::FerriteOperators.WeightedJacobianKind) = true
+FerriteOperators.assemble_cell!(
+    req::FerriteOperators.WeightedJacobianRequest,
+    element_cache::QuasiStaticCondensedODEElementCache,
+    args::FerriteOperators.CellArgs,
+) = _assemble_condensed_cell!(
+    req,
     element_cache,
-    p,
-    t,
-    Δt,
+    args,
+    _qs_linearization(element_cache, _qs_state_weight(req.weights), false),
 )
 
-function _assemble_condensed_element_j!(
-    Kₑ::AbstractMatrix,
-    uₑ::AbstractVector,
-    uₑprev::AbstractVector,
-    velocity::AffineVelocity,
-    geometry_cache::CellCache,
+FerriteOperators.assemble_cell!(
+    req::FerriteOperators.WeightedJacobianRequest,
+    element_cache::QuasiStaticCondensedDAEElementCache,
+    args::FerriteOperators.CellArgs,
+) = _assemble_condensed_cell!(
+    req,
+    element_cache,
+    args,
+    _qs_linearization(
+        element_cache,
+        _qs_state_weight(req.weights),
+        _qs_rate_weight(req.weights),
+    ),
+)
+
+function FerriteOperators.assemble_cell!(
+    req::FerriteOperators.ResidualRequest,
     element_cache::QuasiStaticCondensedElementCache,
-    p,
-    t,
-    Δt,
+    args::FerriteOperators.CellArgs,
 )
     @unpack constitutive_model, internal_cache, cv, coefficient_cache = element_cache
-    ndofs = getnbasefunctions(cv)
-    dₑ, Qₑ = _qs_split_unknowns(element_cache, uₑ)
-    _, Qₑprev = _qs_split_unknowns(element_cache, uₑprev)
-    dvelocity, _ = _qs_split_unknowns(element_cache, velocity.uᵥ)
-    velocityₑ = AffineVelocity(velocity.∂v∂u, dvelocity)
-
-    reinit!(cv, geometry_cache)
+    ndofs  = getnbasefunctions(cv)
+    dₑ     = args.states.u
+    Qₑ, Qₑprev = _qs_local_state(element_cache, args)
+    t      = FerriteOperators.evaluation_time(args.ctx)
+    Δt     = FerriteOperators.stage_scaling(args.ctx)
 
     @inbounds for qp ∈ QuadratureIterator(cv)
         dΩ = getdetJdV(cv, qp)
 
-        kinematics = compute_kinematic_quantities(element_cache, qp, dₑ, velocityₑ)
-
-        # Tangent only
-        _, sensitivities = material_routine(
-            constitutive_model,
-            kinematics,
-            coefficient_cache,
-            internal_cache,
-            geometry_cache,
-            qp,
-            t,
-            @view(Qₑ[:, qp.i]),
-            @view(Qₑprev[:, qp.i]),
-            Δt,
-        )
-        tangent = consistent_tangent(
-            sensitivities,
-            compute_kinematic_linearization(element_cache, velocityₑ),
-        )
-
-        for i = 1:ndofs
-            ∇δui = shape_gradient(cv, qp, i)
-            ∇δui_tangent = ∇δui ⊡ tangent # Hoisted computation
-            for j = 1:ndofs
-                ∇δuj = shape_gradient(cv, qp, j)
-                Kₑ[i, j] += (∇δui_tangent ⊡ ∇δuj) * dΩ
-            end
-        end
-    end
-end
-
-function _assemble_condensed_element_r!(
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    uₑprev::AbstractVector,
-    velocity::AffineVelocity,
-    geometry_cache::CellCache,
-    element_cache::QuasiStaticCondensedElementCache,
-    p,
-    t,
-    Δt,
-)
-    @unpack constitutive_model, internal_cache, cv, coefficient_cache = element_cache
-    ndofs = getnbasefunctions(cv)
-    dₑ, Qₑ = _qs_split_unknowns(element_cache, uₑ)
-    _, Qₑprev = _qs_split_unknowns(element_cache, uₑprev)
-    dvelocity, _ = _qs_split_unknowns(element_cache, velocity.uᵥ)
-    velocityₑ = AffineVelocity(velocity.∂v∂u, dvelocity)
-
-    reinit!(cv, geometry_cache)
-
-    @inbounds for qp ∈ QuadratureIterator(cv)
-        dΩ = getdetJdV(cv, qp)
-
-        kinematics = compute_kinematic_quantities(element_cache, qp, dₑ, velocityₑ)
+        kinematics = compute_kinematic_quantities(element_cache, qp, dₑ, args.states)
 
         # Stress only
         P = reduced_material_routine(
@@ -575,7 +512,7 @@ function _assemble_condensed_element_r!(
             kinematics,
             coefficient_cache,
             internal_cache,
-            geometry_cache,
+            args.cell,
             qp,
             t,
             @view(Qₑ[:, qp.i]),
@@ -585,247 +522,10 @@ function _assemble_condensed_element_r!(
 
         for i = 1:ndofs
             ∇δui = shape_gradient(cv, qp, i)
-            residualₑ[i] += ∇δui ⊡ P * dΩ
+            req.r[i] += ∇δui ⊡ P * dΩ
         end
     end
 end
-
-FerriteOperators.assemble_element_gto1!(
-    Kₑ::AbstractMatrix,
-    uₑ::AbstractVector,
-    uₑprev::AbstractVector,
-    geometry_cache::CellCache,
-    element_cache::QuasiStaticCondensedElementCache,
-    p,
-    t,
-    Δt,
-) = _assemble_condensed_element_j!(
-    Kₑ,
-    uₑ,
-    uₑprev,
-    AffineVelocity(inv(Δt), uₑprev),
-    geometry_cache,
-    element_cache,
-    p,
-    t,
-    Δt,
-)
-
-FerriteOperators.assemble_element_gto1!(
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    uₑprev::AbstractVector,
-    geometry_cache::CellCache,
-    element_cache::QuasiStaticCondensedElementCache,
-    p,
-    t,
-    Δt,
-) = _assemble_condensed_element_r!(
-    residualₑ,
-    uₑ,
-    uₑprev,
-    AffineVelocity(inv(Δt), uₑprev),
-    geometry_cache,
-    element_cache,
-    p,
-    t,
-    Δt,
-)
-
-"""
-    NewmarkTimeParameters(p, t, Δt, velocity, uprev)
-
-The element facing parameters of a Newmark stage, the second order counterpart of
-`FerriteOperators.GenericFirstOrderTimeParameters`.
-
-It keeps apart the **two** time quantities that the first order object conflates into one `Δt`:
-
-* `Δt` — the real timestep, which the *internal variable* integrates over. `dₜQ = L(F, Q)` is first
-  order no matter what the global scheme does with `u`, so its local problem is unchanged.
-* `velocity::`[`AffineVelocity`](@ref) — how the deformation rate is formed and how it linearizes.
-
-`uprev` is still carried on its own, because it is what supplies `Qprev`.
-"""
-@concrete struct NewmarkTimeParameters
-    p
-    t
-    Δt
-    velocity
-    uprev
-end
-
-"""
-    NewmarkElementParameters
-
-Element local form of [`NewmarkTimeParameters`](@ref), produced by `query_element_parameters`.
-"""
-@concrete struct NewmarkElementParameters
-    pₑ
-    t
-    Δt
-    velocity
-    uₑprev
-end
-
-@inline get_time(p::NewmarkElementParameters) = p.t
-@inline get_time(p::NewmarkTimeParameters) = p.t
-
-function FerriteOperators.query_element_parameters(
-    element::QuasiStaticCondensedElementCache,
-    cell,
-    ivh,
-    p::NewmarkTimeParameters,
-)
-    uₑprev = FerriteOperators.allocate_element_unknown_vector(element, cell)
-    FerriteOperators.load_element_unknowns!(uₑprev, p.uprev, cell, ivh, element)
-    uₑᵥ = FerriteOperators.allocate_element_unknown_vector(element, cell)
-    FerriteOperators.load_element_unknowns!(uₑᵥ, p.velocity.uᵥ, cell, ivh, element)
-    pₑ = FerriteOperators.query_element_parameters(element, cell, ivh, p.p)
-    return NewmarkElementParameters(pₑ, p.t, p.Δt, AffineVelocity(p.velocity.∂v∂u, uₑᵥ), uₑprev)
-end
-
-# A rate-free element itself has no use for any of this and wants the bare time. It is nevertheless
-# handed the full element local object, because FerriteOperators computes *one* parameter object from
-# the volumetric cache and gives it to the boundary cache too: discarding the rate here would discard
-# it for a dashpot boundary condition as well, and a rate-free bulk with a damped boundary is an
-# ordinary combination (a passive myocardium against the pericardium, say). The time is unwrapped one
-# level further down instead, by the volumetric `assemble_element!` methods below.
-#
-# The cost is the `uₑprev`/`uₑᵥ` load per element per assembly, which the condensed caches above
-# already pay. It buys uniformity: the same object reaches every cache, and each states what it wants
-# by dispatch rather than by hoping the volume asked for the right thing.
-function FerriteOperators.query_element_parameters(
-    element::QuasiStaticElementCache,
-    cell,
-    ivh,
-    p::NewmarkTimeParameters,
-)
-    uₑprev = FerriteOperators.allocate_element_unknown_vector(element, cell)
-    FerriteOperators.load_element_unknowns!(uₑprev, p.uprev, cell, ivh, element)
-    uₑᵥ = FerriteOperators.allocate_element_unknown_vector(element, cell)
-    FerriteOperators.load_element_unknowns!(uₑᵥ, p.velocity.uᵥ, cell, ivh, element)
-    pₑ = FerriteOperators.query_element_parameters(element, cell, ivh, p.p)
-    return NewmarkElementParameters(pₑ, p.t, p.Δt, AffineVelocity(p.velocity.∂v∂u, uₑᵥ), uₑprev)
-end
-
-# Same for `gto1`. Without this the FerriteOperators fallback `query_element_parameters(…, p) = p`
-# applies and the *global* parameter object reaches the element, where it is passed on as the time —
-# so a coefficient reading `t` (a calcium transient, a pressure ramp) silently receives a struct.
-function FerriteOperators.query_element_parameters(
-    element::QuasiStaticElementCache,
-    cell,
-    ivh,
-    p::FerriteOperators.GenericFirstOrderTimeParameters,
-)
-    uₑprev = FerriteOperators.allocate_element_unknown_vector(element, cell)
-    FerriteOperators.load_element_unknowns!(uₑprev, p.uprev, cell, ivh, element)
-    pₑ = FerriteOperators.query_element_parameters(element, cell, ivh, p.p)
-    return FerriteOperators.GenericFirstOrderTimeElementParameters(pₑ, p.t, p.Δt, uₑprev)
-end
-
-# The rate-free element takes the time back out with `get_time`, at the point of use rather than by a
-# layer of unwrapping methods.
-
-FerriteOperators.assemble_element!(
-    Kₑ::AbstractMatrix,
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    cell,
-    element_cache::QuasiStaticCondensedElementCache,
-    p::NewmarkElementParameters,
-) = _assemble_condensed_element_jr!(
-    Kₑ,
-    residualₑ,
-    uₑ,
-    p.uₑprev,
-    p.velocity,
-    cell,
-    element_cache,
-    p.pₑ,
-    p.t,
-    p.Δt,
-)
-
-FerriteOperators.assemble_element!(
-    Kₑ::AbstractMatrix,
-    uₑ::AbstractVector,
-    cell,
-    element_cache::QuasiStaticCondensedElementCache,
-    p::NewmarkElementParameters,
-) = _assemble_condensed_element_j!(
-    Kₑ,
-    uₑ,
-    p.uₑprev,
-    p.velocity,
-    cell,
-    element_cache,
-    p.pₑ,
-    p.t,
-    p.Δt,
-)
-
-FerriteOperators.assemble_element!(
-    residualₑ::AbstractVector,
-    uₑ::AbstractVector,
-    cell,
-    element_cache::QuasiStaticCondensedElementCache,
-    p::NewmarkElementParameters,
-) = _assemble_condensed_element_r!(
-    residualₑ,
-    uₑ,
-    p.uₑprev,
-    p.velocity,
-    cell,
-    element_cache,
-    p.pₑ,
-    p.t,
-    p.Δt,
-)
-
-# --- handing the time discretization to the boundary ---------------------------------------------
-#
-# FerriteOperators computes a *single* element parameter object from the volumetric cache and passes it
-# to the boundary cache as well (`operators/nonlinear.jl`), whose generic `assemble_element!` forwards
-# it verbatim to `assemble_facet!`. The surface `query_element_parameters` that FerriteOperators
-# defines is therefore never reached on this path: a facet cache does not get to ask for what it
-# wants, it gets whatever the volume asked for.
-#
-# Rather than decoding that object into a per-cache payload here, it is forwarded untouched and each
-# cache queries the part it needs at the point of use -- [`get_time`](@ref) for the springs and the
-# pressures, [`facet_velocity`](@ref) for the dashpots. That is what lets one object serve a composite
-# tuple mixing the two, which is the case no single unwrapping at the top could have handled.
-#
-# Both queries discard `pₑ`, which is correct only while facet caches consume the time and the velocity
-# alone. This is the surface half of the `t`/`p` conflation described in the `nlsolve!` docstring: once
-# `p` carries parameters being optimized, a boundary condition depending on such a parameter (a
-# pressure amplitude, say) needs it forwarded, not dropped.
-#
-# The right long-term fix is upstream: `AssembleLinearizationJR` should query element parameters for
-# the boundary cache separately instead of reusing the volumetric one.
-
-"""
-    facet_velocity(p)
-
-The velocity reconstruction a time scheme offers to a facet, as an [`AffineVelocity`](@ref).
-
-The rate-side counterpart of [`get_time`](@ref), and the surface counterpart of what
-`compute_kinematic_quantities` reads in the volume. It exists so that a dashpot boundary condition is
-written once against the reconstruction rather than once per time scheme: reading `Δt` at the facet
-would hard code the backward Euler difference quotient and be silently wrong under Newmark, where the
-slope is `γ/(βΔt)`.
-
-A scheme that offers no rate at all -- continuation -- has no method here on purpose; the combination
-is rejected during solver setup by `check_weak_boundary_conditions_are_rate_free`.
-"""
-function facet_velocity end
-
-@inline facet_velocity(p::FerriteOperators.GenericFirstOrderTimeElementParameters) =
-    AffineVelocity(inv(p.Δt), p.uₑprev)
-@inline facet_velocity(p::NewmarkElementParameters) = p.velocity
-# Idempotent, so a reconstruction can be handed straight to a facet assembly — which is what a test
-# exercising the element in isolation wants. Deliberately *not* a `facet_velocity(p) = p` fallback:
-# handing a bare time to a dashpot has to fail, not be reinterpreted as a velocity.
-@inline facet_velocity(velocity::AffineVelocity) = velocity
 
 # ------------------------------------------------------------------------------------------------
 

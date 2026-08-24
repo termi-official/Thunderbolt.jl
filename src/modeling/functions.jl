@@ -204,6 +204,16 @@ subset of the fields -- must ask for that subset by name instead.
 fe_dof_range(f::AbstractSolidMechanicsFunction) = Base.OneTo(ndofs(f.dh))
 
 """
+    has_internal_variables(f)
+
+Whether the solution vector of `f` carries a condensed internal tail at all.
+
+A scheme asks this to decide whether its stage runs the condensation phase; a model with no condensed
+material has nothing for that traversal to solve and skips it.
+"""
+has_internal_variables(f) = !isempty(internal_variable_range(f))
+
+"""
     internal_variable_range(f)
     internal_variable_range(dh, lvh)
 

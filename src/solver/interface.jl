@@ -15,7 +15,7 @@ setup_stage_operator(f::NullFunction, solver::AbstractSolver, local_solver_cache
 # Linear
 # Unrolled to disambiguate
 function setup_operator(
-    strategy::SequentialAssemblyStrategy{<:AbstractCPUDevice},
+    strategy::AssemblyStrategy{<:FullAssembly, SequentialScheduling, <:AbstractCPUDevice},
     ::LinearIntegrator{<:NoStimulationProtocol},
     solver::AbstractSolver,
     dh::AbstractDofHandler,
@@ -23,7 +23,7 @@ function setup_operator(
     LinearNullOperator{value_type(strategy.device), ndofs(dh)}()
 end
 function setup_operator(
-    strategy::PerColorAssemblyStrategy{<:AbstractCPUDevice},
+    strategy::AssemblyStrategy{<:FullAssembly, <:ColoredScheduling, <:AbstractCPUDevice},
     ::LinearIntegrator{<:NoStimulationProtocol},
     solver::AbstractSolver,
     dh::AbstractDofHandler,
@@ -31,7 +31,7 @@ function setup_operator(
     LinearNullOperator{value_type(strategy.device), ndofs(dh)}()
 end
 function setup_operator(
-    strategy::ElementAssemblyStrategy{<:AbstractCPUDevice},
+    strategy::AssemblyStrategy{<:Union{ElementAssembly, <:ElementAssemblyData}, <:AbstractSchedulingPolicy, <:AbstractCPUDevice},
     ::LinearIntegrator{<:NoStimulationProtocol},
     solver::AbstractSolver,
     dh::AbstractDofHandler,
@@ -39,7 +39,7 @@ function setup_operator(
     LinearNullOperator{value_type(strategy.device), ndofs(dh)}()
 end
 function setup_operator(
-    strategy::SequentialAssemblyStrategy{<:AbstractGPUDevice},
+    strategy::AssemblyStrategy{<:FullAssembly, SequentialScheduling, <:AbstractGPUDevice},
     ::LinearIntegrator{<:NoStimulationProtocol},
     solver::AbstractSolver,
     dh::AbstractDofHandler,
@@ -47,7 +47,7 @@ function setup_operator(
     LinearNullOperator{value_type(strategy.device), ndofs(dh)}()
 end
 function setup_operator(
-    strategy::PerColorAssemblyStrategy{<:AbstractGPUDevice},
+    strategy::AssemblyStrategy{<:FullAssembly, <:ColoredScheduling, <:AbstractGPUDevice},
     ::LinearIntegrator{<:NoStimulationProtocol},
     solver::AbstractSolver,
     dh::AbstractDofHandler,
@@ -55,7 +55,7 @@ function setup_operator(
     LinearNullOperator{value_type(strategy.device), ndofs(dh)}()
 end
 function setup_operator(
-    strategy::ElementAssemblyStrategy{<:AbstractGPUDevice},
+    strategy::AssemblyStrategy{<:Union{ElementAssembly, <:ElementAssemblyData}, <:AbstractSchedulingPolicy, <:AbstractGPUDevice},
     ::LinearIntegrator{<:NoStimulationProtocol},
     solver::AbstractSolver,
     dh::AbstractDofHandler,
@@ -75,8 +75,8 @@ end
 # Bilinear
 function setup_operator(
     strategy::Union{
-        SequentialAssemblyStrategy{<:AbstractCPUDevice},
-        PerColorAssemblyStrategy{<:AbstractCPUDevice},
+        AssemblyStrategy{<:FullAssembly, SequentialScheduling, <:AbstractCPUDevice},
+        AssemblyStrategy{<:FullAssembly, <:ColoredScheduling, <:AbstractCPUDevice},
     },
     integrator::AbstractBilinearIntegrator,
     solver::AbstractSolver,
@@ -85,7 +85,7 @@ function setup_operator(
     setup_assembled_operator(strategy, integrator, solver.system_matrix_type, dh)
 end
 function setup_assembled_operator(
-    strategy::SequentialAssemblyStrategy{<:AbstractCPUDevice},
+    strategy::AssemblyStrategy{<:FullAssembly, SequentialScheduling, <:AbstractCPUDevice},
     integrator::AbstractBilinearIntegrator,
     system_matrix_type::Type,
     dh::AbstractDofHandler,

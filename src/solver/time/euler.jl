@@ -78,6 +78,27 @@ mutable struct BackwardEulerAffineODEStage{
     Δt_last::T
 end
 
+@doc raw"""
+    _backward_euler_stage_evaluation(f, t, Δt, uprev)
+
+The discretization one backward Euler step hands the elements.
+
+The velocity is reconstructed from the unknown displacement as ``v = (u - u_{n-1})/\Delta t``, which
+is an [`AffineRate`](@ref) with slope ``1/\Delta t`` anchored at the previous solution. The same
+`Δt` is the interval the internal variable integrates over, so here the reconstruction slope and the
+stage scaling are reciprocals — the coincidence that makes this the one scheme a rate-coupled element
+could be written against by hand.
+"""
+function _backward_euler_stage_evaluation(f, t, Δt, uprev)
+    slope = inv(Δt)
+    return StageEvaluation(;
+        slots     = (uprev = uprev, qprev = InternalSource(uprev), v = AffineRate(slope, uprev)),
+        ctx       = TimeIntegrationContext(t, Δt, Δt),
+        weights   = (u = true, v = slope),
+        condensed = has_internal_variables(f),
+    )
+end
+
 function perform_backward_euler_step!(
     f::AffineODEFunction,
     cache::BackwardEulerSolverCache,
@@ -126,7 +147,8 @@ function _implicit_euler_heat_solver_update_system_matrix!(A, M, K, Δt)
 end
 
 function implicit_euler_heat_update_source_term!(cache::BackwardEulerAffineODEStage, t)
-    needs_update(cache.source_term, t) && update_operator!(cache.source_term, t)
+    needs_update(cache.source_term, t) &&
+        update_operator!(cache.source_term, nothing, TimeIntegrationContext(t, zero(t), zero(t)))
 end
 
 function setup_solver_cache(
@@ -180,9 +202,10 @@ function setup_solver_cache(
     )
 
     @timeit_debug "initial assembly" begin
-        update_operator!(mass_operator, t₀)
-        update_operator!(bilinear_operator, t₀)
-        update_operator!(source_operator, t₀)
+        ctx₀ = TimeIntegrationContext(t₀, zero(t₀), zero(t₀))
+        update_operator!(mass_operator, nothing, ctx₀)
+        update_operator!(bilinear_operator, nothing, ctx₀)
+        update_operator!(source_operator, nothing, ctx₀)
     end
 
     return cache
@@ -324,13 +347,14 @@ setup_local_solver_cache(f::QuasiStaticFunction, solver::MultiLevelNewtonRaphson
 setup_local_solver_cache(f::ElastodynamicsFunction, solver::MultiLevelNewtonRaphsonSolver) =
     setup_local_solver_cache(f.structural, solver)
 
-# `gto1` supplies the previous solution and the timestep per call via
-# `GenericFirstOrderTimeParameters`, so only the local solver cache has to reach the element here.
+# The previous solution, the internal state and the reconstructed velocity reach the element as slots
+# of the step, so only the local solver cache has to be woven into the integrator here.
 setup_stage_operator(f::QuasiStaticFunction, solver::BackwardEulerSolver, local_solver_cache, t₀) =
     setup_operator(
         get_strategy(f),
         _annotate_with_local_solver_cache(f.integrator, local_solver_cache),
-        f.dh,
+        f.dh;
+        slots = THUNDERBOLT_STAGE_SLOTS,
     )
 
 """
@@ -356,7 +380,7 @@ stage: it is the annotated one, carrying the local solver cache down to the elem
     sf = FullStateStage(
         f,
         op,
-        FerriteOperators.GenericFirstOrderTimeParameters(nothing, t₀, zero(t₀), uprev),
+        _backward_euler_stage_evaluation(f, t₀, zero(t₀), uprev),
     )
 
     return BackwardEulerStageCache(
@@ -544,10 +568,7 @@ function perform_backward_euler_step!(
     # element via `query_element_parameters(element, cell, ivh, p.p)`. It is the slot reserved for the
     # parameters being *optimized* — not the model's parameters in general, which stay in the model
     # struct. Nothing is optimized here, hence `nothing`. See the `nlsolve!` docstring.
-    set_stage_parameters!(
-        sf,
-        FerriteOperators.GenericFirstOrderTimeParameters(nothing, t + Δt, Δt, cache.uₙ₋₁),
-    )
+    set_stage_parameters!(sf, _backward_euler_stage_evaluation(f, t + Δt, Δt, cache.uₙ₋₁))
     # Nothing is condensed, so the stage vector aliases the state and both transfer hooks are no-ops.
     z = cache.uₙ
     init_stage!(z, sf, cache.uₙ)

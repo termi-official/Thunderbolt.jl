@@ -61,18 +61,24 @@ duplicate_for_device(device, ec::AnalyticalCoefficientElementCache) =
         ec.cv,
     )
 
-@inline function assemble_element!(
-    bₑ::AbstractVector,
-    geometry_cache::CellCache,
+Ferrite.getnquadpoints(element_cache::AnalyticalCoefficientElementCache) =
+    getnquadpoints(element_cache.cv)
+# The kernel maps the reference quadrature points itself, out of the geometry cache's coordinates,
+# and reads only the reference shape values of `cv`. Nothing in the cache is per-cell state.
+FerriteOperators.reinit_values!(::AnalyticalCoefficientElementCache, cell) = nothing
+
+@inline function FerriteOperators.assemble_cell!(
+    req::FerriteOperators.ResidualRequest,
     element_cache::AnalyticalCoefficientElementCache,
-    time,
+    args::FerriteOperators.CellArgs,
 )
+    geometry_cache = args.cell
     _assemble_element!(
-        bₑ,
+        req.r,
         geometry_cache,
         getcoordinates(geometry_cache),
         element_cache::AnalyticalCoefficientElementCache,
-        time,
+        FerriteOperators.evaluation_time(args.ctx),
     )
 end
 

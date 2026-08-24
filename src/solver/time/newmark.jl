@@ -109,34 +109,53 @@ function _add_inertia_linearization!(sop::NewmarkStageOperator)
     return nothing
 end
 
+# The inertia is the scheme's own term, so every entry point of the wrapped operator gains it. `u` is
+# read out of the `:u` slot: the acceleration is a function of the displacement alone.
 function FerriteOperators.update_linearization!(
     sop::NewmarkStageOperator,
     residual::AbstractVector,
-    u::AbstractVector,
+    states::NamedTuple,
     p,
+    ctx,
 )
-    update_linearization!(sop.op, residual, u, p)
-    _add_inertia_residual!(residual, sop, u)
+    update_linearization!(sop.op, residual, states, p, ctx)
+    _add_inertia_residual!(residual, sop, states.u)
     _add_inertia_linearization!(sop)
     return nothing
 end
 
-function FerriteOperators.update_linearization!(sop::NewmarkStageOperator, u::AbstractVector, p)
-    update_linearization!(sop.op, u, p)
-    _add_inertia_linearization!(sop)
-    return nothing
-end
-
-function FerriteOperators.residual!(
+function FerriteOperators.evaluate!(
     sop::NewmarkStageOperator,
     residual::AbstractVector,
-    u::AbstractVector,
+    states::NamedTuple,
     p,
+    ctx,
 )
-    residual!(sop.op, residual, u, p)
-    _add_inertia_residual!(residual, sop, u)
+    evaluate!(sop.op, residual, states, p, ctx)
+    _add_inertia_residual!(residual, sop, states.u)
     return nothing
 end
+
+function FerriteOperators.assemble_weighted_jacobian!(
+    W::AbstractMatrix,
+    sop::NewmarkStageOperator,
+    weights::NamedTuple,
+    states::NamedTuple,
+    p,
+    ctx,
+)
+    assemble_weighted_jacobian!(W, sop.op, weights, states, p, ctx)
+    _add_inertia_linearization!(sop)
+    return W
+end
+
+FerriteOperators.condense_internal!(
+    sop::NewmarkStageOperator,
+    weights::NamedTuple,
+    states::NamedTuple,
+    p,
+    ctx,
+) = condense_internal!(sop.op, weights, states, p, ctx)
 
 """
     NewmarkStage(f, op, mapping, velocity_dofs, p)
@@ -148,7 +167,7 @@ variables against the *structural* problem's dof handler, and the velocity follo
 displacement. So the stage's unknowns are a strict subset of the state's, wired to it by a
 [`SolutionVectorMapping`](@ref) rather than by an assumed layout.
 
-`update_state!` reconstructs the velocity from the same [`AffineVelocity`](@ref) the element is handed
+`update_state!` reconstructs the velocity from the same [`AffineRate`](@ref) the element is handed
 to form the deformation rate, so the global corrector and the element's rate cannot drift apart.
 """
 mutable struct NewmarkStage{FType, OpType, MapType, PType} <: AbstractStageFunction
@@ -172,9 +191,9 @@ function update_state!(u::AbstractVector, sf::NewmarkStage, z::AbstractVector)
     scatter!(u, z, stage_mapping(sf))
     # v = ∂v∂u (u - uᵥ), in the structural numbering, written into the state's velocity block. This is
     # the same relation the element uses to form the deformation rate -- one statement, not two.
-    (; ∂v∂u, uᵥ) = sf.p.velocity
+    rate = stage_parameters(sf).slots.v
     @inbounds for (i, d) in enumerate(sf.velocity_dofs)
-        u[d] = ∂v∂u * (z[i] - uᵥ[i])
+        u[d] = rate.slope * (z[i] - rate.anchor[i])
     end
     return u
 end
@@ -227,7 +246,7 @@ mutable struct NewmarkSolverCache{
     aₙ₋₁::AccelerationType
     # Scratch for the velocity predictor
     ṽ::AccelerationType
-    # The `uᵥ` of this step's `AffineVelocity`, held at the structural problem's length so that the
+    # The `uᵥ` of this step's velocity reconstruction, held at the structural problem's length so that the
     # element query can slice a cell out of it exactly as it does for the previous solution.
     uᵥ::VelocityReferenceType
     stage::StageType
@@ -395,10 +414,12 @@ function setup_stage_operator(
     op = setup_operator(
         get_strategy(f),
         _annotate_with_local_solver_cache(structural.integrator, local_solver_cache),
-        dh,
+        dh;
+        slots = THUNDERBOLT_STAGE_SLOTS,
     )
     mass_operator = setup_operator(get_strategy(f), f.mass_term, solver, dh)
-    @timeit_debug "mass assembly" update_operator!(mass_operator, t₀)
+    @timeit_debug "mass assembly" update_operator!(
+        mass_operator, nothing, TimeIntegrationContext(t₀, zero(t₀), zero(t₀)))
 
     nfe = ndofs(dh)
     return NewmarkStageOperator(
@@ -446,11 +467,12 @@ function setup_solver_cache(
         stage_op,
         f.state_mapping,
         f.velocity_dofs,
-        NewmarkTimeParameters(
-            nothing,
+        _newmark_stage_evaluation(
+            structural,
             t₀,
             zero(t₀),
-            AffineVelocity(one(Float64), zeros(solution_size(structural))),
+            one(Float64),
+            zeros(solution_size(structural)),
             zeros(solution_size(structural)),
         ),
     )
@@ -518,8 +540,14 @@ function _consistent_initial_acceleration(f::ElastodynamicsFunction, stage_op, u
     ∂v∂u = one(eltype(z))
     uᵥ = copy(z)
     @inbounds @views @.. uᵥ[fe] = z[fe] - v₀ / ∂v∂u
-    p = NewmarkTimeParameters(nothing, t₀, eps(Float64), AffineVelocity(∂v∂u, uᵥ), copy(z))
-    residual!(stage_op.op, r, copy(z), p)
+    ztrial = copy(z)
+    e      = _newmark_stage_evaluation(structural, t₀, eps(Float64), ∂v∂u, uᵥ, copy(z))
+    states = merge((u = ztrial,), e.slots)
+    if e.condensed
+        states = merge(states, (q = InternalSource(ztrial),))
+        condense_internal!(stage_op.op, e.weights, states, e.p, e.ctx)
+    end
+    evaluate!(stage_op.op, r, states, e.p, e.ctx)
     r .= .-r
 
     # On a copy of the mass matrix: `apply_zero!` rewrites the constrained rows and columns, and the
@@ -535,7 +563,7 @@ end
     _newmark_affine_velocity!(uᵥ, ũ, ṽ, ∂v∂u)
 
 Write the displacement at which the reconstructed velocity vanishes, i.e. the `uᵥ` of the
-[`AffineVelocity`](@ref) this step hands the element.
+[`AffineRate`](@ref) this step hands the element.
 
 Inserting the corrector ``v = \tilde{v} + \gamma\Delta t\,(u - \tilde{u})/(\beta\Delta t^2)`` into
 ``v(u) = \partial_u v\,(u - u_v)`` and collecting terms gives ``u_v = \tilde{u} - \tilde{v}/\partial_u v``.
@@ -546,6 +574,23 @@ function _newmark_affine_velocity!(uᵥ, ũ, ṽ, ∂v∂u)
     @inbounds @views @.. uᵥ[1:length(ũ)] = ũ - ṽ / ∂v∂u
     return uᵥ
 end
+
+@doc raw"""
+    _newmark_stage_evaluation(structural, t, Δt, ∂v∂u, uᵥ, uprev)
+
+The discretization one Newmark step hands the elements.
+
+The two time quantities stay apart. `Δt` is the interval the internal variable integrates over —
+``d_tQ = L(F, Q)`` is first order whatever the global scheme does with ``u`` — while the velocity is
+reconstructed as ``v(u) = \partial_u v\,(u - u_v)``. Under Newmark the two differ by
+``\gamma/\beta``, and `weights` is what carries the reconstruction slope into the scheme matrix.
+"""
+_newmark_stage_evaluation(structural, t, Δt, ∂v∂u, uᵥ, uprev) = StageEvaluation(;
+    slots     = (uprev = uprev, qprev = InternalSource(uprev), v = AffineRate(∂v∂u, uᵥ)),
+    ctx       = TimeIntegrationContext(t, Δt, Δt),
+    weights   = (u = true, v = ∂v∂u),
+    condensed = has_internal_variables(structural),
+)
 
 # The scheme reports its error estimate to the *controller* via `set_error_estimate!`,
 # so this dispatches on the integrator rather than on `(f, cache, t, Δt)`. Nothing about the step size
@@ -582,12 +627,12 @@ function perform_step!(f::ElastodynamicsFunction, cache::NewmarkSolverCache, t, 
 
     # The two time quantities backward Euler conflates. `Δt` is what the *internal variable* integrates
     # over: `dₜQ = L(F, Q)` stays first order whatever the global scheme does with `u`, so its local
-    # problem is unchanged. The `AffineVelocity` is how the deformation rate is formed and linearized.
+    # problem is unchanged. The `AffineRate` is how the deformation rate is formed and linearized.
     ∂v∂u = γ / (β * Δt)
     _newmark_affine_velocity!(uᵥ, stage_op.ũ, ṽ, ∂v∂u)
     set_stage_parameters!(
         stage_function,
-        NewmarkTimeParameters(nothing, t + Δt, Δt, AffineVelocity(∂v∂u, uᵥ), zprev),
+        _newmark_stage_evaluation(f.structural, t + Δt, Δt, ∂v∂u, uᵥ, zprev),
     )
     if !nlsolve!(z, stage_function, nlsolver, t + Δt)
         return false

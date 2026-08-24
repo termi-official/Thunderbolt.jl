@@ -499,11 +499,10 @@ end
             )
         end
 
-        # The facet path reaches the time the same way: a surface cache is handed whatever
-        # `query_element_parameters` produced for the *volumetric* cache of its subdomain, and
-        # `PressureFieldBC` queries `get_time` on it rather than passing its trailing argument to
-        # `evaluate_coefficient` unexamined. On a rate-free subdomain that object is the element local
-        # form of the `gto1` parameters, not a bare time, which is what this pins.
+        # The facet path reaches the time the same way a cell kernel does: `PressureFieldBC` reads
+        # `evaluation_time(args.ctx)` and hands *that* to `evaluate_coefficient`, rather than anything
+        # out of `args.p`, which carries configuration only. This pins a time dependent facet
+        # coefficient on a subdomain whose element is rate-free.
         let facemodels_tdep = (
                 NormalSpringBC(0.0, "right"),
                 ConstantPressureBC(0.0, "back"),
