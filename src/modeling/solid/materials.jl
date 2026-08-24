@@ -785,6 +785,11 @@ Models the stress formulated in the 1st Piola-Kirchhoff stress tensor based on a
 of the deformation gradient $$F = F_{\textrm{e}} F_{0}$$ where we compute $$P(F_{\textrm{e}}) = P(F F^{-1}_{0})$$.
 
 Please note that it is assumed that $$F^{-1}_{0}$$ is the quantity computed by `prestress_field`.
+
+The inner model's strain energy is taken per unit volume of the **intermediate** (stress-free)
+configuration, so the referential density is $$\\Psi(F) = \\det(F_0)\\, \\Psi^e(F F_0^{-1})$$ and the
+first Piola stress carries the $$\\det(F_0)$$ factor. For isochoric prestress this coincides with the
+per-reference-volume convention; for non-isochoric fields (e.g. kinematic growth) it does not.
 """
 struct PrestressedMechanicalModel{MM, FF} <: AbstractMaterialModel
     inner_model::MM
@@ -880,6 +885,12 @@ function prestressed_material_routine(
 )
     F₀inv = evaluate_coefficient(coefficient_cache.prestress_cache, geometry_cache, qp, time)
     Fᵉ = F ⋅ F₀inv
+    # The inner model's energy density is defined per unit volume of the *intermediate* (stress-free)
+    # configuration, so the referential density is Ψ(F) = J₀ Ψᵉ(F F₀⁻¹) with J₀ = det F₀ — and the
+    # stress and tangent inherit the factor: P = ∂Ψ/∂F = J₀ Pᵉ F₀⁻ᵀ (Coleman–Noll). For isochoric
+    # prestress (J₀ = 1) this is invisible; for grown states the reference stress is otherwise wrong
+    # by exactly J₀.
+    J₀ = 1 / det(F₀inv)
     ∂Ψᵉ∂Fᵉ, ∂²Ψᵉ∂Fᵉ² = material_routine(
         material_model.inner_model,
         Fᵉ,
@@ -890,12 +901,13 @@ function prestressed_material_routine(
         time,
     )
     Pᵉ = ∂Ψᵉ∂Fᵉ # Elastic PK1
-    P = Pᵉ ⋅ transpose(F₀inv) # Obtained by Coleman-Noll procedure
+    P = J₀ * Pᵉ ⋅ transpose(F₀inv)
     Aᵉ = ∂²Ψᵉ∂Fᵉ² # Elastic mixed modulus
     # TODO condense these steps into a single operation "A_imkn F_jm F_ln"
-    # Pull elastic modulus from intermediate to reference configuration
+    # Pull elastic modulus from intermediate to reference configuration; J₀ is constant in F, so the
+    # tangent simply scales.
     ∂Pᵉ∂F = Aᵉ ⋅ transpose(F₀inv)
-    ∂P∂F = dot_2_1t(∂Pᵉ∂F, F₀inv)
+    ∂P∂F = J₀ * dot_2_1t(∂Pᵉ∂F, F₀inv)
     return P, ∂P∂F
 end
 
@@ -971,7 +983,8 @@ function reduced_prestressed_material_routine(
         time,
     )
     Pᵉ = ∂Ψᵉ∂Fᵉ # Elastic PK1
-    P = Pᵉ ⋅ transpose(F₀inv) # Obtained by Coleman-Noll procedure
+    # Same J₀ = det F₀ pushforward as in `prestressed_material_routine` — see the derivation there.
+    P = (1 / det(F₀inv)) * Pᵉ ⋅ transpose(F₀inv)
     return P
 end
 setup_internal_cache(
