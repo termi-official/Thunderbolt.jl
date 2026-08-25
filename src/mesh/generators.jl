@@ -740,7 +740,7 @@ function generate_ideal_lv_mesh(
 end
 
 """
-    generate_ideal_lh_mesh(num_elements_circumferential::Int, num_elements_radial::Int, num_elements_longitudinal::Int, num_elements_longitudinal_la::Int; inner_radius = 0.7, outer_radius = 1.0, longitudinal_upper = 0.2, apex_inner = 1.3, apex_outer = 1.5, la_cavity_radius = outer_radius, la_cavity_depth = inner_radius, la_wall_thickness = (outer_radius - inner_radius)/3, valve_plate_thickness = la_wall_thickness/3, num_elements_radial_plate = 3, septum_fraction = 1//3)
+    generate_ideal_lh_mesh(num_elements_circumferential::Int, num_elements_radial::Int, num_elements_longitudinal::Int, num_elements_longitudinal_la::Int; inner_radius = 0.7, outer_radius = 1.0, longitudinal_upper = 0.2, apex_inner = 1.3, apex_outer = 1.5, la_cavity_radius = outer_radius, la_cavity_depth = inner_radius, la_wall_thickness = (outer_radius - inner_radius)/3, valvular_plane_thickness = la_wall_thickness/3, num_elements_valvular_plane = 3, septum_fraction = 1//3)
 
 Generate an idealized left heart: the truncated ellipsoid of [`generate_ideal_lv_mesh`](@ref), a
 thin-walled left atrium grown from the far side of its basal rim, and a valvular plate closing the
@@ -788,7 +788,7 @@ thickness there to `la_wall_thickness` at the roof.
 
 # Valvular plate
 
-`"valvular-plane"` is a thin solid plate of thickness `valve_plate_thickness`, centered on the
+`"valvular-plane"` is a thin solid plate of thickness `valvular_plane_thickness`, centered on the
 annulus plane, that closes the mitral orifice so that each chamber has a closed surface: without it
 the endocardial sets are open at the orifice and the divergence-theorem chamber volume is neither
 direction-independent nor correct under deformation. It is meshed rather than imposed, so it deforms
@@ -796,7 +796,7 @@ with the wall; downstream gives it a soft dummy material, which carries the plat
 adding meaningful stiffness.
 
 It attaches to the *shared* endocardial rim ring, without duplicating or collapsing nodes: an
-innermost wedge fan around the plate's center edge, `num_elements_radial_plate - 2` annular
+innermost wedge fan around the plate's center edge, `num_elements_valvular_plane - 2` annular
 hexahedral layers, and an outermost ring of wedges whose triangular faces are radial-vertical with
 the rim node as the third vertex, so the plate tapers to a knife edge exactly at the annulus.
 
@@ -819,7 +819,11 @@ ventricle-only ridge sheets `"SRidgePost"`/`"SRidgeAnt"` and `"LVEndocardium"`/`
 call works on `subdomains = ["ventricle"]`.
 
 Nodesets `"Apex"`, `"ApexInOut"` and `"MyocardialAnchor1"`-`"MyocardialAnchor4"` as on the ventricle
-alone, plus `"MitralAnnulus"` for the shared rim nodes across the whole wall thickness.
+alone, plus `"MitralAnnulusRing"` for the shared rim nodes across the whole wall thickness.
+
+At the defaults the atrial cavity holds ≈0.78 of the ventricular cavity volume — the wide orifice
+makes a physiological ≈0.5 reachable only by flattening the dome; lower `la_cavity_depth` if the
+ratio matters more than the shape.
 """
 function generate_ideal_lh_mesh(
     num_elements_circumferential::Int,
@@ -834,8 +838,8 @@ function generate_ideal_lh_mesh(
     la_cavity_radius::T = outer_radius,
     la_cavity_depth::T = inner_radius,
     la_wall_thickness::T = (outer_radius - inner_radius)/3,
-    valve_plate_thickness::T = la_wall_thickness/3,
-    num_elements_radial_plate::Int = 3,
+    valvular_plane_thickness::T = la_wall_thickness/3,
+    num_elements_valvular_plane::Int = 3,
     septum_fraction = 1//3,
 ) where {T}
     nc        = num_elements_circumferential
@@ -843,18 +847,18 @@ function generate_ideal_lh_mesh(
     n_nodes_r = num_elements_radial + 1
     n_lv      = num_elements_longitudinal
     n_la      = num_elements_longitudinal_la
-    np        = num_elements_radial_plate
+    np        = num_elements_valvular_plane
 
     basal_angle = (1.0 + longitudinal_upper)*π/2
     rim_height  = apex_outer*cos(basal_angle)
     rim_radius(rp) = (inner_radius*(1.0-rp) + outer_radius*rp)*sin(basal_angle)
 
-    min(la_cavity_depth, la_wall_thickness, valve_plate_thickness) > 0.0 || error(
+    min(la_cavity_depth, la_wall_thickness, valvular_plane_thickness) > 0.0 || error(
         "`la_cavity_depth` ($(la_cavity_depth)), `la_wall_thickness` ($(la_wall_thickness)) and " *
-        "`valve_plate_thickness` ($(valve_plate_thickness)) all have to be positive.",
+        "`valvular_plane_thickness` ($(valvular_plane_thickness)) all have to be positive.",
     )
     np ≥ 2 || error(
-        "`num_elements_radial_plate` ($(np)) is below 2: the valvular plate needs at least its " *
+        "`num_elements_valvular_plane` ($(np)) is below 2: the valvular plate needs at least its " *
         "center fan and its tapering outer ring.",
     )
     la_cavity_radius ≥ rim_radius(0.0) || error(
@@ -932,8 +936,8 @@ function generate_ideal_lh_mesh(
     # The plate's interior rings, at the two plate faces, and its center edge. Its outermost ring is
     # the endocardial rim ring itself, which is why it is not built here.
     orifice_radius = rim_radius(0.0)
-    plate_top      = rim_height + valve_plate_thickness/2
-    plate_bottom   = rim_height - valve_plate_thickness/2
+    plate_top      = rim_height + valvular_plane_thickness/2
+    plate_bottom   = rim_height - valvular_plane_thickness/2
     plate_offset   = length(nodes)
     for j = 1:(np-1), z ∈ (plate_top, plate_bottom), φ ∈ circumferential_angle
         radius = orifice_radius*j/np
@@ -1055,7 +1059,7 @@ function generate_ideal_lh_mesh(
         OrderedSet{Int}([ventricle_array[ceil(Int, 1+3*nc/4), 1, end]])
     nodesets["Apex"]          = OrderedSet{Int}([last(apex_nodes)])
     nodesets["ApexInOut"]     = OrderedSet{Int}([first(apex_nodes), last(apex_nodes)])
-    nodesets["MitralAnnulus"] = OrderedSet{Int}(ventricle_array[:, :, end][:])
+    nodesets["MitralAnnulusRing"] = OrderedSet{Int}(ventricle_array[:, :, end][:])
 
     cellsets = Dict{String, OrderedSet{Int}}(
         "ventricle"      => OrderedSet{Int}([ventricle_hex[:]; apex_fan[:]]),

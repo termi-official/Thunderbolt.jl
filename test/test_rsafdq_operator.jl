@@ -303,13 +303,13 @@ function two_chamber_state(; seed = 7)
 
     pressure_symbols = (:pₗᵥ, :pₗₐ)
     couplers = (
-        Thunderbolt.Pressure3D0DVolumeCoupler(
+        Pressure3D0DVolumeCoupler(
             "LVChamberSurface",
             :d,
             pressure_symbols[1],
             RSAFDQ2022SurrogateVolume(),
         ),
-        Thunderbolt.Pressure3D0DVolumeCoupler(
+        Pressure3D0DVolumeCoupler(
             "LAChamberSurface",
             :d,
             pressure_symbols[2],

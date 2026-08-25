@@ -208,7 +208,7 @@ include(joinpath(@__DIR__, "testfixtures.jl"))
 
         @testset "valvular plate" begin
             plate = getcellset(mesh, "valvular-plane")
-            rim   = getnodeset(mesh, "MitralAnnulus")
+            rim   = getnodeset(mesh, "MitralAnnulusRing")
             coordinate(n) = Ferrite.get_node_coordinate(getnodes(mesh, n))
 
             @test min_detJdV(mesh) > 0
@@ -274,7 +274,7 @@ include(joinpath(@__DIR__, "testfixtures.jl"))
         end
 
         @testset "rim sharing" begin
-            rim = getnodeset(mesh, "MitralAnnulus")
+            rim = getnodeset(mesh, "MitralAnnulusRing")
             @test length(rim) == nc*(nr+1)
 
             chambers_of = Dict(n => Set{String}() for n in rim)
@@ -316,7 +316,7 @@ include(joinpath(@__DIR__, "testfixtures.jl"))
             @test_throws ErrorException generate_ideal_lh_mesh(4, 1, 1, 1; la_wall_thickness = -0.1)
             @test_throws ErrorException generate_ideal_lh_mesh(
                 4, 1, 1, 1;
-                num_elements_radial_plate = 1,
+                num_elements_valvular_plane = 1,
             )
         end
 
