@@ -82,10 +82,12 @@ function _get_facet_quadrature_from_discretization(disc::FiniteElementDiscretiza
     if haskey(disc.fqrcs, sym)
         return disc.fqrcs[sym]
     end
-    # Step 2: Deduce from interpolation order
+    # Step 2: Deduce from interpolation order. A facet rule at the interpolation order
+    # under-integrates boundary functionals (e.g. a closed-surface chamber volume was off
+    # by 0.7-2.1% at order 1, exact at order 2), so mirror the volumetric `_extract_qrc` formula.
     if haskey(disc.interpolations, sym)
         intorder = getorder(_extract_ipc(disc.interpolations[sym]))
-        return FacetQuadratureRuleCollection(intorder)
+        return FacetQuadratureRuleCollection(max(2intorder - 1, 2))
     end
     error(
         "Finite element discretization does not have an interpolation or facet quadrature rule for $sym. Available symbols: $(collect(keys(disc.interpolations))) and $(collect(keys(disc.fqrcs))).",
