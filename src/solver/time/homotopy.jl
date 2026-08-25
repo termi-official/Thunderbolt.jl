@@ -30,8 +30,6 @@ during setup, so that it is reported once with a name and a remedy instead of su
 from the assembly loop.
 """
 check_internal_variables_are_rate_free(f) = nothing
-check_internal_variables_are_rate_free(f::AbstractSemidiscreteBlockedFunction) =
-    foreach(check_internal_variables_are_rate_free, blocks(f))
 check_internal_variables_are_rate_free(f::QuasiStaticFunction) =
     foreach(_check_model_is_rate_free, _volume_models(get_volume_integrator(f)))
 
@@ -52,8 +50,6 @@ Without this the combination fails inside the assembly loop, where the message i
 `Float64` rather than a named boundary condition.
 """
 check_weak_boundary_conditions_are_rate_free(f) = nothing
-check_weak_boundary_conditions_are_rate_free(f::AbstractSemidiscreteBlockedFunction) =
-    foreach(check_weak_boundary_conditions_are_rate_free, blocks(f))
 check_weak_boundary_conditions_are_rate_free(f::QuasiStaticFunction) =
     foreach(_check_facet_model_is_rate_free, _facet_models(get_volume_integrator(f)))
 
@@ -166,60 +162,6 @@ function setup_solver_cache(
         _u,
         _uprev,
         vtype(undef, solution_size(f)),
-    )
-
-    # Make sure the initial state is consistent
-    perform_step!(f, solver_cache, t₀, 0.0) ||
-        error("Initial guess is not consistent with the model or the problem is not well-posed!")
-
-    return solver_cache
-end
-
-function setup_solver_cache(
-    f::AbstractSemidiscreteBlockedFunction,
-    solver::HomotopyPathSolver,
-    t₀;
-    uprev       = nothing,
-    u           = nothing,
-    alias_uprev = true,
-    alias_u     = false,
-)
-    check_internal_variables_are_rate_free(f)
-    check_weak_boundary_conditions_are_rate_free(f)
-    stage_function = FullStateStage(f, setup_stage_operator(f, solver, nothing, t₀), _homotopy_stage_evaluation(f, t₀))
-    inner_solver_cache = setup_solver_cache(stage_function, solver.inner_solver)
-
-    vtype = Vector{Float64}
-    if u === nothing
-        _u = mortar([vtype(undef, solution_size(fi)) for fi ∈ blocks(f)])
-        @warn "Cannot initialize u for $(typeof(solver))."
-    else
-        if alias_u
-            _u = u
-        else
-            _u = mortar([vtype(undef, solution_size(fi)) for fi ∈ blocks(f)])
-            _u .= u
-        end
-    end
-
-    if uprev === nothing
-        _uprev = mortar([vtype(undef, solution_size(fi)) for fi ∈ blocks(f)])
-        _uprev .= u
-    else
-        if alias_uprev
-            _uprev = uprev
-        else
-            _uprev = mortar([vtype(undef, solution_size(fi)) for fi ∈ blocks(f)])
-            _uprev .= uprev
-        end
-    end
-
-    solver_cache = HomotopyPathSolverCache(
-        stage_function,
-        inner_solver_cache,
-        _u,
-        _uprev,
-        mortar([vtype(undef, solution_size(fi)) for fi ∈ blocks(f)]),
     )
 
     # Make sure the initial state is consistent

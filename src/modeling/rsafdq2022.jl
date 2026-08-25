@@ -9,6 +9,8 @@ mutable struct RSAFDQ2022SingleChamberTying{CVM}
     const facets::OrderedSet{FacetIndex}
     const volume_method::CVM
     const displacement_symbol::Symbol
+    # The buffer between the two sides of the split: `VolumeTransfer0D3D` writes the 0D solve's
+    # chamber volume here, and the 3D stage copies it into its parameter bag once per step.
     V⁰ᴰval::Float64
     const V⁰ᴰidx_global::Int
 end
@@ -21,43 +23,53 @@ solution_size(problem::RSAFDQ2022TyingInfo) = length(problem.chambers)
 
 # TODO use an operator for this
 function compute_chamber_volume(dh, u, setname, method::RSAFDQ2022SingleChamberTying)
-    grid = dh.grid
+    volume = 0.0
+    for (sdhi, facets) in _chamber_facets_per_subdofhandler(dh, setname)
+        volume += _chamber_volume_contribution(dh.subdofhandlers[sdhi], u, facets, method)
+    end
+    return volume
+end
+
+# A chamber surface is bounded by whatever subdomains touch it -- the ventricular wall and the
+# valvular plate, hexahedra and wedges -- so the facets are grouped by the subdofhandler owning
+# their cell. Resolving the owner is what keeps the interpolation the one that cell actually
+# carries; the surface's own partition is by cell type, which does not determine the subdomain.
+function _chamber_facets_per_subdofhandler(dh, setname)
+    grouped = OrderedDict{Int, Vector{FacetIndex}}()
+    for facetset in values(get_grid(dh).surface_subdomains[setname].data), facet in facetset
+        sdhi = dh.cell_to_subdofhandler[facet[1]]
+        sdhi == 0 && continue
+        push!(get!(Vector{FacetIndex}, grouped, sdhi), facet)
+    end
+    return grouped
+end
+
+function _chamber_volume_contribution(sdh, u, facets, method::RSAFDQ2022SingleChamberTying)
+    ip     = Ferrite.getfieldinterpolation(sdh, method.displacement_symbol)
+    drange = dof_range(sdh, method.displacement_symbol)
+    qr     = FacetQuadratureRule{Ferrite.getrefshape(ip)}(2*Ferrite.getorder(ip))
+    fv     = FacetValues(qr, ip, Ferrite.geometric_interpolation(getcelltype(sdh)))
 
     volume = 0.0
-    # TODO function barrier
-    for facetset in values(grid.surface_subdomains[setname].data)
-        # TODO move out of loop and refactor
-        cell = getcells(grid, first(facetset)[1])
-        sdhi = typeof(cell) == Hexahedron ? 1 : min(2, length(dh.subdofhandlers)) # :) We can find it by searching the element index of the first element in the facetset in the sdh cellsets.
-        sdh = dh.subdofhandlers[sdhi]
-        ip = Ferrite.getfieldinterpolation(sdh, method.displacement_symbol)
-        drange = dof_range(sdh, method.displacement_symbol)
-        for facet ∈ FacetIterator(sdh, facetset)
-            ip_geo = Ferrite.geometric_interpolation(typeof(cell))
-            intorder = 2*Ferrite.getorder(ip)
-            ref_shape = Ferrite.getrefshape(ip)
-            qr_facet = FacetQuadratureRule{ref_shape}(intorder)
-            fv = FacetValues(qr_facet, ip, ip_geo)
+    for facet ∈ FacetIterator(sdh, facets)
+        Ferrite.reinit!(fv, facet)
 
-            Ferrite.reinit!(fv, facet)
+        coords = getcoordinates(facet)
+        ddofs = @view celldofs(facet)[drange]
+        uₑ = @view u[ddofs]
 
-            coords = getcoordinates(facet)
-            ddofs = @view celldofs(facet)[drange]
-            uₑ = @view u[ddofs]
+        for qp in QuadratureIterator(fv)
+            dΓ = getdetJdV(fv, qp)
+            N = getnormal(fv, qp)
 
-            for qp in QuadratureIterator(fv)
-                dΓ = getdetJdV(fv, qp)
-                N = getnormal(fv, qp)
+            ∇u = function_gradient(fv, qp, uₑ)
+            F = one(∇u) + ∇u
 
-                ∇u = function_gradient(fv, qp, uₑ)
-                F = one(∇u) + ∇u
+            d = function_value(fv, qp, uₑ)
 
-                d = function_value(fv, qp, uₑ)
+            x = spatial_coordinate(fv, qp, coords)
 
-                x = spatial_coordinate(fv, qp, coords)
-
-                volume += volume_integral(x, d, F, N, method.volume_method) * dΓ
-            end
+            volume += volume_integral(x, d, F, N, method.volume_method) * dΓ
         end
     end
     return volume
@@ -99,17 +111,11 @@ struct RSAFDQ20223DFunction{MT <: QuasiStaticFunction, TP <: RSAFDQ2022TyingInfo
 end
 
 # The chamber pressures are algebraic variables of the structural `DofHandler`, so this function's
-# unknowns *are* the structural ones. `blocksizes` reports how that one vector splits into
-# `[field dofs | chamber pressures]`, which is the split a block solver works on.
+# unknowns *are* the structural ones. Where a block split is needed -- `setup_stage_operator`
+# building the `BlockMatrix` Schur solves on -- it is derived there from the chamber count.
 solution_size(f::RSAFDQ20223DFunction) = solution_size(f.structural_function)
-BlockArrays.blocksizes(f::RSAFDQ20223DFunction) = (
-    solution_size(f.structural_function) - solution_size(f.tying_info),
-    solution_size(f.tying_info),
-)
 
 getch(f::AbstractSemidiscreteFunction) = f.ch
-getch(f::AbstractSemidiscreteBlockedFunction) =
-    error("Overlaod getch to get the constraint handler for a blocked function")
 getch(f::RSAFDQ20223DFunction) = getch(f.structural_function)
 
 get_strategy(f::RSAFDQ20223DFunction) = get_strategy(f.structural_function)

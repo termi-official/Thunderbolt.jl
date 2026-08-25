@@ -124,38 +124,6 @@ end
 
 update_constraints!(f, solver_cache::AbstractTimeSolverCache, t) = nothing
 
-function update_constraints!(
-    f::AbstractSemidiscreteBlockedFunction,
-    solver_cache::AbstractTimeSolverCache,
-    t,
-)
-    for (i, pi) ∈ enumerate(blocks(f))
-        update_constraints_block!(pi, Block(i), solver_cache, t)
-    end
-end
-
-function update_constraints_block!(
-    f::AbstractSemidiscreteFunction,
-    i::Block,
-    solver_cache::AbstractTimeSolverCache,
-    t,
-)
-    Ferrite.update!(getch(f), t)
-    u = @view solver_cache.uₙ[i]
-    apply!(u, getch(f))
-end
-
-update_constraints_block!(
-    f::SciMLBase.AbstractDiffEqFunction,
-    i::Block,
-    solver_cache::AbstractTimeSolverCache,
-    t,
-) = nothing
-
-update_constraints_block!(f::NullFunction, i::Block, solver_cache::AbstractTimeSolverCache, t) =
-    nothing
-
-
 create_system_matrix(T::Type{<:AbstractMatrix}, f::AbstractSemidiscreteFunction) =
     create_system_matrix(T, f.dh)
 

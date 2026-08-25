@@ -301,7 +301,7 @@ reason given at [`rsafdq_reference_state`](@ref).
 `device` defaults to the sequential device, deterministic summation for a pinned reference; pass
 `PolyesterDevice()` to build the same problem for the threaded-vs-sequential equivalence check.
 
-Returns `(; f, op, u, pressure_symbols, pressure_dofs, n_u, models)`.
+Returns `(; f, op, u, pressure_symbols, chamber_surface_names, pressure_dofs, n_u, models)`.
 """
 function two_chamber_state(; seed = 7, device = Thunderbolt.SequentialCPUDevice())
     scaling_factor = 3.9

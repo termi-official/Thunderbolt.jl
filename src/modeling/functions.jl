@@ -15,19 +15,6 @@ get_strategy(::AbstractSemidiscreteFunction) = SequentialAssemblyStrategy(Polyes
 abstract type AbstractPointwiseFunction <: AbstractSemidiscreteFunction end
 
 """
-    AbstractSemidiscreteBlockedFunction <: AbstractSemidiscreteFunction
-
-Supertype for all functions coming from PDE discretizations with blocked structure.
-
-## Interface
-
-    BlockArrays.blocksizes(::AbstractSemidiscreteFunction)
-    BlockArrays.blocks(::AbstractSemidiscreteFunction) -> Iterable
-"""
-abstract type AbstractSemidiscreteBlockedFunction <: AbstractSemidiscreteFunction end
-solution_size(f::AbstractSemidiscreteBlockedFunction) = sum(blocksizes(f))
-
-"""
     NullFunction(ndofs)
 
 Utility type to describe that Jacobian and residual are zero, but ndofs dofs are present.

@@ -1,5 +1,5 @@
-using Test, Thunderbolt, Tensors, LinearAlgebra
-using JET: @test_opt, @test_call
+using Test, Thunderbolt, Tensors
+using JET: @test_opt
 @testset "Element API" begin
     import Thunderbolt: setup_element_cache, setup_boundary_cache
     import Thunderbolt: BilinearMassIntegrator, BilinearDiffusionIntegrator
@@ -41,7 +41,6 @@ using JET: @test_opt, @test_call
     grid = generate_grid(Hexahedron, (1, 1, 1))
     qrc  = QuadratureRuleCollection(3)
     qr   = QuadratureRule{RefHexahedron}(3)
-    qrcf = QuadratureRuleCollection(3)
     qrf  = FacetQuadratureRule{RefHexahedron}(3)
     ip   = Lagrange{RefHexahedron, 1}()
 
@@ -51,7 +50,6 @@ using JET: @test_opt, @test_call
     sdhs = first(dhs.subdofhandlers)
     cell_cache_s = Ferrite.CellCache(sdhs)
     Ferrite.reinit!(cell_cache_s, 1)
-    uₑs = [-1.0, -1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0] .* 1e-4
 
     ipv = ip^3
     dhv = DofHandler(grid)

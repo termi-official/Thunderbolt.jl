@@ -22,7 +22,6 @@ import FerriteOperators:
     SequentialCPUDevice,
     PolyesterDevice,
     duplicate_for_device,
-    EAVector,
     InternalVariableHandler,
     AbstractAssemblyStrategy,
     AbstractCPUDevice,
@@ -30,7 +29,6 @@ import FerriteOperators:
     PerColorAssemblyStrategy,
     ElementAssemblyStrategy,
     AssemblyStrategy,
-    AbstractAssemblyForm,
     FullAssembly,
     ElementAssembly,
     ElementAssemblyData,
@@ -56,7 +54,6 @@ import FerriteOperators:
     has_internal_state,
     condense_cell!,
     condense_internal!,
-    condensed_update_linearization!,
     CondensationReport,
     ResidualRequest,
     JacobianRequest,
@@ -84,10 +81,8 @@ import FerriteInterfaceElements:
     InterfaceCellInterpolation, InterfaceCellValues, InterfaceCell, getdetJdV_average
 
 import FerriteOperators:
-    LinearizedFerriteOperator,
     BilinearFerriteOperator,
     LinearFerriteOperator,
-    AbstractLinearOperator,
     LinearNullOperator,
     setup_operator,
     update_operator!

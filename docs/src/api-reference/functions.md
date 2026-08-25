@@ -6,7 +6,6 @@ DocTestSetup = :(using Thunderbolt)
 
 ```@docs
 Thunderbolt.AbstractSemidiscreteFunction
-Thunderbolt.AbstractSemidiscreteBlockedFunction
 Thunderbolt.AbstractSemidiscreteODEFunction
 Thunderbolt.AbstractSemidiscreteDAEFunction
 Thunderbolt.AbstractSolidMechanicsFunction

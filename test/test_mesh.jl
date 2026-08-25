@@ -1,10 +1,9 @@
 using Test, Thunderbolt, Tensors
 include(joinpath(@__DIR__, "testfixtures.jl"))
 @testset "Mesh" begin
+    # `uniform_refinement` splits hexahedra alone; the other cell types reach it through
+    # `hexahedralize` first.
     num_refined_elements(::Type{Hexahedron}) = 8
-    num_refined_elements(::Type{Tetrahedron}) = 8
-    num_refined_elements(::Type{Triangle}) = 4
-    num_refined_elements(::Type{Quadrilateral}) = 4
 
     function test_detJ(grid)
         for cc ∈ CellIterator(grid)
