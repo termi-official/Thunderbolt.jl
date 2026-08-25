@@ -1,48 +1,20 @@
 """
     RSAFDQ2022TyingOperator
 
-The 3D-0D coupled operator: an ordinary [`setup_operator`](@ref) result for the volume, plus the
-chamber tying terms assembled as a second pass into the same matrix and residual.
+The 3D-0D coupled operator: an ordinary [`setup_operator`](@ref) result, plus the solver-supplied
+reference volume in the chamber rows.
 
-The tying pass is Ferrite's manual pattern for algebraic variables: a facet loop over an augmented
-local system `[celldofs(facet); pressure dofs]`.
-
-Only the fused `update_linearization!` is served; there is no residual-only entry point.
+The chamber row is `∫_Γ V³ᴰ(u) dΓ - V⁰ᴰ`. The facet item kernel writes the integral; `V⁰ᴰ` is
+constant within one 3D solve and is subtracted here.
 """
 @concrete struct RSAFDQ2022TyingOperator
     op
     chambers
-    # Per chamber: the `(sdh, cache)` pairs contributing the tying terms, and the chamber's algebraic
-    # dofs queried once from the closed `DofHandler`.
-    tying_caches
+    # The chambers' algebraic dofs, queried once from the closed `DofHandler`.
     pressure_dofs
 end
 
 getJ(op::RSAFDQ2022TyingOperator) = getJ(op.op)
-
-function _update_tying_subdomain_Jr(assembler, sdh, u, p, ctx, tying_cache, pressure_dofs)
-    # FIXME allocator api
-    ndofs_local = ndofs_per_cell(sdh) + length(pressure_dofs)
-    Kₑ = zeros(ndofs_local, ndofs_local)
-    rₑ = zeros(ndofs_local)
-    uₑ = zeros(ndofs_local)
-    dofs = zeros(Int, ndofs_local)
-    dofs[(ndofs_per_cell(sdh)+1):end] .= pressure_dofs
-    for facet in FacetIterator(sdh, tying_cache.facets)
-        copyto!(dofs, celldofs(facet))
-        uₑ .= u[dofs]
-        fill!(Kₑ, 0.0)
-        fill!(rₑ, 0.0)
-        # FIXME use facet directly
-        assemble_facet!(
-            FerriteOperators.JacobianResidualRequest(Kₑ, rₑ),
-            tying_cache,
-            FerriteOperators.FacetArgs((u = uₑ,), facet.cc, p, ctx),
-            facet.current_facet_id,
-        )
-        assemble!(assembler, dofs, Kₑ, rₑ)
-    end
-end
 
 function FerriteOperators.update_linearization!(
     op::RSAFDQ2022TyingOperator,
@@ -51,31 +23,8 @@ function FerriteOperators.update_linearization!(
     p,
     ctx,
 )
-    (; chambers, tying_caches, pressure_dofs) = op
-    J = getJ(op)
-
-    # Pass 1: the volume, which zeroes both targets.
     update_linearization!(op.op, residual, states, p, ctx)
-
-    # Pass 2: the chamber tying terms, on top of what pass 1 wrote.
-    assembler = start_assemble(J, residual; fillzero = false)
-    @timeit_debug "assemble tying" for (chamber_index, chamber) ∈ enumerate(chambers)
-        for (sdh, tying_cache) in tying_caches[chamber_index]
-            _update_tying_subdomain_Jr(
-                assembler,
-                sdh,
-                states.u,
-                p,
-                ctx,
-                tying_cache,
-                pressure_dofs[chamber_index],
-            )
-        end
-        # The chamber row is `∫_Γ V³ᴰ(u) dΓ - V⁰ᴰ`; the facet kernel writes the integral, this is the
-        # solver supplied reference volume.
-        residual[only(pressure_dofs[chamber_index])] -= chamber.V⁰ᴰval
-    end
-
+    _subtract_reference_volumes!(residual, op)
     return nothing
 end
 
@@ -86,60 +35,110 @@ function FerriteOperators.evaluate!(
     p,
     ctx,
 )
-    error(
-        "The 3D-0D coupled operator has no residual-only entry point: the tying terms are assembled " *
-        "through Ferrite's matrix assembler, which writes the matrix too. Use the fused " *
-        "`update_linearization!`, i.e. a full Newton rather than `simplified_newton = true`.",
-    )
+    evaluate!(op.op, residual, states, p, ctx)
+    _subtract_reference_volumes!(residual, op)
+    return nothing
 end
 
-# Every subdofhandler owning a cell of the facetset contributes: a boundary set may span
-# several subdomains (e.g. the apex wedges next to the myocardial hexahedra).
-function _find_sdhs(dh, facetset)
-    sdhs = SubDofHandler[]
-    for sdh in dh.subdofhandlers
-        if any(facet -> facet[1] ∈ sdh.cellset, facetset)
-            push!(sdhs, sdh)
-        end
+function _subtract_reference_volumes!(residual, op::RSAFDQ2022TyingOperator)
+    for (chamber, pressure_dof) in zip(op.chambers, op.pressure_dofs)
+        residual[pressure_dof] -= chamber.V⁰ᴰval
     end
-    return sdhs
+    return nothing
 end
 
-function setup_3D0D_coupling_integrator(sdh, chamber, integrator::NonlinearIntegrator)
-    return setup_boundary_cache(
-        Pressure3D0DVolumeCouplerIntegrator(
-            integrator.fqrc,
-            integrator.volume_model.displacement_symbol,
-            chamber.pressure_symbol,
-            chamber.facets,
-            chamber.volume_method,
-        ),
-        sdh,
+"""
+    RSAFDQ2022TyingIntegrator(volume, couplers)
+
+A subdomain's structural integrator carrying the chamber tying terms as facet items.
+
+The volumetric and fused boundary terms are `volume`'s. The chamber pressures are the element-local
+system's global-dof tail, one per chamber in `couplers` order and the same on every subdomain, and
+the endocardial facets a subdomain owns are its facet items.
+"""
+struct RSAFDQ2022TyingIntegrator{VI, CI} <: FerriteOperators.AbstractCondensedNonlinearIntegrator
+    volume::VI
+    couplers::CI
+end
+
+FerriteOperators.setup_element_cache(
+    integrator::RSAFDQ2022TyingIntegrator,
+    sdh::SubDofHandler,
+) = setup_element_cache(integrator.volume, sdh)
+
+FerriteOperators.setup_boundary_cache(
+    integrator::RSAFDQ2022TyingIntegrator,
+    sdh::SubDofHandler,
+) = setup_boundary_cache(integrator.volume, sdh)
+
+# `global_dofs` is one declaration per subdomain, shared by the volumetric and the facet kernels, so
+# every chamber's pressure is declared on every subdomain the integrator claims. That keeps chamber
+# `k` at tail position `k` everywhere, which is what lets a subdomain's single facet item cache serve
+# several chambers.
+FerriteOperators.global_dofs(integrator::RSAFDQ2022TyingIntegrator, sdh::SubDofHandler) =
+    Int[dof for coupler in integrator.couplers
+        for dof in FerriteOperators.global_dofs(coupler, sdh)]
+
+FerriteOperators.facet_items(integrator::RSAFDQ2022TyingIntegrator, sdh::SubDofHandler) =
+    FacetIndex[facet for coupler in integrator.couplers
+               for facet in FerriteOperators.facet_items(coupler, sdh)]
+
+function FerriteOperators.setup_facet_item_cache(
+    integrator::RSAFDQ2022TyingIntegrator,
+    sdh::SubDofHandler,
+)
+    offset = ndofs_per_cell(sdh)
+    caches = Tuple(
+        setup_3D0D_coupling_cache(coupler, sdh, offset + k) for
+        (k, coupler) in enumerate(integrator.couplers)
     )
+    length(caches) == 1 && return only(caches)
+    return ChamberTyingCache(caches, _chamber_of_facet(integrator.couplers, sdh))
 end
 
-function setup_3D0D_coupling_integrator(sdh, chamber, integrator::NonlinearMultiDomainIntegrator2)
-    # FIXME tighter weaveing between sdh and chamber.facets
-    grid = get_grid(sdh.dh)
-    for (name, subintegrator) in integrator.subintegrators
-        has_volumetric_subdomain(grid, name) || continue
-        volumetric_subdomain = grid.volumetric_subdomains[name]
-        for cellset in values(volumetric_subdomain.data)
-            if CellIndex(first(sdh.cellset)) ∈ cellset # FIXME how to get around this fallacy here?
-                return setup_boundary_cache(
-                    Pressure3D0DVolumeCouplerIntegrator(
-                        subintegrator.fqrc,
-                        subintegrator.volume_model.displacement_symbol,
-                        chamber.pressure_symbol,
-                        chamber.facets,
-                        chamber.volume_method,
-                    ),
-                    sdh,
-                )
-            end
-        end
+"""
+    ChamberTyingCache(chamber_caches, chamber_of_facet)
+
+The facet item cache of a subdomain whose endocardial facets belong to several chambers.
+
+FerriteOperators admits one facet item cache per subdomain, so the chambers sharing a subdomain are
+multiplexed here: `chamber_of_facet` names which of `chamber_caches` a facet belongs to.
+"""
+@concrete struct ChamberTyingCache <: AbstractSurfaceElementCache
+    chamber_caches
+    chamber_of_facet
+end
+
+duplicate_for_device(device, cache::ChamberTyingCache) = ChamberTyingCache(
+    map(chamber_cache -> duplicate_for_device(device, chamber_cache), cache.chamber_caches),
+    cache.chamber_of_facet,
+)
+
+FerriteOperators.provides_analytic(
+    ::Type{<:ChamberTyingCache},
+    kind::Union{FerriteOperators.JacobianKind{:u}, FerriteOperators.JacobianResidualKind},
+) = FerriteOperators.provides_analytic(Pressure3D0DVolumeCouplerCache, kind)
+
+function FerriteOperators.assemble_facet!(
+    req::FerriteOperators.AbstractAssemblyRequest,
+    cache::ChamberTyingCache,
+    args::FerriteOperators.FacetArgs,
+    local_facet_index::Int,
+)
+    chamber = cache.chamber_of_facet[FacetIndex(cellid(args.cell), local_facet_index)]
+    return assemble_facet!(req, cache.chamber_caches[chamber], args, local_facet_index)
+end
+
+function _chamber_of_facet(couplers, sdh::SubDofHandler)
+    chamber_of_facet = Dict{FacetIndex, Int}()
+    for (k, coupler) in enumerate(couplers), facet in FerriteOperators.facet_items(coupler, sdh)
+        haskey(chamber_of_facet, facet) && error(
+            "The endocardial facet $facet is declared by more than one chamber. A facet carries " *
+            "the pressure of exactly one chamber.",
+        )
+        chamber_of_facet[facet] = k
     end
-    return FerriteOperators.EmptySurfaceElementCache()
+    return chamber_of_facet
 end
 
 """
@@ -147,14 +146,41 @@ end
 
 The sparsity the chamber pressure needs, as Ferrite's coupling descriptor.
 
-`CellCoupling` over the whole `DofHandler` is the conservative statement: every field dof may couple
-to the pressure. The modelling-true statement is a `FacetCoupling` over the chamber surface, which is
-what makes the off-diagonal support the endocardium rather than the mesh.
+`CellCoupling` over the whole `DofHandler` is what the shared `global_dofs` declaration requires:
+the pressure sits in the tail of *every* element-local system of the subdomains carrying the tying
+term, so the cell sweep scatters through the coupling entries of every cell -- even where the
+element writes zeros into them. Narrowing this to the endocardial surface needs a per-item-family
+`global_dofs` declaration, which FerriteOperators does not offer.
 """
 _chamber_coupling(dh, displacement_symbol, chamber) = CellCoupling(
     collect(Int, Iterators.flatten(sdh.cellset for sdh in dh.subdofhandlers));
     algebraic_coupling = ((displacement_symbol, chamber.pressure_symbol),),
 )
+
+# One coupler per chamber, sharing the subintegrator's facet quadrature: the endocardium is a surface
+# of the subdomain whose volumetric model that subintegrator carries.
+_chamber_couplers(subintegrator, chambers) = [
+    Pressure3D0DVolumeCouplerIntegrator(
+        subintegrator.fqrc,
+        chamber.displacement_symbol,
+        chamber.pressure_symbol,
+        chamber.facets,
+        chamber.volume_method,
+    ) for chamber in chambers
+]
+
+_tying_integrator(integrator::NonlinearIntegrator, chambers) =
+    RSAFDQ2022TyingIntegrator(integrator, _chamber_couplers(integrator, chambers))
+
+_tying_integrator(integrator::NonlinearMultiDomainIntegrator2, chambers) =
+    NonlinearMultiDomainIntegrator2(
+        Dict(
+            name => RSAFDQ2022TyingIntegrator(
+                subintegrator,
+                _chamber_couplers(subintegrator, chambers),
+            ) for (name, subintegrator) in integrator.subintegrators
+        ),
+    )
 
 function setup_stage_operator(
     f::RSAFDQ20223DFunction,
@@ -166,7 +192,7 @@ function setup_stage_operator(
     (; dh, ch, integrator) = structural_function
     chambers = tying_info.chambers
 
-    # The tying pass writes into one dof shared by every chamber facet, which no coloring can make
+    # The tying facets write into one dof shared by every chamber facet, which no coloring can make
     # race free, so the scheduling is sequential regardless of what the discretization asked for.
     couplings = Tuple(
         _chamber_coupling(dh, chamber.displacement_symbol, chamber) for chamber in chambers
@@ -182,14 +208,13 @@ function setup_stage_operator(
         get_strategy(f).device,
     )
 
-    op = setup_operator(strategy, integrator, dh; slots = THUNDERBOLT_STAGE_SLOTS)
-    tying_caches = [
-        [
-            (sdh, setup_3D0D_coupling_integrator(sdh, chamber, integrator)) for
-            sdh in _find_sdhs(dh, chamber.facets)
-        ] for chamber in chambers
-    ]
-    pressure_dofs = [algebraic_dofs(dh, chamber.pressure_symbol) for chamber in chambers]
+    op = setup_operator(
+        strategy,
+        _tying_integrator(integrator, chambers),
+        dh;
+        slots = THUNDERBOLT_STAGE_SLOTS,
+    )
+    pressure_dofs = [chamber.pressure_dof_index for chamber in chambers]
 
-    return RSAFDQ2022TyingOperator(op, chambers, tying_caches, pressure_dofs)
+    return RSAFDQ2022TyingOperator(op, chambers, pressure_dofs)
 end

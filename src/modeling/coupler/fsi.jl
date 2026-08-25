@@ -71,7 +71,6 @@ struct Pressure3D0DVolumeCouplerIntegrator <: AbstractNonlinearIntegrator
     fqrc::FacetQuadratureRuleCollection
     displacement_symbol::Symbol
     pressure_symbol::Symbol
-    # boundary_name::String
     facets::OrderedSet
     volume_method
 end
@@ -80,48 +79,90 @@ end
     fv
     displacement_range
     pressure_index
-    facets
     volume_method
 end
 
-function FerriteOperators.setup_boundary_cache(model::Pressure3D0DVolumeCouplerIntegrator, sdh)
+duplicate_for_device(device, cache::Pressure3D0DVolumeCouplerCache) =
+    Pressure3D0DVolumeCouplerCache(
+        duplicate_for_device(device, cache.fv),
+        cache.displacement_range,
+        cache.pressure_index,
+        cache.volume_method,
+    )
+
+# The chamber pressure belongs to no cell, so it enters the element-local system as its global-dof
+# tail; the endocardial facets carrying the term are their own traversal rather than a per-facet
+# membership test on the cell sweep.
+FerriteOperators.global_dofs(model::Pressure3D0DVolumeCouplerIntegrator, sdh::SubDofHandler) =
+    algebraic_dofs(sdh.dh, model.pressure_symbol)
+
+FerriteOperators.facet_items(model::Pressure3D0DVolumeCouplerIntegrator, sdh::SubDofHandler) =
+    filter(facet -> facet[1] ∈ sdh.cellset, model.facets)
+
+FerriteOperators.setup_facet_item_cache(
+    model::Pressure3D0DVolumeCouplerIntegrator,
+    sdh::SubDofHandler,
+) = setup_3D0D_coupling_cache(
+    model,
+    sdh,
+    first(FerriteOperators.global_dof_range(model, sdh)),
+)
+
+"""
+    setup_3D0D_coupling_cache(model, sdh, pressure_index)
+
+The coupling cache for one chamber on one subdomain, with `pressure_index` naming where that
+chamber's pressure sits in the augmented local system `[celldofs(cell); global dofs]`.
+
+The index is a parameter because several chambers may share a subdomain's tail, and only the caller
+holding all of them knows their order.
+"""
+function setup_3D0D_coupling_cache(
+    model::Pressure3D0DVolumeCouplerIntegrator,
+    sdh::SubDofHandler,
+    pressure_index::Int,
+)
     qr     = getquadraturerule(model.fqrc, sdh)
     ip     = Ferrite.getfieldinterpolation(sdh, model.displacement_symbol)
     ip_geo = geometric_subdomain_interpolation(sdh)
-    fv     = FacetValues(qr, ip, ip_geo)
-
-    displacement_range = dof_range(sdh, model.displacement_symbol)
-
-    # This is the non-local coupling
-    # @assert length(sdh_chamber.cellset) == 1 "0D subdomain has more than one cell ($(length(sdh_chamber.cellset)))"
-    # pressure_symbol = model.pressure_symbol
-    # pressure_dofs = dof_range(sdh, pressure_symbol)
-    # @assert length(pressure_dofs) == 1 "Pressure ,,$(pressure_symbol)'' is associated with more than one dof ($(length(pressure_dofs)))"
-
-    all_facets = model.facets #getfacetset(get_grid(sdh.dh), model.boundary_name)
-    pressure_dof = ndofs_per_cell(sdh)+1 #first(pressure_dofs)
     return Pressure3D0DVolumeCouplerCache(
-        fv,
-        displacement_range,
-        pressure_dof,
-        filter(facet -> facet[1] ∈ sdh.cellset, all_facets),
+        FacetValues(qr, ip, ip_geo),
+        dof_range(sdh, model.displacement_symbol),
+        pressure_index,
         model.volume_method,
     )
 end
 
-@inline FerriteOperators.is_facet_in_cache(
-    facet::FacetIndex,
-    cell,
-    facet_cache::Pressure3D0DVolumeCouplerCache,
-) = facet ∈ facet_cache.facets
-
 FerriteOperators.provides_analytic(
     ::Type{<:Pressure3D0DVolumeCouplerCache},
-    ::FerriteOperators.JacobianResidualKind,
+    ::Union{FerriteOperators.JacobianKind{:u}, FerriteOperators.JacobianResidualKind},
 ) = true
 
-function FerriteOperators.assemble_facet!(
+FerriteOperators.assemble_facet!(
+    req::FerriteOperators.ResidualRequest,
+    cache::Pressure3D0DVolumeCouplerCache,
+    args::FerriteOperators.FacetArgs,
+    local_facet_index::Int,
+) = _assemble_3D0D_coupling_facet!(req, cache, args, local_facet_index)
+
+FerriteOperators.assemble_facet!(
+    req::FerriteOperators.JacobianRequest{:u},
+    cache::Pressure3D0DVolumeCouplerCache,
+    args::FerriteOperators.FacetArgs,
+    local_facet_index::Int,
+) = _assemble_3D0D_coupling_facet!(req, cache, args, local_facet_index)
+
+FerriteOperators.assemble_facet!(
     req::FerriteOperators.JacobianResidualRequest,
+    cache::Pressure3D0DVolumeCouplerCache,
+    args::FerriteOperators.FacetArgs,
+    local_facet_index::Int,
+) = _assemble_3D0D_coupling_facet!(req, cache, args, local_facet_index)
+
+# One body for the three requests: which buffers it fills is decided on the request type, so the
+# branches fold away per kernel.
+function _assemble_3D0D_coupling_facet!(
+    req,
     element_cache::Pressure3D0DVolumeCouplerCache,
     args::FerriteOperators.FacetArgs,
     local_facet_index::Int,
@@ -138,6 +179,15 @@ function FerriteOperators.assemble_facet!(
     p = uₑ[pdof]
     coords = getcoordinates(geometry_cache)
 
+    residual = req isa Union{
+        FerriteOperators.ResidualRequest,
+        FerriteOperators.JacobianResidualRequest,
+    }
+    jacobian = req isa Union{
+        FerriteOperators.JacobianRequest{:u},
+        FerriteOperators.JacobianResidualRequest,
+    }
+
     for qp in QuadratureIterator(fv)
         # Part 1: Surface pressure part
         ∂Ω₀ = getdetJdV(fv, qp)
@@ -153,37 +203,43 @@ function FerriteOperators.assemble_facet!(
 
         for i ∈ 1:getnbasefunctions(fv)
             δuᵢ = shape_value(fv, qp, i)
-            req.r[displacement_range[i]] += p * J * n ⋅ δuᵢ * ∂Ω₀
-            for j ∈ 1:getnbasefunctions(fv)
-                ∇δuⱼ = shape_gradient(fv, qp, j)
-                # Add contribution to the tangent
-                #   δF^-1 = -F^-1 δF F^-1
-                #   δJ = J tr(δF F^-1)
-                # Product rule
-                δcofF = -transpose(invF ⋅ ∇δuⱼ ⋅ invF)
-                δJ = J * tr(∇δuⱼ ⋅ invF)
-                δJcofF = δJ * cofF + J * δcofF
-                req.K[displacement_range[i], displacement_range[j]] += p * (δJcofF ⋅ n₀) ⋅ δuᵢ * ∂Ω₀
+            residual && (req.r[displacement_range[i]] += p * J * n ⋅ δuᵢ * ∂Ω₀)
+            if jacobian
+                for j ∈ 1:getnbasefunctions(fv)
+                    ∇δuⱼ = shape_gradient(fv, qp, j)
+                    # Add contribution to the tangent
+                    #   δF^-1 = -F^-1 δF F^-1
+                    #   δJ = J tr(δF F^-1)
+                    # Product rule
+                    δcofF = -transpose(invF ⋅ ∇δuⱼ ⋅ invF)
+                    δJ = J * tr(∇δuⱼ ⋅ invF)
+                    δJcofF = δJ * cofF + J * δcofF
+                    req.K[displacement_range[i], displacement_range[j]] +=
+                        p * (δJcofF ⋅ n₀) ⋅ δuᵢ * ∂Ω₀
+                end
+                req.K[displacement_range[i], pdof] += J * n ⋅ δuᵢ * ∂Ω₀
             end
-            req.K[displacement_range[i], pdof] += J * n ⋅ δuᵢ * ∂Ω₀
         end
 
         # Part 2: Chamber volume constraint part
         d = function_value(fv, qp, dₑ)
         x = spatial_coordinate(fv, qp, coords)
 
-        req.r[pdof] += volume_integral(x, d, F, n₀, volume_method) * ∂Ω₀
+        residual && (req.r[pdof] += volume_integral(x, d, F, n₀, volume_method) * ∂Ω₀)
 
-        # Via chain rule we obtain:
-        #   δV(u,F(u)) = δu ⋅ dVdu + δF : dVdF
-        ∂V∂u = Tensors.gradient(u_ -> volume_integral(x, u_, F, n₀, volume_method), d)
-        ∂V∂F = Tensors.gradient(u_ -> volume_integral(x, d, u_, n₀, volume_method), F)
-        for j ∈ 1:getnbasefunctions(fv)
-            δuⱼ = shape_value(fv, qp, j)
-            ∇δuⱼ = shape_gradient(fv, qp, j)
-            req.K[pdof, displacement_range[j]] += (∂V∂u ⋅ δuⱼ + ∂V∂F ⊡ ∇δuⱼ) * ∂Ω₀
+        if jacobian
+            # Via chain rule we obtain:
+            #   δV(u,F(u)) = δu ⋅ dVdu + δF : dVdF
+            ∂V∂u = Tensors.gradient(u_ -> volume_integral(x, u_, F, n₀, volume_method), d)
+            ∂V∂F = Tensors.gradient(u_ -> volume_integral(x, d, u_, n₀, volume_method), F)
+            for j ∈ 1:getnbasefunctions(fv)
+                δuⱼ = shape_value(fv, qp, j)
+                ∇δuⱼ = shape_gradient(fv, qp, j)
+                req.K[pdof, displacement_range[j]] += (∂V∂u ⋅ δuⱼ + ∂V∂F ⊡ ∇δuⱼ) * ∂Ω₀
+            end
+            # req.K[pdof, pdof] += 0
         end
-
-        # req.K[pdof, pdof] += 0
     end
+
+    return nothing
 end

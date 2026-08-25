@@ -198,14 +198,23 @@ end
     end
 
     @testset "facet coverage" begin
-        # Every declared tying facet must be assembled by exactly one subdomain pass. A boundary
-        # set spanning several subdomains (apex wedges beside the hexahedra) once lost the facets
-        # outside the first facet's subdomain.
-        for (chamber, caches) in zip(state.op.chambers, state.op.tying_caches)
-            covered = [facet for (sdh, cache) in caches for facet in cache.facets]
-            @test length(covered) == length(chamber.facets)
-            @test Set(covered) == Set(chamber.facets)
-        end
+        # Every declared tying facet must be assembled by exactly one subdomain. A boundary set
+        # spanning several subdomains (apex wedges beside the hexahedra) once lost the facets
+        # outside the first facet's subdomain. The declared set *is* the traversal, and a facet
+        # whose cell a subdomain does not own is a setup error, so what is left to check here is
+        # that the per-subdomain declarations cover the chamber surfaces without duplication.
+        tying_integrator = Thunderbolt._tying_integrator(
+            state.f.structural_function.integrator,
+            state.f.tying_info.chambers,
+        )
+        declared = [
+            facet for sdh in dh.subdofhandlers for
+            facet in Thunderbolt.FerriteOperators.facet_items(tying_integrator, sdh)
+        ]
+        chamber_facets =
+            union((Set(chamber.facets) for chamber in state.f.tying_info.chambers)...)
+        @test length(declared) == length(chamber_facets)
+        @test Set(declared) == chamber_facets
     end
 
     pdof = only(reference.pressure_dofs)
@@ -221,5 +230,21 @@ end
         @test length(r) == length(reference.r)
         @test approx_entrywise(J, J₀)
         @test approx_entrywise(r, reference.r)
+    end
+
+    @testset "derivatives" begin
+        # The independent referee for the analytic tying tangent: central finite differences of the
+        # operator's own residual. It runs on the assembled operator rather than the wrapper, whose
+        # only remaining term is the constant `- V⁰ᴰ`.
+        result = Thunderbolt.FerriteOperators.check_derivatives(
+            state.op.op,
+            (u = state.u,),
+            state.p,
+            state.ctx,
+        )
+        @test result.passed
+        for (name, check) in pairs(result.checks)
+            check.passed || @info "check_derivatives($name)" check
+        end
     end
 end

@@ -115,6 +115,18 @@ _qs_ninternal(e::AnyQuasiStaticElementCache) =
     internal_variable_size(e.constitutive_model, nothing, nothing)*getnquadpoints(e.cv)
 
 """
+    _qs_field_dofs(element_cache, uₑ)
+
+The displacement field's entries of an element-local state vector.
+
+A subdomain declaring [`FerriteOperators.global_dofs`](@ref) -- a chamber pressure tying a surface,
+say -- hands its elements the augmented system `[celldofs(cell); global dofs]`. These elements carry
+the displacement field alone, so its entries are the head of that vector, which is also the range
+`req.r[i]` and `req.K[i, j]` address.
+"""
+@inline _qs_field_dofs(e::AnyQuasiStaticElementCache, uₑ) = @view uₑ[1:getnbasefunctions(e.cv)]
+
+"""
     _qs_internal_block(element_cache, Qₑ)
 
 View the cell's condensed unknowns as `(size_per_quadrature_point, nquadpoints)`, so a quadrature loop
@@ -150,7 +162,7 @@ function FerriteOperators.assemble_cell!(
 )
     @unpack constitutive_model, internal_cache, cv, coefficient_cache = element_cache
     ndofs = getnbasefunctions(cv)
-    dₑ = args.states.u
+    dₑ = _qs_field_dofs(element_cache, args.states.u)
     time = FerriteOperators.evaluation_time(args.ctx)
 
     @inbounds for qp ∈ QuadratureIterator(cv)
@@ -192,7 +204,7 @@ end
 function _assemble_quasistatic_jacobian!(req, element_cache::QuasiStaticElementCache, args, w)
     @unpack constitutive_model, internal_cache, cv, coefficient_cache = element_cache
     ndofs = getnbasefunctions(cv)
-    dₑ = args.states.u
+    dₑ = _qs_field_dofs(element_cache, args.states.u)
     time = FerriteOperators.evaluation_time(args.ctx)
 
     @inbounds for qp ∈ QuadratureIterator(cv)
@@ -247,7 +259,7 @@ function FerriteOperators.assemble_cell!(
 )
     @unpack constitutive_model, internal_cache, cv, coefficient_cache = element_cache
     ndofs = getnbasefunctions(cv)
-    dₑ = args.states.u
+    dₑ = _qs_field_dofs(element_cache, args.states.u)
     time = FerriteOperators.evaluation_time(args.ctx)
 
     @inbounds for qp ∈ QuadratureIterator(cv)
@@ -309,7 +321,7 @@ end
     ∇u = function_gradient(e.cv, qp, dₑ)
     # The `v` slot already carries `∂v∂u (u - uᵥ)`, and `function_gradient` is linear, so its gradient
     # is the deformation rate the material asks for.
-    ∇v = function_gradient(e.cv, qp, states.v)
+    ∇v = function_gradient(e.cv, qp, _qs_field_dofs(e, states.v))
     return DeformationGradientWithRate(one(∇u) + ∇u, ∇v)
 end
 
@@ -374,7 +386,7 @@ function FerriteOperators.condense_cell!(
     weights::NamedTuple,
 )
     @unpack constitutive_model, internal_cache, cv, coefficient_cache = element_cache
-    dₑ     = args.states.u
+    dₑ     = _qs_field_dofs(element_cache, args.states.u)
     Qₑ     = _qs_internal_block(element_cache, args.states.q)
     Qₑprev = _qs_internal_block(element_cache, args.states.qprev)
     t      = FerriteOperators.evaluation_time(args.ctx)
@@ -409,7 +421,7 @@ function _assemble_condensed_cell!(
 )
     @unpack constitutive_model, internal_cache, cv, coefficient_cache = element_cache
     ndofs  = getnbasefunctions(cv)
-    dₑ     = args.states.u
+    dₑ     = _qs_field_dofs(element_cache, args.states.u)
     Qₑ, Qₑprev = _qs_local_state(element_cache, args)
     t      = FerriteOperators.evaluation_time(args.ctx)
     Δt     = FerriteOperators.stage_scaling(args.ctx)
@@ -496,7 +508,7 @@ function FerriteOperators.assemble_cell!(
 )
     @unpack constitutive_model, internal_cache, cv, coefficient_cache = element_cache
     ndofs  = getnbasefunctions(cv)
-    dₑ     = args.states.u
+    dₑ     = _qs_field_dofs(element_cache, args.states.u)
     Qₑ, Qₑprev = _qs_local_state(element_cache, args)
     t      = FerriteOperators.evaluation_time(args.ctx)
     Δt     = FerriteOperators.stage_scaling(args.ctx)
