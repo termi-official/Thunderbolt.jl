@@ -50,6 +50,11 @@ end
 test_worker(name) =
     if startswith(name, "integration/")
         addworker(; exeflags = ["--threads=$(INTEGRATION_THREADS)"])
+    elseif name == "test_rsafdq_operator"
+        # Its threaded-vs-sequential equivalence testset needs a second real worker thread to
+        # exercise `PolyesterDevice`'s atomic scatter at all -- without this it would silently
+        # assemble both sides on the same one thread `addworker` otherwise pins.
+        addworker(; exeflags = ["--threads=2"])
     else
         nothing
     end

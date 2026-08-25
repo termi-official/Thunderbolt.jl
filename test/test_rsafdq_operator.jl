@@ -111,7 +111,12 @@ function rsafdq_reference_state(; seed = 42)
 
     splitform = semidiscretize(
         RSAFDQ2022Split(coupled_model),
-        FiniteElementDiscretization(Dict(:d => LagrangeCollection{1}()^3); dbcs),
+        FiniteElementDiscretization(
+            Dict(:d => LagrangeCollection{1}()^3);
+            dbcs,
+            # Pinned reference: deterministic summation needs the sequential device.
+            assembly_strategy = Thunderbolt.SequentialAssemblyStrategy(Thunderbolt.SequentialCPUDevice()),
+        ),
         mesh,
     )
     f = splitform.functions[1]
@@ -270,7 +275,7 @@ end
 end
 
 """
-    two_chamber_state(; seed = 7)
+    two_chamber_state(; seed = 7, device = SequentialCPUDevice())
 
 A passive left heart with one [`Thunderbolt.Pressure3D0DVolumeCoupler`](@ref) per chamber, its
 operator, and a fixed pseudo-random state to assemble at.
@@ -281,9 +286,12 @@ pressures are the only unknowns outside the mesh, and they exist because the two
 so -- nothing here declares them a second time. The state is deliberately not a solution, for the
 reason given at [`rsafdq_reference_state`](@ref).
 
+`device` defaults to the sequential device, deterministic summation for a pinned reference; pass
+`PolyesterDevice()` to build the same problem for the threaded-vs-sequential equivalence check.
+
 Returns `(; f, op, u, pressure_symbols, pressure_dofs, n_u, models)`.
 """
-function two_chamber_state(; seed = 7)
+function two_chamber_state(; seed = 7, device = Thunderbolt.SequentialCPUDevice())
     scaling_factor = 3.9
     mesh = generate_ideal_lh_mesh(
         6, 1, 2, 2;
@@ -364,7 +372,13 @@ function two_chamber_state(; seed = 7)
     # volume is the enclosed volume only where the surface is closed *and* the rule is exact.
     f = semidiscretize(
         models,
-        FiniteElementDiscretization(Dict(:d => LagrangeCollection{1}()^3); dbcs),
+        FiniteElementDiscretization(
+            Dict(:d => LagrangeCollection{1}()^3);
+            dbcs,
+            # Pinned reference: deterministic summation needs the sequential device (the default
+            # here); the threaded-vs-sequential equivalence test overrides it via `device`.
+            assembly_strategy = Thunderbolt.SequentialAssemblyStrategy(device),
+        ),
         mesh,
     )
 
@@ -523,4 +537,21 @@ end
         @test maximum(abs, Δ[others]) ≈ 0 atol = 1.0e-12 * maximum(abs, r)
         @test approx_entrywise(J′, J)
     end
+end
+
+@testset "Threaded vs sequential two-chamber equivalence" begin
+    # The first genuine multi-worker exercise of the full coupled operator (cells + facet items +
+    # algebraic items + global dofs): the atomic scatter under `PolyesterDevice` has to reproduce
+    # the sequential assembly, entry for entry up to summation order (never `==`, see
+    # `approx_entrywise`).
+    seq = two_chamber_state()
+    par = two_chamber_state(device = Thunderbolt.PolyesterDevice())
+
+    V⁰ᴰ = [120.0, 60.0]
+    ctx = Thunderbolt.TimeIntegrationContext(RSAFDQ_REFERENCE_T, 0.0, 0.0)
+    J_seq, r_seq = assemble_pair(seq.op, seq.u, (V⁰ᴰ = V⁰ᴰ,), ctx)
+    J_par, r_par = assemble_pair(par.op, par.u, (V⁰ᴰ = V⁰ᴰ,), ctx)
+
+    @test approx_entrywise(J_par, J_seq)
+    @test approx_entrywise(r_par, r_seq)
 end
