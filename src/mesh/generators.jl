@@ -740,54 +740,80 @@ function generate_ideal_lv_mesh(
 end
 
 """
-    generate_ideal_lh_mesh(num_elements_circumferential::Int, num_elements_radial::Int, num_elements_longitudinal::Int, num_elements_longitudinal_la::Int; inner_radius = 0.7, outer_radius = 1.0, longitudinal_upper = 0.2, apex_inner = 1.3, apex_outer = 1.5, la_inner_radius = inner_radius, la_outer_radius = outer_radius, la_roof_inner = 0.7, la_roof_outer = 0.9, septum_fraction = 1//3)
+    generate_ideal_lh_mesh(num_elements_circumferential::Int, num_elements_radial::Int, num_elements_longitudinal::Int, num_elements_longitudinal_la::Int; inner_radius = 0.7, outer_radius = 1.0, longitudinal_upper = 0.2, apex_inner = 1.3, apex_outer = 1.5, la_cavity_radius = outer_radius, la_cavity_depth = inner_radius, la_wall_thickness = (outer_radius - inner_radius)/3, valve_plate_thickness = la_wall_thickness/3, num_elements_radial_plate = 3, septum_fraction = 1//3)
 
-Generate an idealized left heart: the truncated ellipsoid of [`generate_ideal_lv_mesh`](@ref) with a
-smaller, rounder left atrium grown from the far side of its basal rim, after the idealized left-heart
-geometries used in the cardiac FSI literature (Dedè et al. 2021, Viola et al. 2020).
+Generate an idealized left heart: the truncated ellipsoid of [`generate_ideal_lv_mesh`](@ref), a
+thin-walled left atrium grown from the far side of its basal rim, and a valvular plate closing the
+mitral orifice, after the idealized left-heart geometries used in the cardiac FSI literature
+(Dedè et al. 2021, Viola et al. 2020).
 
 The first three element counts and the `inner_radius`, `outer_radius`, `longitudinal_upper`,
 `apex_inner`, `apex_outer` and `septum_fraction` keywords describe the ventricle exactly as they do
 there. `num_elements_longitudinal_la` counts the atrial hexahedral layers between the rim and the
 roof fan.
 
-# Rim sharing
+# Atrium
+
+The atrial cavity is given by its equatorial semi-axis `la_cavity_radius` and by `la_cavity_depth`,
+how far its roof sits below the annulus plane; `la_wall_thickness` offsets both to reach the
+epicardial layer, and defaults to a third of the ventricular wall so the atrium is the
+thinner-walled chamber. The roof closes with a wedge fan around a singular edge, like the apex.
 
 The mitral annulus *is* the ventricular rim: the atrial shell reuses its nodes instead of meeting a
-second surface there, so the two chambers form one continuous wall, the annulus plane is an interior
-facet sheet and the mitral orifice is the open disk inside the endocardial rim circle. No valve is
-meshed.
+second surface there, so the two chambers form one continuous wall and the annulus plane is an
+interior facet sheet. With `θ = 0` at the roof pole, the shell at transmural fraction `rp` is the
+surface of revolution
 
-That sharing constrains the atrial ellipsoid layer by layer. With `θ = 0` at the roof pole, the shell
-at transmural fraction `rp` is the surface of revolution
+    (r sin(θ) cos(φ), r sin(θ) sin(φ), zr + h (cos(θmax) - cos(θ))),   θ ∈ [0, θmax]
 
-    (r sin(θ) cos(φ), r sin(θ) sin(φ), zc - h cos(θ)),   θ ∈ [0, θmax]
+with equatorial semi-axis `r = la_cavity_radius + rp*la_wall_thickness`. It has to pass through the
+ventricular rim circle of the *same* `rp`, which has radius
+`ρ = (inner_radius*(1-rp) + outer_radius*rp)*sin(θb)` and sits at height `zr = apex_outer*cos(θb)`,
+where `θb = (1 + longitudinal_upper)*π/2` is the ventricular truncation angle. That fixes the
+truncation angle, and the requested pole depth
+`d = la_cavity_depth + rp*la_wall_thickness` then fixes the polar semi-axis,
 
-with equatorial semi-axis `r = la_inner_radius*(1-rp) + la_outer_radius*rp` and polar semi-axis
-`h = la_roof_inner*(1-rp) + la_roof_outer*rp`. The ventricular rim circle of the same `rp` has radius
-`ρ = (inner_radius*(1-rp) + outer_radius*rp)*sin(θb)` and height `zr = apex_outer*cos(θb)`, where
-`θb = (1 + longitudinal_upper)*π/2` is the ventricular truncation angle. Passing through it fixes the
-truncation angle and the center of the atrial layer,
-
-    θmax = π - asin(ρ/r),    zc = zr + h*cos(θmax)
+    θmax = π - asin(ρ/r),    h = d/(1 - cos(θmax))
 
 The `π -` branch is what makes the atrium wider than the annulus it stands on, so that both chambers
-bulge away from the shared ring and the lumen has a waist there. It requires
-`la_inner_radius ≥ inner_radius*sin(θb)` and `la_outer_radius ≥ outer_radius*sin(θb)`, which the
-generator checks. The defaults keep the ventricular equatorial semi-axes, where the truncation costs
-a factor `sin(θb)`, and shorten the polar ones: the atrium comes out roughly spherical and around
-half the ventricular cavity volume. The roof closes with a wedge fan around a singular edge, like the
-apex.
+bulge away from the shared ring and the lumen has a waist there. Deriving `h` from the depth rather
+than prescribing it keeps the layers nested for any wall thickness.
+
+Rim matching needs `r ≥ ρ` on every layer, which the generator checks: with a thin wall that forces
+both atrial equatorial semi-axes above `outer_radius*sin(θb)`, i.e. the atrial cavity comes out
+about as wide as the ventricular *outer* surface. That is the price of taking the whole ventricular
+rim as the orifice, and it is also why the wall is thin only away from the annulus: at the annulus
+the layers land on the ventricular rim circles, so the atrial wall tapers from the ventricular
+thickness there to `la_wall_thickness` at the roof.
+
+# Valvular plate
+
+`"valvular-plane"` is a thin solid plate of thickness `valve_plate_thickness`, centered on the
+annulus plane, that closes the mitral orifice so that each chamber has a closed surface: without it
+the endocardial sets are open at the orifice and the divergence-theorem chamber volume is neither
+direction-independent nor correct under deformation. It is meshed rather than imposed, so it deforms
+with the wall; downstream gives it a soft dummy material, which carries the plate along without
+adding meaningful stiffness.
+
+It attaches to the *shared* endocardial rim ring, without duplicating or collapsing nodes: an
+innermost wedge fan around the plate's center edge, `num_elements_radial_plate - 2` annular
+hexahedral layers, and an outermost ring of wedges whose triangular faces are radial-vertical with
+the rim node as the third vertex, so the plate tapers to a knife edge exactly at the annulus.
 
 # Sets
 
-Cellsets `"ventricle"` and `"atrium"`, hexahedra and wedges of each side. A chamber pressure is
-declared by the facet term that reads it, so there is no control cell to carry one.
+Cellsets `"ventricle"`, `"atrium"` and `"valvular-plane"`. A chamber pressure is declared by the
+facet term that reads it, so there is no control cell to carry one.
 
 Facetsets `"LVEndocardium"`, `"LAEndocardium"` and their union `"Endocardium"`, likewise
-`"LVEpicardium"`, `"LAEpicardium"` and `"Epicardium"`. Those three surfaces are the entire boundary:
-the annulus plane is interior here, so unlike the single-chamber generator this mesh carries no
-`"Base"`. `"MitralAnnulus"` holds the annulus facets on their ventricular side, which is what
+`"LVEpicardium"`, `"LAEpicardium"` and `"Epicardium"`. The endocardia stay anatomical, i.e. wall
+only. `"LVValvularPlane"` and `"LAValvularPlane"` are the two faces of the plate, and the closed
+chamber surfaces are their unions with the matching endocardium, `"LVChamberSurface"` and
+`"LAChamberSurface"` -- those are what a 3D-0D volume coupler integrates over. Endocardia,
+epicardium and the two plate faces are the entire boundary: the annulus plane is interior here, so
+unlike the single-chamber generator this mesh carries no `"Base"`.
+
+`"MitralAnnulus"` holds the annulus facets on their ventricular side, which is what
 [`compute_lv_coordinate_system`](@ref) takes as `base_name` on this mesh; together with the
 ventricle-only ridge sheets `"SRidgePost"`/`"SRidgeAnt"` and `"LVEndocardium"`/`"LVEpicardium"` that
 call works on `subdomains = ["ventricle"]`.
@@ -805,10 +831,11 @@ function generate_ideal_lh_mesh(
     longitudinal_upper::T = Float64(0.2),
     apex_inner::T = Float64(1.3),
     apex_outer::T = Float64(1.5),
-    la_inner_radius::T = inner_radius,
-    la_outer_radius::T = outer_radius,
-    la_roof_inner::T = Float64(0.7),
-    la_roof_outer::T = Float64(0.9),
+    la_cavity_radius::T = outer_radius,
+    la_cavity_depth::T = inner_radius,
+    la_wall_thickness::T = (outer_radius - inner_radius)/3,
+    valve_plate_thickness::T = la_wall_thickness/3,
+    num_elements_radial_plate::Int = 3,
     septum_fraction = 1//3,
 ) where {T}
     nc        = num_elements_circumferential
@@ -816,18 +843,28 @@ function generate_ideal_lh_mesh(
     n_nodes_r = num_elements_radial + 1
     n_lv      = num_elements_longitudinal
     n_la      = num_elements_longitudinal_la
+    np        = num_elements_radial_plate
 
     basal_angle = (1.0 + longitudinal_upper)*π/2
     rim_height  = apex_outer*cos(basal_angle)
     rim_radius(rp) = (inner_radius*(1.0-rp) + outer_radius*rp)*sin(basal_angle)
 
-    la_inner_radius ≥ rim_radius(0.0) || error(
-        "The atrial endocardium cannot reach the ventricular rim: `la_inner_radius` " *
-        "($(la_inner_radius)) is below the endocardial rim radius $(rim_radius(0.0)).",
+    min(la_cavity_depth, la_wall_thickness, valve_plate_thickness) > 0.0 || error(
+        "`la_cavity_depth` ($(la_cavity_depth)), `la_wall_thickness` ($(la_wall_thickness)) and " *
+        "`valve_plate_thickness` ($(valve_plate_thickness)) all have to be positive.",
     )
-    la_outer_radius ≥ rim_radius(1.0) || error(
-        "The atrial epicardium cannot reach the ventricular rim: `la_outer_radius` " *
-        "($(la_outer_radius)) is below the epicardial rim radius $(rim_radius(1.0)).",
+    np ≥ 2 || error(
+        "`num_elements_radial_plate` ($(np)) is below 2: the valvular plate needs at least its " *
+        "center fan and its tapering outer ring.",
+    )
+    la_cavity_radius ≥ rim_radius(0.0) || error(
+        "The atrial endocardium cannot reach the ventricular rim: `la_cavity_radius` " *
+        "($(la_cavity_radius)) is below the endocardial rim radius $(rim_radius(0.0)).",
+    )
+    la_cavity_radius + la_wall_thickness ≥ rim_radius(1.0) || error(
+        "The atrial epicardium cannot reach the ventricular rim: `la_cavity_radius + " *
+        "la_wall_thickness` ($(la_cavity_radius + la_wall_thickness)) is below the epicardial " *
+        "rim radius $(rim_radius(1.0)).",
     )
 
     circumferential_angle = range(0.0, stop = 2*π, length = nc+1)[1:(end-1)]
@@ -849,11 +886,11 @@ function generate_ideal_lh_mesh(
 
     "Atrial wall at transmural fraction `rp`, `s = 0` at the roof pole and `s = 1` on the rim."
     function atrium_point(s, φ, rp)
-        r = la_inner_radius*(1.0-rp) + la_outer_radius*rp
-        h = la_roof_inner*(1.0-rp) + la_roof_outer*rp
-        θmax = π - asin(clamp(rim_radius(rp)/r, -1.0, 1.0))
-        θ = s*θmax
-        z = rim_height + h*(cos(θmax) - cos(θ))
+        r = la_cavity_radius + rp*la_wall_thickness
+        cos_θmax = -sqrt(max(0.0, 1.0 - (rim_radius(rp)/r)^2))
+        h = (la_cavity_depth + rp*la_wall_thickness)/(1.0 - cos_θmax)
+        θ = s*acos(cos_θmax)
+        z = rim_height + h*(cos_θmax - cos(θ))
         return Vec((r*sin(θ)*cos(φ), r*sin(θ)*sin(φ), z))
     end
 
@@ -892,6 +929,21 @@ function generate_ideal_lh_mesh(
         push!(nodes, Node(atrium_point(0.0, 0.0, radius_percent)))
     end
 
+    # The plate's interior rings, at the two plate faces, and its center edge. Its outermost ring is
+    # the endocardial rim ring itself, which is why it is not built here.
+    orifice_radius = rim_radius(0.0)
+    plate_top      = rim_height + valve_plate_thickness/2
+    plate_bottom   = rim_height - valve_plate_thickness/2
+    plate_offset   = length(nodes)
+    for j = 1:(np-1), z ∈ (plate_top, plate_bottom), φ ∈ circumferential_angle
+        radius = orifice_radius*j/np
+        push!(nodes, Node(Vec((radius*cos(φ), radius*sin(φ), z))))
+    end
+    plate_array = reshape(collect((plate_offset+1):length(nodes)), (nc, 2, np-1))
+    plate_axis  = (length(nodes)+1):(length(nodes)+2)
+    push!(nodes, Node(Vec((zero(T), zero(T), plate_top))))
+    push!(nodes, Node(Vec((zero(T), zero(T), plate_bottom))))
+
     cells = Union{Hexahedron, Wedge}[]
 
     _shell_hex_cells!(cells, ventricle_array, nc, nr, n_lv)
@@ -910,6 +962,37 @@ function generate_ideal_lh_mesh(
     offset = length(cells)
     _fan_wedge_cells!(cells, view(atrium_array, :, :, n_la+1), roof_nodes, nc, nr, true)
     roof_fan = reshape(collect((offset+1):length(cells)), (nc, nr))
+
+    # The plate, from its center outwards. Its cells stack from the ventricular face to the atrial
+    # one, which is what the fan's flipped winding and the transposed node array of the annular
+    # layers are for -- both builders stack along their last index.
+    offset = length(cells)
+    _fan_wedge_cells!(cells, view(plate_array, :, :, 1), plate_axis, nc, 1, true)
+    plate_fan = collect((offset+1):length(cells))
+
+    offset = length(cells)
+    _shell_hex_cells!(cells, permutedims(plate_array, (1, 3, 2)), nc, np-2, 1)
+    plate_hex = collect((offset+1):length(cells))
+
+    # The knife edge: each wedge stands on two radial-vertical triangles that run from the
+    # outermost plate ring to a single rim node, so the plate ends on the shared ring without a node
+    # of its own there and without any collapsed edge.
+    offset = length(cells)
+    for i = 1:nc
+        i_next = (i == nc) ? 1 : i + 1
+        push!(
+            cells,
+            Wedge((
+                plate_array[i, 2, np-1],
+                plate_array[i, 1, np-1],
+                ventricle_array[i, 1, end],
+                plate_array[i_next, 2, np-1],
+                plate_array[i_next, 1, np-1],
+                ventricle_array[i_next, 1, end],
+            )),
+        )
+    end
+    plate_taper = collect((offset+1):length(cells))
 
     facetsets = Dict{String, OrderedSet{FacetIndex}}()
     facetsets["LVEndocardium"] = OrderedSet{FacetIndex}([
@@ -930,6 +1013,24 @@ function generate_ideal_lh_mesh(
     ])
     facetsets["Endocardium"] = union(facetsets["LVEndocardium"], facetsets["LAEndocardium"])
     facetsets["Epicardium"]  = union(facetsets["LVEpicardium"], facetsets["LAEpicardium"])
+
+    facetsets["LVValvularPlane"] = OrderedSet{FacetIndex}([
+        [FacetIndex(cl, 1) for cl in plate_fan];
+        [FacetIndex(cl, 1) for cl in plate_hex];
+        [FacetIndex(cl, 4) for cl in plate_taper]
+    ])
+    facetsets["LAValvularPlane"] = OrderedSet{FacetIndex}([
+        [FacetIndex(cl, 5) for cl in plate_fan];
+        [FacetIndex(cl, 6) for cl in plate_hex];
+        [FacetIndex(cl, 3) for cl in plate_taper]
+    ])
+    # The closed surfaces a chamber volume is measured over. The endocardia alone are open at the
+    # orifice, where the plate closes them.
+    facetsets["LVChamberSurface"] =
+        union(facetsets["LVEndocardium"], facetsets["LVValvularPlane"])
+    facetsets["LAChamberSurface"] =
+        union(facetsets["LAEndocardium"], facetsets["LAValvularPlane"])
+
     facetsets["MitralAnnulus"] =
         OrderedSet{FacetIndex}(FacetIndex(cl, 6) for cl in ventricle_hex[:, :, end][:])
 
@@ -957,8 +1058,9 @@ function generate_ideal_lh_mesh(
     nodesets["MitralAnnulus"] = OrderedSet{Int}(ventricle_array[:, :, end][:])
 
     cellsets = Dict{String, OrderedSet{Int}}(
-        "ventricle" => OrderedSet{Int}([ventricle_hex[:]; apex_fan[:]]),
-        "atrium"    => OrderedSet{Int}([atrium_hex[:]; roof_fan[:]]),
+        "ventricle"      => OrderedSet{Int}([ventricle_hex[:]; apex_fan[:]]),
+        "atrium"         => OrderedSet{Int}([atrium_hex[:]; roof_fan[:]]),
+        "valvular-plane" => OrderedSet{Int}([plate_fan; plate_hex; plate_taper]),
     )
 
     return to_mesh(

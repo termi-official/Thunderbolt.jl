@@ -41,3 +41,42 @@ function generate_mixed_dimensional_grid_3D()
     ))
     return Grid(elements, nodes; cellsets, facetsets)
 end
+
+"""
+    surface_volumes(grid, facets, coordinates = nothing)
+
+`∫ xᵢ nᵢ dA` over `facets`, once per axis, with `n` the outward normal of the cell each facet
+belongs to and `coordinates` an optional stand-in for the grid's node coordinates -- a deformed
+configuration, say.
+
+On a closed surface the divergence theorem makes all three components the enclosed volume, signed by
+the orientation; on an open one they differ and none of them is a volume. The rule is second order
+because the integrand is quadratic on a bilinear facet, and that discrete identity holds only where
+the quadrature is exact.
+"""
+function surface_volumes(grid, facets, coordinates = nothing)
+    facetvalues = Dict{DataType, Any}()
+    volumes = zeros(3)
+    for facet in facets
+        cell = getcells(grid, facet[1])
+        fv = get!(facetvalues, typeof(cell)) do
+            FacetValues(
+                FacetQuadratureRule{Ferrite.getrefshape(cell)}(2),
+                Ferrite.geometric_interpolation(typeof(cell)),
+            )
+        end
+        x =
+            coordinates === nothing ? getcoordinates(grid, facet[1]) :
+            [coordinates[nodeid] for nodeid in cell.nodes]
+        reinit!(fv, cell, x, facet[2])
+        for qp = 1:getnquadpoints(fv)
+            n  = getnormal(fv, qp)
+            xq = spatial_coordinate(fv, qp, x)
+            dΓ = getdetJdV(fv, qp)
+            for d = 1:3
+                volumes[d] += xq[d]*n[d]*dΓ
+            end
+        end
+    end
+    return volumes
+end

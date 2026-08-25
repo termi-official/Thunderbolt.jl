@@ -1,6 +1,7 @@
 using Test, Thunderbolt
 using Ferrite, LinearAlgebra, SparseArrays, JLD2
 using BlockArrays
+include(joinpath(@__DIR__, "testfixtures.jl"))
 
 # Equivalence harness for the 3D-0D coupled operator.
 #
@@ -260,9 +261,11 @@ end
 A passive left heart with one [`Thunderbolt.Pressure3D0DVolumeCoupler`](@ref) per chamber, its
 operator, and a fixed pseudo-random state to assemble at.
 
-The two chamber pressures are the only unknowns outside the mesh, and they exist because the two
-facet terms say so -- nothing here declares them a second time. The state is deliberately not a
-solution, for the reason given at [`rsafdq_reference_state`](@ref).
+The couplers tie over the *closed* chamber surfaces, endocardium plus the matching face of the
+valvular plate, which is what makes their volume integral the enclosed volume. The two chamber
+pressures are the only unknowns outside the mesh, and they exist because the two facet terms say
+so -- nothing here declares them a second time. The state is deliberately not a solution, for the
+reason given at [`rsafdq_reference_state`](@ref).
 
 Returns `(; f, op, u, pressure_symbols, pressure_dofs, n_u, models)`.
 """
@@ -275,8 +278,6 @@ function two_chamber_state(; seed = 7)
         longitudinal_upper = 0.4,
         apex_inner         = scaling_factor * 1.3,
         apex_outer         = scaling_factor * 1.5,
-        la_roof_inner      = scaling_factor * 0.7,
-        la_roof_outer      = scaling_factor * 0.9,
     )
 
     # The coordinate system is ventricular -- the atrium has no long axis of its own -- so it is
@@ -303,20 +304,28 @@ function two_chamber_state(; seed = 7)
     pressure_symbols = (:pₗᵥ, :pₗₐ)
     couplers = (
         Thunderbolt.Pressure3D0DVolumeCoupler(
-            "LVEndocardium",
+            "LVChamberSurface",
             :d,
             pressure_symbols[1],
             RSAFDQ2022SurrogateVolume(),
         ),
         Thunderbolt.Pressure3D0DVolumeCoupler(
-            "LAEndocardium",
+            "LAChamberSurface",
             :d,
             pressure_symbols[2],
             RSAFDQ2022SurrogateVolume(),
         ),
     )
-    # Both subdomains carry both couplers: the declarations have to agree across a domain split, and
-    # each coupler only ever traverses the facets of its own chamber.
+    # The plate is a carrier, not tissue: passive, three orders of magnitude below the wall and
+    # nearly free to change volume, so it follows the annulus without stiffening it.
+    plate_material = PK1Model(
+        Guccione1991PassiveModel(; C₀ = 1.0e-3, mpU = SimpleCompressionPenalty(5.0e-2)),
+        atrium_microstructure,
+    )
+    # All three subdomains carry both couplers: the declarations have to agree across a domain
+    # split, and each coupler only ever traverses the facets of its own chamber. The plate is not
+    # along for the ride here -- both of its faces are tying facets, so its own model is what
+    # declares them, and the pressure of a closed cavity does act on it.
     models = Dict(
         "ventricle" => QuasiStaticModel(
             :d,
@@ -328,6 +337,7 @@ function two_chamber_state(; seed = 7)
             PK1Model(Guccione1991PassiveModel(), atrium_microstructure),
             couplers,
         ),
+        "valvular-plane" => QuasiStaticModel(:d, plate_material, couplers),
     )
 
     dbcs = [
@@ -336,9 +346,16 @@ function two_chamber_state(; seed = 7)
         Dirichlet(:d, getnodeset(mesh, "MyocardialAnchor3"), (x, t) -> (0.0,), [3]),
         Dirichlet(:d, getnodeset(mesh, "MyocardialAnchor4"), (x, t) -> (0.0,), [3]),
     ]
+    # The facet rule defaults to the interpolation order, one point per quadrilateral facet, which
+    # does not integrate the volume functional exactly -- and the chamber volume is the enclosed
+    # volume only where the surface is closed *and* the rule is exact.
     f = semidiscretize(
         models,
-        FiniteElementDiscretization(Dict(:d => LagrangeCollection{1}()^3); dbcs),
+        FiniteElementDiscretization(
+            Dict(:d => LagrangeCollection{1}()^3);
+            dbcs,
+            fqrcs = Dict(:d => Thunderbolt.FacetQuadratureRuleCollection(2)),
+        ),
         mesh,
     )
 
@@ -378,6 +395,33 @@ function two_chamber_state(; seed = 7)
     return (; f, op, u, pressure_symbols, pressure_dofs, n_u, models)
 end
 
+"""
+    deformed_coordinates(dh, u)
+
+The grid's nodes moved by the displacement field in `u`.
+
+With a linear geometry and a linear displacement interpolation the deformed mesh is exactly the mesh
+with moved nodes, so the deformed chamber volume follows from node positions alone -- independently
+of how the operator computes it.
+"""
+function deformed_coordinates(dh, u)
+    grid = dh.grid
+    displacements = zeros(Vec{3, Float64}, getnnodes(grid))
+    for sdh in dh.subdofhandlers
+        displacement_range = dof_range(sdh, :d)
+        for cellid in sdh.cellset
+            dofs = celldofs(dh, cellid)[displacement_range]
+            for (i, nodeid) in enumerate(getcells(grid, cellid).nodes)
+                displacements[nodeid] = Vec(ntuple(c -> u[dofs[3*(i-1)+c]], 3))
+            end
+        end
+    end
+    return [
+        Ferrite.get_node_coordinate(node) + displacements[i] for
+        (i, node) in enumerate(getnodes(grid))
+    ]
+end
+
 @testset "Two-chamber 3D-0D operator" begin
     state = two_chamber_state()
     dh = state.f.dh
@@ -405,11 +449,31 @@ end
             facet for sdh in dh.subdofhandlers for
             facet in Thunderbolt.FerriteOperators.facet_items(integrator, sdh)
         ]
-        @test length(declared) == length(getfacetset(dh.grid, "Endocardium"))
-        @test Set(declared) == Set(getfacetset(dh.grid, "Endocardium"))
-        for name in ("LVEndocardium", "LAEndocardium")
+        surfaces = union(
+            getfacetset(dh.grid, "LVChamberSurface"),
+            getfacetset(dh.grid, "LAChamberSurface"),
+        )
+        @test length(declared) == length(surfaces)
+        @test Set(declared) == Set(surfaces)
+        for name in ("LVEndocardium", "LAEndocardium", "LVValvularPlane", "LAValvularPlane")
             @test Set(getfacetset(dh.grid, name)) ⊆ Set(declared)
         end
+
+        # `facet_items` filters per subdomain, so the plate's faces reach the operator only because
+        # the plate's own model declares them. Its wedges and its hexahedra are handled apart, so
+        # the subdomain is several subhandlers.
+        plate_cells = getcellset(dh.grid, "valvular-plane")
+        plate_sdhs = [sdh for sdh in dh.subdofhandlers if all(∈(plate_cells), sdh.cellset)]
+        @test !isempty(plate_sdhs)
+        plate_declared = [
+            facet for sdh in plate_sdhs for
+            facet in Thunderbolt.FerriteOperators.facet_items(integrator, sdh)
+        ]
+        @test !isempty(plate_declared)
+        @test Set(plate_declared) == union(
+            getfacetset(dh.grid, "LVValvularPlane"),
+            getfacetset(dh.grid, "LAValvularPlane"),
+        )
     end
 
     V⁰ᴰ = [120.0, 60.0]
@@ -422,6 +486,20 @@ end
             @test maximum(abs, J[dof, :]) > 0
             @test maximum(abs, J[:, dof]) > 0
             @test abs(r[dof]) > 0
+        end
+    end
+
+    @testset "each chamber row is its closed volume" begin
+        # `RSAFDQ2022SurrogateVolume` measures `-∮ (x + d - b) ⋅ ĥ n̂ dΓ` along one axis, which is
+        # the enclosed volume only on a closed surface -- and then it is the same along every axis,
+        # and independent of `b`. The plate is meshed, so the closure moves with the wall and the
+        # deformed surface is still closed.
+        deformed = deformed_coordinates(dh, state.u)
+        for (i, name) in enumerate(("LVChamberSurface", "LAChamberSurface"))
+            volumes = surface_volumes(dh.grid, getfacetset(dh.grid, name), deformed)
+            @test volumes[1] ≈ volumes[2] rtol = 1.0e-10
+            @test volumes[1] ≈ volumes[3] rtol = 1.0e-10
+            @test r[state.pressure_dofs[i]] ≈ -volumes[1] - V⁰ᴰ[i] rtol = 1.0e-10
         end
     end
 

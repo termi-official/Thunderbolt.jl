@@ -1,4 +1,5 @@
 using Test, Thunderbolt, Tensors
+include(joinpath(@__DIR__, "testfixtures.jl"))
 @testset "Mesh" begin
     num_refined_elements(::Type{Hexahedron}) = 8
     num_refined_elements(::Type{Tetrahedron}) = 8
@@ -109,32 +110,74 @@ using Test, Thunderbolt, Tensors
             return Set(only(v) for v in values(owners) if length(v) == 1)
         end
 
-        nc, nr, n_lv, n_la = 8, 2, 3, 2
+        # `test_detJ` samples one point per cell; the plate is thin and tapered, so check the whole
+        # rule.
+        function min_detJdV(grid)
+            smallest = Inf
+            for cc in CellIterator(grid)
+                cell = getcells(grid, cellid(cc))
+                cv = CellValues(
+                    QuadratureRule{Ferrite.getrefshape(cell)}(2),
+                    Ferrite.geometric_interpolation(typeof(cell)),
+                )
+                reinit!(cv, cc)
+                for qp in 1:getnquadpoints(cv)
+                    smallest = min(smallest, getdetJdV(cv, qp))
+                end
+            end
+            return smallest
+        end
+
+        # `∫ π x(z)² dz` up the endocardial surface of revolution and closed by the annulus plane,
+        # in the polar angle, where `∫₀^θ sin³ = cos³(θ)/3 - cos(θ) + 2/3`.
+        function analytic_lv_cavity(; inner_radius, apex_inner, apex_outer, longitudinal_upper)
+            cap(θ) = cos(θ)^3/3 - cos(θ) + 2/3
+            basal_angle = (1.0 + longitudinal_upper)*π/2
+            return π*inner_radius^2 *
+                   (apex_inner*cap(π/2) + apex_outer*(cap(basal_angle) - cap(π/2)))
+        end
+
+        nc, nr, n_lv, n_la, np = 8, 2, 3, 2, 3
         mesh = generate_ideal_lh_mesh(nc, nr, n_lv, n_la)
-        # The annulus plane of the default geometry, where the two shells meet.
+        # A second resolution: the thin-walled defaults have to hold up on both.
+        fine_mesh = generate_ideal_lh_mesh(24, 2, 8, 6)
+        # The annulus plane of the default geometry, where the two shells meet, and the thickness of
+        # the plate centered on it.
         z_rim = 1.5*cos(1.2*π/2)
+        plate_thickness = (1.0 - 0.7)/9
         test_detJ(mesh)
+        @test min_detJdV(fine_mesh) > 0
 
         @testset "layout" begin
-            @test getnnodes(mesh) == nc*(nr+1)*(n_lv+1+n_la) + 2*(nr+1)
-            @test getncells(mesh) == nc*nr*(n_lv+n_la) + 2*nc*nr
+            @test getnnodes(mesh) == nc*(nr+1)*(n_lv+1+n_la) + 2*(nr+1) + 2*nc*(np-1) + 2
+            @test getncells(mesh) == nc*nr*(n_lv+n_la) + 2*nc*nr + nc*np
             @test length(getcellset(mesh, "ventricle")) == nc*nr*(n_lv+1)
             @test length(getcellset(mesh, "atrium")) == nc*nr*(n_la+1)
-            @test isempty(intersect(getcellset(mesh, "ventricle"), getcellset(mesh, "atrium")))
-            @test length(getcellset(mesh, "ventricle")) + length(getcellset(mesh, "atrium")) ==
+            @test length(getcellset(mesh, "valvular-plane")) == nc*np
+            subdomains = ("ventricle", "atrium", "valvular-plane")
+            @test sum(length(getcellset(mesh, name)) for name in subdomains) == getncells(mesh)
+            @test length(union((getcellset(mesh, name) for name in subdomains)...)) ==
                   getncells(mesh)
         end
 
         @testset "boundary integrity" begin
-            lv_endo = getfacetset(mesh, "LVEndocardium")
-            la_endo = getfacetset(mesh, "LAEndocardium")
-            epi     = getfacetset(mesh, "Epicardium")
+            # With the orifice plated over, the boundary is the two endocardia, the epicardium and
+            # the two plate faces -- and nothing else.
+            parts = Tuple(
+                getfacetset(mesh, name) for name in (
+                    "LVEndocardium",
+                    "LAEndocardium",
+                    "Epicardium",
+                    "LVValvularPlane",
+                    "LAValvularPlane",
+                )
+            )
 
             @test !Thunderbolt._has_facetset(mesh, "Base")
-            @test isempty(intersect(lv_endo, la_endo))
-            @test isempty(intersect(lv_endo, epi))
-            @test isempty(intersect(la_endo, epi))
-            @test Set(union(lv_endo, la_endo, epi)) == boundary_skeleton(mesh)
+            for (i, a) in enumerate(parts), b in parts[(i+1):end]
+                @test isempty(intersect(a, b))
+            end
+            @test Set(union(parts...)) == boundary_skeleton(mesh)
             # The annulus is where the two shells meet, so its facets are interior.
             @test isempty(intersect(getfacetset(mesh, "MitralAnnulus"), boundary_skeleton(mesh)))
         end
@@ -144,6 +187,11 @@ using Test, Thunderbolt, Tensors
                   union(getfacetset(mesh, "LVEndocardium"), getfacetset(mesh, "LAEndocardium"))
             @test getfacetset(mesh, "Epicardium") ==
                   union(getfacetset(mesh, "LVEpicardium"), getfacetset(mesh, "LAEpicardium"))
+            # The endocardia stay anatomical; the chamber surfaces are the closed versions.
+            @test getfacetset(mesh, "LVChamberSurface") ==
+                  union(getfacetset(mesh, "LVEndocardium"), getfacetset(mesh, "LVValvularPlane"))
+            @test getfacetset(mesh, "LAChamberSurface") ==
+                  union(getfacetset(mesh, "LAEndocardium"), getfacetset(mesh, "LAValvularPlane"))
             # `compute_lv_coordinate_system(mesh; subdomains = ["ventricle"])` reads these, so they
             # may not reach into the atrium.
             ventricle = getcellset(mesh, "ventricle")
@@ -152,6 +200,77 @@ using Test, Thunderbolt, Tensors
             end
             @test all(facet -> facet[1] ∈ getcellset(mesh, "atrium"),
                       getfacetset(mesh, "LAEndocardium"))
+            plate = getcellset(mesh, "valvular-plane")
+            for name in ("LVValvularPlane", "LAValvularPlane")
+                @test all(facet -> facet[1] ∈ plate, getfacetset(mesh, name))
+            end
+        end
+
+        @testset "valvular plate" begin
+            plate = getcellset(mesh, "valvular-plane")
+            rim   = getnodeset(mesh, "MitralAnnulus")
+            coordinate(n) = Ferrite.get_node_coordinate(getnodes(mesh, n))
+
+            @test min_detJdV(mesh) > 0
+            # The taper ends *on* the shared ring: every cell keeps all of its nodes distinct, so no
+            # wedge collapsed onto the ring to get there.
+            @test all(cellid -> allunique(getcells(mesh, cellid).nodes), plate)
+
+            # It reaches the ring by reusing its nodes -- every endocardial one and nothing else --
+            # rather than by placing a second ring on top of it.
+            plate_nodes = Set(n for cellid in plate for n in getcells(mesh, cellid).nodes)
+            shared = intersect(plate_nodes, rim)
+            @test length(shared) == nc
+            endocardial_rim_radius = 0.7*sin(1.2*π/2)
+            @test all(shared) do n
+                x = coordinate(n)
+                x[1]^2 + x[2]^2 ≈ endocardial_rim_radius^2
+            end
+            @test nc == count(1:getnnodes(mesh)) do n
+                x = coordinate(n)
+                x[3] ≈ z_rim && x[1]^2 + x[2]^2 ≈ endocardial_rim_radius^2
+            end
+
+            # The plate is a slab of the requested thickness, centered on the annulus plane.
+            zs = [coordinate(n)[3] for n in plate_nodes]
+            @test minimum(zs) ≈ z_rim - plate_thickness/2
+            @test maximum(zs) ≈ z_rim + plate_thickness/2
+        end
+
+        @testset "closed chamber surfaces" begin
+            # The chamber surfaces are traversed from the cells bounding the chamber, so their
+            # normals point into it and the enclosed volume comes out negative.
+            translated = [
+                Ferrite.get_node_coordinate(node) + Vec((3.0, -2.0, 5.0)) for
+                node in getnodes(mesh)
+            ]
+            for name in ("LVChamberSurface", "LAChamberSurface")
+                volumes = surface_volumes(mesh, getfacetset(mesh, name))
+                @test volumes[1] ≈ volumes[2] rtol = 1.0e-10
+                @test volumes[1] ≈ volumes[3] rtol = 1.0e-10
+                # A rigid translation moves no volume, which only a closed surface can honour.
+                @test surface_volumes(mesh, getfacetset(mesh, name), translated) ≈ volumes rtol =
+                    1.0e-8
+            end
+
+            # Negative control: the endocardium alone is open at the orifice, so the three axes give
+            # three different numbers and none of them is a volume.
+            open_lv = surface_volumes(mesh, getfacetset(mesh, "LVEndocardium"))
+            @test !isapprox(open_lv[1], open_lv[3]; rtol = 1.0e-6)
+            @test !isapprox(open_lv[2], open_lv[3]; rtol = 1.0e-6)
+
+            reference = analytic_lv_cavity(;
+                inner_radius = 0.7,
+                apex_inner = 1.3,
+                apex_outer = 1.5,
+                longitudinal_upper = 0.2,
+            )
+            coarse = -surface_volumes(mesh, getfacetset(mesh, "LVChamberSurface"))[1]
+            fine   = -surface_volumes(fine_mesh, getfacetset(fine_mesh, "LVChamberSurface"))[1]
+            # The facetted cavity is inscribed in the smooth one, and the ventricular half of the
+            # plate displaces another 0.8% of it, so both stay below and converge to just under it.
+            @test coarse < fine < reference
+            @test fine ≈ reference rtol = 0.035
         end
 
         @testset "rim sharing" begin
@@ -185,10 +304,20 @@ using Test, Thunderbolt, Tensors
             @test flipped_below == above
         end
 
-        @testset "rim reachability" begin
-            # The atrium has to be wide enough at the annulus to stand on the ventricular rim.
-            @test_throws ErrorException generate_ideal_lh_mesh(4, 1, 1, 1; la_inner_radius = 0.1)
-            @test_throws ErrorException generate_ideal_lh_mesh(4, 1, 1, 1; la_outer_radius = 0.1)
+        @testset "parameter feasibility" begin
+            # The atrium has to be wide enough at the annulus to stand on the ventricular rim, on
+            # its endocardial and on its epicardial layer.
+            @test_throws ErrorException generate_ideal_lh_mesh(4, 1, 1, 1; la_cavity_radius = 0.1)
+            @test_throws ErrorException generate_ideal_lh_mesh(
+                4, 1, 1, 1;
+                la_cavity_radius = 0.7,
+                la_wall_thickness = 0.01,
+            )
+            @test_throws ErrorException generate_ideal_lh_mesh(4, 1, 1, 1; la_wall_thickness = -0.1)
+            @test_throws ErrorException generate_ideal_lh_mesh(
+                4, 1, 1, 1;
+                num_elements_radial_plate = 1,
+            )
         end
 
         @testset "single chamber generator unchanged" begin
