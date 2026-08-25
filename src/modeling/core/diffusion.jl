@@ -130,6 +130,11 @@ struct BilinearInterfaceDiffusionElementCache{CoefficientCacheType, CV} <:
     cellvalues::CV
 end
 
+# FerriteInterfaceElements does not know the device API, and `InterfaceCellValues` has no
+# field-wise constructor: a deep copy is the correct CPU duplicate — private worker scratch,
+# internal here/there aliasing preserved. A non-CPU device stays a loud MethodError.
+duplicate_for_device(device::AbstractCPUDevice, cv::InterfaceCellValues) = deepcopy(cv)
+
 function duplicate_for_device(device, cache::BilinearInterfaceDiffusionElementCache)
     return BilinearInterfaceDiffusionElementCache(
         duplicate_for_device(device, cache.Dcache),

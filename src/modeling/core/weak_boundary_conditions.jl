@@ -963,11 +963,11 @@ struct ConsistencyCheckWeakBoundaryConditionCache{IC} <: AbstractSurfaceElementC
 end
 function duplicate_for_device(device, cache::ConsistencyCheckWeakBoundaryConditionCache)
     return ConsistencyCheckWeakBoundaryConditionCache(
-        duplicate_for_device(cache.inner_cache),
-        duplicate_for_device(cache.Kₑfd),
-        duplicate_for_device(cache.uₑfd),
-        duplicate_for_device(cache.residualₑfd),
-        duplicate_for_device(cache.residualₑref),
+        duplicate_for_device(device, cache.inner_cache),
+        duplicate_for_device(device, cache.Kₑfd),
+        duplicate_for_device(device, cache.uₑfd),
+        duplicate_for_device(device, cache.residualₑfd),
+        duplicate_for_device(device, cache.residualₑref),
         cache.Δ,
     )
 end
