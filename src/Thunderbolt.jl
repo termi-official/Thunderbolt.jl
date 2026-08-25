@@ -87,7 +87,6 @@ import FerriteOperators:
     LinearizedFerriteOperator,
     BilinearFerriteOperator,
     LinearFerriteOperator,
-    AbstractBlockOperator,
     AbstractLinearOperator,
     LinearNullOperator,
     setup_operator,
