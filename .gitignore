@@ -34,6 +34,8 @@ Manifest.toml
 *.eps
 *.sqlite
 *.jld2
+# Test fixtures are data, not output
+!test/data/*.jld2
 
 # Documenter files
 docs/src/tutorials

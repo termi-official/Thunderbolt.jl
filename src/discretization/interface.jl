@@ -29,6 +29,6 @@ function semidiscretize(model, discretization, mesh)
     )
 end
 
-function semidiscretize(models::Dict{String, Any}, discretization, mesh)
-    semidiscretize(narrow_dict_types(models), discretization, mesh)
+function semidiscretize(models::Dict{String, Any}, discretization, mesh; kwargs...)
+    semidiscretize(narrow_dict_types(models), discretization, mesh; kwargs...)
 end

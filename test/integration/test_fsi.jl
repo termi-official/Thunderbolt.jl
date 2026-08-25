@@ -42,7 +42,9 @@ function test_solve_contractile_ideal_lv_3D0D(
         NewtonRaphsonSolver(;
             max_iter = 10,
             tol = 1e-2,
-            inner_solver = SchurComplementLinearSolver(LinearSolve.UMFPACKFactorization()),
+            # The coupled system is assembled monolithically, so it is solved monolithically. It is
+            # indefinite, which UMFPACK handles.
+            inner_solver = LinearSolve.UMFPACKFactorization(),
         ),
     )
     blood_circuit_solver = Tsit5()

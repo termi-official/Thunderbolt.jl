@@ -1,34 +1,35 @@
-# TODO try to reproduce this via the BlockOperator
-@concrete struct AssembledRSAFDQ2022Operator <: AbstractBlockOperator
-    J
-    # The structural operator. Its matrix is `J[Block(1,1)]`, so its sweep needs no separate target.
-    inner
-    # Ferrite's assembler binds a `Vector`, and the structural block of the residual is a view into
-    # the blocked one, so pass 1 fills this and the result is copied into the block.
-    residual_structural
-    dh
-    integrator
+"""
+    RSAFDQ2022TyingOperator
+
+The 3D-0D coupled operator: an ordinary [`setup_operator`](@ref) result for the volume, plus the
+chamber tying terms assembled as a second pass into the same matrix and residual.
+
+The tying pass is Ferrite's manual pattern for algebraic variables: a facet loop over an augmented
+local system `[celldofs(facet); pressure dofs]`.
+
+Only the fused `update_linearization!` is served; there is no residual-only entry point.
+"""
+@concrete struct RSAFDQ2022TyingOperator
+    op
     chambers
+    # Per chamber: the `(sdh, cache)` pairs contributing the tying terms, and the chamber's algebraic
+    # dofs queried once from the closed `DofHandler`.
     tying_caches
+    pressure_dofs
 end
 
-# Interface
-function FerriteOperators.update_linearization!(
-    op::AssembledRSAFDQ2022Operator,
-    states::NamedTuple,
-    p,
-    ctx,
-)
-    error("Not implemented yet.")
-end
-function _update_tying_subdomain_Jr(assembler, sdh, u, p, ctx, tying_cache, chamber)
+getJ(op::RSAFDQ2022TyingOperator) = getJ(op.op)
+
+function _update_tying_subdomain_Jr(assembler, sdh, u, p, ctx, tying_cache, pressure_dofs)
     # FIXME allocator api
-    Kₑ = zeros(ndofs_per_cell(sdh)+1, ndofs_per_cell(sdh)+1)
-    rₑ = zeros(ndofs_per_cell(sdh)+1)
-    uₑ = zeros(ndofs_per_cell(sdh)+1)
+    ndofs_local = ndofs_per_cell(sdh) + length(pressure_dofs)
+    Kₑ = zeros(ndofs_local, ndofs_local)
+    rₑ = zeros(ndofs_local)
+    uₑ = zeros(ndofs_local)
+    dofs = zeros(Int, ndofs_local)
+    dofs[(ndofs_per_cell(sdh)+1):end] .= pressure_dofs
     for facet in FacetIterator(sdh, tying_cache.facets)
-        # FIXME loader function
-        dofs = [celldofs(facet); chamber.pressure_dof_index_local]
+        copyto!(dofs, celldofs(facet))
         uₑ .= u[dofs]
         fill!(Kₑ, 0.0)
         fill!(rₑ, 0.0)
@@ -42,69 +43,55 @@ function _update_tying_subdomain_Jr(assembler, sdh, u, p, ctx, tying_cache, cham
         assemble!(assembler, dofs, Kₑ, rₑ)
     end
 end
+
 function FerriteOperators.update_linearization!(
-    op::AssembledRSAFDQ2022Operator,
-    residual_::AbstractVector,
+    op::RSAFDQ2022TyingOperator,
+    residual::AbstractVector,
     states::NamedTuple,
     p,
     ctx,
 )
-    (; J, inner, chambers, tying_caches) = op
-    u_ = states.u
+    (; chambers, tying_caches, pressure_dofs) = op
+    J = getJ(op)
 
-    bs = blocksizes(J)
-    s1 = bs[1, 1][1]
-    s2 = bs[2, 2][1]
-    u  = BlockedVector(u_, [s1, s2])
-    ud = @view u[Block(1)]
+    # Pass 1: the volume, which zeroes both targets.
+    update_linearization!(op.op, residual, states, p, ctx)
 
-    residual  = BlockedVector(residual_, [s1, s2])
-    residuald = @view residual[Block(1)]
-    residualp = @view residual[Block(2)]
-    fill!(residuald, 0.0)
-    fill!(residualp, 0.0)
-
-    Jpd = @view J[Block(2, 1)]
-    Jdp = @view J[Block(1, 2)]
-    fill!(Jpd, 0.0)
-    fill!(Jdp, 0.0)
-
-    # Pass 1: Assemble volume as usual. The inner operator's matrix IS this block, so it writes
-    # straight into place.
-    rd = op.residual_structural
-    update_linearization!(inner, rd, merge(states, (u = ud,)), p, ctx)
-    residuald .= rd
+    # Pass 2: the chamber tying terms, on top of what pass 1 wrote.
     assembler = start_assemble(J, residual; fillzero = false)
-
-    # Pass 2: Assemble forward and backward coupling contributions
-    # TODO wrap into task system as boundary integration
     @timeit_debug "assemble tying" for (chamber_index, chamber) ∈ enumerate(chambers)
-        V⁰ᴰ = chamber.V⁰ᴰval
-        chamber_pressure = u[chamber.pressure_dof_index_local] # We can also make this up[pressure_dof_index] with local index
-
         for (sdh, tying_cache) in tying_caches[chamber_index]
-            _update_tying_subdomain_Jr(assembler, sdh, u, p, ctx, tying_cache, chamber)
+            _update_tying_subdomain_Jr(
+                assembler,
+                sdh,
+                states.u,
+                p,
+                ctx,
+                tying_cache,
+                pressure_dofs[chamber_index],
+            )
         end
-
-        residualp[chamber_index] -= V⁰ᴰ
-
-        @debug "Chamber $chamber_index" chamber_pressure V⁰ᴰ
+        # The chamber row is `∫_Γ V³ᴰ(u) dΓ - V⁰ᴰ`; the facet kernel writes the integral, this is the
+        # solver supplied reference volume.
+        residual[only(pressure_dofs[chamber_index])] -= chamber.V⁰ᴰval
     end
 
     return nothing
 end
+
 function FerriteOperators.evaluate!(
-    op::AssembledRSAFDQ2022Operator,
-    residual_::AbstractVector,
+    op::RSAFDQ2022TyingOperator,
+    residual::AbstractVector,
     states::NamedTuple,
     p,
     ctx,
 )
-    error("Not implemented yet.")
+    error(
+        "The 3D-0D coupled operator has no residual-only entry point: the tying terms are assembled " *
+        "through Ferrite's matrix assembler, which writes the matrix too. Use the fused " *
+        "`update_linearization!`, i.e. a full Newton rather than `simplified_newton = true`.",
+    )
 end
-
-getJ(op::AssembledRSAFDQ2022Operator) = op.J
-getJ(op::AssembledRSAFDQ2022Operator, i::Block) = @view op.J[i]
 
 function _find_sdhs(dh, facetset)
     facet = first(facetset)
@@ -154,6 +141,20 @@ function setup_3D0D_coupling_integrator(sdh, chamber, integrator::NonlinearMulti
     return FerriteOperators.EmptySurfaceElementCache()
 end
 
+"""
+    _chamber_coupling(dh, displacement_symbol, chamber)
+
+The sparsity the chamber pressure needs, as Ferrite's coupling descriptor.
+
+`CellCoupling` over the whole `DofHandler` is the conservative statement: every field dof may couple
+to the pressure. The modelling-true statement is a `FacetCoupling` over the chamber surface, which is
+what makes the off-diagonal support the endocardium rather than the mesh.
+"""
+_chamber_coupling(dh, displacement_symbol, chamber) = CellCoupling(
+    collect(Int, Iterators.flatten(sdh.cellset for sdh in dh.subdofhandlers));
+    algebraic_coupling = ((displacement_symbol, chamber.pressure_symbol),),
+)
+
 function setup_stage_operator(
     f::RSAFDQ20223DFunction,
     solver::HomotopyPathSolver,
@@ -161,36 +162,33 @@ function setup_stage_operator(
     t₀,
 )
     (; tying_info, structural_function) = f
-    (; dh, integrator, assembly_strategy) = structural_function
+    (; dh, ch, integrator) = structural_function
+    chambers = tying_info.chambers
 
-    inner = setup_operator(assembly_strategy, integrator, dh; slots = THUNDERBOLT_STAGE_SLOTS)
+    # The tying pass writes into one dof shared by every chamber facet, which no coloring can make
+    # race free, so the scheduling is sequential regardless of what the discretization asked for.
+    couplings = Tuple(
+        _chamber_coupling(dh, chamber.displacement_symbol, chamber) for chamber in chambers
+    )
+    strategy = AssemblyStrategy(
+        FullAssembly(
+            FerriteOperators.StandardOperatorSpecification(;
+                algebraic_couplings = couplings,
+                constraint_handler = ch,
+            ),
+        ),
+        SequentialScheduling(),
+        get_strategy(f).device,
+    )
+
+    op = setup_operator(strategy, integrator, dh; slots = THUNDERBOLT_STAGE_SLOTS)
     tying_caches = [
         [
             (sdh, setup_3D0D_coupling_integrator(sdh, chamber, integrator)) for
             sdh in _find_sdhs(dh, chamber.facets)
-        ] for chamber in tying_info.chambers
+        ] for chamber in chambers
     ]
+    pressure_dofs = [algebraic_dofs(dh, chamber.pressure_symbol) for chamber in chambers]
 
-    num_chambers = length(tying_info.chambers)
-    block_sizes = [ndofs(dh), num_chambers]
-    total_size = sum(block_sizes)
-    # First we initialize an empty dummy block array
-    Jblock = BlockArray(spzeros(total_size, total_size), block_sizes, block_sizes)
-    # By reference: the inner operator assembles into this block directly.
-    Jblock[Block(1, 1)] = getJ(inner)
-    # TODO optimize storage
-    Jblock[Block(1, 2)] = sparse(ones(ndofs(dh), num_chambers))
-    Jblock[Block(2, 1)] = sparse(ones(num_chambers, ndofs(dh)))
-    Jblock[Block(2, 2)] = sparse(ones(num_chambers, num_chambers))
-    Ferrite.fillzero!(Jblock)
-
-    return AssembledRSAFDQ2022Operator(
-        Jblock,
-        inner,
-        zeros(ndofs(dh)),
-        dh,
-        integrator,
-        tying_info.chambers,
-        tying_caches,
-    )
+    return RSAFDQ2022TyingOperator(op, chambers, tying_caches, pressure_dofs)
 end

@@ -1,8 +1,9 @@
 ##########################################################################
 
 mutable struct RSAFDQ2022SingleChamberTying{CVM}
-    const pressure_dof_index_local::Int
-    const pressure_dof_index_global::Int
+    # The chamber pressure's global dof, from `algebraic_dofs`. It is also its index in the enclosing
+    # split vector, because the 3D block leads that vector.
+    const pressure_dof_index::Int
     const pressure_symbol::Symbol
     const pressure_parameter_index_local
     const facets::OrderedSet{FacetIndex}
@@ -92,27 +93,38 @@ end
 Generic description of the function associated with the RSAFDQModel.
 """
 struct RSAFDQ20223DFunction{MT <: QuasiStaticFunction, TP <: RSAFDQ2022TyingInfo} <:
-       AbstractSemidiscreteBlockedFunction
+       AbstractSemidiscreteFunction
     structural_function::MT
     tying_info::TP
 end
-BlockArrays.blocksizes(f::RSAFDQ20223DFunction) =
-    (solution_size(f.structural_function), solution_size(f.tying_info))
+
+# The chamber pressures are algebraic variables of the structural `DofHandler`, so this function's
+# unknowns *are* the structural ones. `blocksizes` reports how that one vector splits into
+# `[field dofs | chamber pressures]`, which is the split a block solver works on.
+solution_size(f::RSAFDQ20223DFunction) = solution_size(f.structural_function)
+BlockArrays.blocksizes(f::RSAFDQ20223DFunction) = (
+    solution_size(f.structural_function) - solution_size(f.tying_info),
+    solution_size(f.tying_info),
+)
 
 getch(f::AbstractSemidiscreteFunction) = f.ch
 getch(f::AbstractSemidiscreteBlockedFunction) =
     error("Overlaod getch to get the constraint handler for a blocked function")
 getch(f::RSAFDQ20223DFunction) = getch(f.structural_function)
 
-BlockArrays.blocks(f::RSAFDQ20223DFunction) = (f.structural_function, f.tying_info)
+get_strategy(f::RSAFDQ20223DFunction) = get_strategy(f.structural_function)
 
-# The chamber pressures are genuine unknowns appended after the structural block. `pressure_dof_index_local`
-# and `pressure_dof_index_global` hold the same value today, but `_local` is the correct one here: the
-# enclosing split translates, so a descriptor must report positions local to this function.
+# The checks are the structural model's; continuation rejects the same materials and boundary
+# conditions whether or not a circuit is tied to them.
+check_internal_variables_are_rate_free(f::RSAFDQ20223DFunction) =
+    check_internal_variables_are_rate_free(f.structural_function)
+check_weak_boundary_conditions_are_rate_free(f::RSAFDQ20223DFunction) =
+    check_weak_boundary_conditions_are_rate_free(f.structural_function)
+
 function solution_variables(f::RSAFDQ20223DFunction)
     vars = solution_variables(f.structural_function)
     for chamber in f.tying_info.chambers
-        push!(vars, GlobalVariable(chamber.pressure_symbol, chamber.pressure_dof_index_local))
+        push!(vars, GlobalVariable(chamber.pressure_symbol, chamber.pressure_dof_index))
     end
     return merge_and_check_unique(vars)
 end
@@ -144,21 +156,10 @@ end
 """
     _check_rsafdq_internal_variables(structural_problem)
 
-The 3D-0D coupling does not support materials carrying internal variables yet. Two independent
-reasons, both of which need the redesign to resolve properly:
-
- 1. The 3D block's *solution vector* is laid out `[u_dofs | internal_vars | pressures]`
-    (`blocksizes`, sized via `solution_size(::QuasiStaticFunction) = ndofs(dh) + ndofs(lvh)`),
-    while its *system matrix* is laid out `[u_dofs | pressures]`
-    (`block_sizes = [ndofs(dh), num_chambers]` in `setup_operator`). The tying assembly in
-    `_update_tying_subdomain_Jr` builds a single `dofs` array and uses it to index both, so the two
-    layouts must coincide - which they only do when there are no internal variables.
- 2. `RSAFDQ2022Split` is solved through `HomotopyPathSolver`, which never routes through
-    `BackwardEulerStageAnnotation`. Internal variables would therefore never be advanced in time
-    even if the indexing were corrected, which is a worse failure mode than an error.
-
-Fixing this properly requires distinguishing the solution-vector layout from the system layout,
-which is what the planned solution-partition concept is for.
+The 3D-0D coupling does not support materials carrying internal variables yet: `RSAFDQ2022Split` is
+solved through `HomotopyPathSolver`, which never routes through `BackwardEulerStageAnnotation`, so
+internal variables would never be advanced in time. Silently freezing them is a worse failure mode
+than an error, which is why this is a check rather than a caveat.
 """
 function _check_rsafdq_internal_variables(structural_problem)
     niv = ndofs(structural_problem.lvh)
@@ -180,15 +181,13 @@ function create_chamber_tyings(
     for i = 1:length(coupler.chamber_couplings)
         # Get i-th ChamberVolumeCoupling
         coupling = coupler.chamber_couplings[i]
-        # The pressure dof is just the last dof index for the structurel problem + the current chamber index
-        pressure_dof_index          = num_unknowns_structure + i
         (; dh)                      = structural_problem
+        pressure_dof_index          = only(algebraic_dofs(dh, coupling.pressure_symbol_3D))
         chamber_facetset            = getfacetset(get_grid(dh), coupling.chamber_surface_setname)
         chamber_volume_idx_lumped   = get_variable_symbol_index(circuit_model, coupling.lumped_volume_symbol)
         chamber_pressure_idx_lumped = get_parameter_symbol_index(circuit_model, coupling.lumped_pressure_symbol)
         # TODO rethink the next two lines
         tying = RSAFDQ2022SingleChamberTying(
-            pressure_dof_index,
             pressure_dof_index,
             coupling.pressure_symbol_3D,
             chamber_pressure_idx_lumped,
@@ -196,7 +195,8 @@ function create_chamber_tyings(
             coupling.chamber_volume_method,
             coupler.displacement_symbol,
             NaN,
-            num_unknowns_structure+num_unknown_pressures(circuit_model)+chamber_volume_idx_lumped,
+            # The chamber volume, in the circuit block that follows the 3D unknowns.
+            num_unknowns_structure+chamber_volume_idx_lumped,
         )
         tying.V⁰ᴰval =
             compute_chamber_volume(dh, zeros(ndofs(dh)), coupling.chamber_surface_setname, tying)
@@ -215,8 +215,14 @@ function semidiscretize(
     @assert length(coupler.chamber_couplings) ≥ 1 "Provide at least one coupling for the semi-discretization of an RSAFDQ2022 model"
     @assert coupler.displacement_symbol == structural_displacement_symbol(structural_model) "Coupler is not compatible with structural model"
 
-    # Discretize individual problems
-    structural_problem = semidiscretize(model.structural_model, discretization, mesh)
+    # Discretize individual problems. The chamber pressures are unknowns of the 3D system, so they
+    # enter its `DofHandler` as algebraic variables rather than being appended to the solution vector.
+    structural_problem = semidiscretize(
+        model.structural_model,
+        discretization,
+        mesh;
+        algebraic_variables = [c.pressure_symbol_3D for c in coupler.chamber_couplings],
+    )
     _check_rsafdq_internal_variables(structural_problem)
     num_chambers_lumped = num_unknown_pressures(model.circuit_model)
 
@@ -228,7 +234,7 @@ function semidiscretize(
     chamber_tyings = create_chamber_tyings(coupler, structural_problem, circuit_model)
     @debug "Chamber tyings:"
     for chamber_tying in chamber_tyings
-        @debug "Chamber:" chamber_tying.pressure_dof_index_local chamber_tying.pressure_dof_index_global chamber_tying.volume_method chamber_tying.displacement_symbol chamber_tying.V⁰ᴰidx_global
+        @debug "Chamber:" chamber_tying.pressure_dof_index chamber_tying.volume_method chamber_tying.displacement_symbol chamber_tying.V⁰ᴰidx_global
     end
     @assert num_chambers_lumped == length(chamber_tyings) "Number of chambers in structural model ($(length(chamber_tyings))) and circuit model ($num_chambers_lumped) differs."
 
@@ -247,40 +253,3 @@ function semidiscretize(
 
     return splitfun
 end
-
-#################################################################################
-
-function residual_norm(cache::AbstractNonlinearSolverCache, f::RSAFDQ2022TyingInfo)
-    norm(cache.residual[Block(2)])
-end
-
-eliminate_constraints_from_increment!(
-    Δu,
-    f::RSAFDQ2022TyingInfo,
-    solver_cache::AbstractNonlinearSolverCache,
-) = nothing
-function eliminate_constraints_from_linearization!(
-    solver_cache::AbstractNonlinearSolverCache,
-    op,
-    f::RSAFDQ20223DFunction,
-)
-    @unpack structural_function = f
-    ch = getch(structural_function)
-    # Eliminate residual
-    residual_block = @view solver_cache.residual[Block(1)]
-    # Elimiante diagonal
-    # apply_zero!(getJ(op, Block(1,1)), residual_block, ch) # FIXME crashes
-    apply!(getJ(op, Block(1, 1)), ch)
-    apply_zero!(residual_block, ch)
-    # Eliminate rows
-    getJ(op, Block((1, 2)))[ch.prescribed_dofs, :] .= 0.0
-    # Eliminate columns
-    getJ(op, Block((2, 1)))[:, ch.prescribed_dofs] .= 0.0
-end
-
-update_constraints_block!(
-    ::RSAFDQ2022TyingInfo,
-    ::BlockArrays.Block,
-    ::HomotopyPathSolverCache,
-    ::Float64,
-) = nothing

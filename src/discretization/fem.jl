@@ -579,11 +579,28 @@ function _rebase_internal_variable_handler(
     return InternalVariableHandler(offsets, nothing, ndofs(to_dh), ndofs(lvh))
 end
 
+"""
+    _add_algebraic_variables!(dh, names)
+
+Declare scalar unknowns that live in the `DofHandler` without a mesh domain, before it is closed.
+
+A coupled model whose extra unknowns are genuine columns of the system - a chamber pressure acting as
+a Lagrange multiplier - says so here, so that the dofs are Ferrite's rather than index arithmetic on
+top of `solution_size`. Ferrite numbers them after every spatial dof.
+"""
+function _add_algebraic_variables!(dh::DofHandler, names)
+    for name in names
+        add!(dh, name, AlgebraicVariable())
+    end
+    return dh
+end
+
 # Solid mechanics semidiscretize interface
 function semidiscretize(
     model::QuasiStaticModel,
     discretization::FiniteElementDiscretization,
-    mesh::AbstractGrid,
+    mesh::AbstractGrid;
+    algebraic_variables = (),
 )
     sym = model.displacement_symbol
     qrc = _get_quadrature_from_discretization(discretization, sym)
@@ -591,6 +608,7 @@ function semidiscretize(
     dh = DofHandler(mesh)
     name = single_subdomain_or_error(get_grid(dh))
     add_subdomain!(dh, name, _approximation_descriptors(discretization, model))
+    _add_algebraic_variables!(dh, algebraic_variables)
     close!(dh)
 
     integrator =
@@ -843,7 +861,8 @@ end
 function semidiscretize(
     models::Dict{String, <: QuasiStaticModel},
     discretization::FiniteElementDiscretization,
-    mesh::AbstractGrid,
+    mesh::AbstractGrid;
+    algebraic_variables = (),
 )
     _check_model_subdomains_disjoint(mesh, collect(keys(models)))
 
@@ -874,6 +893,7 @@ function semidiscretize(
             fqrc,
         )
     end
+    _add_algebraic_variables!(dh, algebraic_variables)
     close!(dh)
 
     lvh = _setup_internal_variable_handler(NonlinearMultiDomainIntegrator2(integrators), dh)

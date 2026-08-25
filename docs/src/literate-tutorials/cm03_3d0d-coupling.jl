@@ -125,9 +125,7 @@ chamber_solver = HomotopyPathSolver(
     NewtonRaphsonSolver(;
         max_iter=10,
         tol=1e-2,
-        inner_solver=SchurComplementLinearSolver(
-            LinearSolve.UMFPACKFactorization()
-        )
+        inner_solver=LinearSolve.UMFPACKFactorization()
     )
 )
 blood_circuit_solver = Tsit5()
