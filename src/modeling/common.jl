@@ -115,7 +115,7 @@ Which of the two families a member of a model's `facet_models` belongs to.
 Fused-boundary members — the default, and what every weak boundary condition is — ride the cell
 sweep: each facet of each cell is offered to them and `is_facet_in_cache` decides. Facet-item members
 declare their facets up front and assemble as their own work items, which is what lets them carry
-`global_dofs`, `algebraic_items` and hence unknowns of their own.
+`facet_item_global_dofs`, `algebraic_items` and hence unknowns of their own.
 """
 is_facet_item_model(facet_model) = false
 

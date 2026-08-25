@@ -42,9 +42,10 @@ function FerriteOperators.setup_boundary_cache(
     return setup_boundary_cache(subintegrator, sdh)
 end
 
-# The declaration hooks route on the same claim as the caches: a subdomain's global dofs and its
-# facet items are the ones its subintegrator declares. Without these forwards a routed operator
-# silently falls back to the framework defaults and drops both declarations.
+# The declaration hooks route on the same claim as the caches: a subdomain's global dofs -- one
+# declaration per item family -- and its facet items are the ones its subintegrator declares. Without
+# these forwards a routed operator silently falls back to the framework defaults and drops the
+# declarations.
 function FerriteOperators.global_dofs(
     integrator::NonlinearMultiDomainIntegrator2,
     sdh::SubDofHandler,
@@ -52,6 +53,15 @@ function FerriteOperators.global_dofs(
     subintegrator = _subintegrator_for_subdomain(integrator.subintegrators, sdh)
     subintegrator === nothing && return ()
     return FerriteOperators.global_dofs(subintegrator, sdh)
+end
+
+function FerriteOperators.facet_item_global_dofs(
+    integrator::NonlinearMultiDomainIntegrator2,
+    sdh::SubDofHandler,
+)
+    subintegrator = _subintegrator_for_subdomain(integrator.subintegrators, sdh)
+    subintegrator === nothing && return ()
+    return FerriteOperators.facet_item_global_dofs(subintegrator, sdh)
 end
 
 function FerriteOperators.facet_items(

@@ -1,16 +1,15 @@
 """
-    _chamber_coupling(dh, displacement_symbol, chamber)
+    _chamber_coupling(displacement_symbol, chamber)
 
 The sparsity the chamber pressure needs, as Ferrite's coupling descriptor.
 
-`CellCoupling` over the whole `DofHandler` is what the shared `global_dofs` declaration requires:
-the pressure sits in the tail of *every* element-local system of the subdomains carrying the tying
-term, so the cell sweep scatters through the coupling entries of every cell -- even where the
-element writes zeros into them. Narrowing this to the endocardial surface needs a per-item-family
-`global_dofs` declaration, which FerriteOperators does not offer.
+The pressure is the facet items' own tail (`facet_item_global_dofs`), so the only local systems it
+enters are the tying facets': `FacetCoupling` over the chamber surface allocates the displacement
+dofs of the adjacent cells and nothing beyond them. The cell sweep of those subdomains assembles the
+pure displacement system and never addresses a pressure entry.
 """
-_chamber_coupling(dh, displacement_symbol, chamber) = CellCoupling(
-    collect(Int, Iterators.flatten(sdh.cellset for sdh in dh.subdofhandlers));
+_chamber_coupling(displacement_symbol, chamber) = FacetCoupling(
+    chamber.facets;
     algebraic_coupling = ((displacement_symbol, chamber.pressure_symbol),),
 )
 
@@ -29,7 +28,7 @@ function setup_stage_operator(
     # The tying facets write into one dof shared by every chamber facet, which no coloring can make
     # race free, so the scheduling is sequential regardless of what the discretization asked for.
     couplings = Tuple(
-        _chamber_coupling(dh, chamber.displacement_symbol, chamber) for chamber in chambers
+        _chamber_coupling(chamber.displacement_symbol, chamber) for chamber in chambers
     )
     # CSC blocks, not the CSR of FerriteOperators' own blocked-assembly example:
     # `SchurComplementLinearSolver`'s inner `UMFPACKFactorization` factorizes the (1,1) block, which

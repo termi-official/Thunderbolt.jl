@@ -71,7 +71,7 @@ contribution (i.e. variation w.r.t. p) for the term
 where p is the unknown chamber pressure and u contains the unknown deformation field.
 
 One object owns the whole coupling contract: it declares the pressure as an algebraic variable, the
-endocardial facets as facet items, the pressure dof as the local system's global-dof tail, and the
+endocardial facets as facet items, the pressure dof as the facet items' global-dof tail, and the
 `- V⁰ᴰ` row as its algebraic item. The chamber surface is named rather than resolved, so the term is
 constructible where the model is written down and the facetset is looked up at setup.
 """
@@ -101,11 +101,13 @@ duplicate_for_device(device, cache::Pressure3D0DVolumeCouplerCache) =
         cache.volume_method,
     )
 
-# The chamber pressure belongs to no cell, so it enters the element-local system as its global-dof
-# tail; the endocardial facets carrying the term are their own traversal rather than a per-facet
-# membership test on the cell sweep. The declared set spans whatever subdomains the chamber surface
-# touches, and each subdomain declares the part it owns.
-FerriteOperators.global_dofs(model::Pressure3D0DVolumeCoupler, sdh::SubDofHandler) =
+# The chamber pressure belongs to no cell, so it enters the facet items' local system as their
+# global-dof tail; the endocardial facets carrying the term are their own traversal rather than a
+# per-facet membership test on the cell sweep. The declared set spans whatever subdomains the chamber
+# surface touches, and each subdomain declares the part it owns. The declaration is the facet items'
+# alone, so the subdomain's volumetric kernels keep the pure displacement system and the pressure's
+# sparsity is the tying surface, not the mesh.
+FerriteOperators.facet_item_global_dofs(model::Pressure3D0DVolumeCoupler, sdh::SubDofHandler) =
     algebraic_dofs(sdh.dh, model.pressure_symbol)
 
 FerriteOperators.facet_items(model::Pressure3D0DVolumeCoupler, sdh::SubDofHandler) = filter(

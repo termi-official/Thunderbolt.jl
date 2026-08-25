@@ -39,20 +39,19 @@ FerriteOperators.get_number_of_internal_dofs_per_element(
 
 The facet terms of `integrator` belonging to the facet-item family, in declaration order.
 
-Everything the integrator declares beyond the cell sweep — global dofs, facet items, algebraic items
-— is derived from these, and the fused boundary cache is built from their complement, so a term
-belongs to exactly one of the two routes.
+Everything the integrator declares beyond the cell sweep — facet-item global dofs, facet items,
+algebraic items — is derived from these, and the fused boundary cache is built from their complement,
+so a term belongs to exactly one of the two routes.
 """
 _facet_item_models(facet_models) = filter(is_facet_item_model, _facet_model_tuple(facet_models))
 _facet_item_models(integrator::NonlinearIntegrator) = _facet_item_models(integrator.facet_model)
 
-# The local system of a subdomain carrying facet items is `[celldofs(cell); the global dofs of its
-# item models, in declaration order]`. `global_dofs` is one declaration per subdomain shared by every
-# kernel of that subdomain, so the tail looks the same to the volumetric kernel — which writes
-# nothing into it — as it does to the item kernels.
-FerriteOperators.global_dofs(integrator::NonlinearIntegrator, sdh::SubDofHandler) =
+# The local system of a facet item is `[celldofs(cell); the global dofs of the item models, in
+# declaration order]`. The declaration is the facet-item family's own, so the subdomain's cell sweep
+# is not augmented by it and the volumetric kernels see the pure field system.
+FerriteOperators.facet_item_global_dofs(integrator::NonlinearIntegrator, sdh::SubDofHandler) =
     Int[dof for model in _facet_item_models(integrator)
-        for dof in FerriteOperators.global_dofs(model, sdh)]
+        for dof in FerriteOperators.facet_item_global_dofs(model, sdh)]
 
 FerriteOperators.facet_items(integrator::NonlinearIntegrator, sdh::SubDofHandler) =
     FacetIndex[facet for model in _facet_item_models(integrator)
@@ -65,7 +64,7 @@ function FerriteOperators.setup_facet_item_cache(
     models = _facet_item_models(integrator)
     isempty(models) && return FerriteOperators.EmptySurfaceElementCache()
     qr     = getquadraturerule(integrator.fqrc, sdh)
-    widths = map(model -> length(FerriteOperators.global_dofs(model, sdh)), models)
+    widths = map(model -> length(FerriteOperators.facet_item_global_dofs(model, sdh)), models)
     caches = ntuple(length(models)) do k
         offset = ndofs_per_cell(sdh) + sum(widths[1:(k-1)]; init = 0)
         FerriteOperators.setup_facet_item_cache(models[k], qr, sdh, offset .+ (1:widths[k]))
@@ -74,8 +73,8 @@ function FerriteOperators.setup_facet_item_cache(
     return FacetItemMultiplexCache(caches, _facet_item_owners(models, sdh))
 end
 
-# One item per declaring model, in declaration order -- the same order `global_dofs` above puts them
-# in the local system's tail, so the two agree without a shared lookup. `algebraic_items` is declared
+# One item per declaring model, in declaration order -- the same order `facet_item_global_dofs` above
+# puts them in the local system's tail, so the two agree without a shared lookup. `algebraic_items` is declared
 # once per `DofHandler` rather than per subdomain, so the dofs it names do not depend on which
 # subdomain's copy of the integrator answers.
 FerriteOperators.algebraic_items(integrator::NonlinearIntegrator, dh::DofHandler) =

@@ -249,6 +249,18 @@ end
         @test abs(r[pdof]) > 0
     end
 
+    @testset "coupling sparsity is the tying surface" begin
+        # The pressure is the facet items' tail alone, so the cell sweep never addresses a pressure
+        # entry and the allocated coupling is `FacetCoupling` over the chamber surface: the
+        # displacement dofs of the cells carrying a tying facet, and no other. This mesh is one
+        # element thick, so every cell carries one and the count coincides with the whole-handler
+        # `CellCoupling`'s -- the two-chamber operator below is where the sets differ.
+        chamber = only(state.f.tying_info.chambers)
+        adjacent = unique!(reduce(vcat, [celldofs(dh, facet[1]) for facet in chamber.facets]))
+        @test nnz(blocks(state.op.J)[1, 2]) == length(adjacent)
+        @test nnz(blocks(state.op.J)[2, 1]) == length(adjacent)
+    end
+
     @testset "equivalence" begin
         J₀ = Matrix(reference.J)
         @test size(J) == size(J₀)
@@ -324,20 +336,16 @@ function two_chamber_state(; seed = 7, device = Thunderbolt.SequentialCPUDevice(
     )
 
     pressure_symbols = (:pₗᵥ, :pₗₐ)
-    couplers = (
+    # The closed chamber surfaces: endocardium plus the plate face that caps it.
+    chamber_surface_names = ("LVChamberSurface", "LAChamberSurface")
+    couplers = ntuple(2) do i
         Pressure3D0DVolumeCoupler(
-            "LVChamberSurface",
+            chamber_surface_names[i],
             :d,
-            pressure_symbols[1],
+            pressure_symbols[i],
             RSAFDQ2022SurrogateVolume(),
-        ),
-        Pressure3D0DVolumeCoupler(
-            "LAChamberSurface",
-            :d,
-            pressure_symbols[2],
-            RSAFDQ2022SurrogateVolume(),
-        ),
-    )
+        )
+    end
     # The plate is a carrier, not tissue: passive, three orders of magnitude below the wall and
     # nearly free to change volume, so it follows the annulus without stiffening it.
     plate_material = PK1Model(
@@ -386,14 +394,14 @@ function two_chamber_state(; seed = 7, device = Thunderbolt.SequentialCPUDevice(
     pressure_dofs = [only(algebraic_dofs(dh, sym)) for sym in pressure_symbols]
     n_u = ndofs(dh) - length(pressure_symbols)
 
-    # Both pressures sit in the tail of every element-local system, so both need the sparsity of a
-    # `CellCoupling` over the whole handler -- see `Thunderbolt._chamber_coupling`.
-    all_cells = collect(Int, Iterators.flatten(sdh.cellset for sdh in dh.subdofhandlers))
+    # Each pressure sits in the tail of its own tying facets' local systems and nowhere else, so the
+    # sparsity it needs is a `FacetCoupling` over its closed chamber surface -- what
+    # `Thunderbolt._chamber_coupling` declares on the RSAFDQ path.
     couplings = Tuple(
-        Thunderbolt.FerriteOperators.CellCoupling(
-            all_cells;
+        Thunderbolt.FerriteOperators.FacetCoupling(
+            getfacetset(dh.grid, name);
             algebraic_coupling = ((:d, sym),),
-        ) for sym in pressure_symbols
+        ) for (name, sym) in zip(chamber_surface_names, pressure_symbols)
     )
     strategy = Thunderbolt.AssemblyStrategy(
         Thunderbolt.FullAssembly(
@@ -415,7 +423,7 @@ function two_chamber_state(; seed = 7, device = Thunderbolt.SequentialCPUDevice(
     u = 0.05 .* (_pinned_uniform(Thunderbolt.solution_size(f), seed) .- 0.5)
     u[pressure_dofs] .= RSAFDQ_REFERENCE_PRESSURE
 
-    return (; f, op, u, pressure_symbols, pressure_dofs, n_u, models)
+    return (; f, op, u, pressure_symbols, chamber_surface_names, pressure_dofs, n_u, models)
 end
 
 """
@@ -459,9 +467,12 @@ end
         end
         @test dh.algebraic_names == collect(state.pressure_symbols)
         @test state.pressure_dofs == state.n_u .+ (1:n_chambers)
-        # Every subdomain sees the same tail, in the same order.
+        # Every subdomain's facet items see the same tail, in the same order -- and the cell sweep of
+        # the same subdomain sees none of it.
         for sdh in dh.subdofhandlers
-            @test Thunderbolt.FerriteOperators.global_dofs(integrator, sdh) == state.pressure_dofs
+            @test Thunderbolt.FerriteOperators.facet_item_global_dofs(integrator, sdh) ==
+                  state.pressure_dofs
+            @test isempty(Thunderbolt.FerriteOperators.global_dofs(integrator, sdh))
         end
         @test Thunderbolt.FerriteOperators.algebraic_items(integrator, dh) ==
               [[dof] for dof in state.pressure_dofs]
@@ -509,6 +520,19 @@ end
             @test maximum(abs, J[dof, :]) > 0
             @test maximum(abs, J[:, dof]) > 0
             @test abs(r[dof]) > 0
+        end
+    end
+
+    @testset "coupling sparsity is each tying surface" begin
+        # One `FacetCoupling` per chamber: the pressure column carries the displacement dofs of the
+        # cells owning one of ITS tying facets, plus its own diagonal, and nothing of the rest of
+        # the mesh.
+        for (i, name) in enumerate(state.chamber_surface_names)
+            adjacent = unique!(
+                reduce(vcat, [celldofs(dh, facet[1]) for facet in getfacetset(dh.grid, name)]),
+            )
+            @test length(nzrange(state.op.J, state.pressure_dofs[i])) == length(adjacent) + 1
+            @test length(adjacent) < state.n_u
         end
     end
 
