@@ -93,11 +93,12 @@ function FerriteOperators.evaluate!(
     )
 end
 
+# Every subdofhandler owning a cell of the facetset contributes: a boundary set may span
+# several subdomains (e.g. the apex wedges next to the myocardial hexahedra).
 function _find_sdhs(dh, facetset)
-    facet = first(facetset)
     sdhs = SubDofHandler[]
     for sdh in dh.subdofhandlers
-        if facet[1] ∈ sdh.cellset
+        if any(facet -> facet[1] ∈ sdh.cellset, facetset)
             push!(sdhs, sdh)
         end
     end

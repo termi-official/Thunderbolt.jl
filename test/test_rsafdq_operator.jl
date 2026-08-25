@@ -197,6 +197,17 @@ end
         @test ndofs(dh) - state.n_chambers == reference.n_field_dofs
     end
 
+    @testset "facet coverage" begin
+        # Every declared tying facet must be assembled by exactly one subdomain pass. A boundary
+        # set spanning several subdomains (apex wedges beside the hexahedra) once lost the facets
+        # outside the first facet's subdomain.
+        for (chamber, caches) in zip(state.op.chambers, state.op.tying_caches)
+            covered = [facet for (sdh, cache) in caches for facet in cache.facets]
+            @test length(covered) == length(chamber.facets)
+            @test Set(covered) == Set(chamber.facets)
+        end
+    end
+
     pdof = only(reference.pressure_dofs)
     @testset "coupling is exercised" begin
         @test maximum(abs, J[pdof, :]) > 0
