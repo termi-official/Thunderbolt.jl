@@ -120,12 +120,14 @@ tspan = (0.0, 3*800.0)
 # This speeds up the CI #hide
 tspan = (0.0, 10.0);    #hide
 
-# The remaining code is very similar to how we use SciML solvers.
+# The remaining code is very similar to how we use SciML solvers. The 3D-0D operator assembles
+# into a block matrix, structural block and chamber-pressure block, so the inner solver is a
+# Schur complement solve around a factorization of the structural block.
 chamber_solver = HomotopyPathSolver(
     NewtonRaphsonSolver(;
         max_iter=10,
         tol=1e-2,
-        inner_solver=LinearSolve.UMFPACKFactorization()
+        inner_solver=SchurComplementLinearSolver(LinearSolve.UMFPACKFactorization())
     )
 )
 blood_circuit_solver = Tsit5()

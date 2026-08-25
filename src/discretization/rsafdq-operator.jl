@@ -175,15 +175,22 @@ function setup_stage_operator(
     (; tying_info, structural_function) = f
     (; dh, ch, integrator) = structural_function
     chambers = tying_info.chambers
+    n_chambers = length(chambers)
+    n_u = ndofs(dh) - n_chambers
 
     # The tying facets write into one dof shared by every chamber facet, which no coloring can make
     # race free, so the scheduling is sequential regardless of what the discretization asked for.
     couplings = Tuple(
         _chamber_coupling(dh, chamber.displacement_symbol, chamber) for chamber in chambers
     )
+    # CSC blocks, not the CSR of FerriteOperators' own blocked-assembly example:
+    # `SchurComplementLinearSolver`'s inner `UMFPACKFactorization` factorizes the (1,1) block, which
+    # needs CSC.
     strategy = AssemblyStrategy(
         FullAssembly(
-            FerriteOperators.StandardOperatorSpecification(;
+            FerriteOperators.BlockedOperatorSpecification(
+                [n_u, n_chambers],
+                BlockMatrix{Float64, Matrix{SparseMatrixCSC{Float64, Int}}};
                 algebraic_couplings = couplings,
                 constraint_handler = ch,
             ),

@@ -42,9 +42,10 @@ function test_solve_contractile_ideal_lv_3D0D(
         NewtonRaphsonSolver(;
             max_iter = 10,
             tol = 1e-2,
-            # The coupled system is assembled monolithically, so it is solved monolithically. It is
-            # indefinite, which UMFPACK handles.
-            inner_solver = LinearSolve.UMFPACKFactorization(),
+            # The (1,1) block is the structural Jacobian, invertible; the (2,2) block is zero by
+            # construction (`ChamberBalanceCache`'s row is constant in `u`) -- exactly the saddle
+            # point `SchurComplementLinearSolver` factors.
+            inner_solver = SchurComplementLinearSolver(LinearSolve.UMFPACKFactorization()),
         ),
     )
     blood_circuit_solver = Tsit5()

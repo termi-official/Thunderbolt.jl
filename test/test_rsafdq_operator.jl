@@ -1,5 +1,6 @@
 using Test, Thunderbolt
 using Ferrite, LinearAlgebra, SparseArrays, JLD2
+using BlockArrays
 
 # Equivalence harness for the 3D-0D coupled operator.
 #
@@ -195,6 +196,13 @@ end
         @test pressure_dofs == reference.pressure_dofs
         @test pressure_dofs == reference.n_field_dofs .+ (1:state.n_chambers)
         @test ndofs(dh) - state.n_chambers == reference.n_field_dofs
+    end
+
+    @testset "block layout" begin
+        # `SchurComplementLinearSolver` factors the (1,1) block directly, which needs `op.J` to be a
+        # `BlockMatrix` split as [field dofs | chamber pressures].
+        @test state.op.J isa BlockMatrix{Float64, Matrix{SparseMatrixCSC{Float64, Int}}}
+        @test blocklengths(axes(state.op.J, 1)) == [reference.n_field_dofs, state.n_chambers]
     end
 
     @testset "facet coverage" begin
