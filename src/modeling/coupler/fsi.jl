@@ -58,22 +58,33 @@ function volume_integral(x::Vec, d::Vec, F::Tensor, N::Vec, method::Hirschvogel2
 end
 
 """
-Chamber volume contribution for the 3D-0D constraint
-    ∫ V³ᴰ(u) ∂Ω - V⁰ᴰ(c)
-where u are the unkowns in the 3D problem and c the unkowns in the 0D problem.
+    Pressure3D0DVolumeCoupler(chamber_surface_name, displacement_symbol, pressure_symbol, volume_method)
 
-Pressure contribution (i.e. variation w.r.t. p) for the term
+The 3D side of one chamber's 3D-0D tying, as a facet term of the structural model.
+
+It contributes the chamber volume constraint
+    ∫ V³ᴰ(u) ∂Ω - V⁰ᴰ(c)
+where u are the unknowns in the 3D problem and c the unknowns in the 0D problem, and the pressure
+contribution (i.e. variation w.r.t. p) for the term
     ∫ p n(u) δu ∂Ω
  [= ∫ p J(u) F(u)^-T n₀ δu ∂Ω₀]
 where p is the unknown chamber pressure and u contains the unknown deformation field.
+
+One object owns the whole coupling contract: it declares the pressure as an algebraic variable, the
+endocardial facets as facet items, the pressure dof as the local system's global-dof tail, and the
+`- V⁰ᴰ` row as its algebraic item. The chamber surface is named rather than resolved, so the term is
+constructible where the model is written down and the facetset is looked up at setup.
 """
-struct Pressure3D0DVolumeCouplerIntegrator <: AbstractNonlinearIntegrator
-    fqrc::FacetQuadratureRuleCollection
+struct Pressure3D0DVolumeCoupler{CVM}
+    chamber_surface_name::String
     displacement_symbol::Symbol
     pressure_symbol::Symbol
-    facets::OrderedSet
-    volume_method
+    volume_method::CVM
 end
+
+is_facet_item_model(::Pressure3D0DVolumeCoupler) = true
+
+algebraic_variables(model::Pressure3D0DVolumeCoupler) = (model.pressure_symbol,)
 
 @concrete struct Pressure3D0DVolumeCouplerCache <: AbstractSurfaceElementCache
     fv
@@ -92,46 +103,72 @@ duplicate_for_device(device, cache::Pressure3D0DVolumeCouplerCache) =
 
 # The chamber pressure belongs to no cell, so it enters the element-local system as its global-dof
 # tail; the endocardial facets carrying the term are their own traversal rather than a per-facet
-# membership test on the cell sweep.
-FerriteOperators.global_dofs(model::Pressure3D0DVolumeCouplerIntegrator, sdh::SubDofHandler) =
+# membership test on the cell sweep. The declared set spans whatever subdomains the chamber surface
+# touches, and each subdomain declares the part it owns.
+FerriteOperators.global_dofs(model::Pressure3D0DVolumeCoupler, sdh::SubDofHandler) =
     algebraic_dofs(sdh.dh, model.pressure_symbol)
 
-FerriteOperators.facet_items(model::Pressure3D0DVolumeCouplerIntegrator, sdh::SubDofHandler) =
-    filter(facet -> facet[1] ∈ sdh.cellset, model.facets)
-
-FerriteOperators.setup_facet_item_cache(
-    model::Pressure3D0DVolumeCouplerIntegrator,
-    sdh::SubDofHandler,
-) = setup_3D0D_coupling_cache(
-    model,
-    sdh,
-    first(FerriteOperators.global_dof_range(model, sdh)),
+FerriteOperators.facet_items(model::Pressure3D0DVolumeCoupler, sdh::SubDofHandler) = filter(
+    facet -> facet[1] ∈ sdh.cellset,
+    getfacetset(get_grid(sdh.dh), model.chamber_surface_name),
 )
 
 """
-    setup_3D0D_coupling_cache(model, sdh, pressure_index)
+    setup_facet_item_cache(model::Pressure3D0DVolumeCoupler, qr, sdh, global_dof_range)
 
-The coupling cache for one chamber on one subdomain, with `pressure_index` naming where that
+The coupling cache for one chamber on one subdomain, with `global_dof_range` naming where that
 chamber's pressure sits in the augmented local system `[celldofs(cell); global dofs]`.
 
-The index is a parameter because several chambers may share a subdomain's tail, and only the caller
-holding all of them knows their order.
+The range is a parameter because several chambers may share a subdomain's tail, and only the
+integrator holding all of them knows their order.
 """
-function setup_3D0D_coupling_cache(
-    model::Pressure3D0DVolumeCouplerIntegrator,
+function FerriteOperators.setup_facet_item_cache(
+    model::Pressure3D0DVolumeCoupler,
+    qr::FacetQuadratureRule,
     sdh::SubDofHandler,
-    pressure_index::Int,
+    global_dof_range,
 )
-    qr     = getquadraturerule(model.fqrc, sdh)
     ip     = Ferrite.getfieldinterpolation(sdh, model.displacement_symbol)
     ip_geo = geometric_subdomain_interpolation(sdh)
     return Pressure3D0DVolumeCouplerCache(
         FacetValues(qr, ip, ip_geo),
         dof_range(sdh, model.displacement_symbol),
-        pressure_index,
+        only(global_dof_range),
         model.volume_method,
     )
 end
+
+"""
+    ChamberBalanceCache()
+
+Algebraic cache for the chamber rows `r[p] -= V⁰ᴰ`. One cache serves every chamber;
+`args.item.index` (via [`query_cell_parameters`](@ref)) selects which chamber's solver-supplied
+reference volume applies. The row is constant in `u` -- the integral half, `∫_Γ V³ᴰ(u) dΓ`, is the
+facet item kernel's -- so its Jacobian block is left to the AD fallback.
+"""
+struct ChamberBalanceCache end
+
+duplicate_for_device(device, cache::ChamberBalanceCache) = cache
+
+# `V⁰ᴰ` is solver-supplied data, not element state: it arrives fresh through `p` on every sweep
+# rather than through a mutable field the cache (and its per-worker duplicates) would hold a
+# reference to.
+FerriteOperators.query_cell_parameters(::ChamberBalanceCache, item::FerriteOperators.AlgebraicItem, p) =
+    p.V⁰ᴰ[item.index]
+
+FerriteOperators.assemble_algebraic!(
+    req::FerriteOperators.ResidualRequest,
+    ::ChamberBalanceCache,
+    args::FerriteOperators.AlgebraicArgs,
+) = (req.r[1] -= args.p; nothing)
+
+# The `- V⁰ᴰ` half of the chamber row lives on no cell, so it is an item of the algebraic family,
+# owned by the same term that writes the `∫_Γ V³ᴰ(u) dΓ` half onto the facets.
+FerriteOperators.algebraic_items(model::Pressure3D0DVolumeCoupler, dh::DofHandler) =
+    [[only(algebraic_dofs(dh, model.pressure_symbol))]]
+
+FerriteOperators.setup_algebraic_cache(::Pressure3D0DVolumeCoupler, ::DofHandler) =
+    ChamberBalanceCache()
 
 FerriteOperators.provides_analytic(
     ::Type{<:Pressure3D0DVolumeCouplerCache},

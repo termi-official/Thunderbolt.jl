@@ -1,7 +1,10 @@
+# Only the fused-boundary family rides the cell sweep; the facet-item members of the same
+# `facet_models` declare their own traversal and are served by `setup_facet_item_cache`.
 function setup_boundary_cache(boundary_models::Tuple, qr::FacetQuadratureRule, sdh::SubDofHandler)
-    length(boundary_models) == 0 && return EmptySurfaceElementCache()
+    fused = filter(!is_facet_item_model, boundary_models)
+    length(fused) == 0 && return EmptySurfaceElementCache()
     return CompositeSurfaceElementCache(
-        ntuple(i->setup_boundary_cache(boundary_models[i], qr, sdh), length(boundary_models)),
+        ntuple(i->setup_boundary_cache(fused[i], qr, sdh), length(fused)),
     )
 end
 

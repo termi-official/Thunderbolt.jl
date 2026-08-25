@@ -645,4 +645,8 @@ function setup_boundary_cache(wrapper::LocalSolverCacheAnnotation, fqr, sdh)
     setup_boundary_cache(wrapper.f, fqr, sdh)
 end
 
+# The annotation carries solver-owned state into the element caches and leaves the family split of
+# the terms it wraps untouched.
+_facet_model_tuple(wrapper::AbstractModelAnnotation) = _facet_model_tuple(wrapper.f)
+
 OrdinaryDiffEqCore.is_constant_cache(::BackwardEulerSolverCache) = false

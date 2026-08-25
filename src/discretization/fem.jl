@@ -599,8 +599,7 @@ end
 function semidiscretize(
     model::QuasiStaticModel,
     discretization::FiniteElementDiscretization,
-    mesh::AbstractGrid;
-    algebraic_variables = (),
+    mesh::AbstractGrid,
 )
     sym = model.displacement_symbol
     qrc = _get_quadrature_from_discretization(discretization, sym)
@@ -608,7 +607,7 @@ function semidiscretize(
     dh = DofHandler(mesh)
     name = single_subdomain_or_error(get_grid(dh))
     add_subdomain!(dh, name, _approximation_descriptors(discretization, model))
-    _add_algebraic_variables!(dh, algebraic_variables)
+    _add_algebraic_variables!(dh, algebraic_variables(model))
     close!(dh)
 
     integrator =
@@ -711,6 +710,14 @@ function _elastodynamics_function(
 )
     ipc = _get_interpolation_from_discretization(discretization, sym)
     _assert_shared_interpolation(discretization, sym, vsym, ipc)
+
+    # The state carries the two fields and nothing else, so an unknown that belongs to no mesh entity
+    # has no place in it and the two vectors would silently differ in length.
+    _has_algebraic_variables(quasistaticform.dh) && error(
+        "Elastodynamics does not support a model whose facet terms declare algebraic variables " *
+        "(got $(quasistaticform.dh.algebraic_names)). The state vector carries the displacement " *
+        "and the velocity field, with no room for an unknown outside the mesh.",
+    )
 
     dh = DofHandler(mesh)
     for name in names
@@ -858,13 +865,32 @@ function _shared_symbol_or_error(models::Dict{String}, accessor, what::AbstractS
     return first(symbols)
 end
 
+"""
+    _shared_algebraic_variables_or_error(models)
+
+The algebraic variables every model in a domain split agrees on, in their declaration order.
+
+The same rule as for the displacement symbol, and for a sharper reason: the variables enter one
+`DofHandler`, so their number *and* their order fix the dof numbering of the whole split. Deriving
+them from one subdomain model would make that numbering depend on which subdomain the dictionary
+iterates first.
+"""
+function _shared_algebraic_variables_or_error(models::Dict{String})
+    declarations = Set(algebraic_variables(model) for model in values(models))
+    length(declarations) == 1 || error(
+        "All models in a domain split must declare the same algebraic variables in the same " *
+        "order, got $(collect(declarations)).",
+    )
+    return first(declarations)
+end
+
 function semidiscretize(
     models::Dict{String, <: QuasiStaticModel},
     discretization::FiniteElementDiscretization,
-    mesh::AbstractGrid;
-    algebraic_variables = (),
+    mesh::AbstractGrid,
 )
     _check_model_subdomains_disjoint(mesh, collect(keys(models)))
+    shared_algebraic_variables = _shared_algebraic_variables_or_error(models)
 
     dh = DofHandler(mesh)
     integrators = Dict{String, NonlinearIntegrator}()
@@ -893,7 +919,7 @@ function semidiscretize(
             fqrc,
         )
     end
-    _add_algebraic_variables!(dh, algebraic_variables)
+    _add_algebraic_variables!(dh, shared_algebraic_variables)
     close!(dh)
 
     lvh = _setup_internal_variable_handler(NonlinearMultiDomainIntegrator2(integrators), dh)

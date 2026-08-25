@@ -211,13 +211,10 @@ end
         # outside the first facet's subdomain. The declared set *is* the traversal, and a facet
         # whose cell a subdomain does not own is a setup error, so what is left to check here is
         # that the per-subdomain declarations cover the chamber surfaces without duplication.
-        tying_integrator = Thunderbolt._tying_integrator(
-            state.f.structural_function.integrator,
-            state.f.tying_info.chambers,
-        )
+        integrator = state.f.structural_function.integrator
         declared = [
             facet for sdh in dh.subdofhandlers for
-            facet in Thunderbolt.FerriteOperators.facet_items(tying_integrator, sdh)
+            facet in Thunderbolt.FerriteOperators.facet_items(integrator, sdh)
         ]
         chamber_facets =
             union((Set(chamber.facets) for chamber in state.f.tying_info.chambers)...)

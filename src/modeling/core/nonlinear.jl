@@ -33,3 +33,114 @@ FerriteOperators.get_number_of_internal_dofs_per_element(
     ::FerriteOperators.EmptyVolumetricElementCache,
     sdh::SubDofHandler,
 ) = Iterators.repeated(0, length(sdh.cellset))
+
+"""
+    _facet_item_models(integrator)
+
+The facet terms of `integrator` belonging to the facet-item family, in declaration order.
+
+Everything the integrator declares beyond the cell sweep — global dofs, facet items, algebraic items
+— is derived from these, and the fused boundary cache is built from their complement, so a term
+belongs to exactly one of the two routes.
+"""
+_facet_item_models(facet_models) = filter(is_facet_item_model, _facet_model_tuple(facet_models))
+_facet_item_models(integrator::NonlinearIntegrator) = _facet_item_models(integrator.facet_model)
+
+# The local system of a subdomain carrying facet items is `[celldofs(cell); the global dofs of its
+# item models, in declaration order]`. `global_dofs` is one declaration per subdomain shared by every
+# kernel of that subdomain, so the tail looks the same to the volumetric kernel — which writes
+# nothing into it — as it does to the item kernels.
+FerriteOperators.global_dofs(integrator::NonlinearIntegrator, sdh::SubDofHandler) =
+    Int[dof for model in _facet_item_models(integrator)
+        for dof in FerriteOperators.global_dofs(model, sdh)]
+
+FerriteOperators.facet_items(integrator::NonlinearIntegrator, sdh::SubDofHandler) =
+    FacetIndex[facet for model in _facet_item_models(integrator)
+               for facet in FerriteOperators.facet_items(model, sdh)]
+
+function FerriteOperators.setup_facet_item_cache(
+    integrator::NonlinearIntegrator,
+    sdh::SubDofHandler,
+)
+    models = _facet_item_models(integrator)
+    isempty(models) && return FerriteOperators.EmptySurfaceElementCache()
+    qr     = getquadraturerule(integrator.fqrc, sdh)
+    widths = map(model -> length(FerriteOperators.global_dofs(model, sdh)), models)
+    caches = ntuple(length(models)) do k
+        offset = ndofs_per_cell(sdh) + sum(widths[1:(k-1)]; init = 0)
+        FerriteOperators.setup_facet_item_cache(models[k], qr, sdh, offset .+ (1:widths[k]))
+    end
+    length(caches) == 1 && return only(caches)
+    return FacetItemMultiplexCache(caches, _facet_item_owners(models, sdh))
+end
+
+# One item per declaring model, in declaration order -- the same order `global_dofs` above puts them
+# in the local system's tail, so the two agree without a shared lookup. `algebraic_items` is declared
+# once per `DofHandler` rather than per subdomain, so the dofs it names do not depend on which
+# subdomain's copy of the integrator answers.
+FerriteOperators.algebraic_items(integrator::NonlinearIntegrator, dh::DofHandler) =
+    Vector{Int}[item for model in _facet_item_models(integrator)
+                for item in FerriteOperators.algebraic_items(model, dh)]
+
+function FerriteOperators.setup_algebraic_cache(
+    integrator::NonlinearIntegrator,
+    dh::DofHandler,
+)
+    caches = unique(
+        typeof,
+        [FerriteOperators.setup_algebraic_cache(model, dh) for
+         model in _facet_item_models(integrator) if
+         !isempty(FerriteOperators.algebraic_items(model, dh))],
+    )
+    length(caches) == 1 || error(
+        "FerriteOperators admits one algebraic cache per `DofHandler`, but the facet models of " *
+        "this integrator ask for $(length(caches)) ($(join(typeof.(caches), ", "))). One cache " *
+        "has to serve every declared item; which item a kernel stands on arrives as `args.item`.",
+    )
+    return only(caches)
+end
+
+"""
+    FacetItemMultiplexCache(caches, facet_owner)
+
+The facet item cache of a subdomain whose declared facets come from several facet-item models.
+
+FerriteOperators admits one facet item cache per subdomain, so the models sharing a subdomain are
+multiplexed here: `facet_owner` names which of `caches` a facet belongs to.
+"""
+struct FacetItemMultiplexCache{CS <: Tuple} <: AbstractSurfaceElementCache
+    caches::CS
+    facet_owner::Dict{FacetIndex, Int}
+end
+
+duplicate_for_device(device, cache::FacetItemMultiplexCache) = FacetItemMultiplexCache(
+    map(inner -> duplicate_for_device(device, inner), cache.caches),
+    cache.facet_owner,
+)
+
+FerriteOperators.provides_analytic(
+    ::Type{<:FacetItemMultiplexCache{CS}},
+    kind,
+) where {CS <: Tuple} = all(C -> FerriteOperators.provides_analytic(C, kind), fieldtypes(CS))
+
+function FerriteOperators.assemble_facet!(
+    req::FerriteOperators.AbstractAssemblyRequest,
+    cache::FacetItemMultiplexCache,
+    args::FerriteOperators.FacetArgs,
+    local_facet_index::Int,
+)
+    owner = cache.facet_owner[FacetIndex(cellid(args.cell), local_facet_index)]
+    return assemble_facet!(req, cache.caches[owner], args, local_facet_index)
+end
+
+function _facet_item_owners(models, sdh::SubDofHandler)
+    owner = Dict{FacetIndex, Int}()
+    for (k, model) in enumerate(models), facet in FerriteOperators.facet_items(model, sdh)
+        haskey(owner, facet) && error(
+            "The facet $facet is declared as a facet item by more than one facet model. A facet " *
+            "item is one local system, assembled by exactly one term.",
+        )
+        owner[facet] = k
+    end
+    return owner
+end

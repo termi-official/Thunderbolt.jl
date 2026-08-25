@@ -213,6 +213,41 @@ function create_chamber_tyings(
     return chamber_tyings
 end
 
+"""
+    _chamber_coupler_models(coupler)
+
+One [`Pressure3D0DVolumeCoupler`](@ref) per chamber, in `coupler.chamber_couplings` order.
+"""
+_chamber_coupler_models(coupler::LumpedFluidSolidCoupler) = Tuple(
+    Pressure3D0DVolumeCoupler(
+        coupling.chamber_surface_setname,
+        coupler.displacement_symbol,
+        coupling.pressure_symbol_3D,
+        coupling.chamber_volume_method,
+    ) for coupling in coupler.chamber_couplings
+)
+
+"""
+    _with_chamber_couplers(structural_model, coupler)
+
+The structural model with the chamber tying terms appended to its facet terms.
+
+That is what makes the chamber pressures unknowns of the *model*: the terms reading them declare
+them, and the discretization only has to put what the model declares into the `DofHandler`. They go
+at the end, so the pressures are numbered in `coupler.chamber_couplings` order. Every subdomain model
+carries the same terms -- the pressures are unknowns of the whole 3D system, not of one subdomain --
+which is also what lets the domain split agree on one declaration.
+"""
+_with_chamber_couplers(model::QuasiStaticModel, coupler) = QuasiStaticModel(
+    model.displacement_symbol,
+    model.material_model,
+    (_facet_model_tuple(model.facet_models)..., _chamber_coupler_models(coupler)...),
+)
+
+_with_chamber_couplers(models::Dict{String}, coupler) = Dict{String, QuasiStaticModel}(
+    name => _with_chamber_couplers(model, coupler) for (name, model) in models
+)
+
 function semidiscretize(
     split::RSAFDQ2022Split,
     discretization::FiniteElementDiscretization,
@@ -225,12 +260,8 @@ function semidiscretize(
 
     # Discretize individual problems. The chamber pressures are unknowns of the 3D system, so they
     # enter its `DofHandler` as algebraic variables rather than being appended to the solution vector.
-    structural_problem = semidiscretize(
-        model.structural_model,
-        discretization,
-        mesh;
-        algebraic_variables = [c.pressure_symbol_3D for c in coupler.chamber_couplings],
-    )
+    structural_problem =
+        semidiscretize(_with_chamber_couplers(structural_model, coupler), discretization, mesh)
     _check_rsafdq_internal_variables(structural_problem)
     num_chambers_lumped = num_unknown_pressures(model.circuit_model)
 
