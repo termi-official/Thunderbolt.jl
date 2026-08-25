@@ -47,6 +47,7 @@ generate_open_ring_mesh
 generate_quadratic_ring_mesh
 generate_quadratic_open_ring_mesh
 generate_ideal_lv_mesh
+generate_ideal_lh_mesh
 ```
 
 ## [Utility](@id mesh-utility-api)
@@ -54,6 +55,7 @@ generate_ideal_lv_mesh
 ```@docs
 Thunderbolt.hexahedralize
 Thunderbolt.uniform_refinement
+separate_chamber_surfaces
 load_carp_mesh
 load_voom2_mesh
 load_mfem_mesh

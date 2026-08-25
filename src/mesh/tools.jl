@@ -880,3 +880,35 @@ function compute_center_of_surface(grid::AbstractGrid{sdim}, name::String) where
     center = sum(centerpoints .* volumes) ./ sum(volumes)
     return Vec((center[1], center[2], center[3]))
 end
+
+"""
+    separate_chamber_surfaces(grid, endocardium, plane_point::Vec{3}, plane_normal::Vec{3})
+
+Split an endocardial facetset into the two chamber surfaces that meet at a valve plane.
+
+Returns `(above, below)`, where `above` holds the facets whose centroid `x` satisfies
+`(x - plane_point) ⋅ plane_normal > 0` and `below` all the others -- so `plane_normal` points from
+the chamber returned second towards the chamber returned first, and a facet lying exactly in the
+plane counts as below.
+
+Deciding per facet centroid is exact for two chambers that touch only along the valve ring, which is
+the case both for [`generate_ideal_lh_mesh`](@ref), where the split can also be read off the
+structural facetsets, and for an imported mesh that carries a single endocardial surface for the
+chamber pair.
+"""
+function separate_chamber_surfaces(
+    grid::AbstractGrid{3},
+    endocardium::AbstractSet{FacetIndex},
+    plane_point::Vec{3},
+    plane_normal::Vec{3},
+)
+    coords = _node_coordinates(grid)
+    above = OrderedSet{FacetIndex}()
+    below = OrderedSet{FacetIndex}()
+    for facet in endocardium
+        nodeids = Ferrite.facets(getcells(grid, facet[1]))[facet[2]]
+        centroid = sum(coords[nodeid] for nodeid in nodeids) / length(nodeids)
+        push!((centroid - plane_point) ⋅ plane_normal > 0 ? above : below, facet)
+    end
+    return (above, below)
+end

@@ -253,3 +253,187 @@ end
         end
     end
 end
+
+"""
+    two_chamber_state(; seed = 7)
+
+A passive left heart with one [`Thunderbolt.Pressure3D0DVolumeCoupler`](@ref) per chamber, its
+operator, and a fixed pseudo-random state to assemble at.
+
+The two chamber pressures are the only unknowns outside the mesh, and they exist because the two
+facet terms say so -- nothing here declares them a second time. The state is deliberately not a
+solution, for the reason given at [`rsafdq_reference_state`](@ref).
+
+Returns `(; f, op, u, pressure_symbols, pressure_dofs, n_u, models)`.
+"""
+function two_chamber_state(; seed = 7)
+    scaling_factor = 3.9
+    mesh = generate_ideal_lh_mesh(
+        6, 1, 2, 2;
+        inner_radius       = scaling_factor * 0.7,
+        outer_radius       = scaling_factor * 1.0,
+        longitudinal_upper = 0.4,
+        apex_inner         = scaling_factor * 1.3,
+        apex_outer         = scaling_factor * 1.5,
+        la_roof_inner      = scaling_factor * 0.7,
+        la_roof_outer      = scaling_factor * 0.9,
+    )
+
+    # The coordinate system is ventricular -- the atrium has no long axis of its own -- so it is
+    # built on that subdomain alone, off the ventricular surfaces, with the interior annulus sheet
+    # standing in for the basal one. The atrium carries a constant frame instead.
+    cs = compute_lv_coordinate_system(
+        mesh;
+        subdomains       = ["ventricle"],
+        axes             = compute_lv_axes(mesh; base = "MitralAnnulus", apex = "Apex"),
+        base_name        = "MitralAnnulus",
+        endocardium_name = "LVEndocardium",
+        epicardium_name  = "LVEpicardium",
+    )
+    ventricle_microstructure = create_microstructure_model(
+        cs,
+        LagrangeCollection{1}()^3,
+        ODB25LTMicrostructureParameters(αendo = deg2rad(80.0), αepi = deg2rad(-65.0));
+        subdomains = ["ventricle"],
+    )
+    atrium_microstructure = ConstantCoefficient(
+        OrthotropicMicrostructure(Vec((1.0, 0.0, 0.0)), Vec((0.0, 1.0, 0.0)), Vec((0.0, 0.0, 1.0))),
+    )
+
+    pressure_symbols = (:pₗᵥ, :pₗₐ)
+    couplers = (
+        Thunderbolt.Pressure3D0DVolumeCoupler(
+            "LVEndocardium",
+            :d,
+            pressure_symbols[1],
+            RSAFDQ2022SurrogateVolume(),
+        ),
+        Thunderbolt.Pressure3D0DVolumeCoupler(
+            "LAEndocardium",
+            :d,
+            pressure_symbols[2],
+            RSAFDQ2022SurrogateVolume(),
+        ),
+    )
+    # Both subdomains carry both couplers: the declarations have to agree across a domain split, and
+    # each coupler only ever traverses the facets of its own chamber.
+    models = Dict(
+        "ventricle" => QuasiStaticModel(
+            :d,
+            PK1Model(Guccione1991PassiveModel(), ventricle_microstructure),
+            couplers,
+        ),
+        "atrium" => QuasiStaticModel(
+            :d,
+            PK1Model(Guccione1991PassiveModel(), atrium_microstructure),
+            couplers,
+        ),
+    )
+
+    dbcs = [
+        Dirichlet(:d, getnodeset(mesh, "MyocardialAnchor1"), (x, t) -> (0.0, 0.0, 0.0), [1, 2, 3]),
+        Dirichlet(:d, getnodeset(mesh, "MyocardialAnchor2"), (x, t) -> (0.0, 0.0), [2, 3]),
+        Dirichlet(:d, getnodeset(mesh, "MyocardialAnchor3"), (x, t) -> (0.0,), [3]),
+        Dirichlet(:d, getnodeset(mesh, "MyocardialAnchor4"), (x, t) -> (0.0,), [3]),
+    ]
+    f = semidiscretize(
+        models,
+        FiniteElementDiscretization(Dict(:d => LagrangeCollection{1}()^3); dbcs),
+        mesh,
+    )
+
+    dh = f.dh
+    pressure_dofs = [only(algebraic_dofs(dh, sym)) for sym in pressure_symbols]
+    n_u = ndofs(dh) - length(pressure_symbols)
+
+    # Both pressures sit in the tail of every element-local system, so both need the sparsity of a
+    # `CellCoupling` over the whole handler -- see `Thunderbolt._chamber_coupling`.
+    all_cells = collect(Int, Iterators.flatten(sdh.cellset for sdh in dh.subdofhandlers))
+    couplings = Tuple(
+        Thunderbolt.FerriteOperators.CellCoupling(
+            all_cells;
+            algebraic_coupling = ((:d, sym),),
+        ) for sym in pressure_symbols
+    )
+    strategy = Thunderbolt.AssemblyStrategy(
+        Thunderbolt.FullAssembly(
+            Thunderbolt.FerriteOperators.StandardOperatorSpecification(;
+                algebraic_couplings = couplings,
+                constraint_handler = f.ch,
+            ),
+        ),
+        Thunderbolt.SequentialScheduling(),
+        Thunderbolt.get_strategy(f).device,
+    )
+    op = Thunderbolt.setup_operator(
+        strategy,
+        f.integrator,
+        dh;
+        slots = Thunderbolt.THUNDERBOLT_STAGE_SLOTS,
+    )
+
+    u = 0.05 .* (_pinned_uniform(Thunderbolt.solution_size(f), seed) .- 0.5)
+    u[pressure_dofs] .= RSAFDQ_REFERENCE_PRESSURE
+
+    return (; f, op, u, pressure_symbols, pressure_dofs, n_u, models)
+end
+
+@testset "Two-chamber 3D-0D operator" begin
+    state = two_chamber_state()
+    dh = state.f.dh
+    integrator = state.f.integrator
+    n_chambers = length(state.pressure_symbols)
+
+    @testset "declared unknowns" begin
+        # The couplers own the pressures, so the model derives them rather than being told.
+        for model in values(state.models)
+            @test collect(Thunderbolt.algebraic_variables(model)) ==
+                  collect(state.pressure_symbols)
+        end
+        @test dh.algebraic_names == collect(state.pressure_symbols)
+        @test state.pressure_dofs == state.n_u .+ (1:n_chambers)
+        # Every subdomain sees the same tail, in the same order.
+        for sdh in dh.subdofhandlers
+            @test Thunderbolt.FerriteOperators.global_dofs(integrator, sdh) == state.pressure_dofs
+        end
+        @test Thunderbolt.FerriteOperators.algebraic_items(integrator, dh) ==
+              [[dof] for dof in state.pressure_dofs]
+    end
+
+    @testset "facet coverage" begin
+        declared = [
+            facet for sdh in dh.subdofhandlers for
+            facet in Thunderbolt.FerriteOperators.facet_items(integrator, sdh)
+        ]
+        @test length(declared) == length(getfacetset(dh.grid, "Endocardium"))
+        @test Set(declared) == Set(getfacetset(dh.grid, "Endocardium"))
+        for name in ("LVEndocardium", "LAEndocardium")
+            @test Set(getfacetset(dh.grid, name)) ⊆ Set(declared)
+        end
+    end
+
+    V⁰ᴰ = [120.0, 60.0]
+    ctx = Thunderbolt.TimeIntegrationContext(RSAFDQ_REFERENCE_T, 0.0, 0.0)
+    J, r = assemble_pair(state.op, state.u, (V⁰ᴰ = V⁰ᴰ,), ctx)
+
+    @testset "both chambers are exercised" begin
+        @test size(J) == (state.n_u + n_chambers, state.n_u + n_chambers)
+        for dof in state.pressure_dofs
+            @test maximum(abs, J[dof, :]) > 0
+            @test maximum(abs, J[:, dof]) > 0
+            @test abs(r[dof]) > 0
+        end
+    end
+
+    @testset "V⁰ᴰ enters each chamber row alone" begin
+        # `r[p] -= V⁰ᴰ` is the whole dependence, so swapping the two reference volumes has to move
+        # the two chamber entries by the difference and nothing else at all.
+        swapped = reverse(V⁰ᴰ)
+        J′, r′ = assemble_pair(state.op, state.u, (V⁰ᴰ = swapped,), ctx)
+        Δ = r′ - r
+        @test Δ[state.pressure_dofs] ≈ V⁰ᴰ - swapped rtol = 1.0e-12
+        others = setdiff(1:length(r), state.pressure_dofs)
+        @test maximum(abs, Δ[others]) ≈ 0 atol = 1.0e-12 * maximum(abs, r)
+        @test approx_entrywise(J′, J)
+    end
+end

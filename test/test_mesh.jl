@@ -93,6 +93,125 @@ using Test, Thunderbolt, Tensors
         test_detJ(lv_mesh_hex)
     end
 
+    @testset "Ideal left heart" begin
+        # Every facet that belongs to exactly one cell, i.e. the boundary the mesh actually has,
+        # derived from the connectivity rather than from what the generator declared.
+        function boundary_skeleton(grid)
+            owners = Dict{NTuple{4, Int}, Vector{FacetIndex}}()
+            for cellid = 1:getncells(grid)
+                for (local_facet, facet) in enumerate(Ferrite.facets(getcells(grid, cellid)))
+                    # Triangular and quadrilateral facets meet here, so the key is zero padded.
+                    sorted = sort!(collect(facet))
+                    key = ntuple(i -> i ≤ length(sorted) ? sorted[i] : 0, 4)
+                    push!(get!(owners, key, FacetIndex[]), FacetIndex(cellid, local_facet))
+                end
+            end
+            return Set(only(v) for v in values(owners) if length(v) == 1)
+        end
+
+        nc, nr, n_lv, n_la = 8, 2, 3, 2
+        mesh = generate_ideal_lh_mesh(nc, nr, n_lv, n_la)
+        # The annulus plane of the default geometry, where the two shells meet.
+        z_rim = 1.5*cos(1.2*π/2)
+        test_detJ(mesh)
+
+        @testset "layout" begin
+            @test getnnodes(mesh) == nc*(nr+1)*(n_lv+1+n_la) + 2*(nr+1)
+            @test getncells(mesh) == nc*nr*(n_lv+n_la) + 2*nc*nr
+            @test length(getcellset(mesh, "ventricle")) == nc*nr*(n_lv+1)
+            @test length(getcellset(mesh, "atrium")) == nc*nr*(n_la+1)
+            @test isempty(intersect(getcellset(mesh, "ventricle"), getcellset(mesh, "atrium")))
+            @test length(getcellset(mesh, "ventricle")) + length(getcellset(mesh, "atrium")) ==
+                  getncells(mesh)
+        end
+
+        @testset "boundary integrity" begin
+            lv_endo = getfacetset(mesh, "LVEndocardium")
+            la_endo = getfacetset(mesh, "LAEndocardium")
+            epi     = getfacetset(mesh, "Epicardium")
+
+            @test !Thunderbolt._has_facetset(mesh, "Base")
+            @test isempty(intersect(lv_endo, la_endo))
+            @test isempty(intersect(lv_endo, epi))
+            @test isempty(intersect(la_endo, epi))
+            @test Set(union(lv_endo, la_endo, epi)) == boundary_skeleton(mesh)
+            # The annulus is where the two shells meet, so its facets are interior.
+            @test isempty(intersect(getfacetset(mesh, "MitralAnnulus"), boundary_skeleton(mesh)))
+        end
+
+        @testset "set consistency" begin
+            @test getfacetset(mesh, "Endocardium") ==
+                  union(getfacetset(mesh, "LVEndocardium"), getfacetset(mesh, "LAEndocardium"))
+            @test getfacetset(mesh, "Epicardium") ==
+                  union(getfacetset(mesh, "LVEpicardium"), getfacetset(mesh, "LAEpicardium"))
+            # `compute_lv_coordinate_system(mesh; subdomains = ["ventricle"])` reads these, so they
+            # may not reach into the atrium.
+            ventricle = getcellset(mesh, "ventricle")
+            for name in ("SRidgePost", "SRidgeAnt", "LVEndocardium", "LVEpicardium", "MitralAnnulus")
+                @test all(facet -> facet[1] ∈ ventricle, getfacetset(mesh, name))
+            end
+            @test all(facet -> facet[1] ∈ getcellset(mesh, "atrium"),
+                      getfacetset(mesh, "LAEndocardium"))
+        end
+
+        @testset "rim sharing" begin
+            rim = getnodeset(mesh, "MitralAnnulus")
+            @test length(rim) == nc*(nr+1)
+
+            chambers_of = Dict(n => Set{String}() for n in rim)
+            for name in ("ventricle", "atrium"), cellid in getcellset(mesh, name)
+                for n in getcells(mesh, cellid).nodes
+                    n ∈ rim && push!(chambers_of[n], name)
+                end
+            end
+            @test all(==(Set(["ventricle", "atrium"])), values(chambers_of))
+
+            # Both shells are truncated in the same plane, which is what lets them share the ring.
+            @test all(n -> Ferrite.get_node_coordinate(getnodes(mesh, n))[3] ≈ z_rim, rim)
+        end
+
+        @testset "chamber separation helper" begin
+            endocardium = getfacetset(mesh, "Endocardium")
+            plane_point = Vec((0.0, 0.0, z_rim))
+            above, below =
+                separate_chamber_surfaces(mesh, endocardium, plane_point, Vec((0.0, 0.0, 1.0)))
+            @test above == getfacetset(mesh, "LVEndocardium")
+            @test below == getfacetset(mesh, "LAEndocardium")
+
+            # Flipping the normal swaps the two returns, which is the documented convention.
+            flipped_above, flipped_below =
+                separate_chamber_surfaces(mesh, endocardium, plane_point, Vec((0.0, 0.0, -1.0)))
+            @test flipped_above == below
+            @test flipped_below == above
+        end
+
+        @testset "rim reachability" begin
+            # The atrium has to be wide enough at the annulus to stand on the ventricular rim.
+            @test_throws ErrorException generate_ideal_lh_mesh(4, 1, 1, 1; la_inner_radius = 0.1)
+            @test_throws ErrorException generate_ideal_lh_mesh(4, 1, 1, 1; la_outer_radius = 0.1)
+        end
+
+        @testset "single chamber generator unchanged" begin
+            # The refactor that gave both generators their shared builders may not move the
+            # single-chamber mesh: `test/test_rsafdq_operator.jl` pins assembled values on it.
+            lv = generate_ideal_lv_mesh(4, 2, 2)
+            @test getnnodes(lv) == 4*3*3 + 3
+            @test getncells(lv) == 4*2*2 + 4*2
+            @test length(getfacetset(lv, "Endocardium")) == 4*2 + 4
+            @test length(getfacetset(lv, "Epicardium")) == 4*2 + 4
+            @test length(getfacetset(lv, "Base")) == 4*2
+            @test length(getfacetset(lv, "SRidgePost")) == 2*2 + 2
+            @test length(getfacetset(lv, "SRidgeAnt")) == 2*2 + 2
+
+            θ_first, θ_base = 1.2*π/2/3, 1.2*π/2
+            @test Ferrite.get_node_coordinate(getnodes(lv, 1)) ≈
+                  Vec((0.7*sin(θ_first), 0.0, 1.3*cos(θ_first)))
+            @test Ferrite.get_node_coordinate(getnodes(lv, 2*4*3 + 1)) ≈
+                  Vec((0.7*sin(θ_base), 0.0, 1.5*cos(θ_base)))
+            @test Ferrite.get_node_coordinate(getnodes(lv, getnnodes(lv))) ≈ Vec((0.0, 0.0, 1.5))
+        end
+    end
+
     @testset "IO" begin
         dirname = @__DIR__
 

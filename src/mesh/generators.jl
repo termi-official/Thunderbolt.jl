@@ -501,6 +501,83 @@ function generate_quadratic_open_ring_mesh(
 end
 
 """
+Push the ring nodes of an ellipsoidal shell, in the order its `(circumferential, transmural,
+longitudinal)` node array indexes them: circumferential fastest, longitudinal slowest. `point(l, φ,
+rp)` places one node from its longitudinal parameter, azimuth and transmural fraction.
+"""
+function _shell_ring_nodes!(
+    nodes,
+    point,
+    longitudinal_parameters,
+    radii_in_percent,
+    circumferential_angles,
+)
+    for l ∈ longitudinal_parameters,
+        radius_percent ∈ radii_in_percent,
+        φ ∈ circumferential_angles
+
+        push!(nodes, Node(point(l, φ, radius_percent)))
+    end
+    return nodes
+end
+
+"""
+Push the `nl` hexahedral layers between the rings of `node_array[circumferential, transmural,
+longitudinal]`, longitudinal index slowest, so that cell `(i, j, k)` is the
+`(k-1)*nr*nc + (j-1)*nc + i`-th of them. The circumferential index wraps.
+"""
+function _shell_hex_cells!(cells, node_array, nc::Int, nr::Int, nl::Int)
+    for k = 1:nl, j = 1:nr, i = 1:nc
+        i_next = (i == nc) ? 1 : i + 1
+        push!(
+            cells,
+            Hexahedron((
+                node_array[i, j, k],
+                node_array[i_next, j, k],
+                node_array[i_next, j+1, k],
+                node_array[i, j+1, k],
+                node_array[i, j, k+1],
+                node_array[i_next, j, k+1],
+                node_array[i_next, j+1, k+1],
+                node_array[i, j+1, k+1],
+            )),
+        )
+    end
+    return cells
+end
+
+"""
+Push the wedge fan closing a shell against the singular edge on its axis, transmural index slowest,
+so that cell `(i, j)` is the `(j-1)*nc + i`-th of them.
+
+`ring[i, j]` are the nodes of the ring the fan attaches to and `singular[j]` the `nr+1` nodes of the
+edge, innermost first. Facet 1 of the innermost cells and facet 5 of the outermost ones are the two
+free surfaces, facets 2 and 3 the sheets at the azimuths of `i` and `i+1`.
+
+`flip` reverses the circumferential orientation, which is what a fan closing the shell beyond the
+*end* of the longitudinal index -- rather than before its start -- needs to keep its Jacobian
+positive.
+"""
+function _fan_wedge_cells!(cells, ring, singular, nc::Int, nr::Int, flip::Bool)
+    for j = 1:nr, i = 1:nc
+        i_next = (i == nc) ? 1 : i + 1
+        a, b = flip ? (i_next, i) : (i, i_next)
+        push!(
+            cells,
+            Wedge((
+                singular[j],
+                ring[a, j],
+                ring[b, j],
+                singular[j+1],
+                ring[a, j+1],
+                ring[b, j+1],
+            )),
+        )
+    end
+    return cells
+end
+
+"""
     generate_ideal_lv_mesh(num_elements_circumferential::Int, num_elements_radial::Int, num_elements_longitudinal::Int; inner_radius::T = Float64(0.7), outer_radius::T = Float64(1.0), longitudinal_upper::T = Float64(0.2), apex_inner::T = Float64(1.3), apex_outer::T = Float64(1.5), septum_fraction = 1//3)
 
 Generate an idealized left ventricle as a truncated ellipsoid.
@@ -561,35 +638,24 @@ function generate_ideal_lv_mesh(
 
     # Rings from the one above the apex up to the base, circumferential index fastest.
     nodes = Node{3, T}[]
-    for θ ∈ longitudinal_angle[2:end],
-        radius_percent ∈ radii_in_percent,
-        φ ∈ circumferential_angle[1:(end-1)]
-
-        push!(nodes, Node(point(θ, φ, radius_percent)))
-    end
+    _shell_ring_nodes!(
+        nodes,
+        point,
+        longitudinal_angle[2:end],
+        radii_in_percent,
+        circumferential_angle[1:(end-1)],
+    )
 
     # Generate all cells but the apex
     node_array = reshape(collect(1:n_nodes), (n_nodes_c, n_nodes_r, n_nodes_l))
     cells = with_control_point ? Union{Hexahedron, Wedge, Point}[] : Union{Hexahedron, Wedge}[]
-    for k = 1:num_elements_longitudinal,
-        j = 1:num_elements_radial,
-        i = 1:num_elements_circumferential
-
-        i_next = (i == num_elements_circumferential) ? 1 : i + 1
-        push!(
-            cells,
-            Hexahedron((
-                node_array[i, j, k],
-                node_array[i_next, j, k],
-                node_array[i_next, j+1, k],
-                node_array[i, j+1, k],
-                node_array[i, j, k+1],
-                node_array[i_next, j, k+1],
-                node_array[i_next, j+1, k+1],
-                node_array[i, j+1, k+1],
-            )),
-        )
-    end
+    _shell_hex_cells!(
+        cells,
+        node_array,
+        num_elements_circumferential,
+        num_elements_radial,
+        num_elements_longitudinal,
+    )
 
     nodesets = Dict{String, OrderedSet{Int}}()
     nodesets["MyocardialAnchor1"] = OrderedSet{Int}([node_array[1, 1, end]])
@@ -631,32 +697,30 @@ function generate_ideal_lv_mesh(
     nodesets["ApexInOut"]   = OrderedSet{Int}()
 
     # Add apex nodes
-    push!(nodesets["ApexInOut"], length(nodes)+1)
+    apex_nodes = (length(nodes)+1):(length(nodes)+n_nodes_r)
+    push!(nodesets["ApexInOut"], first(apex_nodes))
     for radius_percent ∈ radii_in_percent
         push!(nodes, Node(point(0.0, 0.0, radius_percent)))
     end
-    push!(nodesets["ApexInOut"], length(nodes))
+    push!(nodesets["ApexInOut"], last(apex_nodes))
 
     # Add apex cells
+    apex_offset = length(cells)
+    _fan_wedge_cells!(
+        cells,
+        view(node_array, :, :, 1),
+        apex_nodes,
+        num_elements_circumferential,
+        num_elements_radial,
+        false,
+    )
     for j ∈ 1:num_elements_radial, i ∈ 1:num_elements_circumferential
-        i_next = (i == num_elements_circumferential) ? 1 : i + 1
-        singular_index = length(nodes)-num_elements_radial+j-1
-        push!(
-            cells,
-            Wedge((
-                singular_index,
-                node_array[i, j, 1],
-                node_array[i_next, j, 1],
-                singular_index+1,
-                node_array[i, j+1, 1],
-                node_array[i_next, j+1, 1],
-            )),
-        )
-        j == 1 && push!(facetsets["Endocardium"], FacetIndex(length(cells), 1))
-        j == num_elements_radial && push!(facetsets["Epicardium"], FacetIndex(length(cells), 5))
-        j == num_elements_radial && push!(nodesets["Apex"], singular_index+1)
-        i == 1 && push!(facetsets["SRidgePost"], FacetIndex(length(cells), 2))
-        i == i_ant-1 && push!(facetsets["SRidgeAnt"], FacetIndex(length(cells), 3))
+        cl = apex_offset + (j-1)*num_elements_circumferential + i
+        j == 1 && push!(facetsets["Endocardium"], FacetIndex(cl, 1))
+        j == num_elements_radial && push!(facetsets["Epicardium"], FacetIndex(cl, 5))
+        j == num_elements_radial && push!(nodesets["Apex"], apex_nodes[j+1])
+        i == 1 && push!(facetsets["SRidgePost"], FacetIndex(cl, 2))
+        i == i_ant-1 && push!(facetsets["SRidgeAnt"], FacetIndex(cl, 3))
     end
 
     if with_control_point
@@ -669,6 +733,233 @@ function generate_ideal_lv_mesh(
     else
         cellsets = Dict(["myocardium" => OrderedSet(1:length(cells))])
     end
+
+    return to_mesh(
+        Grid(cells, nodes, nodesets = nodesets, facetsets = facetsets, cellsets = cellsets),
+    )
+end
+
+"""
+    generate_ideal_lh_mesh(num_elements_circumferential::Int, num_elements_radial::Int, num_elements_longitudinal::Int, num_elements_longitudinal_la::Int; inner_radius = 0.7, outer_radius = 1.0, longitudinal_upper = 0.2, apex_inner = 1.3, apex_outer = 1.5, la_inner_radius = inner_radius, la_outer_radius = outer_radius, la_roof_inner = 0.7, la_roof_outer = 0.9, septum_fraction = 1//3)
+
+Generate an idealized left heart: the truncated ellipsoid of [`generate_ideal_lv_mesh`](@ref) with a
+smaller, rounder left atrium grown from the far side of its basal rim, after the idealized left-heart
+geometries used in the cardiac FSI literature (Dedè et al. 2021, Viola et al. 2020).
+
+The first three element counts and the `inner_radius`, `outer_radius`, `longitudinal_upper`,
+`apex_inner`, `apex_outer` and `septum_fraction` keywords describe the ventricle exactly as they do
+there. `num_elements_longitudinal_la` counts the atrial hexahedral layers between the rim and the
+roof fan.
+
+# Rim sharing
+
+The mitral annulus *is* the ventricular rim: the atrial shell reuses its nodes instead of meeting a
+second surface there, so the two chambers form one continuous wall, the annulus plane is an interior
+facet sheet and the mitral orifice is the open disk inside the endocardial rim circle. No valve is
+meshed.
+
+That sharing constrains the atrial ellipsoid layer by layer. With `θ = 0` at the roof pole, the shell
+at transmural fraction `rp` is the surface of revolution
+
+    (r sin(θ) cos(φ), r sin(θ) sin(φ), zc - h cos(θ)),   θ ∈ [0, θmax]
+
+with equatorial semi-axis `r = la_inner_radius*(1-rp) + la_outer_radius*rp` and polar semi-axis
+`h = la_roof_inner*(1-rp) + la_roof_outer*rp`. The ventricular rim circle of the same `rp` has radius
+`ρ = (inner_radius*(1-rp) + outer_radius*rp)*sin(θb)` and height `zr = apex_outer*cos(θb)`, where
+`θb = (1 + longitudinal_upper)*π/2` is the ventricular truncation angle. Passing through it fixes the
+truncation angle and the center of the atrial layer,
+
+    θmax = π - asin(ρ/r),    zc = zr + h*cos(θmax)
+
+The `π -` branch is what makes the atrium wider than the annulus it stands on, so that both chambers
+bulge away from the shared ring and the lumen has a waist there. It requires
+`la_inner_radius ≥ inner_radius*sin(θb)` and `la_outer_radius ≥ outer_radius*sin(θb)`, which the
+generator checks. The defaults keep the ventricular equatorial semi-axes, where the truncation costs
+a factor `sin(θb)`, and shorten the polar ones: the atrium comes out roughly spherical and around
+half the ventricular cavity volume. The roof closes with a wedge fan around a singular edge, like the
+apex.
+
+# Sets
+
+Cellsets `"ventricle"` and `"atrium"`, hexahedra and wedges of each side. A chamber pressure is
+declared by the facet term that reads it, so there is no control cell to carry one.
+
+Facetsets `"LVEndocardium"`, `"LAEndocardium"` and their union `"Endocardium"`, likewise
+`"LVEpicardium"`, `"LAEpicardium"` and `"Epicardium"`. Those three surfaces are the entire boundary:
+the annulus plane is interior here, so unlike the single-chamber generator this mesh carries no
+`"Base"`. `"MitralAnnulus"` holds the annulus facets on their ventricular side, which is what
+[`compute_lv_coordinate_system`](@ref) takes as `base_name` on this mesh; together with the
+ventricle-only ridge sheets `"SRidgePost"`/`"SRidgeAnt"` and `"LVEndocardium"`/`"LVEpicardium"` that
+call works on `subdomains = ["ventricle"]`.
+
+Nodesets `"Apex"`, `"ApexInOut"` and `"MyocardialAnchor1"`-`"MyocardialAnchor4"` as on the ventricle
+alone, plus `"MitralAnnulus"` for the shared rim nodes across the whole wall thickness.
+"""
+function generate_ideal_lh_mesh(
+    num_elements_circumferential::Int,
+    num_elements_radial::Int,
+    num_elements_longitudinal::Int,
+    num_elements_longitudinal_la::Int;
+    inner_radius::T = Float64(0.7),
+    outer_radius::T = Float64(1.0),
+    longitudinal_upper::T = Float64(0.2),
+    apex_inner::T = Float64(1.3),
+    apex_outer::T = Float64(1.5),
+    la_inner_radius::T = inner_radius,
+    la_outer_radius::T = outer_radius,
+    la_roof_inner::T = Float64(0.7),
+    la_roof_outer::T = Float64(0.9),
+    septum_fraction = 1//3,
+) where {T}
+    nc        = num_elements_circumferential
+    nr        = num_elements_radial
+    n_nodes_r = num_elements_radial + 1
+    n_lv      = num_elements_longitudinal
+    n_la      = num_elements_longitudinal_la
+
+    basal_angle = (1.0 + longitudinal_upper)*π/2
+    rim_height  = apex_outer*cos(basal_angle)
+    rim_radius(rp) = (inner_radius*(1.0-rp) + outer_radius*rp)*sin(basal_angle)
+
+    la_inner_radius ≥ rim_radius(0.0) || error(
+        "The atrial endocardium cannot reach the ventricular rim: `la_inner_radius` " *
+        "($(la_inner_radius)) is below the endocardial rim radius $(rim_radius(0.0)).",
+    )
+    la_outer_radius ≥ rim_radius(1.0) || error(
+        "The atrial epicardium cannot reach the ventricular rim: `la_outer_radius` " *
+        "($(la_outer_radius)) is below the epicardial rim radius $(rim_radius(1.0)).",
+    )
+
+    circumferential_angle = range(0.0, stop = 2*π, length = nc+1)[1:(end-1)]
+    radii_in_percent      = range(0.0, stop = 1.0, length = n_nodes_r)
+    longitudinal_angle    = range(0.0, stop = basal_angle, length = n_lv+2)
+
+    ventricle_point(θ, φ, rp) = _ellipsoid_point(
+        θ,
+        φ,
+        rp;
+        inner_radius,
+        outer_radius,
+        apex_inner,
+        apex_outer,
+        septum_flatness = 0.0,
+        axis_ratio = 1.0,
+        eccentricity = 0.0,
+    )
+
+    "Atrial wall at transmural fraction `rp`, `s = 0` at the roof pole and `s = 1` on the rim."
+    function atrium_point(s, φ, rp)
+        r = la_inner_radius*(1.0-rp) + la_outer_radius*rp
+        h = la_roof_inner*(1.0-rp) + la_roof_outer*rp
+        θmax = π - asin(clamp(rim_radius(rp)/r, -1.0, 1.0))
+        θ = s*θmax
+        z = rim_height + h*(cos(θmax) - cos(θ))
+        return Vec((r*sin(θ)*cos(φ), r*sin(θ)*sin(φ), z))
+    end
+
+    # Ventricular rings, from the one above the apex down to the rim, then the atrial rings between
+    # the rim and the roof. Ring 1 of the atrial array *is* the ventricular rim, so it is not built
+    # twice -- that shared annulus is what joins the two shells.
+    nodes = Node{3, T}[]
+    _shell_ring_nodes!(
+        nodes,
+        ventricle_point,
+        longitudinal_angle[2:end],
+        radii_in_percent,
+        circumferential_angle,
+    )
+    ventricle_array = reshape(collect(1:length(nodes)), (nc, n_nodes_r, n_lv+1))
+
+    atrium_offset = length(nodes)
+    _shell_ring_nodes!(
+        nodes,
+        atrium_point,
+        [(n_la+1-m)/(n_la+1) for m = 1:n_la],
+        radii_in_percent,
+        circumferential_angle,
+    )
+    atrium_array = Array{Int}(undef, nc, n_nodes_r, n_la+1)
+    atrium_array[:, :, 1] .= ventricle_array[:, :, end]
+    atrium_array[:, :, 2:end] .=
+        reshape(collect((atrium_offset+1):length(nodes)), (nc, n_nodes_r, n_la))
+
+    apex_nodes = (length(nodes)+1):(length(nodes)+n_nodes_r)
+    for radius_percent ∈ radii_in_percent
+        push!(nodes, Node(ventricle_point(0.0, 0.0, radius_percent)))
+    end
+    roof_nodes = (length(nodes)+1):(length(nodes)+n_nodes_r)
+    for radius_percent ∈ radii_in_percent
+        push!(nodes, Node(atrium_point(0.0, 0.0, radius_percent)))
+    end
+
+    cells = Union{Hexahedron, Wedge}[]
+
+    _shell_hex_cells!(cells, ventricle_array, nc, nr, n_lv)
+    ventricle_hex = reshape(collect(1:length(cells)), (nc, nr, n_lv))
+
+    offset = length(cells)
+    _shell_hex_cells!(cells, atrium_array, nc, nr, n_la)
+    atrium_hex = reshape(collect((offset+1):length(cells)), (nc, nr, n_la))
+
+    offset = length(cells)
+    _fan_wedge_cells!(cells, view(ventricle_array, :, :, 1), apex_nodes, nc, nr, false)
+    apex_fan = reshape(collect((offset+1):length(cells)), (nc, nr))
+
+    # The roof fan sits beyond the *last* atrial ring, where the apex fan sits before the first
+    # ventricular one, so its cells are wound the other way.
+    offset = length(cells)
+    _fan_wedge_cells!(cells, view(atrium_array, :, :, n_la+1), roof_nodes, nc, nr, true)
+    roof_fan = reshape(collect((offset+1):length(cells)), (nc, nr))
+
+    facetsets = Dict{String, OrderedSet{FacetIndex}}()
+    facetsets["LVEndocardium"] = OrderedSet{FacetIndex}([
+        [FacetIndex(cl, 2) for cl in ventricle_hex[:, 1, :][:]];
+        [FacetIndex(cl, 1) for cl in apex_fan[:, 1][:]]
+    ])
+    facetsets["LVEpicardium"] = OrderedSet{FacetIndex}([
+        [FacetIndex(cl, 4) for cl in ventricle_hex[:, end, :][:]];
+        [FacetIndex(cl, 5) for cl in apex_fan[:, end][:]]
+    ])
+    facetsets["LAEndocardium"] = OrderedSet{FacetIndex}([
+        [FacetIndex(cl, 2) for cl in atrium_hex[:, 1, :][:]];
+        [FacetIndex(cl, 1) for cl in roof_fan[:, 1][:]]
+    ])
+    facetsets["LAEpicardium"] = OrderedSet{FacetIndex}([
+        [FacetIndex(cl, 4) for cl in atrium_hex[:, end, :][:]];
+        [FacetIndex(cl, 5) for cl in roof_fan[:, end][:]]
+    ])
+    facetsets["Endocardium"] = union(facetsets["LVEndocardium"], facetsets["LAEndocardium"])
+    facetsets["Epicardium"]  = union(facetsets["LVEpicardium"], facetsets["LAEpicardium"])
+    facetsets["MitralAnnulus"] =
+        OrderedSet{FacetIndex}(FacetIndex(cl, 6) for cl in ventricle_hex[:, :, end][:])
+
+    # As on the single ventricle: the ridges are placed by convention, they run from the rim down to
+    # the singular apex edge, and each facet is stored on its septal cell.
+    i_ant = clamp(round(Int, nc*septum_fraction), 1, nc-1) + 1
+    facetsets["SRidgePost"] = OrderedSet{FacetIndex}([
+        [FacetIndex(cl, 5) for cl in ventricle_hex[1, :, :][:]];
+        [FacetIndex(cl, 2) for cl in apex_fan[1, :][:]]
+    ])
+    facetsets["SRidgeAnt"] = OrderedSet{FacetIndex}([
+        [FacetIndex(cl, 3) for cl in ventricle_hex[i_ant-1, :, :][:]];
+        [FacetIndex(cl, 3) for cl in apex_fan[i_ant-1, :][:]]
+    ])
+
+    nodesets = Dict{String, OrderedSet{Int}}()
+    nodesets["MyocardialAnchor1"] = OrderedSet{Int}([ventricle_array[1, 1, end]])
+    nodesets["MyocardialAnchor2"] = OrderedSet{Int}([ventricle_array[1, end, end]])
+    nodesets["MyocardialAnchor3"] =
+        OrderedSet{Int}([ventricle_array[ceil(Int, 1+nc/4), 1, end]])
+    nodesets["MyocardialAnchor4"] =
+        OrderedSet{Int}([ventricle_array[ceil(Int, 1+3*nc/4), 1, end]])
+    nodesets["Apex"]          = OrderedSet{Int}([last(apex_nodes)])
+    nodesets["ApexInOut"]     = OrderedSet{Int}([first(apex_nodes), last(apex_nodes)])
+    nodesets["MitralAnnulus"] = OrderedSet{Int}(ventricle_array[:, :, end][:])
+
+    cellsets = Dict{String, OrderedSet{Int}}(
+        "ventricle" => OrderedSet{Int}([ventricle_hex[:]; apex_fan[:]]),
+        "atrium"    => OrderedSet{Int}([atrium_hex[:]; roof_fan[:]]),
+    )
 
     return to_mesh(
         Grid(cells, nodes, nodesets = nodesets, facetsets = facetsets, cellsets = cellsets),

@@ -267,8 +267,10 @@ export
     generate_quadratic_ring_mesh,
     generate_quadratic_open_ring_mesh,
     generate_ideal_lv_mesh,
+    generate_ideal_lh_mesh,
     # Mesh utilities
     hexahedralize,
+    separate_chamber_surfaces,
     to_mesh,
     # Generic models
     TransientDiffusionModel,
