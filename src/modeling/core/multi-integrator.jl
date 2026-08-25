@@ -72,6 +72,22 @@ function FerriteOperators.setup_facet_item_cache(
     return FerriteOperators.setup_facet_item_cache(subintegrator, sdh)
 end
 
+# `algebraic_items` is declared once per integrator over the whole `DofHandler`, not per subdomain,
+# so there is no `sdh` to route on the way the hooks above do. FerriteOperators does not forward this
+# pair for its own multi-domain integrators either (`AnyMultiDomainIntegrator` in
+# `elements/domain_elements.jl`), so a subintegrator that wants item rows declares them the same way
+# on every subdomain it owns -- RSAFDQ's chamber tying does exactly that -- and any one subintegrator's
+# declaration already speaks for the whole handler. A subdomain that declares nothing forwards to the
+# framework default, `()`. This silently drops a declaration that is present on only SOME
+# subintegrators; nothing in this package does that today.
+function FerriteOperators.algebraic_items(integrator::NonlinearMultiDomainIntegrator2, dh::DofHandler)
+    isempty(integrator.subintegrators) && return ()
+    return FerriteOperators.algebraic_items(first(values(integrator.subintegrators)), dh)
+end
+
+FerriteOperators.setup_algebraic_cache(integrator::NonlinearMultiDomainIntegrator2, dh::DofHandler) =
+    FerriteOperators.setup_algebraic_cache(first(values(integrator.subintegrators)), dh)
+
 struct BilinearMultiIntegrator <: AbstractBilinearIntegrator
     subintegrators::Dict{<: String, <: AbstractBilinearIntegrator}
 end

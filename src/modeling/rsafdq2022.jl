@@ -129,6 +129,14 @@ function solution_variables(f::RSAFDQ20223DFunction)
     return merge_and_check_unique(vars)
 end
 
+# The chamber balance rows read `V⁰ᴰ` off `p`, not off `chamber.V⁰ᴰval` directly (see
+# `ChamberBalanceCache`): copied into a plain vector here, once per step, rather than aliased, so an
+# assembly worker never sees a write racing its own sweep.
+_homotopy_stage_evaluation(f::RSAFDQ20223DFunction, t) = StageEvaluation(;
+    p   = (V⁰ᴰ = [chamber.V⁰ᴰval for chamber in f.tying_info.chambers],),
+    ctx = TimeIntegrationContext(t, zero(t), zero(t)),
+)
+
 ##########################################################################
 
 """

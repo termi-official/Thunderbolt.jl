@@ -1,51 +1,26 @@
 """
-    RSAFDQ2022TyingOperator
+    ChamberBalanceCache()
 
-The 3D-0D coupled operator: an ordinary [`setup_operator`](@ref) result, plus the solver-supplied
-reference volume in the chamber rows.
-
-The chamber row is `∫_Γ V³ᴰ(u) dΓ - V⁰ᴰ`. The facet item kernel writes the integral; `V⁰ᴰ` is
-constant within one 3D solve and is subtracted here.
+Algebraic cache for the chamber rows `r[p] -= V⁰ᴰ`. One cache serves every chamber;
+`args.item.index` (via [`query_cell_parameters`](@ref)) selects which chamber's solver-supplied
+reference volume applies. The row is constant in `u` -- the integral half, `∫_Γ V³ᴰ(u) dΓ`, is the
+facet item kernel's -- so its Jacobian block is left to the AD fallback.
 """
-@concrete struct RSAFDQ2022TyingOperator
-    op
-    chambers
-    # The chambers' algebraic dofs, queried once from the closed `DofHandler`.
-    pressure_dofs
-end
+struct ChamberBalanceCache end
 
-getJ(op::RSAFDQ2022TyingOperator) = getJ(op.op)
+duplicate_for_device(device, cache::ChamberBalanceCache) = cache
 
-function FerriteOperators.update_linearization!(
-    op::RSAFDQ2022TyingOperator,
-    residual::AbstractVector,
-    states::NamedTuple,
-    p,
-    ctx,
-)
-    update_linearization!(op.op, residual, states, p, ctx)
-    _subtract_reference_volumes!(residual, op)
-    return nothing
-end
+# `V⁰ᴰ` is solver-supplied data, not element state: it arrives fresh through `p` on every sweep
+# rather than through a mutable field the cache (and its per-worker duplicates) would hold a
+# reference to.
+FerriteOperators.query_cell_parameters(::ChamberBalanceCache, item::FerriteOperators.AlgebraicItem, p) =
+    p.V⁰ᴰ[item.index]
 
-function FerriteOperators.evaluate!(
-    op::RSAFDQ2022TyingOperator,
-    residual::AbstractVector,
-    states::NamedTuple,
-    p,
-    ctx,
-)
-    evaluate!(op.op, residual, states, p, ctx)
-    _subtract_reference_volumes!(residual, op)
-    return nothing
-end
-
-function _subtract_reference_volumes!(residual, op::RSAFDQ2022TyingOperator)
-    for (chamber, pressure_dof) in zip(op.chambers, op.pressure_dofs)
-        residual[pressure_dof] -= chamber.V⁰ᴰval
-    end
-    return nothing
-end
+FerriteOperators.assemble_algebraic!(
+    req::FerriteOperators.ResidualRequest,
+    ::ChamberBalanceCache,
+    args::FerriteOperators.AlgebraicArgs,
+) = (req.r[1] -= args.p; nothing)
 
 """
     RSAFDQ2022TyingIntegrator(volume, couplers)
@@ -95,6 +70,15 @@ function FerriteOperators.setup_facet_item_cache(
     length(caches) == 1 && return only(caches)
     return ChamberTyingCache(caches, _chamber_of_facet(integrator.couplers, sdh))
 end
+
+# One item per chamber, in `couplers` order -- the same order `global_dofs` above puts them in the
+# facet kernels' local-system tail, so chamber `k` here and chamber `k` there agree without a shared
+# lookup. `algebraic_items` is declared once per `DofHandler`, not per subdomain, so the pressure dof
+# it names does not depend on which subdomain's copy of the integrator asks.
+FerriteOperators.algebraic_items(integrator::RSAFDQ2022TyingIntegrator, dh::DofHandler) =
+    [[only(algebraic_dofs(dh, coupler.pressure_symbol))] for coupler in integrator.couplers]
+
+FerriteOperators.setup_algebraic_cache(::RSAFDQ2022TyingIntegrator, ::DofHandler) = ChamberBalanceCache()
 
 """
     ChamberTyingCache(chamber_caches, chamber_of_facet)
@@ -208,13 +192,10 @@ function setup_stage_operator(
         get_strategy(f).device,
     )
 
-    op = setup_operator(
+    return setup_operator(
         strategy,
         _tying_integrator(integrator, chambers),
         dh;
         slots = THUNDERBOLT_STAGE_SLOTS,
     )
-    pressure_dofs = [chamber.pressure_dof_index for chamber in chambers]
-
-    return RSAFDQ2022TyingOperator(op, chambers, pressure_dofs)
 end

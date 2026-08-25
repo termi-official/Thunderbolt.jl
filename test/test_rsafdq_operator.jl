@@ -125,7 +125,7 @@ function rsafdq_reference_state(; seed = 42)
         chamber.V⁰ᴰval = RSAFDQ_REFERENCE_V⁰ᴰ
     end
 
-    evaluation = Thunderbolt._homotopy_stage_evaluation(RSAFDQ_REFERENCE_T)
+    evaluation = Thunderbolt._homotopy_stage_evaluation(f, RSAFDQ_REFERENCE_T)
     return (; f, op, u, p = evaluation.p, ctx = evaluation.ctx, pressure_symbol = :pₗᵥ, n_chambers)
 end
 
@@ -233,11 +233,11 @@ end
     end
 
     @testset "derivatives" begin
-        # The independent referee for the analytic tying tangent: central finite differences of the
-        # operator's own residual. It runs on the assembled operator rather than the wrapper, whose
-        # only remaining term is the constant `- V⁰ᴰ`.
+        # The independent referee for the analytic tying tangent: central finite differences against
+        # the operator's own residual, chamber rows included. The `-V⁰ᴰ` row is constant in `u`, so
+        # its block should come out zero on both sides of the comparison.
         result = Thunderbolt.FerriteOperators.check_derivatives(
-            state.op.op,
+            state.op,
             (u = state.u,),
             state.p,
             state.ctx,

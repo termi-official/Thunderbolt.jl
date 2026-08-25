@@ -122,8 +122,10 @@ setup_stage_operator(
 )
 
 # Continuation is load stepping: there is no timestep and no rate to reconstruct, so the context
-# carries the pseudo-time alone and the scheme matrix is the plain `∂F/∂u`.
-_homotopy_stage_evaluation(t) = StageEvaluation(; ctx = TimeIntegrationContext(t, zero(t), zero(t)))
+# carries the pseudo-time alone and the scheme matrix is the plain `∂F/∂u`. `f` selects the
+# parameter bag: most functions need none, but e.g. `RSAFDQ20223DFunction` overrides this to carry
+# the solver-supplied chamber reference volumes (see `rsafdq2022.jl`).
+_homotopy_stage_evaluation(f, t) = StageEvaluation(; ctx = TimeIntegrationContext(t, zero(t), zero(t)))
 
 function setup_solver_cache(
     f::AbstractSemidiscreteFunction,
@@ -137,9 +139,9 @@ function setup_solver_cache(
     check_internal_variables_are_rate_free(f)
     check_weak_boundary_conditions_are_rate_free(f)
     # The stage carries the operator, so it is built before the solver cache that works on it. A
-    # continuation offers neither a previous solution nor a timestep, so its parameters are the bare
-    # pseudo-time.
-    stage_function = FullStateStage(f, setup_stage_operator(f, solver, nothing, t₀), _homotopy_stage_evaluation(t₀))
+    # continuation offers neither a previous solution nor a timestep, so its context is the bare
+    # pseudo-time; `_homotopy_stage_evaluation` decides what else `f` needs in `p`.
+    stage_function = FullStateStage(f, setup_stage_operator(f, solver, nothing, t₀), _homotopy_stage_evaluation(f, t₀))
     inner_solver_cache = setup_solver_cache(stage_function, solver.inner_solver)
 
     vtype = Vector{Float64}
@@ -184,7 +186,7 @@ function setup_solver_cache(
 )
     check_internal_variables_are_rate_free(f)
     check_weak_boundary_conditions_are_rate_free(f)
-    stage_function = FullStateStage(f, setup_stage_operator(f, solver, nothing, t₀), _homotopy_stage_evaluation(t₀))
+    stage_function = FullStateStage(f, setup_stage_operator(f, solver, nothing, t₀), _homotopy_stage_evaluation(f, t₀))
     inner_solver_cache = setup_solver_cache(stage_function, solver.inner_solver)
 
     vtype = Vector{Float64}
@@ -235,7 +237,7 @@ function perform_step!(
 )
     update_constraints!(f, solver_cache, t + Δt)
     sf = solver_cache.stage_function
-    set_stage_parameters!(sf, _homotopy_stage_evaluation(t + Δt))
+    set_stage_parameters!(sf, _homotopy_stage_evaluation(f, t + Δt))
     if !nlsolve!(solver_cache.uₙ, sf, solver_cache.inner_solver_cache, t + Δt)
         return false
     end
