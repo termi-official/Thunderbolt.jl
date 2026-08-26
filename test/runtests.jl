@@ -15,13 +15,20 @@ const TESTDIR = @__DIR__
 
 testsuite = find_tests(TESTDIR)   # NOT the `pwd()` default: from the repo root that walks docs/, bak/, …
 
+# `find_tests` picks up *every* `.jl` file under `test/`, so what the suite is composed of is decided
+# here and not by the directory layout.
+#
 # Not part of the suite:
-#   testfixtures    — shared helpers, included by the files that need them
-#   gpu/*           — needs CUDA and its own project, no CI job yet
-#   test_fsi_element — scratch file, untracked and without a testset
+#   testfixtures — shared helpers, included by the files that need them
+#   gpu/*        — needs CUDA and its own project, no CI job yet
+#   data/*       — fixture data (e.g. the pinned RSAFDQ reference), read by the tests that need it
+#
+# Part of the suite, less obviously so:
+#   validation/* — `land2015` reproduces a published benchmark; slow, but it runs on every invocation
+#   integration/* — see the worker configuration below
 delete!(testsuite, "testfixtures")
 for name in collect(keys(testsuite))
-    startswith(name, "gpu/") && delete!(testsuite, name)
+    (startswith(name, "gpu/") || startswith(name, "data/")) && delete!(testsuite, name)
 end
 
 # `default_njobs()` maximises workers against CPU count and free memory, but it does not know that the

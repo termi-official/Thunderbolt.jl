@@ -1,7 +1,5 @@
 module Thunderbolt
 
-import KernelAbstractions as KA
-
 using TimerOutputs: @timeit_debug
 
 import SciMLLogging: Standard, AbstractVerbosityPreset, @SciMLMessage
@@ -176,9 +174,6 @@ include("mesh/meshes.jl")
 
 include("utils.jl")
 
-include("devices.jl")
-
-include("ferrite-addons/InternalVariableHandler.jl")
 include("ferrite-addons/transfer_operators.jl")
 include("ferrite-addons/point.jl")
 

@@ -299,9 +299,10 @@ end
     MultilevelNewtonRaphsonSolver{T}
 
 Multilevel Newton-Raphson solver [RabSanHsu:1979:mna](@ref) for nonlinear problems of the form `F(u,v) = 0; G(u,v) = 0`.
-To use the Multilevel solver you have to dispatch on
-* [update_linearization!](@ref)
-* [`residual!`](@ref), if the global Newton runs with `simplified_newton = true`
+
+Like [`NewtonRaphsonSolver`](@ref) it solves an [`AbstractStageFunction`](@ref), so what it needs
+from a problem is that stage's [`update_stage_linearization!`](@ref) and — when the global Newton
+runs with `simplified_newton = true` — [`evaluate_stage_residual!`](@ref).
 
 The global Newton's `simplified_newton` and `forcing` settings apply here as they do to the plain
 [`NewtonRaphsonSolver`](@ref). Note what a simplified step does *not* skip: the local problems are

@@ -1410,9 +1410,9 @@ end
 
 # Local solve
 #
-# `t` and `Δt` are passed in rather than read from `state_cache`. Under `gto1` the time
-# discretization is supplied per call (`GenericFirstOrderTimeParameters`), so the local problem must
-# not depend on time data baked into the cache at setup.
+# `t` and `Δt` are passed in rather than read from `state_cache`. The time discretization is supplied
+# per call, in the `StageEvaluation` the scheme hands the operator, so the local problem must not
+# depend on time data baked into the cache at setup.
 function solve_internal_timestep(
     material_model::ActiveStressModel,
     state_cache::GenericFirstOrderCondensationMaterialStateCache,

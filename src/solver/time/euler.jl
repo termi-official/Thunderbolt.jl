@@ -561,13 +561,10 @@ function perform_backward_euler_step!(
 )
     update_constraints!(f, cache, t + Δt)
     sf = stage_info.stage_function
-    # `gto1`: the previous solution and the timestep reach the element as *parameters* of the call,
-    # so nothing has to be written into the element caches first.
-    #
-    # The leading `nothing` is the inner parameter object, which FerriteOperators forwards to the
-    # element via `query_element_parameters(element, cell, ivh, p.p)`. It is the slot reserved for the
-    # parameters being *optimized* — not the model's parameters in general, which stay in the model
-    # struct. Nothing is optimized here, hence `nothing`. See the `nlsolve!` docstring.
+    # The previous solution and the timestep reach the element as *slots* and *context* of the call,
+    # so nothing has to be written into the element caches first. The `StageEvaluation`'s `p` stays
+    # at its `nothing` default: it is the slot reserved for the parameters being *optimized*, and
+    # nothing is optimized here. See the `nlsolve!` docstring.
     set_stage_parameters!(sf, _backward_euler_stage_evaluation(f, t + Δt, Δt, cache.uₙ₋₁))
     # Nothing is condensed, so the stage vector aliases the state and both transfer hooks are no-ops.
     z = cache.uₙ

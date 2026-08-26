@@ -44,13 +44,15 @@ end
     NewtonRaphsonSolver{T}
 
 Classical Newton-Raphson solver to solve nonlinear problems of the form `F(u) = 0`.
-To use the Newton-Raphson solver you have to dispatch on
-* [update_linearization!](@ref)
+
+It solves an [`AbstractStageFunction`](@ref), so what it needs from a problem is that stage's
+[`update_stage_linearization!`](@ref) and [`evaluate_stage_residual!`](@ref), not a method on the
+semidiscrete function itself.
 
 If `simplified_newton = true`, the Jacobian (and preconditioner) assembled at the first
 Newton iteration is reused for all subsequent iterations. Only the residual is recomputed
-via [`residual!`](@ref) each step. This saves Jacobian assembly and factorization cost per
-step at the expense of slower outer convergence.
+via [`evaluate_stage_residual!`](@ref) each step. This saves Jacobian assembly and factorization
+cost per step at the expense of slower outer convergence.
 """
 Base.@kwdef struct NewtonRaphsonSolver{T, solverType, MonitorType, ForcingType} <:
                    AbstractNonlinearSolver
@@ -183,31 +185,18 @@ end
 Solve the stage `sf` for its unknowns `z`.
 
 `t` is the time, used for monitoring only. Everything the operator needs travels in
-`stage_parameters(sf)`, which is the parameter object handed to the operator and thence to
-`FerriteOperators.query_element_parameters`.
+`stage_parameters(sf)`, a [`StageEvaluation`](@ref): the time the step is solved at is its `ctx`,
+the previous solution and reconstructed rates are its `slots`, and its `p` is the parameter bag
+`FerriteOperators` hands the elements through `query_cell_parameters`.
 
-!!! warning "Transitional: `p` is currently overloaded"
-    `p` is *intended* to carry the current time together with the **parameters being optimized**, so
-    that a solve can be differentiated with respect to them.
+`p` carries the **parameters being optimized**, so that a solve can be differentiated with respect
+to them. Note "being optimized", not "the model's parameters": a material with ten parameters of
+which nine are known from experiment contributes exactly one entry to `p`, so calibrating it is a 1D
+problem rather than a 10D one. The known nine stay in the model struct. Time and history are `ctx`
+and `slots` and never belong here.
 
-    Note "being optimized", not "the model's parameters". A material with ten parameters of which
-    nine are known from experiment contributes exactly one entry to `p`, so calibrating it is a 1D
-    problem rather than a 10D one. The known nine stay in the model struct; `p` selectively supplies
-    the free ones.
-
-    The framework is not there yet. Today `p` is used only to pass around either a bare time or a
-    `FerriteOperators.GenericFirstOrderTimeParameters`, and several layers still treat a single
-    argument as time and parameters at once — the surface element caches most visibly, since they
-    hand it straight to `evaluate_coefficient`.
-
-    Splitting `p` from `t` here is the first step out of that conflation, not the end of it. When
-    material parameters do become part of `p`, the slot to put them in already exists: the leading
-    `p` field of `GenericFirstOrderTimeParameters`, which FerriteOperators forwards via
-    `query_element_parameters(element, cell, ivh, p.p)`. Do not add new meanings to `t`.
-
-A stage with nothing extra to say sets `p` to the bare time — notably `HomotopyPathSolver`, which is
-a load-stepping continuation rather than a time integrator and so has neither a previous solution nor
-a timestep to offer.
+A stage with nothing to optimize leaves `p` at `nothing`, which is the common case;
+`RSAFDQ20223DFunction` is the exception, passing the solver-supplied chamber reference volumes.
 """
 function nlsolve!(
     u::AbstractVector{T},

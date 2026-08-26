@@ -1,11 +1,12 @@
 module CuThunderboltExt
 
-using Thunderbolt
-using LinearSolve
-using KernelAbstractions
-using SparseMatricesCSR
+# CUDA support is limited to what this extension declares:
+#   * the pointwise cell-model solve, whose outer loop becomes a CUDA kernel launch;
+#   * `CuVector`/`CuSparseMatrix` system allocation for the solver interface;
+#   * moving a coefficient's coordinate vector to the device.
+# Assembly on the GPU goes through `FerriteOperators`' device seam, not through here.
 
-import SparseArrays: SparseMatrixCSC, AbstractSparseMatrix
+using Thunderbolt
 
 import CUDA:
     CUDA,
@@ -14,92 +15,22 @@ import CUDA:
     CUSPARSE,
     blockDim,
     blockIdx,
-    gridDim,
     threadIdx,
-    threadIdx,
-    blockIdx,
-    blockDim,
     @cuda,
-    @cushow,
-    CUDABackend,
-    launch_configuration,
-    cu,
-    cudaconvert
-
-import FerriteOperators: CudaDevice
+    launch_configuration
 
 import Thunderbolt:
-    SimpleMesh,
-    SparseMatrixCSR,
-    SparseMatrixCSC,
-    AbstractSolver,
     AbstractSemidiscreteFunction,
     AbstractPointwiseFunction,
-    solution_size,
     AbstractPointwiseSolverCache,
-    assemble_cell!,
-    LinearIntegrator,
-    LinearOperator,
-    QuadratureRuleCollection,
-    setup_element_cache,
-    update_operator!,
-    FieldCoefficientCache,
-    ElementAssemblyStrategy,
-    value_type,
-    index_type,
-    convert_vec_to_concrete
+    solution_size
 
-import Thunderbolt.FerriteUtils:
-    StaticInterpolationValues,
-    StaticCellValues,
-    allocate_device_mem,
-    CellIterator,
-    mem_size,
-    cellmem,
-    ncells,
-    celldofsview,
-    DeviceDofHandlerData,
-    DeviceSubDofHandler,
-    DeviceDofHandler,
-    DeviceGrid,
-    cellfe,
-    AbstractDeviceGlobalMem,
-    AbstractDeviceSharedMem,
-    AbstractDeviceCellIterator,
-    AbstractCellMem,
-    FeMemShape,
-    KeMemShape,
-    KeFeMemShape,
-    DeviceCellIterator,
-    DeviceOutOfBoundCellIterator,
-    DeviceCellCache,
-    FeCellMem,
-    KeCellMem,
-    KeFeCellMem,
-    NoCellMem,
-    AbstractMemShape
+import Ferrite: AbstractDofHandler
 
-import Thunderbolt.Preconditioners: sparsemat_format_type, CSCFormat, CSRFormat
+########################
+## Pointwise solvers  ##
+########################
 
-import Ferrite:
-    AbstractDofHandler,
-    get_grid,
-    CellIterator,
-    get_node_coordinate,
-    getcoordinates,
-    get_coordinate_eltype,
-    getcells,
-    get_node_ids,
-    get_coordinate_type,
-    nnodes
-
-import StaticArrays: SVector, MVector
-
-import Adapt: Adapt, adapt_structure, adapt, @adapt_structure
-
-# ---------------------- Generic part ------------------------
-
-# Pointwise cuda solver wrapper
 function _gpu_pointwise_step_inner_kernel_wrapper!(f, t, Δt, cache::AbstractPointwiseSolverCache)
     i = (blockIdx().x - Int32(1)) * blockDim().x + threadIdx().x
     i > size(cache.dumat, 1) && return nothing
@@ -115,13 +46,17 @@ function Thunderbolt._pointwise_step_outer_kernel!(
     cache::AbstractPointwiseSolverCache,
     ::Union{<:CuVector, SubArray{<:Any, 1, <:CuVector}},
 )
-    kernel = @cuda launch=false _gpu_pointwise_step_inner_kernel_wrapper!(f.ode, t, Δt, cache) # || return false
+    kernel = @cuda launch=false _gpu_pointwise_step_inner_kernel_wrapper!(f.ode, t, Δt, cache)
     config = launch_configuration(kernel.fun)
     threads = min(f.npoints, config.threads)
     blocks = cld(f.npoints, threads)
     kernel(f.ode, t, Δt, cache; threads, blocks)
     return true
 end
+
+########################
+## System allocation  ##
+########################
 
 Thunderbolt.create_system_vector(::Type{<:CuVector{T}}, f::AbstractSemidiscreteFunction) where {T} = CUDA.zeros(T, solution_size(f))
 Thunderbolt.create_system_vector(::Type{<:CuVector{T}}, dh::DofHandler) where {T}                  = CUDA.zeros(T, ndofs(dh))
@@ -138,35 +73,6 @@ function Thunderbolt.create_system_matrix(
     return SpMatType(colptrgpu, rowvalgpu, nzvalgpu, (Acpu.m, Acpu.n))
 end
 
-Thunderbolt.__add_to_vector!(b::Vector, a::CuVector) = b .+= Vector(a)
-Thunderbolt.__add_to_vector!(b::CuVector, a::Vector) = b .+= CuVector(a)
-
-function Thunderbolt.adapt_vector_type(::Type{<:CuVector}, v::VT) where {VT <: Vector}
-    return CuVector(v)
-end
-
-########################
-## adapt Coefficients ##
-########################
-function Adapt.adapt_structure(
-    ::CudaDevice,
-    element_cache::Thunderbolt.AnalyticalCoefficientElementCache,
-)
-    cc = adapt(CuArray, element_cache.cc)
-    nz_intervals = adapt(CuArray, element_cache.nonzero_intervals)
-    sv = adapt(CuArray, element_cache.cv)
-    return Thunderbolt.AnalyticalCoefficientElementCache(cc, nz_intervals, sv)
-end
-
-function Adapt.adapt_structure(::CudaDevice, cysc::Thunderbolt.FieldCoefficientCache)
-    elementwise_data = adapt(CuArray, cysc.elementwise_data)
-    cv = adapt(CuArray, cysc.cv)
-    return Thunderbolt.FieldCoefficientCache(elementwise_data, cv)
-end
-function Adapt.adapt_structure(::CudaDevice, sphdf::Thunderbolt.SpatiallyHomogeneousDataField)
-    timings = adapt(CuArray, sphdf.timings)
-    data = adapt(CuArray, sphdf.data)
-    return Thunderbolt.SpatiallyHomogeneousDataField(timings, data)
-end
+Thunderbolt.adapt_vector_type(::Type{<:CuVector}, v::VT) where {VT <: Vector} = CuVector(v)
 
 end

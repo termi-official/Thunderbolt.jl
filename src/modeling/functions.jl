@@ -364,6 +364,18 @@ default_initial_state!(Q::AbstractVector, model::AbstractIonicModel) =
     (Q .= default_initial_state(model); Q)
 
 """
+    InternalVariableInfo(name, size)
+
+One named block of a model's quadrature-point-local state and how many entries it occupies. The
+blocks a model declares are what `FerriteOperators` lays the [`InternalVariableHandler`](@ref) out
+from, so `size` is a per-quadrature-point count, not a per-cell one.
+"""
+struct InternalVariableInfo
+    name::Symbol
+    size::Int
+end
+
+"""
     gather_internal_variable_infos(model) -> Tuple{Vararg{InternalVariableInfo}}
 
 Describe the quadrature-point-local state a model carries. Return an **empty tuple** when the model

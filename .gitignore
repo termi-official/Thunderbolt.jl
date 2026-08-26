@@ -35,8 +35,15 @@ Manifest.toml
 *.sqlite
 *.jld2
 
-# Documenter files
-docs/src/tutorials
-docs/src/howto
+# Documenter files. `docs/generate.jl` renders `docs/src/literate-{tutorials,howto}` into these two
+# directories, so their contents are build output — except for the hand-written pages unignored
+# below, which live next to the generated ones because that is where the nav in `docs/make.jl`
+# points. Ignoring the directories themselves would stop git descending into them and make those
+# negations unreachable, hence the `/*`.
+docs/src/tutorials/*
+docs/src/howto/*
+!docs/src/tutorials/index.md
+!docs/src/howto/index.md
+!docs/src/howto/benchmarking.md
 
 .vscode

@@ -6,7 +6,6 @@ using AlgebraicMultigrid
 using TimerOutputs
 import LinearAlgebra: diag, mul!
 # using HybridSmoothers
-import KernelAbstractions as KA
 using FerriteOperators
 
 TimerOutputs.enable_debug_timings(AlgebraicMultigrid)  #src
