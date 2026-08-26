@@ -85,6 +85,7 @@ import FerriteOperators:
     LinearFerriteOperator,
     LinearNullOperator,
     setup_operator,
+    setup_evaluation_operator,
     update_operator!,
     setup_qvector,
     get_range_for_cell,

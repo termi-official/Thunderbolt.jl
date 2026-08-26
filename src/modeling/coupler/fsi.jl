@@ -318,9 +318,8 @@ The reduction `V³ᴰ = ∫_Γ V³ᴰ(u) dΓ` over one chamber's tying facets.
 `pressure_symbol` names the chamber, matching the [`Pressure3D0DVolumeCoupler`](@ref) that declared
 it. One sweep evaluates one chamber: a facet belonging to a different chamber contributes nothing,
 so an operator carrying several couplers is swept once per chamber. Only the facet-item family can
-carry a surface integral, so the cell and algebraic families decline the kind structurally —
-an operator without the coupler's facet items fails the reduction's precondition instead of
-answering a silent zero.
+carry a surface integral, so the kind is declared over that family alone — an operator without the
+coupler's facet items fails the reduction's precondition instead of answering a silent zero.
 
 Evaluate through [`chamber_volume`](@ref).
 """
@@ -328,18 +327,8 @@ struct ChamberVolumeFunctional
     pressure_symbol::Symbol
 end
 
-FerriteOperators.sweep_family(::Type{ChamberVolumeFunctional}) = FerriteOperators.FunctionalFamily()
+FerriteOperators.reduction_families(::Type{ChamberVolumeFunctional}) = (:facets,)
 FerriteOperators.functional_value_type(::ChamberVolumeFunctional) = Float64
-
-FerriteOperators.execute_kind!(
-    kind::ChamberVolumeFunctional,
-    task,
-    ws::FerriteOperators.FacetItemWorkspace,
-) = FerriteOperators.functional_facet_item_sweep(kind, task, ws)
-FerriteOperators.execute_kind!(::ChamberVolumeFunctional, task, ws) = nothing
-
-FerriteOperators._may_contribute(::FerriteOperators.AssemblyDomain, ::ChamberVolumeFunctional) = false
-FerriteOperators._may_contribute(::FerriteOperators.AlgebraicDomain, ::ChamberVolumeFunctional) = false
 
 function FerriteOperators.evaluate_facet_functional(
     kind::ChamberVolumeFunctional,

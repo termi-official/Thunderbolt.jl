@@ -6,13 +6,13 @@ element's values and conductivity configuration — the ECG element is built fro
 one `CellValues` and one coefficient cache — together with the per-quadrature-point flux buffer
 `κ∇φₘ` that the cache's two sweeps write and read.
 
-Its operator exists for those sweeps alone. Nothing is assembled into the operator's vector; the
-element serves the mandatory residual kernel through the diffusion element it composes.
+Evaluation only: it belongs to no integrator family, and its operator
+(`setup_evaluation_operator`) holds the engine and no payload.
 """
 struct Plonsey1964ECGIntegrator{
     DiffusionIntegratorType <: BilinearDiffusionIntegrator,
     QVectorType,
-} <: AbstractLinearIntegrator
+}
     diffusion::DiffusionIntegratorType
     κ∇φₘ::QVectorType
 end
@@ -41,27 +41,31 @@ Ferrite.getnquadpoints(cache::Plonsey1964ECGElementCache) = getnquadpoints(cache
 FerriteOperators.reinit_values!(cache::Plonsey1964ECGElementCache, cell) =
     reinit_values!(cache.diffusion, cell)
 
-# Mandatory on every element cache. The ECG element adds evaluation hooks to the diffusion element
-# and changes none of its forms, so the residual is the composed element's.
+# Mandatory on every element cache, evaluation operator or not: the residual kernel is what setup
+# validates for. The ECG element adds evaluation hooks to the diffusion element and changes none of
+# its forms, so the residual is the composed element's — and no sweep of this operator issues it.
 FerriteOperators.assemble_cell!(
     req::FerriteOperators.ResidualRequest,
     cache::Plonsey1964ECGElementCache,
     args::CellArgs,
 ) = assemble_cell!(req, cache.diffusion, args)
 
-# κ(x̃)∇φₘ(x̃) at one quadrature point -- the integrand of the Plonsey electrode integral below.
-# The conductivity is evaluated at t = 0: the quadrature-evaluation sweep carries no context, and
-# the Plonsey simplifications assume a stationary conductivity anyway.
-function _plonsey_quadrature_flux(φₘₑ, qp::Int, cell, cache::Plonsey1964ECGElementCache, pₑ)
+# κ(x̃, t)∇φₘ(x̃) at one quadrature point -- the integrand of the Plonsey electrode integral below.
+# A sweep carrying no context evaluates the conductivity at t = 0, which is what the Plonsey
+# simplifications assume; a transient conductivity is reached by handing `update_ecg!` the context.
+function _plonsey_quadrature_flux(φₘₑ, qp::Int, cell, cache::Plonsey1964ECGElementCache, pₑ, ctx)
     (; Dcache, cellvalues) = cache.diffusion
     κ = evaluate_coefficient(
         Dcache,
         cell,
         QuadraturePoint(qp, Ferrite.getpoints(cellvalues.qr)[qp]),
-        0.0,
+        _plonsey_time(ctx),
     )
     return κ ⋅ function_gradient(cellvalues, qp, φₘₑ)
 end
+
+_plonsey_time(::Nothing) = 0.0
+_plonsey_time(ctx) = evaluation_time(ctx)
 
 @doc raw"""
     ElectrodePotentialFunctional(x::Vec)
@@ -73,9 +77,9 @@ The reduction
 ```
 
 over the cells of a [`Plonsey1964ECGIntegrator`](@ref) operator, for the electrode at `x`. One
-sweep evaluates one electrode. The integral is volumetric, so the facet and algebraic item families
-decline the kind structurally — an operator without the ECG element's cells fails the reduction's
-precondition instead of answering a silent zero.
+sweep evaluates one electrode. The integral is volumetric, so the kind is declared over the cell
+family alone — an operator without the ECG element's cells fails the reduction's precondition
+instead of answering a silent zero.
 
 Reads the flux the last [`update_ecg!`](@ref) stored; evaluate through [`evaluate_ecg`](@ref),
 which applies the ``-1/(4\pi\kappa_\mathrm{t})`` prefactor.
@@ -84,25 +88,8 @@ struct ElectrodePotentialFunctional{dim, T}
     x::Vec{dim, T}
 end
 
-FerriteOperators.sweep_family(::Type{<:ElectrodePotentialFunctional}) =
-    FerriteOperators.FunctionalFamily()
+FerriteOperators.reduction_families(::Type{<:ElectrodePotentialFunctional}) = (:cells,)
 FerriteOperators.functional_value_type(::ElectrodePotentialFunctional{dim, T}) where {dim, T} = T
-
-FerriteOperators.execute_kind!(
-    kind::ElectrodePotentialFunctional,
-    task,
-    ws::FerriteOperators.AssemblyWorkspace,
-) = FerriteOperators.functional_cell_sweep(kind, task, ws)
-FerriteOperators.execute_kind!(::ElectrodePotentialFunctional, task, ws) = nothing
-
-FerriteOperators._may_contribute(
-    ::FerriteOperators.FacetItemDomain,
-    ::ElectrodePotentialFunctional,
-) = false
-FerriteOperators._may_contribute(
-    ::FerriteOperators.AlgebraicDomain,
-    ::ElectrodePotentialFunctional,
-) = false
 
 function FerriteOperators.evaluate_cell_functional(
     kind::ElectrodePotentialFunctional{dim, T},
@@ -136,9 +123,9 @@ The important simplifications taken are:
    1. Surrounding volume is an infinite, homogeneous sphere with isotropic conductivity
    2. The extracellular space and surrounding volume share the same isotropic, homogeneous conductivity tensor
 
-The cache owns a [`Plonsey1964ECGIntegrator`](@ref) operator over `op`'s dof handler, configured
-from `op`'s diffusion element. Both the flux sweep ([`update_ecg!`](@ref)) and the electrode
-integral ([`evaluate_ecg`](@ref)) run through it.
+The cache owns a payload-free [`Plonsey1964ECGIntegrator`](@ref) operator over `op`'s dof handler,
+configured from `op`'s diffusion element. Both the flux sweep ([`update_ecg!`](@ref)) and the
+electrode integral ([`evaluate_ecg`](@ref)) run through it; nothing is assembled.
 """
 struct Plonsey1964ECGGaussCache{BufferType, OperatorType}
     # Buffer for storing "κ(x) ∇φₘ(x,t)" at the quadrature points
@@ -153,7 +140,7 @@ function Plonsey1964ECGGaussCache(op::BilinearFerriteOperator, φₘ::AbstractVe
     κ∇φₘ  = setup_qvector(Vec{sdim, T}, dh, op.integrator.qrc)
     cache = Plonsey1964ECGGaussCache(
         κ∇φₘ,
-        setup_operator(
+        setup_evaluation_operator(
             op.engine.strategy,
             Plonsey1964ECGIntegrator(op.integrator, κ∇φₘ),
             dh,
@@ -190,8 +177,15 @@ function evaluate_ecg(method::Plonsey1964ECGGaussCache, x::AbstractVector{<:Vec}
     return φₑ
 end
 
-function update_ecg!(cache::Plonsey1964ECGGaussCache, φₘ::AbstractVector)
-    evaluate_quadrature!(cache.κ∇φₘ, cache.op, φₘ, nothing, _plonsey_quadrature_flux)
+"""
+    update_ecg!(cache::Plonsey1964ECGGaussCache, φₘ::AbstractVector, ctx = nothing)
+
+Refill the per-quadrature-point flux buffer `κ∇φₘ` from the transmembrane potential `φₘ`, in one
+sweep of the cache's operator. `ctx` is what the conductivity is evaluated at; without one it is
+the stationary `t = 0`.
+"""
+function update_ecg!(cache::Plonsey1964ECGGaussCache, φₘ::AbstractVector, ctx = nothing)
+    evaluate_quadrature!(cache.κ∇φₘ, cache.op, φₘ, nothing, _plonsey_quadrature_flux; ctx)
     return nothing
 end
 
