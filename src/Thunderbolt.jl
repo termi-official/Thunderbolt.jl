@@ -85,7 +85,10 @@ import FerriteOperators:
     LinearFerriteOperator,
     LinearNullOperator,
     setup_operator,
-    update_operator!
+    update_operator!,
+    setup_qvector,
+    get_range_for_cell,
+    evaluate_quadrature!
 
 import FerriteOperators: CompositeSurfaceElementCache
 
