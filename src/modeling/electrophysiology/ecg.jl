@@ -100,7 +100,7 @@ end
 function evaluate_ecg(method::Plonsey1964ECGGaussCache, x::AbstractVector{<:Vec}, κₜ::Real)
     φₑ = zeros(length(x))
     for i in eachindex(x)
-        φₑ = evaluate_ecg(method, x[i], κₜ)
+        φₑ[i] = evaluate_ecg(method, x[i], κₜ)
     end
     return φₑ
 end
