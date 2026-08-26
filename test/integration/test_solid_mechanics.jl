@@ -1212,6 +1212,50 @@ end
     end
 end
 
+@testset "The condensation report counts the local solves" begin
+    # `condense_internal!` is what the stage reads to decide whether a step is usable, so its report
+    # has to describe the solves that actually ran. Re-run on the converged step, where every
+    # quadrature point poses a genuinely nonlinear local problem.
+    integrator = solve_condensed_cuboid(
+        Thunderbolt.RDQ20MFModel(),
+        NewtonRaphsonSolver(
+            inner_solver = UMFPACKFactorization(),
+            max_iter = 20,
+            tol = 1e-8,
+            enforce_monotonic_convergence = false,
+        ),
+        2.5,
+        2.5,
+    )
+    @test integrator.sol.retcode == SciMLBase.ReturnCode.Success
+
+    sf = integrator.cache.stage.stage_function
+    report = Thunderbolt.condense_internal!(
+        Thunderbolt.getoperator(sf),
+        Thunderbolt.stage_weights(sf),
+        Thunderbolt.stage_states(sf, integrator.cache.uₙ),
+        Thunderbolt.stage_user_parameters(sf),
+        Thunderbolt.stage_context(sf),
+    )
+    ncells = getncells(Thunderbolt.get_grid(integrator.f.dh))
+
+    @test report.converged
+    # One local problem per quadrature point of every cell, and a sarcomere Newton takes at least
+    # one pass -- a report of zeros is what the hook returned before it counted anything.
+    @test report.solves ≥ ncells
+    @test report.solves % ncells == 0
+    @test report.iterations ≥ report.solves
+    @test report.worst_iterations ≥ 1
+    # The argmax carriers survive the fold across cells: a cellid (positive, this being the cell
+    # family) and one of that cell's quadrature points.
+    @test 1 ≤ report.worst_cell ≤ ncells
+    @test 1 ≤ report.worst_qp ≤ report.solves ÷ ncells
+    @test report.worst_iterations ≤ report.iterations
+    @test isfinite(report.worst_residual) && report.worst_residual ≥ 0.0
+    # No stepper here is adaptive, so the sweep asks for no step reduction.
+    @test report.dt_factor == 1.0
+end
+
 @testset "A rate dependent material rejects rate-free kinematics" begin
     # `HomotopyPathSolver` is continuation, not a time scheme: it has no previous solution and no
     # timestep, so a material carrying an evolving internal variable has to be rejected -- and

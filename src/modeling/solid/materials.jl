@@ -1459,7 +1459,10 @@ function solve_internal_timestep(
     # quantity on a scale unrelated to the global one, so demanding more than `params.tol` is neither
     # useful nor reachable within `max_iters`. `outer_tol = 0` means "no relaxation".
     rtol = max(lcache.params.tol, lcache.outer_tol[1])
+    # Passes taken, kept outside the loop because the records after it report on the same solve.
+    iters = 0
     for newton_iter = 1:lcache.params.max_iters
+        iters = newton_iter
         ForwardDiff.jacobian!(J, local_residual_jac_wrap!, R, Q, jcfg)
         local_residual!(R, Q, λ, dλdt)
         residualnorm = norm(R)
@@ -1478,6 +1481,7 @@ function solve_internal_timestep(
                 qp.i,
                 SciMLBase.ReturnCode.InternalLinearSolveFailed,
                 residualnorm,
+                iters,
             )
             @debug "Local Newton hit a singular Jacobian at cell $cid qp $(qp.i). ||r|| = $residualnorm" _group =
                 :nlsolve
@@ -1489,7 +1493,14 @@ function solve_internal_timestep(
         if residualnorm < rtol
             break
         elseif newton_iter == lcache.params.max_iters
-            record_local_solve!(lcache, cid, qp.i, SciMLBase.ReturnCode.MaxIters, residualnorm)
+            record_local_solve!(
+                lcache,
+                cid,
+                qp.i,
+                SciMLBase.ReturnCode.MaxIters,
+                residualnorm,
+                iters,
+            )
             @debug "Local Newton hit max iterations at cell $cid qp $(qp.i). ||r|| = $residualnorm (rtol = $rtol)" _group =
                 :nlsolve
             return Q, Jfac
@@ -1500,6 +1511,7 @@ function solve_internal_timestep(
                 qp.i,
                 SciMLBase.ReturnCode.ConvergenceFailure,
                 residualnorm,
+                iters,
             )
             @debug "Local Newton diverged at cell $cid qp $(qp.i). ||r|| = $residualnorm" _group =
                 :nlsolve
@@ -1513,12 +1525,19 @@ function solve_internal_timestep(
     # the internal variable's own dynamics, so it is reported as one an adaptive integrator could
     # act on by shortening `dt`.
     if !internal_state_in_bounds(contraction_model, Q)
-        record_local_solve!(lcache, cid, qp.i, SciMLBase.ReturnCode.Infeasible, residualnorm)
+        record_local_solve!(
+            lcache,
+            cid,
+            qp.i,
+            SciMLBase.ReturnCode.Infeasible,
+            residualnorm,
+            iters,
+        )
         @debug "Local Newton converged to an inadmissible state at cell $cid qp $(qp.i). ||r|| = $residualnorm" _group =
             :nlsolve
         return Q, Jfac
     end
-    record_local_solve!(lcache, cid, qp.i, SciMLBase.ReturnCode.Success, residualnorm)
+    record_local_solve!(lcache, cid, qp.i, SciMLBase.ReturnCode.Success, residualnorm, iters)
     return Q, Jfac
 end
 

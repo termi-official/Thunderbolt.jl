@@ -363,7 +363,8 @@ FerriteOperators.provides_analytic(::Type{<:QuasiStaticCondensedDAEElementCache}
 """
     condense_cell!(cache, args, weights)
 
-Solve every quadrature point's local problem and write the trial internal state into `args.states.q`.
+Solve every quadrature point's local problem, write the trial internal state into `args.states.q`,
+and report what the solves did ([`cell_condensation_report`](@ref)).
 
 This is the only hook that evolves the condensed state; the assembly kernels are pure evaluations at
 the state it wrote.
@@ -398,7 +399,12 @@ function FerriteOperators.condense_cell!(
             Δt,
         )
     end
-    return zero(FerriteOperators.CondensationReport{Float64})
+    # Read after the loop, so the slots folded here are the ones these solves just wrote.
+    return cell_condensation_report(
+        internal_cache.local_solver_cache,
+        cellid(args.cell),
+        getnquadpoints(cv),
+    )
 end
 
 function _assemble_condensed_cell!(

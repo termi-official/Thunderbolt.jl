@@ -6,13 +6,16 @@ end
 """
     LocalSolveReport
 
-Outcome of the local Newton at one quadrature point.
+Outcome of the local Newton at one quadrature point: its return code, its residual norm at exit and
+the number of Newton passes it took. A point whose local problem is closed form records nothing and
+keeps the default, `Default`/`0.0`/`0` -- not a failure, and no iterations to report.
 """
 struct LocalSolveReport
     retcode::SciMLBase.ReturnCode.T
     residual::Float64
+    iterations::Int
 end
-LocalSolveReport() = LocalSolveReport(SciMLBase.ReturnCode.Default, 0.0)
+LocalSolveReport() = LocalSolveReport(SciMLBase.ReturnCode.Default, 0.0, 0)
 
 _local_solve_failed(report::LocalSolveReport) =
     report.retcode ∉ (SciMLBase.ReturnCode.Default, SciMLBase.ReturnCode.Success)
@@ -137,7 +140,7 @@ function duplicate_for_device(device, cache::GenericLocalNonlinearSolverCache)
 end
 
 """
-    record_local_solve!(local_solver_cache, cellid, qpi, retcode, residualnorm)
+    record_local_solve!(local_solver_cache, cellid, qpi, retcode, residualnorm, iterations)
 
 Record the outcome of one local solve in the shared per-quadrature-point store.
 """
@@ -147,10 +150,11 @@ Record the outcome of one local solve in the shared per-quadrature-point store.
     qpi,
     retcode,
     residualnorm,
+    iterations,
 )
     reports = local_solver_cache.reports
     reports === nothing && return nothing
-    get_data_for_index(reports, cellid)[qpi] = LocalSolveReport(retcode, residualnorm)
+    get_data_for_index(reports, cellid)[qpi] = LocalSolveReport(retcode, residualnorm, iterations)
     return nothing
 end
 
@@ -168,6 +172,56 @@ The outcome recorded for one quadrature point of the current assembly pass.
     reports === nothing && return LocalSolveReport()
     return get_data_for_index(reports, cellid)[qpi]
 end
+
+"""
+    cell_condensation_report(local_solver_cache, cellid, nqp) -> CondensationReport
+
+One cell's `nqp` local outcomes as the [`CondensationReport`](@ref) a condensation sweep folds:
+`solves` counts the local problems the cell posed, `converged` is their conjunction, and the cell
+names itself as `worst_cell` only where some point actually iterated -- `0` is the convention for
+"no iterations anywhere", which is what a closed-form local solve reports.
+
+`dt_factor` stays `1`: no stepper in this package is adaptive, so there is nobody to request a step
+reduction from and a fabricated factor would be read as one.
+
+Read after the sweep's own solves have written their slots, so what it folds is this pass.
+"""
+function cell_condensation_report(
+    local_solver_cache::GenericLocalNonlinearSolverCache,
+    cellid,
+    nqp,
+)
+    converged        = true
+    iterations       = 0
+    worst_iterations = 0
+    worst_qp         = 0
+    worst_residual   = 0.0
+    for qpi = 1:nqp
+        report = local_solve_report(local_solver_cache, cellid, qpi)
+        converged &= !_local_solve_failed(report)
+        iterations += report.iterations
+        worst_residual = max(worst_residual, report.residual)
+        if report.iterations > worst_iterations
+            worst_iterations = report.iterations
+            worst_qp = qpi
+        end
+    end
+    return CondensationReport{Float64}(
+        converged,
+        nqp,
+        iterations,
+        worst_iterations,
+        worst_iterations > 0 ? cellid : 0,
+        worst_qp,
+        worst_residual,
+        1.0,
+    )
+end
+
+# A closed-form local problem is condensed without a local solver cache, so nothing recorded an
+# outcome: `nqp` solves happened, none of them iterated.
+cell_condensation_report(::Nothing, cellid, nqp) =
+    CondensationReport{Float64}(true, nqp, 0, 0, 0, 0, 0.0, 1.0)
 
 function check_local_solve_covergence(local_solver_cache::GenericLocalNonlinearSolverCache)
     reports = local_solver_cache.reports
@@ -194,7 +248,10 @@ function describe_local_solve_failures(local_solver_cache::GenericLocalNonlinear
     for cellid = 1:(length(reports.offsets)-1)
         for (qpi, report) in enumerate(get_data_for_index(reports, cellid))
             _local_solve_failed(report) || continue
-            println(io, "  cell $cellid qp $qpi: $(report.retcode), ||r|| = $(report.residual)")
+            println(
+                io,
+                "  cell $cellid qp $qpi: $(report.retcode), ||r|| = $(report.residual) after $(report.iterations) iterations",
+            )
         end
     end
     return String(take!(io))
