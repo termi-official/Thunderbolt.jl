@@ -261,6 +261,24 @@ end
         @test nnz(blocks(state.op.J)[2, 1]) == length(adjacent)
     end
 
+    @testset "chamber volume as a facet functional" begin
+        # `r[p] = ∫_Γ V³ᴰ(u) dΓ - V⁰ᴰ`, so the reduction has to reproduce the row's integral half
+        # exactly -- same integrand, same facets, only the destination differs.
+        V = Thunderbolt.chamber_volume(state.op, state.pressure_symbol, state.u)
+        @test V ≈ r[pdof] + RSAFDQ_REFERENCE_V⁰ᴰ rtol = 1.0e-12
+        @test abs(V) > 0
+
+        # ... and the direct, operator-free evaluation `create_chamber_tyings` still uses for the
+        # reference volume: one integrand, two routes, `≈` because the traversals differ in order.
+        chamber = only(state.f.tying_info.chambers)
+        @test V ≈ Thunderbolt.compute_chamber_volume(dh, state.u, "Endocardium", chamber) rtol = 1.0e-12
+
+        # Nothing was written into the operator by evaluating it.
+        J₂, r₂ = assemble_pair(state.op, state.u, state.p, state.ctx)
+        @test approx_entrywise(r₂, r)
+        @test approx_entrywise(J₂, J)
+    end
+
     @testset "equivalence" begin
         J₀ = Matrix(reference.J)
         @test size(J) == size(J₀)
@@ -550,6 +568,22 @@ end
         end
     end
 
+    @testset "each chamber volume is its own surface" begin
+        # One sweep per chamber over an operator whose facet items carry both: a facet of the other
+        # chamber contributes nothing, which is what makes the two values differ and what makes each
+        # of them the row's own integral half.
+        volumes = [Thunderbolt.chamber_volume(state.op, sym, state.u) for sym in state.pressure_symbols]
+        for (i, V) in pairs(volumes)
+            @test V ≈ r[state.pressure_dofs[i]] + V⁰ᴰ[i] rtol = 1.0e-12
+        end
+        @test !isapprox(volumes[1], volumes[2]; rtol = 1.0e-3)
+
+        # A name no coupler declared would have every facet decline, which the engine reads as a
+        # legitimate empty sum -- so the entry point rejects it rather than reporting a zero volume.
+        err = @test_throws ArgumentError Thunderbolt.chamber_volume(state.op, :not_a_chamber, state.u)
+        @test occursin("no tying facets for a chamber named", err.value.msg)
+    end
+
     @testset "V⁰ᴰ enters each chamber row alone" begin
         # `r[p] -= V⁰ᴰ` is the whole dependence, so swapping the two reference volumes has to move
         # the two chamber entries by the difference and nothing else at all.
@@ -578,4 +612,11 @@ end
 
     @test approx_entrywise(J_par, J_seq)
     @test approx_entrywise(r_par, r_seq)
+
+    # The chamber-volume reduction takes the same threaded route: per-worker partials folded in
+    # worker order, so the value is the sequential one up to summation order.
+    for sym in seq.pressure_symbols
+        @test Thunderbolt.chamber_volume(par.op, sym, par.u) ≈
+              Thunderbolt.chamber_volume(seq.op, sym, seq.u) rtol = 1.0e-12
+    end
 end

@@ -132,6 +132,22 @@ function FerriteOperators.assemble_facet!(
     return assemble_facet!(req, cache.caches[owner], args, local_facet_index)
 end
 
+# The reduction side of the same multiplexing: a functional reaches the cache owning the facet, and
+# that cache decides whether the facet is one of its own (a foreign chamber returns `nothing`).
+function FerriteOperators.evaluate_facet_functional(
+    kind,
+    cache::FacetItemMultiplexCache,
+    args::FerriteOperators.FacetArgs,
+    local_facet_index::Int,
+)
+    owner = cache.facet_owner[FacetIndex(cellid(args.cell), local_facet_index)]
+    return FerriteOperators.evaluate_facet_functional(
+        kind, cache.caches[owner], args, local_facet_index)
+end
+
+_chamber_symbols(cache::FacetItemMultiplexCache) =
+    Tuple(sym for inner in cache.caches for sym in _chamber_symbols(inner))
+
 function _facet_item_owners(models, sdh::SubDofHandler)
     owner = Dict{FacetIndex, Int}()
     for (k, model) in enumerate(models), facet in FerriteOperators.facet_items(model, sdh)

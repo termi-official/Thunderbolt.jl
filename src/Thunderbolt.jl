@@ -344,6 +344,8 @@ export
     LumpedFluidSolidCoupler,
     ChamberVolumeCoupling,
     Pressure3D0DVolumeCoupler,
+    ChamberVolumeFunctional,
+    chamber_volume,
     # Microstructure
     AnisotropicPlanarMicrostructureModel,
     AnisotropicPlanarMicrostructure,

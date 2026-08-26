@@ -90,6 +90,9 @@ algebraic_variables(model::Pressure3D0DVolumeCoupler) = (model.pressure_symbol,)
     fv
     displacement_range
     pressure_index
+    # Which chamber this cache serves. `pressure_index` cannot say so: it is a position in the
+    # subdomain's augmented tail, and the subdomains differ in `ndofs_per_cell`.
+    pressure_symbol
     volume_method
 end
 
@@ -98,6 +101,7 @@ duplicate_for_device(device, cache::Pressure3D0DVolumeCouplerCache) =
         duplicate_for_device(device, cache.fv),
         cache.displacement_range,
         cache.pressure_index,
+        cache.pressure_symbol,
         cache.volume_method,
     )
 
@@ -136,8 +140,31 @@ function FerriteOperators.setup_facet_item_cache(
         FacetValues(qr, ip, ip_geo),
         dof_range(sdh, model.displacement_symbol),
         only(global_dof_range),
+        model.pressure_symbol,
         model.volume_method,
     )
+end
+
+"""
+    _chamber_volume_facet(fv, coords, dₑ, volume_method) -> V
+
+One facet's contribution to `∫_Γ V³ᴰ(u) dΓ`, over a `FacetValues` already reinitialized on it.
+
+The single spelling of the surrogate's quadrature loop. Three consumers integrate through it: the
+tying kernel's chamber row, the [`ChamberVolumeFunctional`](@ref) reduction, and the reference
+volume [`compute_chamber_volume`](@ref) evaluates before any operator exists — so none of the three
+can drift from the others.
+"""
+function _chamber_volume_facet(fv, coords, dₑ, volume_method)
+    V = zero(eltype(dₑ))
+    for qp in 1:getnquadpoints(fv)
+        ∇d = function_gradient(fv, qp, dₑ)
+        F  = one(∇d) + ∇d
+        d  = function_value(fv, qp, dₑ)
+        x  = spatial_coordinate(fv, qp, coords)
+        V += volume_integral(x, d, F, getnormal(fv, qp), volume_method) * getdetJdV(fv, qp)
+    end
+    return V
 end
 
 """
@@ -260,13 +287,11 @@ function _assemble_3D0D_coupling_facet!(
             end
         end
 
-        # Part 2: Chamber volume constraint part
-        d = function_value(fv, qp, dₑ)
-        x = spatial_coordinate(fv, qp, coords)
-
-        residual && (req.r[pdof] += volume_integral(x, d, F, n₀, volume_method) * ∂Ω₀)
-
+        # Part 2: Chamber volume constraint part. Its residual is the whole facet integral, taken
+        # once below through `_chamber_volume_facet`; what is left here is the tangent.
         if jacobian
+            d = function_value(fv, qp, dₑ)
+            x = spatial_coordinate(fv, qp, coords)
             # Via chain rule we obtain:
             #   δV(u,F(u)) = δu ⋅ dVdu + δF : dVdF
             ∂V∂u = Tensors.gradient(u_ -> volume_integral(x, u_, F, n₀, volume_method), d)
@@ -280,5 +305,83 @@ function _assemble_3D0D_coupling_facet!(
         end
     end
 
+    residual && (req.r[pdof] += _chamber_volume_facet(fv, coords, dₑ, volume_method))
+
     return nothing
 end
+
+"""
+    ChamberVolumeFunctional(pressure_symbol)
+
+The reduction `V³ᴰ = ∫_Γ V³ᴰ(u) dΓ` over one chamber's tying facets.
+
+`pressure_symbol` names the chamber, matching the [`Pressure3D0DVolumeCoupler`](@ref) that declared
+it. One sweep evaluates one chamber: a facet belonging to a different chamber contributes nothing,
+so an operator carrying several couplers is swept once per chamber. Only the facet-item family can
+carry a surface integral, so the cell and algebraic families decline the kind structurally —
+an operator without the coupler's facet items fails the reduction's precondition instead of
+answering a silent zero.
+
+Evaluate through [`chamber_volume`](@ref).
+"""
+struct ChamberVolumeFunctional
+    pressure_symbol::Symbol
+end
+
+FerriteOperators.sweep_family(::Type{ChamberVolumeFunctional}) = FerriteOperators.FunctionalFamily()
+FerriteOperators.functional_value_type(::ChamberVolumeFunctional) = Float64
+
+FerriteOperators.execute_kind!(
+    kind::ChamberVolumeFunctional,
+    task,
+    ws::FerriteOperators.FacetItemWorkspace,
+) = FerriteOperators.functional_facet_item_sweep(kind, task, ws)
+FerriteOperators.execute_kind!(::ChamberVolumeFunctional, task, ws) = nothing
+
+FerriteOperators._may_contribute(::FerriteOperators.AssemblyDomain, ::ChamberVolumeFunctional) = false
+FerriteOperators._may_contribute(::FerriteOperators.AlgebraicDomain, ::ChamberVolumeFunctional) = false
+
+function FerriteOperators.evaluate_facet_functional(
+    kind::ChamberVolumeFunctional,
+    cache::Pressure3D0DVolumeCouplerCache,
+    args::FerriteOperators.FacetArgs,
+    local_facet_index::Int,
+)
+    kind.pressure_symbol === cache.pressure_symbol || return nothing
+    reinit!(cache.fv, args.cell, local_facet_index)
+    dₑ = @view args.states.u[cache.displacement_range]
+    return _chamber_volume_facet(cache.fv, getcoordinates(args.cell), dₑ, cache.volume_method)
+end
+
+# The chambers an operator's tying facets serve. A reduction for a symbol none of them names would
+# come back as a silent zero -- every facet declining is a legitimate empty sum to the engine -- so
+# `chamber_volume` rejects it here instead.
+_chamber_symbols(cache) = ()
+_chamber_symbols(cache::Pressure3D0DVolumeCouplerCache) = (cache.pressure_symbol,)
+_tied_chamber_symbols(op) = unique!(Symbol[
+    sym for sc in op.engine.subdomain_caches
+    if sc.domain isa FerriteOperators.FacetItemDomain
+    for sym in _chamber_symbols(sc.domain.element)
+])
+
+"""
+    chamber_volume(op, pressure_symbol, states, p = nothing, ctx = nothing) -> V³ᴰ
+
+The 3D chamber volume `∫_Γ V³ᴰ(u) dΓ` of the chamber named by `pressure_symbol`, reduced over the
+tying facets `op` assembles.
+
+`states` carries the operator's slots (`(u = u,)` for a stationary evaluation). Nothing is written
+into `op`, and the integrand is the chamber row's own, so this reports the volume the coupled
+residual balances against `V⁰ᴰ`. A symbol naming no chamber of `op` is an `ArgumentError`.
+"""
+function chamber_volume(op, pressure_symbol::Symbol, states::NamedTuple, p = nothing, ctx = nothing)
+    served = _tied_chamber_symbols(op)
+    pressure_symbol ∈ served || throw(ArgumentError(
+        "The operator carries no tying facets for a chamber named `$pressure_symbol`; it serves " *
+        "$(served). A chamber volume is the integral over that chamber's own declared facets.",
+    ))
+    return FerriteOperators.evaluate_functional(
+        op, ChamberVolumeFunctional(pressure_symbol), states, p, ctx)
+end
+chamber_volume(op, pressure_symbol::Symbol, u::AbstractVector, p = nothing, ctx = nothing) =
+    chamber_volume(op, pressure_symbol, (u = u,), p, ctx)

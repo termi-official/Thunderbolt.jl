@@ -176,8 +176,11 @@ Thunderbolt.AbstractCoupler
 
 ```@docs
 LumpedFluidSolidCoupler
+Pressure3D0DVolumeCoupler
 Hirschvogel2017SurrogateVolume
 RSAFDQ2022SurrogateVolume
 RSAFDQ2022Split
 RSAFDQ2022Model
+chamber_volume
+ChamberVolumeFunctional
 ```

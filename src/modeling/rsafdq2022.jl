@@ -21,7 +21,16 @@ end
 
 solution_size(problem::RSAFDQ2022TyingInfo) = length(problem.chambers)
 
-# TODO use an operator for this
+"""
+    compute_chamber_volume(dh, u, setname, method) -> V³ᴰ
+
+`∫_Γ V³ᴰ(u) dΓ` over a chamber surface, evaluated directly on the `DofHandler`.
+
+This is the setup-time route: `create_chamber_tyings` needs the reference volume while the model is
+being semidiscretized, before any operator over the structural problem exists.
+[`Thunderbolt.chamber_volume`](@ref) is the route for everything that has one — same integrand
+([`Thunderbolt._chamber_volume_facet`](@ref)), reduced over the operator's own tying facets.
+"""
 function compute_chamber_volume(dh, u, setname, method::RSAFDQ2022SingleChamberTying)
     volume = 0.0
     for (sdhi, facets) in _chamber_facets_per_subdofhandler(dh, setname)
@@ -53,24 +62,9 @@ function _chamber_volume_contribution(sdh, u, facets, method::RSAFDQ2022SingleCh
     volume = 0.0
     for facet ∈ FacetIterator(sdh, facets)
         Ferrite.reinit!(fv, facet)
-
-        coords = getcoordinates(facet)
         ddofs = @view celldofs(facet)[drange]
-        uₑ = @view u[ddofs]
-
-        for qp in QuadratureIterator(fv)
-            dΓ = getdetJdV(fv, qp)
-            N = getnormal(fv, qp)
-
-            ∇u = function_gradient(fv, qp, uₑ)
-            F = one(∇u) + ∇u
-
-            d = function_value(fv, qp, uₑ)
-
-            x = spatial_coordinate(fv, qp, coords)
-
-            volume += volume_integral(x, d, F, N, method.volume_method) * dΓ
-        end
+        dₑ = @view u[ddofs]
+        volume += _chamber_volume_facet(fv, getcoordinates(facet), dₑ, method.volume_method)
     end
     return volume
 end
