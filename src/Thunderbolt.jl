@@ -84,6 +84,7 @@ import FerriteOperators:
     BilinearFerriteOperator,
     LinearFerriteOperator,
     LinearNullOperator,
+    NullOperator,
     setup_operator,
     setup_evaluation_operator,
     update_operator!,
