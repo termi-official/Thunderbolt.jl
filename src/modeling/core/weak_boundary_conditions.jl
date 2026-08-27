@@ -2,10 +2,7 @@
 # `facet_models` declare their own traversal and are served by `setup_facet_item_cache`.
 function setup_boundary_cache(boundary_models::Tuple, qr::FacetQuadratureRule, sdh::SubDofHandler)
     fused = filter(!is_facet_item_model, boundary_models)
-    length(fused) == 0 && return EmptySurfaceElementCache()
-    return CompositeSurfaceElementCache(
-        ntuple(i->setup_boundary_cache(fused[i], qr, sdh), length(fused)),
-    )
+    return compose_boundary_caches(ntuple(i->setup_boundary_cache(fused[i], qr, sdh), length(fused)))
 end
 
 @doc raw"""
@@ -1067,7 +1064,7 @@ function _check_weak_bc_tangent!(
             FerriteOperators.assemble_facet!(
                 FerriteOperators.ResidualRequest(residualₑfd),
                 inner_cache,
-                FerriteOperators.with_states(
+                with_states(
                     args,
                     merge(args.states, NamedTuple{(slot,)}((uₑfd,))),
                 ),

@@ -9,7 +9,7 @@ struct NonlinearIntegrator{
     SYMS <: Base.AbstractVecOrTuple{Symbol},
     QRC <: Union{<:QuadratureRuleCollection, Nothing},
     FQRC <: Union{<:FacetQuadratureRuleCollection, Nothing},
-} <: FerriteOperators.AbstractCondensedNonlinearIntegrator
+} <: AbstractCondensedNonlinearIntegrator
     volume_model::VM
     facet_model::FM
     syms::SYMS  # The symbols for all unknowns in the submodels.
@@ -28,9 +28,9 @@ end
 # `get_number_of_internal_dofs_per_element` dispatches on the *element cache*, since that is what
 # determines how many condensed unknowns a cell carries; per cache type methods live next to the
 # cache they describe. Subdomains carrying no volumetric model contribute none.
-FerriteOperators.get_number_of_internal_dofs_per_element(
+get_number_of_internal_dofs_per_element(
     integrator,
-    ::FerriteOperators.EmptyVolumetricElementCache,
+    ::EmptyVolumetricElementCache,
     sdh::SubDofHandler,
 ) = Iterators.repeated(0, length(sdh.cellset))
 
@@ -62,7 +62,7 @@ function FerriteOperators.setup_facet_item_cache(
     sdh::SubDofHandler,
 )
     models = _facet_item_models(integrator)
-    isempty(models) && return FerriteOperators.EmptySurfaceElementCache()
+    isempty(models) && return EmptySurfaceElementCache()
     qr     = getquadraturerule(integrator.fqrc, sdh)
     widths = map(model -> length(FerriteOperators.facet_item_global_dofs(model, sdh)), models)
     caches = ntuple(length(models)) do k

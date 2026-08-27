@@ -63,7 +63,7 @@ the same choice [`BackwardEulerAffineODEStage`](@ref) makes, and it is what keep
 cheap — the mass matrix is constant, only its scalar weight moves.
 """
 mutable struct NewmarkStageOperator{OpType, MassOpType, VectorType, T} <:
-               FerriteOperators.AbstractNonlinearOperator
+               AbstractNonlinearOperator
     const op::OpType
     const M::MassOpType
     # Displacement predictor ũ of the current step, written once per step

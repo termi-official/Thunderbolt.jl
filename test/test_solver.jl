@@ -43,7 +43,7 @@ end
     solver = HomotopyPathSolver(NewtonRaphsonSolver(; max_iter = 1))
     op = Thunderbolt.setup_stage_operator(f, solver, nothing, 0.0)
     @test op isa Thunderbolt.NullOperator
-    @test (size(op, 1), size(op, 2)) == (3, 3)
+    @test size(op) == (3, 3)
     op2 = Thunderbolt.setup_stage_operator(f, BackwardEulerSolver(), nothing, 0.0)
     @test op2 isa Thunderbolt.NullOperator
 end

@@ -89,7 +89,7 @@ struct ElectrodePotentialFunctional{dim, T}
 end
 
 FerriteOperators.reduction_families(::Type{<:ElectrodePotentialFunctional}) = (:cells,)
-FerriteOperators.functional_value_type(::ElectrodePotentialFunctional{dim, T}) where {dim, T} = T
+functional_value_type(::ElectrodePotentialFunctional{dim, T}) where {dim, T} = T
 
 function FerriteOperators.evaluate_cell_functional(
     kind::ElectrodePotentialFunctional{dim, T},
@@ -134,14 +134,14 @@ struct Plonsey1964ECGGaussCache{BufferType, OperatorType}
 end
 
 function Plonsey1964ECGGaussCache(op::BilinearFerriteOperator, φₘ::AbstractVector{T}) where {T}
-    dh = op.engine.dh
+    dh = get_dof_handler(op)
     @assert length(dh.field_names) == 1 "Multiple fields detected. Problem setup might be broken..."
     sdim  = Ferrite.getspatialdim(get_grid(dh))
     κ∇φₘ  = setup_qvector(Vec{sdim, T}, dh, op.integrator.qrc)
     cache = Plonsey1964ECGGaussCache(
         κ∇φₘ,
         setup_evaluation_operator(
-            op.engine.strategy,
+            get_strategy(op),
             Plonsey1964ECGIntegrator(op.integrator, κ∇φₘ),
             dh,
         ),
@@ -353,7 +353,7 @@ function PoissonECGReconstructionCache(
     linear_solver        = LinearSolve.KrylovJL_CG(),
     solution_vector_type = Vector{Float64},
 )
-    torso_dh = torso_op.engine.dh
+    torso_dh = get_dof_handler(torso_op)
     torso_ch = torso_fun.ch
     grid = get_grid(torso_dh)
     length(Ferrite.getfieldnames(torso_dh)) == 1 ||
@@ -397,7 +397,7 @@ end
 
 # Batch evaluate all electrodes
 function evaluate_ecg(cache::PoissonECGReconstructionCache)
-    dh = cache.torso_op.engine.dh
+    dh = get_dof_handler(cache.torso_op)
     return evaluate_at_points(cache.ph, dh, cache.ϕₑ, first(dh.field_names))
 end
 
@@ -598,7 +598,7 @@ function Geselowitz1989ECGLeadCache(
     solution_vector_type = Vector{Float64},
     lead_field_sym       = :Z,
 )
-    lead_dh = lead_op.engine.dh
+    lead_dh = get_dof_handler(lead_op)
     length(Ferrite.getfieldnames(lead_dh)) == 1 ||
         @warn "Multiple fields detected. Setup might be broken..."
     nelectrodes = length(electrode_positions)

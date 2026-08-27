@@ -328,7 +328,7 @@ struct ChamberVolumeFunctional
 end
 
 FerriteOperators.reduction_families(::Type{ChamberVolumeFunctional}) = (:facets,)
-FerriteOperators.functional_value_type(::ChamberVolumeFunctional) = Float64
+functional_value_type(::ChamberVolumeFunctional) = Float64
 
 function FerriteOperators.evaluate_facet_functional(
     kind::ChamberVolumeFunctional,
@@ -348,8 +348,8 @@ end
 _chamber_symbols(cache) = ()
 _chamber_symbols(cache::Pressure3D0DVolumeCouplerCache) = (cache.pressure_symbol,)
 _tied_chamber_symbols(op) = unique!(Symbol[
-    sym for sc in op.engine.subdomain_caches
-    if sc.domain isa FerriteOperators.FacetItemDomain
+    sym for sc in get_subdomain_caches(op)
+    if sc.domain isa FacetItemDomain
     for sym in _chamber_symbols(sc.domain.element)
 ])
 

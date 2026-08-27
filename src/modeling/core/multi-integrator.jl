@@ -16,7 +16,7 @@ function _subintegrator_for_subdomain(subintegrators::Dict{<: String}, sdh::SubD
     return nothing
 end
 
-struct NonlinearMultiDomainIntegrator2 <: FerriteOperators.AbstractCondensedNonlinearIntegrator
+struct NonlinearMultiDomainIntegrator2 <: AbstractCondensedNonlinearIntegrator
     subintegrators::Dict{<: String, <: AbstractNonlinearIntegrator}
 end
 
@@ -25,7 +25,7 @@ function FerriteOperators.setup_element_cache(
     sdh::SubDofHandler,
 )
     subintegrator = _subintegrator_for_subdomain(integrator.subintegrators, sdh)
-    subintegrator === nothing && return FerriteOperators.EmptyVolumetricElementCache()
+    subintegrator === nothing && return EmptyVolumetricElementCache()
     return setup_element_cache(subintegrator, sdh)
 end
 
@@ -38,7 +38,7 @@ function FerriteOperators.setup_boundary_cache(
     sdh::SubDofHandler,
 )
     subintegrator = _subintegrator_for_subdomain(integrator.subintegrators, sdh)
-    subintegrator === nothing && return FerriteOperators.EmptySurfaceElementCache()
+    subintegrator === nothing && return EmptySurfaceElementCache()
     return setup_boundary_cache(subintegrator, sdh)
 end
 
@@ -78,7 +78,7 @@ function FerriteOperators.setup_facet_item_cache(
     sdh::SubDofHandler,
 )
     subintegrator = _subintegrator_for_subdomain(integrator.subintegrators, sdh)
-    subintegrator === nothing && return FerriteOperators.EmptySurfaceElementCache()
+    subintegrator === nothing && return EmptySurfaceElementCache()
     return FerriteOperators.setup_facet_item_cache(subintegrator, sdh)
 end
 
@@ -107,7 +107,7 @@ function FerriteOperators.setup_element_cache(
     sdh::SubDofHandler,
 )
     subintegrator = _subintegrator_for_subdomain(integrator.subintegrators, sdh)
-    subintegrator === nothing && return FerriteOperators.EmptyVolumetricElementCache()
+    subintegrator === nothing && return EmptyVolumetricElementCache()
     return setup_element_cache(subintegrator, sdh)
 end
 
@@ -126,7 +126,7 @@ function FerriteOperators.setup_boundary_cache(
             end
         end
     end
-    return FerriteOperators.EmptySurfaceElementCache()
+    return EmptySurfaceElementCache()
 end
 
 
@@ -136,7 +136,7 @@ end
 
 function FerriteOperators.setup_element_cache(integrator::LinearMultiIntegrator, sdh::SubDofHandler)
     subintegrator = _subintegrator_for_subdomain(integrator.subintegrators, sdh)
-    subintegrator === nothing && return FerriteOperators.EmptyVolumetricElementCache()
+    subintegrator === nothing && return EmptyVolumetricElementCache()
     return setup_element_cache(subintegrator, sdh)
 end
 
@@ -155,5 +155,5 @@ function FerriteOperators.setup_boundary_cache(
             end
         end
     end
-    return FerriteOperators.EmptySurfaceElementCache()
+    return EmptySurfaceElementCache()
 end

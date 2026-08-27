@@ -35,14 +35,18 @@ import FerriteOperators:
     ColoredScheduling,
     AbstractGPUDevice,
     AbstractNonlinearIntegrator,
+    AbstractCondensedNonlinearIntegrator,
+    AbstractNonlinearOperator,
     QuadratureRuleCollection,
     getquadraturerule,
     setup_boundary_cache,
     setup_element_cache,
+    compose_boundary_caches,
     AbstractVolumetricElementCache,
     AbstractSurfaceElementCache,
     EmptySurfaceElementCache,
     EmptyVolumetricElementCache,
+    FacetItemDomain,
     update_linearization!,
     evaluate!,
     assemble_cell!,
@@ -50,6 +54,8 @@ import FerriteOperators:
     reinit_values!,
     provides_analytic,
     has_internal_state,
+    get_number_of_internal_dofs_per_element,
+    setup_internal_variable_handler,
     condense_cell!,
     condense_internal!,
     CondensationReport,
@@ -62,6 +68,7 @@ import FerriteOperators:
     WeightedJacobianKind,
     CellArgs,
     FacetArgs,
+    with_states,
     TimeIntegrationContext,
     evaluation_time,
     stage_scaling,
@@ -73,6 +80,7 @@ import FerriteOperators:
     AbstractLinearIntegrator,
     is_facet_in_cache,
     assemble_facet!,
+    functional_value_type,
     value_type
 
 import FerriteInterfaceElements:
@@ -88,9 +96,10 @@ import FerriteOperators:
     update_operator!,
     setup_qvector,
     get_range_for_cell,
-    evaluate_quadrature!
-
-import FerriteOperators: CompositeSurfaceElementCache
+    evaluate_quadrature!,
+    get_dof_handler,
+    get_strategy,
+    get_subdomain_caches
 
 import Unrolled: @unroll
 import FastBroadcast: @..

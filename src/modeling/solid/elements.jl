@@ -103,7 +103,7 @@ Number of condensed unknowns each cell of `sdh` carries, as an iterable of `leng
 Used by `FerriteOperators` to lay out the [`InternalVariableHandler`](@ref). Dispatches on the
 element cache, since that is what determines how many condensed unknowns a cell carries.
 """
-function FerriteOperators.get_number_of_internal_dofs_per_element(
+function get_number_of_internal_dofs_per_element(
     integrator,
     element_cache::AnyQuasiStaticElementCache,
     sdh::SubDofHandler,
