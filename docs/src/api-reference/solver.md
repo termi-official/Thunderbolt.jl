@@ -27,6 +27,10 @@ Thunderbolt.Preconditioners.MatrixViewCache
 ```@docs
 NewtonRaphsonSolver
 MultiLevelNewtonRaphsonSolver
+Thunderbolt.AbstractStageFunction
+Thunderbolt.update_stage_linearization!
+Thunderbolt.evaluate_stage_residual!
+Thunderbolt.condense_stage!
 ```
 
 

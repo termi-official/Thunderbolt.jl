@@ -145,7 +145,7 @@ Assemble the scalar Laplacian on all subdomains of `dh`, via FerriteOperators' `
 `BilinearDiffusionIntegrator` computes `a(u,v) = -∫ ∇v ⋅ D ∇u dx`; conductivity `D = -1` turns that into
 the positive-definite Laplacian stiffness matrix `∫ ∇v ⋅ ∇u dx` this module solves with.
 
-`strategy` defaults to [`default_strategy`](@ref), i.e. parallel with an atomic scatter where Polyester
+`strategy` defaults to `FerriteOperators.default_strategy`, i.e. parallel with an atomic scatter where Polyester
 is loaded. The scatter's summation order perturbs the assembled entries at machine precision, which
 re-steers the Krylov solve, so the coordinates reproduce run to run only to the linear solver's
 tolerance (measured at 2 threads: ~1e-9 relative on the apicobasal and rotational coordinates) — fine
@@ -875,7 +875,7 @@ insertions -- so two hearts only agree under it if they are aligned the same way
 `ridge_anterior = ridge_posterior = nothing` to ask for it deliberately.
 
 `strategy` is the FerriteOperators assembly strategy for the underlying Laplacian solve
-([`_assemble_laplacian`](@ref)); it defaults to [`default_strategy`](@ref).
+(`_assemble_laplacian`); it defaults to `FerriteOperators.default_strategy`.
 """
 function compute_lv_coordinate_system(
     mesh::SimpleMesh{3, <:Any, T};
@@ -963,7 +963,7 @@ discontinuously, so its jump sits on an element interface instead of being smear
 elements.
 
 `strategy` is the FerriteOperators assembly strategy for the underlying Laplacian solve
-([`_assemble_laplacian`](@ref)); it defaults to [`default_strategy`](@ref).
+(`_assemble_laplacian`); it defaults to `FerriteOperators.default_strategy`.
 """
 function compute_midmyocardial_section_coordinate_system(
     mesh::SimpleMesh{3, <:Any, T},
