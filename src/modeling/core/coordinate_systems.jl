@@ -144,11 +144,17 @@ Assemble the scalar Laplacian on all subdomains of `dh`, via FerriteOperators' `
 
 `BilinearDiffusionIntegrator` computes `a(u,v) = -∫ ∇v ⋅ D ∇u dx`; conductivity `D = -1` turns that into
 the positive-definite Laplacian stiffness matrix `∫ ∇v ⋅ ∇u dx` this module solves with.
+
+`strategy` defaults to [`default_strategy`](@ref), i.e. parallel with an atomic scatter where Polyester
+is loaded. The scatter's summation order perturbs the assembled entries at machine precision, which
+re-steers the Krylov solve, so the coordinates reproduce run to run only to the linear solver's
+tolerance (measured at 2 threads: ~1e-9 relative on the apicobasal and rotational coordinates) — fine
+for read-only geometric data. Pass `SequentialAssemblyStrategy(SequentialCPUDevice())` for
+bit-reproducible coordinates.
 """
-function _assemble_laplacian(dh::DofHandler)
+function _assemble_laplacian(dh::DofHandler, strategy::AbstractAssemblyStrategy = default_strategy())
     field_name = first(Ferrite.getfieldnames(dh))
     integrator = BilinearDiffusionIntegrator(ConstantCoefficient(-1.0), QuadratureRuleCollection(2), field_name)
-    strategy = SequentialAssemblyStrategy(SequentialCPUDevice())
     op = setup_operator(strategy, integrator, dh)
     update_operator!(op, nothing, TimeIntegrationContext(0.0, 0.0, 0.0))
     return op.A
@@ -867,6 +873,9 @@ Meshes without ridges fall back to the plain azimuth around the long axis. That 
 chart -- it distributes the coordinate by angle rather than by the position of the right ventricular
 insertions -- so two hearts only agree under it if they are aligned the same way in space. Pass
 `ridge_anterior = ridge_posterior = nothing` to ask for it deliberately.
+
+`strategy` is the FerriteOperators assembly strategy for the underlying Laplacian solve
+([`_assemble_laplacian`](@ref)); it defaults to [`default_strategy`](@ref).
 """
 function compute_lv_coordinate_system(
     mesh::SimpleMesh{3, <:Any, T};
@@ -883,13 +892,14 @@ function compute_lv_coordinate_system(
     rotational_zero_direction::Union{Nothing, Vec{3}} = nothing,
     apicobasal_bins::Int = 200,
     solver = LinearSolve.KrylovJL_CG(), # FIXME add AMG preconditioner
+    strategy::AbstractAssemblyStrategy = default_strategy(),
 ) where {T}
     ip_collection = LagrangeCollection{1}()
     ip_collection_rotational = DiscontinuousLagrangeCollection{1}()
     dh, dh_rotational =
         _coordinate_dofhandlers(mesh, subdomains, ip_collection, ip_collection_rotational)
 
-    K = _assemble_laplacian(dh)
+    K = _assemble_laplacian(dh, strategy)
 
     transmural = _transmural_coordinate(mesh, K, dh, solver, endocardium_name, epicardium_name)
 
@@ -951,6 +961,9 @@ is built exactly as in the LV case: from the two ridges when the section carries
 plain azimuth around `up` otherwise, which is what a plain ring gets. Either way it is stored
 discontinuously, so its jump sits on an element interface instead of being smeared across a layer of
 elements.
+
+`strategy` is the FerriteOperators assembly strategy for the underlying Laplacian solve
+([`_assemble_laplacian`](@ref)); it defaults to [`default_strategy`](@ref).
 """
 function compute_midmyocardial_section_coordinate_system(
     mesh::SimpleMesh{3, <:Any, T},
@@ -964,13 +977,14 @@ function compute_midmyocardial_section_coordinate_system(
     ridge_posterior::Union{Nothing, String} = "SRidgePost",
     rotational_zero_direction::Union{Nothing, Vec{3}} = nothing,
     solver = LinearSolve.KrylovJL_CG(), # FIXME add AMG preconditioner
+    strategy::AbstractAssemblyStrategy = default_strategy(),
 ) where {T}
     ip_collection = LagrangeCollection{1}()
     ip_collection_rotational = DiscontinuousLagrangeCollection{1}()
     dh, dh_rotational =
         _coordinate_dofhandlers(mesh, subdomains, ip_collection, ip_collection_rotational)
 
-    K = _assemble_laplacian(dh)
+    K = _assemble_laplacian(dh, strategy)
 
     transmural = _transmural_coordinate(mesh, K, dh, solver, endocardium_name, epicardium_name)
 

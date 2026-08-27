@@ -267,7 +267,7 @@ function PoissonECGReconstructionCache(
     solution_vector_type = Vector{Float64},
     system_matrix_type = ThreadedSparseMatrixCSR{Float64, Int64},
     extracellular_potential_symbol = :φₑ,
-    strategy = SequentialAssemblyStrategy(PolyesterDevice()),
+    strategy = default_strategy(),
 )
     heart_dh = heart_fun.dh
     heart_grid = get_grid(heart_dh)
@@ -517,7 +517,7 @@ function Geselowitz1989ECGLeadCache(
     solution_vector_type = Vector{Float64},
     system_matrix_type   = ThreadedSparseMatrixCSR{Float64, Int64},
     lead_field_sym       = :Z,
-    strategy             = SequentialAssemblyStrategy(PolyesterDevice()),
+    strategy             = default_strategy(),
 )
     tmpsym = heart_fun.bilinear_term.sym
     lead_field_model = SteadyDiffusionModel(

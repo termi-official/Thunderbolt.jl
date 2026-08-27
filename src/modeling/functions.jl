@@ -10,7 +10,7 @@ Supertype for all functions coming from PDE discretizations.
     get_strategy(::AbstractSemidiscreteFunction)
 """
 abstract type AbstractSemidiscreteFunction <: SciMLBase.AbstractDiffEqFunction{true} end
-get_strategy(::AbstractSemidiscreteFunction) = SequentialAssemblyStrategy(PolyesterDevice())
+get_strategy(::AbstractSemidiscreteFunction) = default_strategy()
 
 abstract type AbstractPointwiseFunction <: AbstractSemidiscreteFunction end
 

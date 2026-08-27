@@ -62,7 +62,13 @@ function rsafdq_reference_state(; seed = 42)
         with_control_point = true,
     )
 
-    cs = compute_lv_coordinate_system(mesh; subdomains = ["myocardium"])
+    # Pinned sequential like the operator below: the reference is bit-reproducible only if its
+    # fixture is, and the parallel default sums shared-dof contributions in a run-dependent order.
+    cs = compute_lv_coordinate_system(
+        mesh;
+        subdomains = ["myocardium"],
+        strategy   = Thunderbolt.SequentialAssemblyStrategy(Thunderbolt.SequentialCPUDevice()),
+    )
     microstructure_model = create_microstructure_model(
         cs,
         LagrangeCollection{1}()^3,
@@ -342,6 +348,7 @@ function two_chamber_state(; seed = 7, device = Thunderbolt.SequentialCPUDevice(
         base_name        = "MitralAnnulus",
         endocardium_name = "LVEndocardium",
         epicardium_name  = "LVEpicardium",
+        strategy         = Thunderbolt.SequentialAssemblyStrategy(Thunderbolt.SequentialCPUDevice()),
     )
     ventricle_microstructure = create_microstructure_model(
         cs,

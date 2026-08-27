@@ -27,6 +27,7 @@ import FerriteOperators:
     PerColorAssemblyStrategy,
     ElementAssemblyStrategy,
     AssemblyStrategy,
+    default_strategy,
     FullAssembly,
     ElementAssembly,
     ElementAssemblyData,

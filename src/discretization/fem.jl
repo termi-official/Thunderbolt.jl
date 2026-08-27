@@ -40,7 +40,7 @@ struct FiniteElementDiscretization
         dbcs::Vector{Dirichlet} = Dirichlet[],
         qrcs::Dict{Symbol} = Dict{Symbol, Any}(),
         fqrcs::Dict{Symbol} = Dict{Symbol, Any}(),
-        assembly_strategy = SequentialAssemblyStrategy(PolyesterDevice()),
+        assembly_strategy = default_strategy(),
     )
         new(ips, dbcs, qrcs, fqrcs, assembly_strategy)
     end
