@@ -347,7 +347,10 @@ end
 
 The residual half of [`update_stage_linearization!`](@ref), for a simplified Newton reusing its
 Jacobian. The condensation phase still runs: the residual is a function of the condensed state, and
-that state is what the phase produces. What a simplified step saves is the tangent sweep.
+that state is what the phase produces. What a simplified step saves is the tangent sweep — and, with
+it, the correctors that only a tangent sweep reads, which is why the phase is elected residual-only
+here. The reused Jacobian is the one iteration 0 assembled; it is not re-formed from correctors, so
+there is nothing on this route for them to feed.
 """
 function evaluate_stage_residual!(
     sf::AbstractStageFunction,
@@ -355,7 +358,7 @@ function evaluate_stage_residual!(
     z::AbstractVector,
 )
     states = stage_states(sf, z)
-    condense_stage!(sf, states) || return false
+    condense_stage!(sf, states, nothing) || return false
     evaluate!(getoperator(sf), residual, states, stage_user_parameters(sf), stage_context(sf))
     return true
 end
@@ -379,18 +382,39 @@ operator that wraps another forwards to it, exactly as it forwards [`getJ`](@ref
 """
 condensed_operator(op) = op
 
-# Solving every element's local problem and writing the trial internal state is its own domain
-# traversal; the assembly sweeps that follow are pure evaluations at the state it wrote.
-function condense_stage!(sf::AbstractStageFunction, states::NamedTuple)
+"""
+    condense_stage!(sf, states, weights = stage_weights(sf)) -> Bool
+
+Solve every element's local problem and write the trial internal state — its own domain traversal,
+after which the assembly sweeps are pure evaluations at the state it wrote.
+
+`weights = nothing` elects a residual-only condensation: `q` is solved for exactly as before, but no
+tangent corrector is formed and the stored ones are dropped. A residual sweep reads neither, so this
+is the shape [`evaluate_stage_residual!`](@ref) wants; a tangent sweep at that state then throws
+rather than combining a previous trial point's corrections.
+
+Returns `false` when a local problem did not converge, having described the failure — this is the one
+step failure that no residual norm can be quoted for, since the sweeps that would have filled the
+residual never ran.
+"""
+function condense_stage!(
+    sf::AbstractStageFunction,
+    states::NamedTuple,
+    weights = stage_weights(sf),
+)
     stage_is_condensed(sf) || return true
     report = condense_internal!(
         getoperator(sf),
-        stage_weights(sf),
+        weights,
         states,
         stage_user_parameters(sf),
         stage_context(sf),
     )
-    return report.converged
+    report.converged && return true
+    # The report's argmax carriers are all that survives the fold, and they are what names the
+    # offender. A solver holding the per-point store can say more; see the multilevel Newton.
+    @debug "Local solve did not converge. Aborting. $report" _group = :nlsolve
+    return false
 end
 
 """

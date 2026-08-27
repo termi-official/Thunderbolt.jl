@@ -223,23 +223,15 @@ end
 cell_condensation_report(::Nothing, cellid, nqp) =
     CondensationReport{Float64}(true, nqp, 0, 0, 0, 0, 0.0, 1.0)
 
-function check_local_solve_covergence(local_solver_cache::GenericLocalNonlinearSolverCache)
-    reports = local_solver_cache.reports
-    reports === nothing && return false
-    return any(_local_solve_failed, reports.data)
-end
-function check_local_solve_covergence(local_solver_cache::Tuple)
-    return any(check_local_solve_covergence.(local_solver_cache))
-end
-function check_local_solve_covergence(local_solver_cache::AbstractVector)
-    return any(check_local_solve_covergence.(local_solver_cache))
-end
-
 """
     describe_local_solve_failures(local_solver_cache)
 
 Every failing quadrature point of the last assembly pass, as `cell`/`qp` pairs with their local
 residual norm and return code. Empty when nothing failed.
+
+The detail behind [`CondensationReport`](@ref)'s summary: the report is a fold and carries one
+argmax, while this walks the store the fold read and so can say how many points failed and where.
+Only a solver owning that store — the multilevel Newton — can ask.
 """
 function describe_local_solve_failures(local_solver_cache::GenericLocalNonlinearSolverCache)
     reports = local_solver_cache.reports
@@ -263,8 +255,8 @@ end
 """
     reset_local_solve_status!(local_solver_cache)
 
-Clear the recorded outcomes before an assembly pass, so `check_local_solve_covergence` reports on
-*that* pass alone.
+Clear the recorded outcomes before an assembly pass, so [`cell_condensation_report`](@ref) and
+[`describe_local_solve_failures`](@ref) report on *that* pass alone.
 
 Without this the failures latch, and the first one would poison every later assembly — including any
 retry of the step, which is the only way a local failure can ever be recovered from.
@@ -357,19 +349,19 @@ function nlsolve!(
         cache.iter += 1
         residual .= 0.0
         reset_local_solve_status!(mlcache.local_solver_cache)
-        if simplified && cache.iter > 0
+        stage_ok = if simplified && cache.iter > 0
             # Simplified Newton: reuse the Jacobian and preconditioner from iteration 0. The local
             # problems are still solved -- the condensed state is what the residual is a function of
             # -- only their sensitivities are not, since no tangent is requested.
-            @timeit_debug "update residual" evaluate_stage_residual!(sf, residual, u) || return false
+            @timeit_debug "update residual" evaluate_stage_residual!(sf, residual, u)
         else
-            @timeit_debug "update operator" update_stage_linearization!(sf, residual, u) || return false
+            @timeit_debug "update operator" update_stage_linearization!(sf, residual, u)
         end
-        # Check if local solve failed. The global residual is reported alongside, because a local
-        # failure at a small global residual points somewhere very different than one far from the
-        # solution.
-        if check_local_solve_covergence(mlcache.local_solver_cache)
-            @debug "Some local newton did not converge. Aborting. ||r|| = $(residual_norm(cache, sf))\n$(describe_local_solve_failures(mlcache.local_solver_cache))" _group =
+        if !stage_ok
+            # `condense_stage!` has already named the worst offender from the folded report. This
+            # solver additionally holds the per-quadrature-point store the fold summarised, so it can
+            # list every failing point -- how many and where, which one argmax cannot say.
+            @debug "Local solve failures of this pass:\n$(describe_local_solve_failures(mlcache.local_solver_cache))" _group =
                 :nlsolve
             return false
         end

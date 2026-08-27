@@ -470,6 +470,89 @@ condense_material_routine(
 ) = rate_dependent_material_needs_rate(material_model)
 
 """
+    condense_material_state!(model, kinematics, coefficient_cache, state_cache, geometry_cache, qp, time, Qflat, Qknownflat, Δt)
+
+The solve half of [`condense_material_routine`](@ref): write the converged internal state into
+`Qflat` and form no tangent correction.
+
+This is what a residual-only condensation runs. The two share the local solve itself -- the
+correction is what [`condense_material_routine`](@ref) adds on top of it -- so `Qflat` comes out
+bit-identical either way, which is the whole premise of eliding the correction on a sweep that never
+reads it.
+"""
+function condense_material_state!(
+    material_model::AbstractMaterialModel,
+    kinematics::DeformationGradient,
+    coefficient_cache,
+    state_cache::RateTypeCondensationMaterialStateCache,
+    geometry_cache::Ferrite.CellCache,
+    qp::QuadraturePoint,
+    time,
+    Qflat,
+    Qknownflat,
+    Δt,
+)
+    coefficients = evaluate_coefficient(coefficient_cache, geometry_cache, qp, time)
+    solve_local_state!(
+        deformation_gradient(kinematics),
+        coefficients,
+        material_model,
+        state_cache,
+        geometry_cache,
+        qp,
+        time,
+        Qflat,
+        Qknownflat,
+        Δt,
+    )
+    return nothing
+end
+
+function condense_material_state!(
+    material_model::AbstractMaterialModel,
+    kinematics::DeformationGradientWithRate,
+    coefficient_cache,
+    state_cache::RateDependentCondensationMaterialStateCache,
+    geometry_cache::Ferrite.CellCache,
+    qp::QuadraturePoint,
+    time,
+    Qflat,
+    Qknownflat,
+    Δt,
+)
+    coefficients = evaluate_coefficient(coefficient_cache, geometry_cache, qp, time)
+    solve_local_state!(
+        deformation_gradient(kinematics),
+        deformation_rate(kinematics),
+        coefficients,
+        material_model,
+        state_cache,
+        geometry_cache,
+        qp,
+        time,
+        Qflat,
+        Qknownflat,
+        Δt,
+    )
+    return nothing
+end
+
+# The rate mismatch of `condense_material_routine`, on the solve-only route: a rate dependent
+# material cannot be served rate-free here either.
+condense_material_state!(
+    material_model::AbstractMaterialModel,
+    kinematics::DeformationGradient,
+    coefficient_cache,
+    state_cache::RateDependentCondensationMaterialStateCache,
+    geometry_cache::Ferrite.CellCache,
+    qp::QuadraturePoint,
+    time,
+    Qflat,
+    Qknownflat,
+    Δt,
+) = rate_dependent_material_needs_rate(material_model)
+
+"""
     frozen_material_routine(model, kinematics, coefficient_cache, state_cache, geometry_cache, qp, time, Qflat)
 
 Stress and the partial sensitivities at the internal state `Qflat` holds -- a pure function of
@@ -1549,6 +1632,86 @@ end
         local_solve_report(state_cache.local_solver_cache, cellid(geometry_cache), qp.i),
     )
 
+"""
+    solve_local_state!(F, [Ḟ,] coefficients, model, state_cache, geometry_cache, qp, time, Qflat, Qknownflat, Δt)
+
+Solve the quadrature point's local problem and write the converged state into `Qflat`, forming none
+of the tangent corrections [`solve_local_constraint`](@ref) returns.
+
+Each method is its [`solve_local_constraint`](@ref) counterpart truncated at the corrector solves,
+and reaches the local problem's inputs through the *same* derivative call rather than the cheapest
+one that would produce them. That is not fastidiousness: `λ` taken as the value component of
+`Tensors.gradient` differs in the last bits from `λ` obtained by evaluating the stretch directly
+(measured: ~25% of random deformation gradients), and the state written here has to match the
+weighted route's bit for bit. What this route sheds is the corrector solves and their contractions,
+which is where the work actually is; the stretch derivatives are scalar and cheap.
+"""
+function solve_local_state!(
+    F::Tensor{2, dim},
+    coefficients,
+    material_model::ActiveStressModel,
+    state_cache::GenericFirstOrderCondensationMaterialStateCache,
+    geometry_cache,
+    qp,
+    time,
+    Qflat,
+    Qknownflat,
+    Δt,
+) where {dim}
+    f₀ = coefficients.f
+    _, λ = Tensors.gradient(F -> _fiber_stretch(F, f₀), F, :all)
+    dλdt = zero(λ)
+    _solve_local_sarcomere(
+        material_model,
+        state_cache,
+        geometry_cache,
+        qp,
+        time,
+        λ,
+        dλdt,
+        Qflat,
+        Qknownflat,
+        Δt,
+    )
+    return nothing
+end
+
+function solve_local_state!(
+    F::Tensor{2, dim},
+    Ḟ::Tensor{2, dim},
+    coefficients,
+    material_model::ActiveStressModel,
+    state_cache::GenericFirstOrderRateDependentCondensationMaterialStateCache,
+    geometry_cache,
+    qp,
+    time,
+    Qflat,
+    Qknownflat,
+    Δt,
+) where {dim}
+    f₀ = coefficients.f
+    # The Hessian, not the gradient, even though `∂²λ∂F²` is corrector-only: `λ` and `dλdF` are the
+    # solve's inputs and must be the ones the weighted route hands the same Newton. They do come out
+    # bitwise equal from `gradient` on every input measured, but that is a property of ForwardDiff's
+    # nested duals observed rather than promised, and the bit-identity of `q` is not worth resting on
+    # it to save one scalar Hessian per quadrature point.
+    _, dλdF, λ = Tensors.hessian(F -> _fiber_stretch(F, f₀), F, :all)
+    dλdt = dλdF ⊡ Ḟ
+    _solve_local_sarcomere(
+        material_model,
+        state_cache,
+        geometry_cache,
+        qp,
+        time,
+        λ,
+        dλdt,
+        Qflat,
+        Qknownflat,
+        Δt,
+    )
+    return nothing
+end
+
 function solve_local_constraint(
     F::Tensor{2, dim},
     coefficients,
@@ -1778,6 +1941,24 @@ function solve_internal_timestep(
     A = tomandel(SMatrix, one(ℂ)/Δt + E₁/η₁ * ℂ)
     b = tomandel(SVector, εᵛ₀/Δt + E₁/η₁ * ℂ ⊡ ε)
     return frommandel(typeof(ε), A \ b)
+end
+
+function solve_local_state!(
+    F::Tensor{2, dim},
+    coefficients,
+    material_model::LinearMaxwellMaterial,
+    state_cache::GenericFirstOrderCondensationMaterialStateCache,
+    geometry_cache,
+    qp,
+    time,
+    Qflat,
+    Qknownflat,
+    Δt,
+) where {dim}
+    ε = symmetric(F - one(F))
+    Q = solve_internal_timestep(material_model, state_cache, ε, Qflat, Qknownflat, Δt)
+    Qflat .= Q.data
+    return nothing
 end
 
 function solve_local_constraint(

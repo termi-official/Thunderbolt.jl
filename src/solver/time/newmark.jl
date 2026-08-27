@@ -152,7 +152,7 @@ end
 
 FerriteOperators.condense_internal!(
     sop::NewmarkStageOperator,
-    weights::NamedTuple,
+    weights::Union{NamedTuple, Nothing},
     states::NamedTuple,
     p,
     ctx,
@@ -546,7 +546,18 @@ function _consistent_initial_acceleration(f::ElastodynamicsFunction, stage_op, u
     states = merge((u = ztrial,), e.slots)
     if e.condensed
         states = merge(states, (q = InternalSource(ztrial),))
-        condense_internal!(stage_op.op, e.weights, states, e.p, e.ctx)
+        # Only the internal forces are wanted, so this condenses residual-only. That also drops the
+        # correctors, which is the honest outcome: they would belong to this vanishing-`Δt` anchor
+        # state and not to any step, and the first real step condenses again before assembling.
+        #
+        # The report is deliberately not checked, and this is the one condensation in the package
+        # where that is right. The vanishing `Δt` above poses `(Q - Qprev)/Δt = L(F, Q)`, whose root
+        # sits a few ulps from `Qprev` -- so close that the local Newton cannot reduce its residual
+        # below any tolerance and exhausts its iterations while standing exactly where the anchor
+        # wants it. Non-convergence here is the degenerate problem's signature, not a failure, and
+        # the flag carries no information about the model. A real failure of this bootstrap surfaces
+        # as a wrong `a₀`, which the first step's own condensation then reports honestly.
+        condense_internal!(stage_op.op, nothing, states, e.p, e.ctx)
     end
     evaluate!(stage_op.op, r, states, e.p, e.ctx)
     r .= .-r

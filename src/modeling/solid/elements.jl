@@ -425,6 +425,50 @@ function FerriteOperators.condense_cell!(
     )
 end
 
+"""
+    condense_cell!(cache, args, ::Nothing)
+
+The residual-only election: solve every quadrature point's local problem and write the trial internal
+state, forming no tangent correction.
+
+The cell's corrector slot is left invalid — `condense_internal!` dropped it before the sweep — so a
+`Consistent` tangent at this state names the cell and refuses rather than combining the corrections of
+whatever trial point stored them last. Condensing again with weights makes it assemblable.
+"""
+function FerriteOperators.condense_cell!(
+    element_cache::QuasiStaticCondensedElementCache,
+    args::FerriteOperators.CellArgs,
+    ::Nothing,
+)
+    @unpack constitutive_model, internal_cache, cv, coefficient_cache = element_cache
+    dₑ     = args.states.u
+    Qₑ     = _qs_internal_block(element_cache, args.states.q)
+    Qₑprev = _qs_internal_block(element_cache, args.states.qprev)
+    t      = FerriteOperators.evaluation_time(args.ctx)
+    Δt     = FerriteOperators.stage_scaling(args.ctx)
+
+    @inbounds for qp ∈ QuadratureIterator(cv)
+        kinematics = compute_kinematic_quantities(element_cache, qp, dₑ, args.states)
+        condense_material_state!(
+            constitutive_model,
+            kinematics,
+            coefficient_cache,
+            internal_cache,
+            args.cell,
+            qp,
+            t,
+            @view(Qₑ[:, qp.i]),
+            @view(Qₑprev[:, qp.i]),
+            Δt,
+        )
+    end
+    return cell_condensation_report(
+        internal_cache.local_solver_cache,
+        cellid(args.cell),
+        getnquadpoints(cv),
+    )
+end
+
 function _assemble_condensed_cell!(
     req,
     element_cache::QuasiStaticCondensedElementCache,
