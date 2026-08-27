@@ -230,6 +230,9 @@ include("disambiguation.jl")
 include("modeling/rsafdq2022.jl")
 include("discretization/rsafdq-operator.jl")
 
+# Last: the workload solves have to see every model, discretization and solver above.
+include("precompile.jl")
+
 # The `MTKModels` circuit definitions live in `ThunderboltMTKExt`; reach them via `mtk_models()`.
 
 # TODO put exports into the individual submodules above!
