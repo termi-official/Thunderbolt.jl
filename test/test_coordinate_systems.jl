@@ -80,7 +80,7 @@ end
         dh = DofHandler(mesh)
         Thunderbolt.add_subdomain!(dh, [Thunderbolt.ApproximationDescriptor(:coordinates, ipc)])
         Ferrite.close!(dh)
-        K = Thunderbolt._assemble_laplacian(dh, ipc)
+        K = Thunderbolt._assemble_laplacian(dh)
         u = Thunderbolt._solve_dirichlet_laplace(
             K,
             dh,

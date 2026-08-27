@@ -140,33 +140,18 @@ getrotationalinterpolation(cs::LVCoordinateSystem, cell::AbstractCell) =
 @inline wrap_rotational(r::T) where {T <: Real} = mod(r, one(T))
 
 """
-Assemble the scalar Laplacian on all subdomains of `dh`.
+Assemble the scalar Laplacian on all subdomains of `dh`, via FerriteOperators' `BilinearDiffusionIntegrator`.
+
+`BilinearDiffusionIntegrator` computes `a(u,v) = -∫ ∇v ⋅ D ∇u dx`; conductivity `D = -1` turns that into
+the positive-definite Laplacian stiffness matrix `∫ ∇v ⋅ ∇u dx` this module solves with.
 """
-function _assemble_laplacian(dh::DofHandler, ip_collection)
-    cv_collection = CellValueCollection(QuadratureRuleCollection(2), ip_collection)
-    K = allocate_matrix(dh)
-    assembler = start_assemble(K)
-    for sdh in dh.subdofhandlers
-        cellvalues = getcellvalues(cv_collection, getcells(get_grid(dh), first(sdh.cellset)))
-        n_basefuncs = getnbasefunctions(cellvalues)
-        Ke = zeros(n_basefuncs, n_basefuncs)
-        @inbounds for cell in CellIterator(sdh)
-            fill!(Ke, 0)
-            reinit!(cellvalues, cell)
-            for qp in QuadratureIterator(cellvalues)
-                dΩ = getdetJdV(cellvalues, qp)
-                for i = 1:n_basefuncs
-                    ∇v = shape_gradient(cellvalues, qp, i)
-                    for j = 1:n_basefuncs
-                        ∇u = shape_gradient(cellvalues, qp, j)
-                        Ke[i, j] += (∇v ⋅ ∇u) * dΩ
-                    end
-                end
-            end
-            assemble!(assembler, celldofs(cell), Ke)
-        end
-    end
-    return K
+function _assemble_laplacian(dh::DofHandler)
+    field_name = first(Ferrite.getfieldnames(dh))
+    integrator = BilinearDiffusionIntegrator(ConstantCoefficient(-1.0), QuadratureRuleCollection(2), field_name)
+    strategy = SequentialAssemblyStrategy(SequentialCPUDevice())
+    op = setup_operator(strategy, integrator, dh)
+    update_operator!(op, nothing, TimeIntegrationContext(0.0, 0.0, 0.0))
+    return op.A
 end
 
 """
@@ -904,8 +889,7 @@ function compute_lv_coordinate_system(
     dh, dh_rotational =
         _coordinate_dofhandlers(mesh, subdomains, ip_collection, ip_collection_rotational)
 
-    # TODO use bilinear operator for performance
-    K = _assemble_laplacian(dh, ip_collection)
+    K = _assemble_laplacian(dh)
 
     transmural = _transmural_coordinate(mesh, K, dh, solver, endocardium_name, epicardium_name)
 
@@ -986,8 +970,7 @@ function compute_midmyocardial_section_coordinate_system(
     dh, dh_rotational =
         _coordinate_dofhandlers(mesh, subdomains, ip_collection, ip_collection_rotational)
 
-    # TODO use bilinear operator from FerriteOperators to parallelize assembly
-    K = _assemble_laplacian(dh, ip_collection)
+    K = _assemble_laplacian(dh)
 
     transmural = _transmural_coordinate(mesh, K, dh, solver, endocardium_name, epicardium_name)
 
