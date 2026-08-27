@@ -305,9 +305,8 @@ from a problem is that stage's [`update_stage_linearization!`](@ref) and — whe
 runs with `simplified_newton = true` — [`evaluate_stage_residual!`](@ref).
 
 The global Newton's `simplified_newton` and `forcing` settings apply here as they do to the plain
-[`NewtonRaphsonSolver`](@ref). Note what a simplified step does *not* skip: the local problems are
-re-solved on every residual evaluation, because the residual is a function of the condensed state.
-What is reused is the global Jacobian, so the local sensitivities are the part that is saved.
+[`NewtonRaphsonSolver`](@ref). Note what a simplified step does *not* skip: the condensation phase,
+because the residual is a function of the condensed state. What it reuses is the global Jacobian.
 """
 Base.@kwdef struct MultiLevelNewtonRaphsonSolver{gSolverType <: NewtonRaphsonSolver, lSolverType} <:
                    AbstractNonlinearSolver

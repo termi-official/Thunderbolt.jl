@@ -527,9 +527,20 @@ function rollback_state!(integrator::ThunderboltTimeIntegrator, cache)
     if length(integrator.uprev) == 0
         error("Cannot roll back integrator. Aborting time integration step at $(integrator.t).")
     end
-    integrator.u .= integrator.uprev
+    restore_state!(integrator.u, integrator.uprev, cache)
     return nothing
 end
+
+"""
+    restore_state!(u, uprev, cache)
+
+Put the committed solution back into `u`, and drop whatever the discarded trial left outside it.
+
+The fallback copies the vector, which is all a cache without a condensed stage carries. A condensed
+stage additionally holds the correctors its condensation phase stored for the discarded trial, which
+[`FerriteOperators.rollback_state!`](@ref) invalidates along with the copy.
+"""
+restore_state!(u::AbstractVector, uprev::AbstractVector, cache) = (u .= uprev; u)
 
 reject_step!(integrator::ThunderboltTimeIntegrator, cache, controller) = nothing
 

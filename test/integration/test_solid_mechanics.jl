@@ -1256,6 +1256,97 @@ end
     @test report.dt_factor == 1.0
 end
 
+@testset "The condensation phase owns the local solves" begin
+    # The assembly sweeps are pure evaluations at the state `condense_internal!` wrote, correcting
+    # their tangent with what it stored. Two consequences, and this is what asserts them: a sweep
+    # solves nothing, and a tangent sweep will not run before a condensation has produced its
+    # correction.
+    integrator = solve_condensed_cuboid(
+        Thunderbolt.RDQ20MFModel(),
+        NewtonRaphsonSolver(
+            inner_solver = UMFPACKFactorization(),
+            max_iter = 20,
+            tol = 1e-8,
+            enforce_monotonic_convergence = false,
+        ),
+        2.5,
+        2.5,
+    )
+    @test integrator.sol.retcode == SciMLBase.ReturnCode.Success
+
+    stage  = integrator.cache.stage
+    sf     = stage.stage_function
+    op     = Thunderbolt.getoperator(sf)
+    states = Thunderbolt.stage_states(sf, integrator.cache.uₙ)
+    p      = Thunderbolt.stage_user_parameters(sf)
+    ctx    = Thunderbolt.stage_context(sf)
+    w      = Thunderbolt.stage_weights(sf)
+    J      = Thunderbolt.getJ(op)
+    r      = zeros(Thunderbolt.FerriteOperators.residual_size(op))
+    lsc    = stage.nlsolver.local_solver_cache
+
+    @test Thunderbolt.condense_internal!(op, w, states, p, ctx).converged
+
+    # Every local solve of this iterate is recorded by the condensation phase, so a sweep that
+    # records nothing is a sweep that solved nothing -- a sarcomere Newton always takes a pass.
+    Thunderbolt.reset_local_solve_status!(lsc)
+    Thunderbolt.evaluate!(op, r, states, p, ctx)
+    Thunderbolt.assemble_weighted_jacobian!(J, op, w, states, p, ctx)
+    @test all(report -> report.iterations == 0, lsc.reports.data)
+    @test !Thunderbolt.check_local_solve_covergence(lsc)
+
+    # A rejected step discards the correctors along with the trial they belong to.
+    Thunderbolt.rollback_state!(integrator, integrator.cache)
+    states = Thunderbolt.stage_states(sf, integrator.cache.uₙ)
+    @test_throws ArgumentError Thunderbolt.assemble_weighted_jacobian!(J, op, w, states, p, ctx)
+    # The residual is a function of the state alone, so it needs no corrector and stays available.
+    Thunderbolt.evaluate!(op, r, states, p, ctx)
+    Thunderbolt.condense_internal!(op, w, states, p, ctx)
+    Thunderbolt.assemble_weighted_jacobian!(J, op, w, states, p, ctx)
+end
+
+@testset "The consistency referee checks the weighted route" begin
+    # `ConsistencyCheckWeakBoundaryCondition` differences the combination the request it is serving
+    # claims to assemble. Backward Euler poses the weighted one, and that is the only route carrying
+    # a dashpot's rate term into the matrix -- so it is also the only route on which that term is
+    # checkable at all. A silent run is the assertion: a referee that dropped the `:v` perturbation
+    # would difference the rate term against zero and warn.
+    mesh = generate_mesh(Hexahedron, (2, 2, 2))
+    material = Thunderbolt.LinearMaxwellMaterial(E₀ = 70e3, E₁ = 20e3, μ = 1e3, η₁ = 1e3, ν = 0.3)
+    dbcs = [Dirichlet(:d, getfacetset(mesh, "left"), (x, t) -> (0.0, 0.0, 0.0), [1, 2, 3])]
+    form = semidiscretize(
+        QuasiStaticModel(
+            :d,
+            material,
+            (
+                ConstantPressureBC(-1e3, "right"),
+                Thunderbolt.ConsistencyCheckWeakBoundaryCondition(
+                    ViscousRobinBC(5e3, "right"),
+                    1.0e-6,
+                ),
+            ),
+        ),
+        FiniteElementDiscretization(Dict(:d => LagrangeCollection{1}()^3); dbcs),
+        mesh,
+    )
+    integrator = init(
+        QuasiStaticProblem(form, (0.0, 0.2)),
+        BackwardEulerSolver(
+            inner_solver = Thunderbolt.MultiLevelNewtonRaphsonSolver(
+                newton = NewtonRaphsonSolver(
+                    inner_solver = UMFPACKFactorization(),
+                    max_iter = 10,
+                    tol = 1e-8,
+                ),
+            ),
+        ),
+        dt = 0.1,
+        verbose = false,
+    )
+    @test_logs min_level = Logging.Warn solve!(integrator)
+    @test integrator.sol.retcode == SciMLBase.ReturnCode.Success
+end
+
 @testset "A rate dependent material rejects rate-free kinematics" begin
     # `HomotopyPathSolver` is continuation, not a time scheme: it has no previous solution and no
     # timestep, so a material carrying an evolving internal variable has to be rejected -- and

@@ -75,6 +75,7 @@ mutable struct NewmarkStageOperator{OpType, MassOpType, VectorType, T} <:
 end
 
 getJ(op::NewmarkStageOperator) = getJ(op.op)
+condensed_operator(op::NewmarkStageOperator) = condensed_operator(op.op)
 Base.eltype(sop::NewmarkStageOperator) = eltype(getJ(sop))
 Base.size(sop::NewmarkStageOperator, args...) = size(getJ(sop), args...)
 
@@ -740,3 +741,6 @@ function rollback_state!(integrator::ThunderboltTimeIntegrator, cache::NewmarkSo
     cache.aₙ .= cache.aₙ₋₁
     return nothing
 end
+
+restore_state!(u::AbstractVector, uprev::AbstractVector, cache::NewmarkSolverCache) =
+    rollback_stage!(u, uprev, cache.stage.stage_function)

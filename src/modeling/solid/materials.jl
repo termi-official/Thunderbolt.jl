@@ -181,6 +181,22 @@ and assembles the two parts separately. That is why `material_routine` returns t
 @inline consistent_tangent(sensitivities::KinematicSensitivities) = sensitivities.∂P∂F
 
 @doc raw"""
+    frozen + correction
+
+Add a condensation's tangent correction to the partials taken at frozen internal state, slot by slot:
+```math
+\frac{\mathrm{d}P}{\mathrm{d}F} = \left.\frac{\partial P}{\partial F}\right|_{Q} + \frac{\partial P}{\partial Q}\frac{\mathrm{d}Q}{\mathrm{d}F}
+```
+and likewise for the rate. Both sides are [`AbstractKinematicSensitivities`](@ref), so a correction
+carrying a rate cannot be added to partials that have none.
+"""
+@inline Base.:+(a::KinematicSensitivities, b::KinematicSensitivities) =
+    KinematicSensitivities(a.∂P∂F + b.∂P∂F)
+
+@inline Base.:+(a::KinematicSensitivitiesWithRate, b::KinematicSensitivitiesWithRate) =
+    KinematicSensitivitiesWithRate(a.∂P∂F + b.∂P∂F, a.∂P∂Ḟ + b.∂P∂Ḟ)
+
+@doc raw"""
     RateTypeCondensationMaterialStateCache
 
 Every condensation cache whose local problem carries a time derivative, i.e. `dₜQ = L(F, Q)` or
@@ -341,11 +357,49 @@ end
     return P, KinematicSensitivitiesWithRate(∂P∂F, zero(∂P∂F))
 end
 
-@inline function material_routine(
+@inline reduced_material_routine(
+    material_model::AbstractMaterialModel,
+    kinematics::AbstractKinematics,
+    coefficient_cache,
+    state_cache,
+    geometry_cache::Ferrite.CellCache,
+    qp::QuadraturePoint,
+    time,
+) = reduced_material_routine(
+    material_model,
+    deformation_gradient(kinematics),
+    coefficient_cache,
+    state_cache,
+    geometry_cache,
+    qp,
+    time,
+)
+
+# --- the condensation phase and the sweeps it feeds -----------------------------------------------
+#
+# [`condense_material_routine`](@ref) is the only entry point that *solves* the local problem. The two
+# `frozen_` entry points below evaluate at the state it wrote and solve nothing, so an assembly sweep
+# costs one stress evaluation per quadrature point -- the cost of an uncondensed material.
+#
+# The correction is returned in the same currency as the partials it corrects, so the element adds the
+# two and the scheme's chain-rule scalars weigh the sum. Weighing afterwards is exact here because the
+# local problem takes `F` and `Ḟ` as independent inputs: no weight enters the local inverse.
+
+"""
+    condense_material_routine(model, kinematics, coefficient_cache, state_cache, geometry_cache, qp, time, Qflat, Qknownflat, Δt)
+
+Solve the quadrature point's local problem, write the converged internal state into `Qflat`, and
+return the tangent correction ``\\partial P/\\partial Q \\cdot \\mathrm{d}Q/\\mathrm{d}\\cdot`` as
+[`AbstractKinematicSensitivities`](@ref) -- one entry per kinematic quantity the scheme offered, as
+everywhere on this seam.
+
+See [`RateTypeCondensationMaterialStateCache`](@ref) for what `Qknownflat` and `Δt` mean.
+"""
+function condense_material_routine(
     material_model::AbstractMaterialModel,
     kinematics::DeformationGradient,
     coefficient_cache,
-    state_cache,
+    state_cache::RateTypeCondensationMaterialStateCache,
     geometry_cache::Ferrite.CellCache,
     qp::QuadraturePoint,
     time,
@@ -353,10 +407,11 @@ end
     Qknownflat,
     Δt,
 )
-    P, ∂P∂F = material_routine(
-        material_model,
+    coefficients = evaluate_coefficient(coefficient_cache, geometry_cache, qp, time)
+    _, ∂P∂QdQdF = solve_local_constraint(
         deformation_gradient(kinematics),
-        coefficient_cache,
+        coefficients,
+        material_model,
         state_cache,
         geometry_cache,
         qp,
@@ -365,16 +420,16 @@ end
         Qknownflat,
         Δt,
     )
-    return P, KinematicSensitivities(∂P∂F)
+    return KinematicSensitivities(∂P∂QdQdF)
 end
 
-# A material that does not read the rate answers the rate-carrying question with a zero rate
-# sensitivity — offering more than a material reads must stay free.
-@inline function material_routine(
+# Rate coupled condensation: the stress has no explicit rate dependence, so the whole `∂P/∂Ḟ` is the
+# internal variable's, and both corrections come out of the same local solve.
+function condense_material_routine(
     material_model::AbstractMaterialModel,
     kinematics::DeformationGradientWithRate,
     coefficient_cache,
-    state_cache,
+    state_cache::RateDependentCondensationMaterialStateCache,
     geometry_cache::Ferrite.CellCache,
     qp::QuadraturePoint,
     time,
@@ -382,10 +437,12 @@ end
     Qknownflat,
     Δt,
 )
-    P, ∂P∂F = material_routine(
-        material_model,
+    coefficients = evaluate_coefficient(coefficient_cache, geometry_cache, qp, time)
+    _, ∂P∂QdQdF, ∂P∂QdQdḞ = solve_local_constraint(
         deformation_gradient(kinematics),
-        coefficient_cache,
+        deformation_rate(kinematics),
+        coefficients,
+        material_model,
         state_cache,
         geometry_cache,
         qp,
@@ -394,50 +451,133 @@ end
         Qknownflat,
         Δt,
     )
-    return P, KinematicSensitivitiesWithRate(∂P∂F, zero(∂P∂F))
+    return KinematicSensitivitiesWithRate(∂P∂QdQdF, ∂P∂QdQdḞ)
 end
 
-@inline reduced_material_routine(
+# See the `material_routine` counterpart: a rate dependent material cannot be served rate-free
+# kinematics.
+condense_material_routine(
     material_model::AbstractMaterialModel,
-    kinematics::AbstractKinematics,
+    kinematics::DeformationGradient,
     coefficient_cache,
-    state_cache,
+    state_cache::RateDependentCondensationMaterialStateCache,
     geometry_cache::Ferrite.CellCache,
     qp::QuadraturePoint,
     time,
-) = reduced_material_routine(
-    material_model,
-    deformation_gradient(kinematics),
-    coefficient_cache,
-    state_cache,
-    geometry_cache,
-    qp,
-    time,
-)
+    Qflat,
+    Qknownflat,
+    Δt,
+) = rate_dependent_material_needs_rate(material_model)
 
-@inline reduced_material_routine(
+"""
+    frozen_material_routine(model, kinematics, coefficient_cache, state_cache, geometry_cache, qp, time, Qflat)
+
+Stress and the partial sensitivities at the internal state `Qflat` holds -- a pure function of
+`(kinematics, Qflat)` with no local solve and no write-back. The condensation's correction is added
+by the caller, which is what keeps the tangent consistent while the kernel stays an evaluation.
+"""
+function frozen_material_routine(
     material_model::AbstractMaterialModel,
     kinematics::AbstractKinematics,
     coefficient_cache,
-    state_cache,
+    state_cache::RateTypeCondensationMaterialStateCache,
     geometry_cache::Ferrite.CellCache,
     qp::QuadraturePoint,
     time,
     Qflat,
-    Qknownflat,
-    Δt,
-) = reduced_material_routine(
-    material_model,
-    deformation_gradient(kinematics),
+)
+    coefficients = evaluate_coefficient(coefficient_cache, geometry_cache, qp, time)
+    return _frozen_stress_and_tangent(
+        material_model,
+        kinematics,
+        coefficients,
+        condensed_state(material_model, Qflat),
+    )
+end
+
+"""
+    frozen_reduced_material_routine(model, kinematics, coefficient_cache, state_cache, geometry_cache, qp, time, Qflat)
+
+The stress half of [`frozen_material_routine`](@ref), for a residual sweep.
+"""
+function frozen_reduced_material_routine(
+    material_model::AbstractMaterialModel,
+    kinematics::AbstractKinematics,
     coefficient_cache,
-    state_cache,
-    geometry_cache,
-    qp,
+    state_cache::RateTypeCondensationMaterialStateCache,
+    geometry_cache::Ferrite.CellCache,
+    qp::QuadraturePoint,
     time,
     Qflat,
-    Qknownflat,
-    Δt,
 )
+    coefficients = evaluate_coefficient(coefficient_cache, geometry_cache, qp, time)
+    return _frozen_stress(
+        material_model,
+        kinematics,
+        coefficients,
+        condensed_state(material_model, Qflat),
+    )
+end
+
+# The kinematics seam once more, at frozen state: the material answers in the currency it was asked
+# in, and a stress that reads the rate itself is reached through the five-argument entry point.
+@inline function _frozen_stress_and_tangent(model, kinematics::DeformationGradient, coefficients, Q)
+    P, ∂P∂F = stress_and_tangent(model, deformation_gradient(kinematics), coefficients, Q)
+    return P, KinematicSensitivities(∂P∂F)
+end
+
+@inline function _frozen_stress_and_tangent(
+    model,
+    kinematics::DeformationGradientWithRate,
+    coefficients,
+    Q,
+)
+    P, ∂P∂F, ∂P∂Ḟ = stress_and_tangent(
+        model,
+        deformation_gradient(kinematics),
+        deformation_rate(kinematics),
+        coefficients,
+        Q,
+    )
+    return P, KinematicSensitivitiesWithRate(∂P∂F, ∂P∂Ḟ)
+end
+
+@inline _frozen_stress(model, kinematics::DeformationGradient, coefficients, Q) =
+    stress_function(model, deformation_gradient(kinematics), coefficients, Q)
+
+@inline _frozen_stress(model, kinematics::DeformationGradientWithRate, coefficients, Q) =
+    stress_function(
+        model,
+        deformation_gradient(kinematics),
+        deformation_rate(kinematics),
+        coefficients,
+        Q,
+    )
+
+"""
+    condensed_state(material_model, Qflat)
+
+The internal state object the material's `stress_function`/`stress_and_tangent` take, viewed on the
+flat per-quadrature-point slice the condensation phase wrote.
+
+The default is the flat slice itself, which is what a material with a vector-valued internal state
+reads. A material whose state is a tensor reshapes it here, and that reshape is the *only* place the
+layout of `Qflat` is interpreted.
+"""
+condensed_state(::AbstractMaterialModel, Qflat) = Qflat
+
+"""
+    local_correction_type(material_model, ::Val{sdim})
+
+The type of the tangent correction [`solve_local_constraint`](@ref) returns for `material_model` in
+`sdim` dimensions -- what the condensation phase stores per quadrature point.
+
+The default is the general fourth order tensor, which every correction converts into. A material
+whose correction is symmetric narrows it, so that the stored corrector and the partials it is added
+to keep the same shape and the tangent contraction stays on the compact representation.
+"""
+local_correction_type(::AbstractMaterialModel, ::Val{sdim}) where {sdim} =
+    Tensor{4, sdim, Float64, sdim^4}
 
 function material_routine(
     material_model::AbstractMaterialModel,
@@ -465,90 +605,6 @@ function material_routine(
     Q = state(state_cache, geometry_cache, qp, time)
     return stress_and_tangent(material_model, F, coefficients, Q)
 end
-
-# `gto1` form: the caller supplies the internal variable and the timestep, so no time data is read
-# from the cache. This is the form the element assembly uses. The shim below derives the same data
-# from the cache and disappears once the backward Euler stage wrapper is retired.
-function material_routine(
-    material_model::AbstractMaterialModel,
-    F::Tensor{2},
-    coefficient_cache,
-    state_cache::RateTypeCondensationMaterialStateCache,
-    geometry_cache::Ferrite.CellCache,
-    qp::QuadraturePoint,
-    time,
-    Qflat,
-    Qknownflat,
-    Δt,
-)
-    coefficients = evaluate_coefficient(coefficient_cache, geometry_cache, qp, time)
-    Q, ∂P∂QdQdF = solve_local_constraint(
-        F,
-        coefficients,
-        material_model,
-        state_cache,
-        geometry_cache,
-        qp,
-        time,
-        Qflat,
-        Qknownflat,
-        Δt,
-    )
-    P, ∂P∂F = stress_and_tangent(material_model, F, coefficients, Q)
-    return P, ∂P∂F + ∂P∂QdQdF
-end
-
-# Rate dependent condensation. The stress itself has no explicit rate dependence — `P = P(F, Q)` — so
-# `∂P/∂Ḟ` is entirely mediated by the internal variable, `∂P/∂Q · ∂Q/∂Ḟ`, and comes out of the local
-# solve rather than out of `stress_and_tangent`.
-function material_routine(
-    material_model::AbstractMaterialModel,
-    kinematics::DeformationGradientWithRate,
-    coefficient_cache,
-    state_cache::RateDependentCondensationMaterialStateCache,
-    geometry_cache::Ferrite.CellCache,
-    qp::QuadraturePoint,
-    time,
-    Qflat,
-    Qknownflat,
-    Δt,
-)
-    F = deformation_gradient(kinematics)
-    coefficients = evaluate_coefficient(coefficient_cache, geometry_cache, qp, time)
-    Q, ∂P∂QdQdF, ∂P∂QdQdḞ = solve_local_constraint(
-        F,
-        deformation_rate(kinematics),
-        coefficients,
-        material_model,
-        state_cache,
-        geometry_cache,
-        qp,
-        time,
-        Qflat,
-        Qknownflat,
-        Δt,
-    )
-    # Through the five-argument entry point, so that a material whose stress *also* reads the rate
-    # directly contributes its own `∂P/∂Ḟ` alongside the condensation's. For the rate-independent
-    # stresses in this package that term is zero and this is the four-argument call it replaces.
-    P, ∂P∂F, ∂P∂Ḟ =
-        stress_and_tangent(material_model, F, deformation_rate(kinematics), coefficients, Q)
-    return P, KinematicSensitivitiesWithRate(∂P∂F + ∂P∂QdQdF, ∂P∂Ḟ + ∂P∂QdQdḞ)
-end
-
-# A rate dependent material cannot be served rate-free kinematics.
-material_routine(
-    material_model::AbstractMaterialModel,
-    kinematics::DeformationGradient,
-    coefficient_cache,
-    state_cache::RateDependentCondensationMaterialStateCache,
-    geometry_cache::Ferrite.CellCache,
-    qp::QuadraturePoint,
-    time,
-    Qflat,
-    Qknownflat,
-    Δt,
-) = rate_dependent_material_needs_rate(material_model)
 
 # A rate-type condensation material reached the bare-`time` assembly path, which is what
 # `HomotopyPathSolver` uses. This should have been rejected during setup; the method is the safety net
@@ -633,22 +689,6 @@ and this method, not of extending the framework.
     "time, Qflat)` that solves it for the current `Q` and returns the stress.",
 )
 
-# Materials without condensed state ignore the `gto1` payload. Deliberately restricted to the two
-# stateless cache types: any *other* cache reaching this arity without its own method is a
-# `MethodError` rather than a silent fallback to cache-held state.
-material_routine(
-    material_model::AbstractMaterialModel,
-    F::Tensor{2},
-    coefficient_cache,
-    state_cache::Union{EmptyInternalCache, TrivialCondensationMaterialStateCache},
-    geometry_cache::Ferrite.CellCache,
-    qp::QuadraturePoint,
-    time,
-    Qflat,
-    Qknownflat,
-    Δt,
-) = material_routine(material_model, F, coefficient_cache, state_cache, geometry_cache, qp, time)
-
 function reduced_material_routine(
     material_model::AbstractMaterialModel,
     F::Tensor{2},
@@ -675,108 +715,6 @@ function reduced_material_routine(
     Q = state(state_cache, geometry_cache, qp, time)
     return stress_function(material_model, F, coefficients, Q)
 end
-
-# `gto1` form, see the `material_routine` counterpart above.
-function reduced_material_routine(
-    material_model::AbstractMaterialModel,
-    F::Tensor{2},
-    coefficient_cache,
-    state_cache::RateTypeCondensationMaterialStateCache,
-    geometry_cache::Ferrite.CellCache,
-    qp::QuadraturePoint,
-    time,
-    Qflat,
-    Qknownflat,
-    Δt,
-)
-    coefficients = evaluate_coefficient(coefficient_cache, geometry_cache, qp, time)
-    Q = solve_local_constraint_state_only(
-        F,
-        coefficients,
-        material_model,
-        state_cache,
-        geometry_cache,
-        qp,
-        time,
-        Qflat,
-        Qknownflat,
-        Δt,
-    )
-    # Residual-only variant: no tangent is requested here, matching the other
-    # `reduced_material_routine` methods and the single-value call site in solid/elements.jl.
-    return stress_function(material_model, F, coefficients, Q)
-end
-
-# Rate-coupled residual. This method is what keeps the residual and the tangent posing the same local
-# problem: without it the generic kinematics forwarding would unpack `F` and drop `Ḟ`, so the
-# residual-only assembly would freeze the sarcomere while `material_routine` linearizes a moving one.
-function reduced_material_routine(
-    material_model::AbstractMaterialModel,
-    kinematics::DeformationGradientWithRate,
-    coefficient_cache,
-    state_cache::RateDependentCondensationMaterialStateCache,
-    geometry_cache::Ferrite.CellCache,
-    qp::QuadraturePoint,
-    time,
-    Qflat,
-    Qknownflat,
-    Δt,
-)
-    F = deformation_gradient(kinematics)
-    Ḟ = deformation_rate(kinematics)
-    coefficients = evaluate_coefficient(coefficient_cache, geometry_cache, qp, time)
-    Q = solve_local_constraint_state_only(
-        F,
-        Ḟ,
-        coefficients,
-        material_model,
-        state_cache,
-        geometry_cache,
-        qp,
-        time,
-        Qflat,
-        Qknownflat,
-        Δt,
-    )
-    # Five-argument, mirroring the tangent path above: residual and linearization must read the same
-    # stress. A rate-independent stress answers through its four-argument method.
-    return stress_function(material_model, F, Ḟ, coefficients, Q)
-end
-
-# See the `material_routine` counterpart.
-reduced_material_routine(
-    material_model::AbstractMaterialModel,
-    kinematics::DeformationGradient,
-    coefficient_cache,
-    state_cache::RateDependentCondensationMaterialStateCache,
-    geometry_cache::Ferrite.CellCache,
-    qp::QuadraturePoint,
-    time,
-    Qflat,
-    Qknownflat,
-    Δt,
-) = rate_dependent_material_needs_rate(material_model)
-
-reduced_material_routine(
-    material_model::AbstractMaterialModel,
-    F::Tensor{2},
-    coefficient_cache,
-    state_cache::Union{EmptyInternalCache, TrivialCondensationMaterialStateCache},
-    geometry_cache::Ferrite.CellCache,
-    qp::QuadraturePoint,
-    time,
-    Qflat,
-    Qknownflat,
-    Δt,
-) = reduced_material_routine(
-    material_model,
-    F,
-    coefficient_cache,
-    state_cache,
-    geometry_cache,
-    qp,
-    time,
-)
 
 @doc raw"""
     PrestressedMechanicalModel(inner_model, prestress_field)
@@ -1777,74 +1715,6 @@ function solve_local_constraint(
     return Q, ∂P∂QdQdF, ∂P∂QdQdḞ
 end
 
-# Residual-only counterpart: the same local problem, without the corrector solves.
-#
-# It must pose the *identical* problem to `solve_local_constraint`, rate included. A residual that
-# freezes `dλdt` while the tangent linearizes a moving one is not a slower Newton, it is a Newton on
-# two different problems.
-function solve_local_constraint_state_only(
-    F::Tensor{2, dim},
-    coefficients,
-    material_model::ActiveStressModel,
-    state_cache::GenericFirstOrderCondensationMaterialStateCache,
-    geometry_cache,
-    qp,
-    time,
-    Qflat,
-    Qknownflat,
-    Δt,
-) where {dim}
-    return solve_local_constraint_state_only(
-        F,
-        zero(F),
-        coefficients,
-        material_model,
-        state_cache,
-        geometry_cache,
-        qp,
-        time,
-        Qflat,
-        Qknownflat,
-        Δt,
-    )
-end
-
-function solve_local_constraint_state_only(
-    F::Tensor{2, dim},
-    Ḟ::Tensor{2, dim},
-    coefficients,
-    material_model::ActiveStressModel,
-    state_cache::GenericFirstOrderCondensationMaterialStateCache,
-    geometry_cache,
-    qp,
-    time,
-    Qflat,
-    Qknownflat,
-    Δt,
-) where {dim}
-    # Only the gradient is needed here: no tangent is requested, so the curvature term that the
-    # rate-coupled `solve_local_constraint` needs never arises.
-    f₀ = coefficients.f
-    dλdF, λ = Tensors.gradient(F -> _fiber_stretch(F, f₀), F, :all)
-
-    Q, _, _ = _solve_local_sarcomere(
-        material_model,
-        state_cache,
-        geometry_cache,
-        qp,
-        time,
-        λ,
-        dλdF ⊡ Ḟ,
-        Qflat,
-        Qknownflat,
-        Δt,
-    )
-    # Abort if local solve failed
-    _local_solve_ok(state_cache, geometry_cache, qp) || return Qflat
-
-    return Q
-end
-
 # Some debug materials
 Base.@kwdef struct LinearMaxwellMaterial{T, sdim} <: AbstractMaterialModel
     E₀::T
@@ -1967,25 +1837,6 @@ function solve_local_constraint(
     return Q, ∂P∂Q ⊡ dQdF
 end
 
-function solve_local_constraint_state_only(
-    F::Tensor{2, dim},
-    coefficients,
-    material_model::LinearMaxwellMaterial,
-    state_cache::GenericFirstOrderCondensationMaterialStateCache,
-    geometry_cache,
-    qp,
-    time,
-    Qflat,
-    Qknownflat,
-    Δt,
-) where {dim}
-    ε = symmetric(F - one(F))
-    Q = solve_internal_timestep(material_model, state_cache, ε, Qflat, Qknownflat, Δt)
-    Qflat .= Q.data
-
-    return Q
-end
-
 # Small strain material: everything it computes is a function of `ε`, so the routines below take it
 # directly. The *interface* method `stress_function` takes `F` like every other material's, because
 # the element hands out kinematics and does not know which strain measure a material works in.
@@ -2004,6 +1855,13 @@ stress_function(
     coefficients,
     εᵛ::SymmetricTensor{2},
 ) = _maxwell_stress(material_model, symmetric(F - one(F)), εᵛ)
+
+# The internal variable is the viscous strain, so the flat slice is a symmetric second order tensor,
+# and the correction `∂P/∂εᵛ ⊡ dεᵛ/dε` inherits that symmetry from both of its factors.
+condensed_state(::LinearMaxwellMaterial{T, sdim}, Qflat) where {T, sdim} =
+    SymmetricTensor{2, sdim}(Qflat)
+local_correction_type(::LinearMaxwellMaterial, ::Val{sdim}) where {sdim} =
+    SymmetricTensor{4, sdim, Float64, (sdim * (sdim + 1) ÷ 2)^2}
 
 function stress_and_tangent(
     material_model::LinearMaxwellMaterial,

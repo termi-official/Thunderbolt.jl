@@ -346,8 +346,8 @@ end
     evaluate_stage_residual!(sf, residual, z) -> Bool
 
 The residual half of [`update_stage_linearization!`](@ref), for a simplified Newton reusing its
-Jacobian. The condensation phase still runs: the residual is a function of the condensed state, so
-what a simplified step saves is the local sensitivities, not the local solves.
+Jacobian. The condensation phase still runs: the residual is a function of the condensed state, and
+that state is what the phase produces. What a simplified step saves is the tangent sweep.
 """
 function evaluate_stage_residual!(
     sf::AbstractStageFunction,
@@ -359,6 +359,25 @@ function evaluate_stage_residual!(
     evaluate!(getoperator(sf), residual, states, stage_user_parameters(sf), stage_context(sf))
     return true
 end
+
+"""
+    rollback_stage!(u, uprev, sf)
+
+Restore the committed solution and invalidate the correctors the condensation phase stored for the
+trial being discarded. A stage that condenses nothing has none, so it only copies.
+"""
+function rollback_stage!(u::AbstractVector, uprev::AbstractVector, sf::AbstractStageFunction)
+    stage_is_condensed(sf) || return (u .= uprev; u)
+    return FerriteOperators.rollback_state!(condensed_operator(getoperator(sf)), u, uprev)
+end
+
+"""
+    condensed_operator(op)
+
+The `FerriteOperators` operator whose element caches carry the condensation correctors. A scheme
+operator that wraps another forwards to it, exactly as it forwards [`getJ`](@ref).
+"""
+condensed_operator(op) = op
 
 # Solving every element's local problem and writing the trial internal state is its own domain
 # traversal; the assembly sweeps that follow are pure evaluations at the state it wrote.

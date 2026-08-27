@@ -947,11 +947,13 @@ end
 
 """
 Finite-difference referee for the inner cache's tangent: assembles the inner cache's Jacobian and
-compares it against the difference quotient of the inner cache's residual under perturbations of the
-`:u` slot.
+compares it against the difference quotient of the inner cache's residual.
 
-Every other slot is held at the value the sweep gathered, so wrapping a `ViscousFacetCache` compares
-its `:u` Jacobian against zero.
+Which slots are perturbed, and with which chain-rule scalar, is the request's own combination: a
+fused `∂F/∂u` differences the `:u` slot alone, a weighted `Σₛ wₛ ∂F/∂s` differences every slot its
+weights name. Every other slot is held at the value the sweep gathered, so a fused check on a
+`ViscousFacetCache` compares its `:u` Jacobian against zero while the weighted check sees the
+dashpot's rate term.
 """
 struct ConsistencyCheckWeakBoundaryConditionCache{IC} <: AbstractSurfaceElementCache
     inner_cache::IC
@@ -984,8 +986,7 @@ FerriteOperators.provides_analytic(
     ::Type{<:ConsistencyCheckWeakBoundaryConditionCache},
     ::FerriteOperators.JacobianResidualKind,
 ) = true
-# A weighted request carries no residual to difference the tangent against, so the weighted tangent
-# is the inner cache's alone -- including which slots it reads, `:v` among them for a dashpot.
+# The referee pulls its own residual sweeps, so a request carrying no residual is checkable too.
 FerriteOperators.provides_analytic(
     ::Type{<:ConsistencyCheckWeakBoundaryConditionCache},
     ::FerriteOperators.WeightedJacobianKind,
@@ -1015,21 +1016,32 @@ FerriteOperators.assemble_facet!(
     lfi::Int,
 ) = FerriteOperators.assemble_facet!(req, cache.inner_cache, args, lfi)
 
+# The two tangent-carrying requests differ only in which combination they claim to assemble, so they
+# hand that combination to the same referee. The fused route's is `∂F/∂u`, i.e. the `:u` slot alone at
+# unit weight; the weighted route's is the request's own `weights`, which is the only route that
+# carries a reconstructed slot into the matrix and therefore the only one that can check it.
+FerriteOperators.assemble_facet!(
+    req::FerriteOperators.JacobianResidualRequest,
+    cache::ConsistencyCheckWeakBoundaryConditionCache,
+    args,
+    lfi::Int,
+) = _check_weak_bc_tangent!(req, cache, args, lfi, (u = true,))
+
 FerriteOperators.assemble_facet!(
     req::FerriteOperators.WeightedJacobianRequest,
     cache::ConsistencyCheckWeakBoundaryConditionCache,
     args,
     lfi::Int,
-) = FerriteOperators.assemble_facet!(req, cache.inner_cache, args, lfi)
+) = _check_weak_bc_tangent!(req, cache, args, lfi, req.weights)
 
-function FerriteOperators.assemble_facet!(
-    req::FerriteOperators.JacobianResidualRequest,
+function _check_weak_bc_tangent!(
+    req,
     cache::ConsistencyCheckWeakBoundaryConditionCache,
     args,
     lfi::Int,
+    weights::NamedTuple,
 )
     (; Δ, inner_cache, Kₑfd, uₑfd, residualₑfd, residualₑref) = cache
-    uₑ = args.states.u
 
     # The incoming element matrix might be non-empty, so we need to start by storing the offset.
     Kₑfd .= req.K
@@ -1045,25 +1057,31 @@ function FerriteOperators.assemble_facet!(
         args,
         lfi,
     )
-    # Here we actually compute the finite difference
-    for i = 1:length(uₑfd)
-        fill!(residualₑfd, 0.0)
-        uₑfd    .= uₑ
-        uₑfd[i] += Δ
-        FerriteOperators.assemble_facet!(
-            FerriteOperators.ResidualRequest(residualₑfd),
-            inner_cache,
-            FerriteOperators.with_states(args, merge(args.states, (u = uₑfd,))),
-            lfi,
-        )
-        residualₑfd .-= residualₑref
-        residualₑfd /= Δ
-        Kₑfd[:, i] .+= residualₑfd
+    # Here we actually compute the finite difference, one weighted slot at a time
+    for (slot, w) in pairs(weights)
+        sₑ = args.states[slot]
+        for i = 1:length(uₑfd)
+            fill!(residualₑfd, 0.0)
+            uₑfd    .= sₑ
+            uₑfd[i] += Δ
+            FerriteOperators.assemble_facet!(
+                FerriteOperators.ResidualRequest(residualₑfd),
+                inner_cache,
+                FerriteOperators.with_states(
+                    args,
+                    merge(args.states, NamedTuple{(slot,)}((uₑfd,))),
+                ),
+                lfi,
+            )
+            residualₑfd .-= residualₑref
+            residualₑfd ./= Δ
+            Kₑfd[:, i] .+= w .* residualₑfd
+        end
     end
 
     # Finally we check for consistency
     if maximum(abs.(Kₑfd .- req.K)) > Δ
         @warn "Inconsistent element $(cellid(args.cell)) facet $(lfi)! Jacobian difference: $(maximum(abs.(Kₑfd .- req.K)))"
-        @info uₑ
+        @info args.states.u
     end
 end

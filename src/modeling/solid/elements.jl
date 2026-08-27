@@ -43,13 +43,18 @@ end
 Quasi-static element whose internal variable follows `dₜQ = L(F, Q)`. Together with the (singular)
 mass matrix of the internal variables this is an ODE in mass matrix form. Its local problem reads the
 deformation gradient alone, so its tangent is a plain `∂F/∂u`.
+
+`correctors` holds the per-quadrature-point tangent correction `∂P/∂Q · dQ/dF` that
+[`FerriteOperators.condense_cell!`](@ref) stored, keyed by cellid; the `Consistent` kernels read it
+through [`FerriteOperators.item_state`](@ref), which names the cell if no condensation phase ran.
 """
-struct QuasiStaticCondensedODEElementCache{M, CCache, CMCache, CV} <:
+struct QuasiStaticCondensedODEElementCache{M, CCache, CMCache, CV, Corr} <:
        FerriteOperators.AbstractVolumetricElementCache
     constitutive_model::M
     coefficient_cache::CCache
     internal_cache::CMCache
     cv::CV
+    correctors::Corr
 end
 
 """
@@ -58,13 +63,17 @@ end
 Quasi-static element whose internal variable follows `dₜQ = L(F, dₜF, Q)`. The dependence on the rate
 of the deformation gradient makes this a genuine DAE rather than a mass matrix ODE, and it is what
 makes the `v` slot and the weighted tangent below part of this cache's contract.
+
+`correctors` carries both corrections of the local solve, `∂P/∂Q · dQ/dF` and `∂P/∂Q · dQ/dḞ`, since
+a weighted sweep weighs the two separately.
 """
-struct QuasiStaticCondensedDAEElementCache{M, CCache, CMCache, CV} <:
+struct QuasiStaticCondensedDAEElementCache{M, CCache, CMCache, CV, Corr} <:
        FerriteOperators.AbstractVolumetricElementCache
     constitutive_model::M
     coefficient_cache::CCache
     internal_cache::CMCache
     cv::CV
+    correctors::Corr
 end
 
 # Methods that only touch the shared fields dispatch on this union.
@@ -337,22 +346,27 @@ rate sensitivity would be dropped silently, leaving a descent direction rather t
 end
 
 """
-    _qs_local_state(element_cache, args)
+    _qs_correctors(element_cache, args)
 
-The cell's condensed unknowns and the known state its local problem integrates from, as
-`(Qₑ, Qₑprev)` blocks addressable per quadrature point.
+The cell's per-quadrature-point tangent corrections, as
+[`FerriteOperators.condense_cell!`](@ref) stored them.
 
-`q` is the trial state [`FerriteOperators.condense_internal!`](@ref) wrote; `qprev` is the committed
-one. A kernel reads both and writes neither -- the local solve inside `material_routine` re-derives
-the same `Q` it was handed, warm started from it, which is what keeps the residual and the tangent
-posing one local problem.
+Reading a cell no condensation phase has visited throws and names it: the corrections are the local
+solve's, and a `Consistent` tangent cannot be formed without them.
 """
-@inline function _qs_local_state(e::QuasiStaticCondensedElementCache, args)
-    Qₑ     = _qs_internal_block(e, similar(args.states.u, length(args.states.q)))
-    Qₑ    .= _qs_internal_block(e, args.states.q)
-    Qₑprev = _qs_internal_block(e, args.states.qprev)
-    return Qₑ, Qₑprev
-end
+@inline _qs_correctors(e::QuasiStaticCondensedElementCache, args) =
+    FerriteOperators.item_state(e.correctors, cellid(args.cell))
+
+# The stored corrections are one `SVector` per cell, so the buffer that fills it is sized off the
+# store's own element type rather than off a runtime quadrature point count.
+@inline _qs_corrector_buffer(::FerriteOperators.ItemStates{SVector{NQP, Corr}}) where {NQP, Corr} =
+    MVector{NQP, Corr}(undef)
+
+@inline _qs_store_correctors!(store::FerriteOperators.ItemStates{S}, id, buffer) where {S} =
+    FerriteOperators.set_item_state!(store, id, S(buffer))
+
+FerriteOperators.invalidate_correctors!(e::QuasiStaticCondensedElementCache) =
+    (FerriteOperators.invalidate_item_states!(e.correctors); nothing)
 
 FerriteOperators.provides_analytic(::Type{<:QuasiStaticCondensedODEElementCache}, ::FerriteOperators.JacobianKind{:u}) = true
 FerriteOperators.provides_analytic(::Type{<:QuasiStaticCondensedODEElementCache}, ::FerriteOperators.JacobianResidualKind) = true
@@ -364,10 +378,15 @@ FerriteOperators.provides_analytic(::Type{<:QuasiStaticCondensedDAEElementCache}
     condense_cell!(cache, args, weights)
 
 Solve every quadrature point's local problem, write the trial internal state into `args.states.q`,
-and report what the solves did ([`cell_condensation_report`](@ref)).
+store the tangent correction each solve produced, and report what the solves did
+([`cell_condensation_report`](@ref)).
 
-This is the only hook that evolves the condensed state; the assembly kernels are pure evaluations at
-the state it wrote.
+This is the only hook that solves; the assembly kernels are pure evaluations at the state it wrote,
+correcting their tangent with what it stored.
+
+`weights` are not read: the local problem takes `F` and `Ḟ` as independent inputs, so its two
+corrections stay separated and the scheme's chain-rule scalars weigh them where every other
+sensitivity is weighed, in [`consistent_tangent`](@ref).
 """
 function FerriteOperators.condense_cell!(
     element_cache::QuasiStaticCondensedElementCache,
@@ -380,13 +399,11 @@ function FerriteOperators.condense_cell!(
     Qₑprev = _qs_internal_block(element_cache, args.states.qprev)
     t      = FerriteOperators.evaluation_time(args.ctx)
     Δt     = FerriteOperators.stage_scaling(args.ctx)
+    correctors = _qs_corrector_buffer(element_cache.correctors)
 
     @inbounds for qp ∈ QuadratureIterator(cv)
         kinematics = compute_kinematic_quantities(element_cache, qp, dₑ, args.states)
-        # Through the residual entry point, so that the state written here is the solution of
-        # exactly the local problem the assembly kernels evaluate. The stress it returns is the
-        # kernels' business, not this hook's.
-        reduced_material_routine(
+        correctors[qp.i] = condense_material_routine(
             constitutive_model,
             kinematics,
             coefficient_cache,
@@ -399,6 +416,7 @@ function FerriteOperators.condense_cell!(
             Δt,
         )
     end
+    _qs_store_correctors!(element_cache.correctors, cellid(args.cell), correctors)
     # Read after the loop, so the slots folded here are the ones these solves just wrote.
     return cell_condensation_report(
         internal_cache.local_solver_cache,
@@ -416,16 +434,16 @@ function _assemble_condensed_cell!(
     @unpack constitutive_model, internal_cache, cv, coefficient_cache = element_cache
     ndofs  = getnbasefunctions(cv)
     dₑ     = args.states.u
-    Qₑ, Qₑprev = _qs_local_state(element_cache, args)
+    Qₑ     = _qs_internal_block(element_cache, args.states.q)
+    correctors = _qs_correctors(element_cache, args)
     t      = FerriteOperators.evaluation_time(args.ctx)
-    Δt     = FerriteOperators.stage_scaling(args.ctx)
 
     @inbounds for qp ∈ QuadratureIterator(cv)
         dΩ = getdetJdV(cv, qp)
 
         kinematics = compute_kinematic_quantities(element_cache, qp, dₑ, args.states)
 
-        P, sensitivities = material_routine(
+        P, sensitivities = frozen_material_routine(
             constitutive_model,
             kinematics,
             coefficient_cache,
@@ -434,10 +452,8 @@ function _assemble_condensed_cell!(
             qp,
             t,
             @view(Qₑ[:, qp.i]),
-            @view(Qₑprev[:, qp.i]),
-            Δt,
         )
-        tangent = consistent_tangent(sensitivities, linearization)
+        tangent = consistent_tangent(sensitivities + correctors[qp.i], linearization)
 
         for i = 1:ndofs
             ∇δui = shape_gradient(cv, qp, i)
@@ -503,17 +519,16 @@ function FerriteOperators.assemble_cell!(
     @unpack constitutive_model, internal_cache, cv, coefficient_cache = element_cache
     ndofs  = getnbasefunctions(cv)
     dₑ     = args.states.u
-    Qₑ, Qₑprev = _qs_local_state(element_cache, args)
+    Qₑ     = _qs_internal_block(element_cache, args.states.q)
     t      = FerriteOperators.evaluation_time(args.ctx)
-    Δt     = FerriteOperators.stage_scaling(args.ctx)
 
     @inbounds for qp ∈ QuadratureIterator(cv)
         dΩ = getdetJdV(cv, qp)
 
         kinematics = compute_kinematic_quantities(element_cache, qp, dₑ, args.states)
 
-        # Stress only
-        P = reduced_material_routine(
+        # Stress only, at the state the condensation phase wrote
+        P = frozen_reduced_material_routine(
             constitutive_model,
             kinematics,
             coefficient_cache,
@@ -522,8 +537,6 @@ function FerriteOperators.assemble_cell!(
             qp,
             t,
             @view(Qₑ[:, qp.i]),
-            @view(Qₑprev[:, qp.i]),
-            Δt,
         )
 
         for i = 1:ndofs
@@ -556,6 +569,41 @@ quasistatic_element_cache_type(::SteadyStateEvolution) = QuasiStaticElementCache
 quasistatic_element_cache_type(::FirstOrderEvolution) = QuasiStaticCondensedODEElementCache
 quasistatic_element_cache_type(::RateCoupledEvolution) = QuasiStaticCondensedDAEElementCache
 
+"""
+    setup_condensation_correctors(evolution, material_model, qr, sdh)
+
+The corrector store the condensed element caches carry, spliced into their constructor -- empty for
+the rate-free cache, which has no local solve to correct with.
+
+One `SVector` of per-quadrature-point corrections per cell, in the currency the element's kinematics
+fix: a rate coupled local problem contributes to both sensitivities, a first order one only to
+`∂P/∂F`. Sized over the whole grid, since a cellid is what keys it.
+"""
+setup_condensation_correctors(
+    ::Union{NoEvolution, SteadyStateEvolution},
+    material_model,
+    qr::QuadratureRule,
+    sdh::SubDofHandler,
+) = ()
+
+setup_condensation_correctors(
+    evolution::Union{FirstOrderEvolution, RateCoupledEvolution},
+    material_model,
+    qr::QuadratureRule,
+    sdh::SubDofHandler,
+) = (_condensation_corrector_store(evolution, material_model, qr, sdh),)
+
+function _condensation_corrector_store(evolution, material_model, qr, sdh)
+    grid       = Ferrite.get_grid(sdh.dh)
+    correction = local_correction_type(material_model, Val(getspatialdim(grid)))
+    corrector  = _corrector_currency(evolution, correction)
+    return FerriteOperators.ItemStates{SVector{getnquadpoints(qr), corrector}}(getncells(grid))
+end
+
+_corrector_currency(::FirstOrderEvolution, ::Type{C}) where {C} = KinematicSensitivities{C}
+_corrector_currency(::RateCoupledEvolution, ::Type{C}) where {C} =
+    KinematicSensitivitiesWithRate{C, C}
+
 function setup_quasistatic_element_cache(
     material_model::AbstractMaterialModel,
     qr::QuadratureRule,
@@ -563,11 +611,13 @@ function setup_quasistatic_element_cache(
     cv::CellValues,
 )
     internal_cache = setup_internal_cache(material_model, qr, sdh)
-    return quasistatic_element_cache_type(internal_variable_evolution(material_model))(
+    evolution      = internal_variable_evolution(material_model)
+    return quasistatic_element_cache_type(evolution)(
         material_model,
         setup_coefficient_cache(material_model, qr, sdh),
         internal_cache,
         cv,
+        setup_condensation_correctors(evolution, material_model, qr, sdh)...,
     )
 end
 function setup_element_cache(model::QuasiStaticModel, qr::QuadratureRule, sdh::SubDofHandler)
@@ -580,12 +630,18 @@ function setup_element_cache(model::QuasiStaticModel, qr::QuadratureRule, sdh::S
 end
 
 duplicate_for_device(device, model::AbstractMaterialModel) = model
-# Reconstruct the *same* concrete cache type, so the problem class survives the move to a device.
+# Reconstruct the *same* concrete cache type, so the problem class survives the move to a device. The
+# corrector store is spliced exactly as at setup, and shares rather than copies: cells are disjoint
+# between workers, so a condensation's writes are visible to whichever worker sweeps them.
 function duplicate_for_device(device, cache::AnyQuasiStaticElementCache)
     return (typeof(cache).name.wrapper)(
         duplicate_for_device(device, cache.constitutive_model),
         duplicate_for_device(device, cache.coefficient_cache),
         duplicate_for_device(device, cache.internal_cache),
         duplicate_for_device(device, cache.cv),
+        map(store -> duplicate_for_device(device, store), _qs_corrector_stores(cache))...,
     )
 end
+
+_qs_corrector_stores(cache::QuasiStaticElementCache) = ()
+_qs_corrector_stores(cache::QuasiStaticCondensedElementCache) = (cache.correctors,)

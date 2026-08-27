@@ -82,6 +82,9 @@ SciMLBase = "3"
 SciMLIterators = "1.0.0"
 SciMLLogging = "2.0.0"
 SymbolicIndexingInterface = "0.3.46"
+# SymbolicUtils 4.46 dropped the ImmutableDict constructor piracy Symbolics 7.36 still calls, which
+# breaks the whole ModelingToolkit test stack at precompile. Lift when Symbolics adapts.
+SymbolicUtils = "~4.45"
 UnPack = "1"
 julia = "1.10"
 
@@ -108,8 +111,9 @@ Pkg = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
 SHA = "ea8e919c-243c-51af-8825-aaa63cd721ce"
 SciCompDSL = "91a8cdf1-4ca6-467b-a780-87fda3fff15e"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+SymbolicUtils = "d1185830-fcd6-423d-90d6-eec64667417b"
 Tensors = "48a634ad-e948-5137-8d70-aa71f2a747f4"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["AlgebraicMultigrid", "Aqua", "DelimitedFiles", "FerriteGmsh", "FerriteMultigrid", "JET", "ModelingToolkit", "OrdinaryDiffEqLowOrderRK", "OrdinaryDiffEqNonlinearSolve", "OrdinaryDiffEqTsit5", "ParallelTestRunner", "Pkg", "SHA", "SciCompDSL", "StaticArrays", "Tensors", "Test", "MatrixDepot"]
+test = ["AlgebraicMultigrid", "Aqua", "DelimitedFiles", "FerriteGmsh", "FerriteMultigrid", "JET", "ModelingToolkit", "OrdinaryDiffEqLowOrderRK", "OrdinaryDiffEqNonlinearSolve", "OrdinaryDiffEqTsit5", "ParallelTestRunner", "Pkg", "SHA", "SciCompDSL", "StaticArrays", "SymbolicUtils", "Tensors", "Test", "MatrixDepot"]

@@ -231,6 +231,11 @@ end
 contraction_rate_cache(cache::BackwardEulerSolverCache) = contraction_rate_cache(cache.stage)
 contraction_rate_cache(stage::BackwardEulerStageCache) = global_newton_cache(stage.nlsolver)
 
+restore_state!(u::AbstractVector, uprev::AbstractVector, cache::BackwardEulerSolverCache) =
+    restore_state!(u, uprev, cache.stage)
+restore_state!(u::AbstractVector, uprev::AbstractVector, stage::BackwardEulerStageCache) =
+    rollback_stage!(u, uprev, stage.stage_function)
+
 # Marks a model tree rewritten to carry solver-side information down to the element caches.
 abstract type AbstractModelAnnotation{T} end
 
@@ -532,11 +537,13 @@ function setup_quasistatic_element_cache(
     cv::CellValues,
 )
     internal_cache = setup_internal_cache(wrapper, qr, sdh)
-    return quasistatic_element_cache_type(internal_variable_evolution(material_model))(
+    evolution      = internal_variable_evolution(material_model)
+    return quasistatic_element_cache_type(evolution)(
         material_model,
         setup_coefficient_cache(material_model, qr, sdh),
         internal_cache,
         cv,
+        setup_condensation_correctors(evolution, material_model, qr, sdh)...,
     )
 end
 function setup_element_cache(
