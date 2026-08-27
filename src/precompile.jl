@@ -10,8 +10,7 @@
 #     set_preferences!(UUID("909927c2-98d5-4a67-bba9-79f03a9ad49b"), "precompile_workload" => false)
 #
 # The workload writes no files, prints nothing (a `NullLogger` swallows the integrator's finalize
-# `@info`) and leaves no global state behind. It runs on the strategy `default_strategy()` returns,
-# so the `PerColorAssemblyStrategy` paths are *not* covered.
+# `@info`) and leaves no global state behind. It runs on the strategy `default_strategy()` returns.
 
 using PrecompileTools: @setup_workload, @compile_workload
 

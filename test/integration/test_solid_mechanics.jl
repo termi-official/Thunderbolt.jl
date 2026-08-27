@@ -37,7 +37,6 @@ function test_solve_passive_structure(mesh, models)
         FiniteElementDiscretization(
             Dict(:d => LagrangeCollection{1}()^3);
             dbcs,
-            assembly_strategy = Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(3)),
         ),
         mesh,
     )
@@ -206,7 +205,6 @@ function solve_contractile_cuboid(mesh, model, timestepper)
         FiniteElementDiscretization(
             Dict(:d => LagrangeCollection{1}()^3);
             dbcs,
-            assembly_strategy = Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(3)),
         ),
         mesh,
     )
@@ -258,7 +256,6 @@ function test_solve_contractile_ideal_lv(
         FiniteElementDiscretization(
             Dict(:d => LagrangeCollection{1}()^3);
             dbcs,
-            assembly_strategy = Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(3)),
         ),
         mesh,
     )
