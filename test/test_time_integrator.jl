@@ -296,7 +296,7 @@ end
 # The Deuflhard controllers are pure functions of the Newton convergence history, so a stub
 # cache with prescribed `Θks` pins their step size laws exactly. End to end that history is
 # emergent and cannot be prescribed, which is why this stays a unit test.
-struct StubNewtonCache
+struct StubNewtonCache <: Thunderbolt.AbstractNonlinearSolverCache
     Θks::Vector{Float64}
     parameters::NamedTuple{(:enforce_monotonic_convergence,), Tuple{Bool}}
 end

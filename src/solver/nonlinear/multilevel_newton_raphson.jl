@@ -300,12 +300,17 @@ The global Newton's `simplified_newton` and `forcing` settings apply here as the
 [`NewtonRaphsonSolver`](@ref). Note what a simplified step does *not* skip: the condensation phase,
 because the residual is a function of the condensed state. What it reuses is the global Jacobian.
 """
-Base.@kwdef struct MultiLevelNewtonRaphsonSolver{gSolverType <: NewtonRaphsonSolver, lSolverType} <:
-                   AbstractNonlinearSolver
-    newton::gSolverType = NewtonRaphsonSolver()
-    local_solver::lSolverType = GenericLocalNonlinearSolver()
+Base.@kwdef struct MultiLevelNewtonRaphsonSolver <: AbstractNonlinearSolver
+    # Both fields are read once, at setup, where they choose which caches to build. Abstractly typed
+    # so that this description -- and every time scheme that holds one -- has a single type whatever
+    # Newton and local solver settings it carries.
+    newton::NewtonRaphsonSolver = NewtonRaphsonSolver()
+    local_solver::AbstractNonlinearSolver = GenericLocalNonlinearSolver()
 end
 
+# Both parameters stay. The local solver cache is handed down to the element caches and read inside
+# the quadrature point loop, which is the one place in this stack where a dynamic dispatch is not
+# free; the global cache no longer varies with the solver configuration anyway.
 struct MultiLevelNewtonRaphsonSolverCache{gCacheType, lCacheType} <: AbstractNonlinearSolverCache
     global_solver_cache::gCacheType
     local_solver_cache::lCacheType
@@ -340,7 +345,6 @@ function nlsolve!(
     monitor = cache.parameters.monitor
     simplified = cache.parameters.simplified_newton
     cache.iter = -1
-    Δu = linear_solver_cache.u
     residualnormprev = 0.0
     Θ1prev = length(Θks) > 0 ? first(Θks) : 0.0
     resize!(Θks, 0)
@@ -391,21 +395,16 @@ function nlsolve!(
         end
 
         _ew_prestep!(cache.forcing_cache, linear_solver_cache, residualnorm, cache.iter)
-        # See the note in the plain Newton: the Eisenstat-Walker criterion is relative to ‖r₀‖, so a
-        # warm-started increment would satisfy it trivially.
-        cache.forcing_cache !== nothing && fill!(Δu, zero(eltype(Δu)))
-        @timeit_debug "solve" sol = LinearSolve.solve!(linear_solver_cache)
-        nonlinear_step_monitor(cache, t, f, u, cache.parameters.monitor)
-        solve_succeeded =
-            LinearSolve.SciMLBase.successful_retcode(sol) ||
-            sol.retcode == LinearSolve.ReturnCode.Default # The latter seems off...
+        solve_succeeded, _ = _newton_increment_step!(
+            u,
+            sf,
+            cache,
+            linear_solver_cache,
+            t,
+            f,
+            cache.forcing_cache !== nothing,
+        )
         solve_succeeded || return false
-
-        eliminate_constraints_from_increment!(Δu, sf, cache)
-
-        # Only the entries the linear system solves for; the condensed tail is written by the
-        # assembly, not by the increment.
-        @inbounds @views u[uncondensed_range(sf)] .-= Δu
 
         if cache.iter > 0
             # In this case we might be unablet to estimate the convergence rate, because we are too close to the solution

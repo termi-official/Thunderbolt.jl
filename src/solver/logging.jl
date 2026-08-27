@@ -98,9 +98,11 @@ function linear_finalize_monitor(lincache, progress_monitor::DefaultProgressMoni
 end
 
 
-Base.@kwdef struct VTKNewtonMonitor{MonitorType}
+Base.@kwdef struct VTKNewtonMonitor
     outdir::String
-    inner_monitor::MonitorType = DefaultProgressMonitor()
+    # A monitor is entered once per Newton iteration, so the wrapped one is untyped for the same
+    # reason `NewtonRaphsonSolver.monitor` is.
+    inner_monitor::Any = DefaultProgressMonitor()
 end
 VTKNewtonMonitor(outdir::String) = VTKNewtonMonitor(outdir, DefaultProgressMonitor())
 

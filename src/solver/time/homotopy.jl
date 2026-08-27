@@ -1,18 +1,20 @@
 """
-    HomotopyPathSolver{IS, T, PFUN}
+    HomotopyPathSolver(inner_solver)
 
 Solve the nonlinear problem `F(u,t)=0` with given time increments `Δt`on some interval `[t_begin, t_end]`
 where `t` is some pseudo-time parameter.
 """
-struct HomotopyPathSolver{IS} <: AbstractSolver
-    inner_solver::IS
+struct HomotopyPathSolver <: AbstractSolver
+    # Read once, at setup, to build the nonlinear solver cache.
+    inner_solver::AbstractNonlinearSolver
 end
 
-mutable struct HomotopyPathSolverCache{SFT, ISC, T, VT <: AbstractVector{T}, VTprev} <:
+mutable struct HomotopyPathSolverCache{SFT, T, VT <: AbstractVector{T}, VTprev} <:
                AbstractTimeSolverCache
     # Continuation condenses nothing, so the stage unknowns are the function's.
     stage_function::SFT
-    inner_solver_cache::ISC
+    # Entered once per load step, through `nlsolve!`.
+    inner_solver_cache::AbstractNonlinearSolverCache
     uₙ::VT
     uₙ₋₁::VTprev
     tmp::VT

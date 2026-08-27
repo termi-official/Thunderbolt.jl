@@ -1,17 +1,15 @@
 #####################################################################
 #  This file contains optimized forward and backward Euler solvers  #
 #####################################################################
-Base.@kwdef struct BackwardEulerSolver{
-    SolverType,
-    SolutionVectorType,
-    SystemMatrixType,
-    MonitorType,
-} <: AbstractSolver
-    inner_solver::SolverType                       = LinearSolve.KrylovJL_CG()
+Base.@kwdef struct BackwardEulerSolver{SolutionVectorType, SystemMatrixType} <: AbstractSolver
+    # Read once, by `setup_solver_cache`: a `LinearSolve` algorithm for an affine problem, a nonlinear
+    # solver for a quasi-static one. The two share no supertype, and typing the scheme on either would
+    # respecialize the scheme, its cache and the integrator per solver choice.
+    inner_solver::Any                              = LinearSolve.KrylovJL_CG()
     solution_vector_type::Type{SolutionVectorType} = Vector{Float64}
     system_matrix_type::Type{SystemMatrixType}     = ThreadedSparseMatrixCSR{Float64, Int64}
     # DO NOT USE THIS (will be replaced by proper logging system)
-    monitor::MonitorType = DefaultProgressMonitor()
+    monitor::Any = DefaultProgressMonitor()
 end
 
 # Backward Euler *permits* a controller but does not bring one: the default below is the dummy, which
@@ -36,7 +34,6 @@ mutable struct BackwardEulerSolverCache{
     PrevSolutionType <: AbstractVector{T},
     TmpType <: AbstractVector{T},
     StageType,
-    MonitorType,
 } <: AbstractTimeSolverCache
     # Current solution buffer
     uₙ::SolutionType
@@ -46,8 +43,8 @@ mutable struct BackwardEulerSolverCache{
     tmp::TmpType
     # Utility to decide what kind of stage we solve (i.e. linear problem, full DAE or mass-matrix ODE)
     stage::StageType
-    # DO NOT USE THIS (will be replaced by proper logging system)
-    monitor::MonitorType
+    # DO NOT USE THIS (will be replaced by proper logging system). Read once per step, so untyped.
+    monitor::Any
 end
 
 # Performs a backward Euler step

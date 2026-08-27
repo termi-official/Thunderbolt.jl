@@ -54,17 +54,23 @@ Newton iteration is reused for all subsequent iterations. Only the residual is r
 via [`evaluate_stage_residual!`](@ref) each step. This saves Jacobian assembly and factorization
 cost per step at the expense of slower outer convergence.
 """
-Base.@kwdef struct NewtonRaphsonSolver{T, solverType, MonitorType, ForcingType} <:
-                   AbstractNonlinearSolver
+Base.@kwdef struct NewtonRaphsonSolver{T} <: AbstractNonlinearSolver
     # Convergence tolerance
     tol::T = 1e-4
     # Maximum number of iterations
     max_iter::Int = 100
-    inner_solver::solverType = LinearSolve.KrylovJL_GMRES()
-    monitor::MonitorType = DefaultProgressMonitor()
+    # Read once, by `setup_solver_cache`. Untyped because the field takes both a `LinearSolve`
+    # algorithm and a `KrylovMGSolver` description, which share no supertype -- and because the whole
+    # solver stack above it (this solver, its cache, the stage, the time scheme, the integrator)
+    # would otherwise be respecialized per linear solver choice for a value read at setup.
+    inner_solver::Any = LinearSolve.KrylovJL_GMRES()
+    # Called once per Newton iteration, so dynamic dispatch here costs nothing measurable. Untyped
+    # because the monitor protocol is a pair of methods (`nonlinear_step_monitor`,
+    # `nonlinear_finalize_monitor`), not a subtype relation, so a user monitor is any type at all.
+    monitor::Any = DefaultProgressMonitor()
     enforce_monotonic_convergence::Bool = true
     # Adaptive linear solver tolerance (Eisenstat-Walker); only active for iterative solvers.
-    forcing::ForcingType = nothing
+    forcing::Union{Nothing, EisenstatWalkerForcing} = nothing
     # When true, reuse the Jacobian and preconditioner from the first Newton iteration.
     simplified_newton::Bool = false
 end
@@ -72,19 +78,17 @@ end
 # The operator is deliberately absent: it belongs to the `AbstractStageFunction` being solved, which
 # is what knows which nonlinear problem this is. One owner, so a scheme cannot hand the solver one
 # operator and the cache another.
-mutable struct NewtonRaphsonSolverCache{
-    ResidualType,
-    T,
-    NewtonType <: NewtonRaphsonSolver{T},
-    InnerSolverCacheType,
-    ForcingCacheType,
-} <: AbstractNonlinearSolverCache
+mutable struct NewtonRaphsonSolverCache{ResidualType, T} <: AbstractNonlinearSolverCache
     # Cache for the right hand side f(u)
     residual::ResidualType
     #
-    const parameters::NewtonType
-    linear_solver_cache::InnerSolverCacheType
-    forcing_cache::ForcingCacheType
+    const parameters::NewtonRaphsonSolver{T}
+    # LinearSolve's cache is legitimately specialized on its algorithm; nothing above it is. Held
+    # untyped so this cache -- and every stage and scheme cache that holds one -- has the same type
+    # for every linear solver. `_newton_increment_step!` is the function barrier that recovers
+    # specialization for the vector sized work: one dispatch per Newton iteration.
+    linear_solver_cache::Any
+    forcing_cache::Union{Nothing, EisenstatWalkerForcingCache{T}}
     Θks::Vector{T} # TODO modularize this
     #
     iter::Int
@@ -180,6 +184,43 @@ function _ew_prestep!(fc::EisenstatWalkerForcingCache, linear_solver_cache, resi
 end
 
 """
+    _newton_increment_step!(u, sf, cache, linear_solver_cache, t, f, reset_increment) -> (ok, ‖Δu‖)
+
+Solve `J Δu = r` for the current Newton increment and subtract it from `u`.
+
+The linear cache is an argument rather than a field read of `cache`. [`NewtonRaphsonSolverCache`](@ref)
+holds it untyped so that the Newton stack is not specialized on the linear algorithm; this call is
+the one place per Newton iteration where that costs a dispatch, and every vector sized operation
+happens on the specialized side of it.
+
+`reset_increment` zeroes `Δu` before the solve. The Eisenstat-Walker criterion is relative to ‖r₀‖,
+which a warm started increment satisfies trivially — Krylov.jl would then return after 0–1 steps.
+
+‖Δu‖ is returned in the residual's precision, which is the one the convergence history `Θks` is kept
+in. That also keeps the return type inferable at the call sites, where only `linear_solver_cache` is
+of unknown type.
+
+Shared by the plain and the multilevel Newton, whose linear steps are the same.
+"""
+function _newton_increment_step!(u, sf, cache, linear_solver_cache, t, f, reset_increment::Bool)
+    T = eltype(cache.residual)
+    Δu = linear_solver_cache.u
+    reset_increment && fill!(Δu, zero(eltype(Δu)))
+    @timeit_debug "solve" sol = LinearSolve.solve!(linear_solver_cache)
+    nonlinear_step_monitor(cache, t, f, u, cache.parameters.monitor)
+    solve_succeeded =
+        LinearSolve.SciMLBase.successful_retcode(sol) ||
+        sol.retcode == LinearSolve.ReturnCode.Default # The latter seems off...
+    solve_succeeded || return (false, zero(T))
+
+    eliminate_constraints_from_increment!(Δu, sf, cache)
+    # Only the entries the linear system solves for; the condensed tail is written by the assembly,
+    # not by the increment.
+    @inbounds @views u[uncondensed_range(sf)] .-= Δu
+    return (true, convert(T, norm(Δu)))
+end
+
+"""
     nlsolve!(z, sf::AbstractStageFunction, cache, t)
 
 Solve the stage `sf` for its unknowns `z`.
@@ -210,7 +251,6 @@ function nlsolve!(
     monitor = cache.parameters.monitor
     simplified = cache.parameters.simplified_newton
     cache.iter = -1
-    Δu = linear_solver_cache.u
     residualnormprev = 0.0
     incrementnormprev = 0.0
     resize!(Θks, 0)
@@ -244,22 +284,16 @@ function nlsolve!(
         end
 
         _ew_prestep!(cache.forcing_cache, linear_solver_cache, residualnorm, cache.iter)
-        # The Eisenstat-Walker analysis assumes a fresh start (x₀ = 0) so that the
-        # initial residual equals the RHS and the tolerance η is meaningful relative
-        # to ‖b‖.  With a warm-started Δu, Krylov.jl's criterion ‖r‖ ≤ η·‖r₀‖ is
-        # trivially met in 0–1 steps because ‖r₀‖ << ‖b‖.
-        cache.forcing_cache !== nothing && fill!(Δu, zero(T))
-        @timeit_debug "solve" sol = LinearSolve.solve!(linear_solver_cache)
-        nonlinear_step_monitor(cache, t, f, u, cache.parameters.monitor)
-        solve_succeeded =
-            LinearSolve.SciMLBase.successful_retcode(sol) ||
-            sol.retcode == LinearSolve.ReturnCode.Default # The latter seems off...
+        solve_succeeded, incrementnorm = _newton_increment_step!(
+            u,
+            sf,
+            cache,
+            linear_solver_cache,
+            t,
+            f,
+            cache.forcing_cache !== nothing,
+        )
         solve_succeeded || return false
-
-        eliminate_constraints_from_increment!(Δu, sf, cache)
-
-        @inbounds @views u[uncondensed_range(sf)] .-= Δu # Current guess
-        incrementnorm = norm(Δu)
 
         if cache.iter > 0
             Θk = min(residualnorm/residualnormprev, incrementnorm/incrementnormprev)

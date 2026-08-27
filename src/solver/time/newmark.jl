@@ -37,13 +37,14 @@ here.
 
 Damping is not supported yet; the model is `M ü + f_int(u) = f_ext`.
 """
-Base.@kwdef struct NewmarkSolver{T, SolverType, SystemMatrixType, MonitorType} <: AbstractSolver
+Base.@kwdef struct NewmarkSolver{T, SystemMatrixType} <: AbstractSolver
     β::T                                       = 1 / 4
     γ::T                                       = 1 / 2
-    inner_solver::SolverType                   = MultiLevelNewtonRaphsonSolver()
+    # Read once, at setup, to build the stage's nonlinear solver cache.
+    inner_solver::AbstractNonlinearSolver      = MultiLevelNewtonRaphsonSolver()
     system_matrix_type::Type{SystemMatrixType} = ThreadedSparseMatrixCSR{Float64, Int64}
     # DO NOT USE THIS (will be replaced by proper logging system)
-    monitor::MonitorType = DefaultProgressMonitor()
+    monitor::Any = DefaultProgressMonitor()
 end
 
 SciMLBase.isadaptive(::NewmarkSolver) = true
@@ -223,7 +224,6 @@ mutable struct NewmarkSolverCache{
     AccelerationType <: AbstractVector{T},
     VelocityReferenceType <: AbstractVector{T},
     StageType,
-    MonitorType,
 } <: AbstractTimeSolverCache
     # Current solution buffer
     uₙ::SolutionType
@@ -251,8 +251,8 @@ mutable struct NewmarkSolverCache{
     # element query can slice a cell out of it exactly as it does for the previous solution.
     uᵥ::VelocityReferenceType
     stage::StageType
-    # DO NOT USE THIS (will be replaced by proper logging system)
-    monitor::MonitorType
+    # DO NOT USE THIS (will be replaced by proper logging system). Read once per step, so untyped.
+    monitor::Any
 end
 
 """

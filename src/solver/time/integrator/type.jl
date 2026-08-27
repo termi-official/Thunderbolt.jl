@@ -14,7 +14,6 @@ Base.@kwdef mutable struct IntegratorOptions{
     F3,
     F4,
     F5,
-    progressMonitorType,
     SType,
     tstopsType,
     saveatType,
@@ -46,7 +45,8 @@ Base.@kwdef mutable struct IntegratorOptions{
     # This is mostly OrdinaryDiffEqCore compat
     progress::Bool = true
     progress_steps::Int = 1
-    progress_monitor::progressMonitorType = DefaultProgressMonitor()
+    # Read once per step, so untyped -- see `NewtonRaphsonSolver.monitor`.
+    progress_monitor::Any = DefaultProgressMonitor()
     save_idxs::SType = nothing
     # `advance_to_tstop` is read by `step!` below, `stop_at_next_tstop` by
     # `SciMLBase.done`. Both are read after `__init` returns, so they live here.
