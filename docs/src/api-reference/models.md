@@ -87,7 +87,7 @@ LinYinPassiveModel
 LinYinActiveModel
 HumphreyStrumpfYinModel
 Guccione1991PassiveModel
-Thunderbolt.BioNeoHookean
+BioNeoHookean
 ```
 
 ### Active Energies
@@ -177,8 +177,8 @@ Thunderbolt.AbstractCoupler
 ```@docs
 LumpedFluidSolidCoupler
 Pressure3D0DVolumeCoupler
-Hirschvogel2017SurrogateVolume
-RSAFDQ2022SurrogateVolume
+ChamberVolumeCoupling
+Thunderbolt.volume_integral
 RSAFDQ2022Split
 RSAFDQ2022Model
 chamber_volume

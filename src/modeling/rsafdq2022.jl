@@ -1,13 +1,12 @@
 ##########################################################################
 
-mutable struct RSAFDQ2022SingleChamberTying{CVM}
+mutable struct RSAFDQ2022SingleChamberTying
     # The chamber pressure's global dof, from `algebraic_dofs`. It is also its index in the enclosing
     # split vector, because the 3D block leads that vector.
     const pressure_dof_index::Int
     const pressure_symbol::Symbol
     const pressure_parameter_index_local
     const facets::OrderedSet{FacetIndex}
-    const volume_method::CVM
     const displacement_symbol::Symbol
     # The buffer between the two sides of the split: `VolumeTransfer0D3D` writes the 0D solve's
     # chamber volume here, and the 3D stage copies it into its parameter bag once per step.
@@ -15,8 +14,8 @@ mutable struct RSAFDQ2022SingleChamberTying{CVM}
     const V⁰ᴰidx_global::Int
 end
 
-struct RSAFDQ2022TyingInfo{CVM}
-    chambers::Vector{RSAFDQ2022SingleChamberTying{CVM}}
+struct RSAFDQ2022TyingInfo
+    chambers::Vector{RSAFDQ2022SingleChamberTying}
 end
 
 solution_size(problem::RSAFDQ2022TyingInfo) = length(problem.chambers)
@@ -64,32 +63,11 @@ function _chamber_volume_contribution(sdh, u, facets, method::RSAFDQ2022SingleCh
         Ferrite.reinit!(fv, facet)
         ddofs = @view celldofs(facet)[drange]
         dₑ = @view u[ddofs]
-        volume += _chamber_volume_facet(fv, getcoordinates(facet), dₑ, method.volume_method)
+        volume += _chamber_volume_facet(fv, getcoordinates(facet), dₑ)
     end
     return volume
 end
 
-
-"""
-Compute the chamber volume as a surface integral via the integral
-  -∫ det(F) ((h ⊗ h)(x + d - b)) adj(F) N ∂Ωendo
-
-as proposed by [RegSalAfrFedDedQar:2022:cem](@citet).
-
-!!! note
-    This integral basically measures the volume via displacement on a given axis.
-"""
-Base.@kwdef struct RSAFDQ2022SurrogateVolume{T}
-    h::Vec{3, T} = Vec((0.0, 1.0, 0.0))
-    b::Vec{3, T} = Vec((0.0, 0.0, -0.1))
-end
-
-function volume_integral(x::Vec, d::Vec, F::Tensor, N::Vec, method::RSAFDQ2022SurrogateVolume)
-    @unpack h, b = method
-    val = det(F) * ((h ⊗ h) ⋅ (x + d - b)) ⋅ (transpose(inv(F)) ⋅ N)
-    # val < 0.0 && @error val, d, x, N
-    -val #det(F) * ((h ⊗ h) ⋅ (x + d - b)) ⋅ (transpose(inv(F)) ⋅  N)
-end
 
 ##########################################################################
 
@@ -98,10 +76,9 @@ end
 
 Generic description of the function associated with the RSAFDQModel.
 """
-struct RSAFDQ20223DFunction{MT <: QuasiStaticFunction, TP <: RSAFDQ2022TyingInfo} <:
-       AbstractSemidiscreteFunction
+struct RSAFDQ20223DFunction{MT <: QuasiStaticFunction} <: AbstractSemidiscreteFunction
     structural_function::MT
-    tying_info::TP
+    tying_info::RSAFDQ2022TyingInfo
 end
 
 # The chamber pressures are algebraic variables of the structural `DofHandler`, so this function's
@@ -180,12 +157,12 @@ function _check_rsafdq_internal_variables(structural_problem)
 end
 
 function create_chamber_tyings(
-    coupler::LumpedFluidSolidCoupler{CVM},
+    coupler::LumpedFluidSolidCoupler,
     structural_problem,
     circuit_model,
-) where {CVM}
+)
     num_unknowns_structure = solution_size(structural_problem)
-    chamber_tyings = RSAFDQ2022SingleChamberTying{CVM}[]
+    chamber_tyings = RSAFDQ2022SingleChamberTying[]
     for i = 1:length(coupler.chamber_couplings)
         # Get i-th ChamberVolumeCoupling
         coupling = coupler.chamber_couplings[i]
@@ -200,7 +177,6 @@ function create_chamber_tyings(
             coupling.pressure_symbol_3D,
             chamber_pressure_idx_lumped,
             chamber_facetset,
-            coupling.chamber_volume_method,
             coupler.displacement_symbol,
             NaN,
             # The chamber volume, in the circuit block that follows the 3D unknowns.
@@ -223,7 +199,6 @@ _chamber_coupler_models(coupler::LumpedFluidSolidCoupler) = Tuple(
         coupling.chamber_surface_setname,
         coupler.displacement_symbol,
         coupling.pressure_symbol_3D,
-        coupling.chamber_volume_method,
     ) for coupling in coupler.chamber_couplings
 )
 
@@ -273,7 +248,7 @@ function semidiscretize(
     chamber_tyings = create_chamber_tyings(coupler, structural_problem, circuit_model)
     @debug "Chamber tyings:"
     for chamber_tying in chamber_tyings
-        @debug "Chamber:" chamber_tying.pressure_dof_index chamber_tying.volume_method chamber_tying.displacement_symbol chamber_tying.V⁰ᴰidx_global
+        @debug "Chamber:" chamber_tying.pressure_dof_index chamber_tying.displacement_symbol chamber_tying.V⁰ᴰidx_global
     end
     @assert num_chambers_lumped == length(chamber_tyings) "Number of chambers in structural model ($(length(chamber_tyings))) and circuit model ($num_chambers_lumped) differs."
 

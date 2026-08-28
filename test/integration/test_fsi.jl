@@ -17,23 +17,29 @@ function test_solve_contractile_ideal_lv_3D0D(
 )
     tspan = (0.0, tmax)
 
-    # Clamp three sides
-    dbcs = [
-        Dirichlet(:d, getnodeset(mesh, "MyocardialAnchor1"), (x, t) -> (0.0, 0.0, 0.0), [1, 2, 3]),
-        Dirichlet(:d, getnodeset(mesh, "MyocardialAnchor2"), (x, t) -> (0.0, 0.0), [2, 3]),
-        Dirichlet(:d, getnodeset(mesh, "MyocardialAnchor3"), (x, t) -> (0.0,), [3]),
-        Dirichlet(:d, getnodeset(mesh, "MyocardialAnchor4"), (x, t) -> (0.0,), [3]),
-    ]
-
+    # No Dirichlet condition: the epicardial Robin spring pins the rigid body modes, and the base is
+    # left free to move -- the valvular plane is what keeps the chamber volume well defined then.
     solid_model = QuasiStaticModel(
         :d,
         constitutive_model,
-        (NormalSpringBC(0.1, "Epicardium"), NormalSpringBC(0.1, "Base")),
+        (RobinBC(0.1, "Epicardium"), NormalSpringBC(0.1, "Base")),
     )
-    coupled_model = RSAFDQ2022Model(Dict("myocardium" => solid_model), fluid_model, coupler)
+    # The cap closing the basal orifice: soft, isotropic, passive, dragged along by the annulus.
+    valvular_plane_model = QuasiStaticModel(
+        :d,
+        PK1Model(
+            BioNeoHookean(; α = 0.1, mpU = SimpleCompressionPenalty(1.0)),
+            NoMicrostructureModel(),
+        ),
+    )
+    coupled_model = RSAFDQ2022Model(
+        Dict("myocardium" => solid_model, "valvular-plane" => valvular_plane_model),
+        fluid_model,
+        coupler,
+    )
     splitform = semidiscretize(
         RSAFDQ2022Split(coupled_model),
-        FiniteElementDiscretization(Dict(:d => LagrangeCollection{1}()^3); dbcs),
+        FiniteElementDiscretization(Dict(:d => LagrangeCollection{1}()^3)),
         mesh,
     )
 
@@ -87,7 +93,7 @@ end
         longitudinal_upper = 0.4,
         apex_inner = scaling_factor * 1.3,
         apex_outer = scaling_factor*1.5,
-        with_control_point = true,
+        with_valvular_plane = true,
     )
 
     cs = compute_lv_coordinate_system(mesh; subdomains = ["myocardium"])
@@ -121,14 +127,7 @@ end
         RSAFDQ2022LumpedCicuitModel(; lv_pressure_given = false),
         LumpedFluidSolidCoupler(
             [
-                ChamberVolumeCoupling(
-                    "Endocardium",
-                    "lv-volume-control",
-                    RSAFDQ2022SurrogateVolume(),
-                    :Vₗᵥ,
-                    :pₗᵥ,
-                    :pₗᵥ,
-                ),
+                ChamberVolumeCoupling("LVChamberSurface", :Vₗᵥ, :pₗᵥ, :pₗᵥ),
             ],
             :d,
         ),
@@ -160,9 +159,7 @@ end
         LumpedFluidSolidCoupler(
             [
                 ChamberVolumeCoupling(
-                    "Endocardium",
-                    "lv-volume-control",
-                    RSAFDQ2022SurrogateVolume(),
+                    "LVChamberSurface",
                     rsafdq2022mtk.Vₗᵥ,
                     rsafdq2022mtk.external_input_lv_p,
                     :pₗᵥ,

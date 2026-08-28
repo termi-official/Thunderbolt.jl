@@ -1,10 +1,14 @@
 """
+    ChamberVolumeCoupling(chamber_surface_setname, lumped_volume_symbol, lumped_pressure_symbol, pressure_symbol_3D)
+
 Descriptor for which volume to couple with which variable for the constraint.
+
+`chamber_surface_setname` has to name a *closed* surface, e.g. the `"LVChamberSurface"` of
+[`generate_ideal_lv_mesh`](@ref): the chamber volume is the divergence-theorem integral over it, and
+that is the enclosed volume only where the surface closes.
 """
-struct ChamberVolumeCoupling{CVM}
+struct ChamberVolumeCoupling
     chamber_surface_setname::String
-    control_point_setname::String
-    chamber_volume_method::CVM
     # Untyped on purpose. These hold either a plain `Symbol` (hand-written lumped models) or a
     # `ModelingToolkit.Num` (MTK-backed ones), and naming the MTK type here would make this struct
     # undefinable without ModelingToolkit — which it must not be, since the `Symbol` flavour is used
@@ -19,46 +23,40 @@ end
 """
 Enforce the constraints that
   chamber volume 3D (solid model) = chamber volume 0D (lumped circuit)
-via Lagrange multiplied, where a surface pressure integral is introduced such that
-  ∫  ∂Ωendo
-Here `chamber_volume_method` is responsible to compute the 3D volume.
+via Lagrange multipliers, where a surface pressure integral is introduced over each chamber surface.
+The 3D volume is [`Thunderbolt.volume_integral`](@ref) over the closed chamber surface each
+[`ChamberVolumeCoupling`](@ref) names.
 
 This approach has been proposed by [RegSalAfrFedDedQar:2022:cem](@citet).
 """
-struct LumpedFluidSolidCoupler{CVM} <: AbstractCoupler
-    chamber_couplings::Vector{ChamberVolumeCoupling{CVM}}
+struct LumpedFluidSolidCoupler <: AbstractCoupler
+    chamber_couplings::Vector{ChamberVolumeCoupling}
     displacement_symbol::Any # see the note on `ChamberVolumeCoupling`
 end
 
-"""
-    Debug helper for FSI. Just keeps the chamber volume constant.
-"""
-struct ConstantChamberVolume
-    volume::Float64
-end
+@doc raw"""
+    volume_integral(x, d, F, N)
 
-function volume_integral(x, d, F, N, method::ConstantChamberVolume)
-    method.volume
-end
+One quadrature point of the chamber volume `V³ᴰ(u)`, in the reference configuration.
 
+```math
+V = -\frac{1}{3} \oint_{\partial \Omega} (\bm{x} + \bm{d}) \cdot \bm{n} \, \mathrm{d}a
+  = -\frac{1}{3} \oint_{\partial \Omega_0} (\bm{x} + \bm{d}) \cdot \mathrm{det}(\bm{F}) \bm{F}^{-T} \bm{N} \, \mathrm{d}A
+```
+
+the divergence theorem on the deformed chamber surface, pulled back with Nanson's formula. The sign
+is the traversal's: a chamber surface is swept from the cells bounding the chamber, so `n` points
+into it and the enclosed volume comes out positive.
+
+This is a volume only where the surface is closed -- an endocardium open at the valvular orifice
+gives a number that depends on the origin and is not the cavity. Closing it is the mesh's job, see
+the `with_valvular_plane` keyword of [`generate_ideal_lv_mesh`](@ref).
 """
-Chamber volume estimator as presented in [HirBasJagWilGee:2017:mcc](@cite).
-
-Compute the chamber volume as a surface integral via the integral
-   - ∫ (x + d) det(F) cof(F) N ∂Ωendo
-where it is assumed that the chamber is convex, zero displacement in
-apicobasal direction at the valvular plane occurs and the plane normal is aligned
-with the z axis, where the origin is at z=0.
-"""
-struct Hirschvogel2017SurrogateVolume end
-
-function volume_integral(x::Vec, d::Vec, F::Tensor, N::Vec, method::Hirschvogel2017SurrogateVolume)
-    val = det(F) * (x + d) ⋅ inv(transpose(F)) ⋅ N
-    return -val
-end
+volume_integral(x::Vec, d::Vec, F::Tensor, N::Vec) =
+    -det(F) * (x + d) ⋅ (transpose(inv(F)) ⋅ N) / 3
 
 """
-    Pressure3D0DVolumeCoupler(chamber_surface_name, displacement_symbol, pressure_symbol, volume_method)
+    Pressure3D0DVolumeCoupler(chamber_surface_name, displacement_symbol, pressure_symbol)
 
 The 3D side of one chamber's 3D-0D tying, as a facet term of the structural model.
 
@@ -75,11 +73,10 @@ endocardial facets as facet items, the pressure dof as the facet items' global-d
 `- V⁰ᴰ` row as its algebraic item. The chamber surface is named rather than resolved, so the term is
 constructible where the model is written down and the facetset is looked up at setup.
 """
-struct Pressure3D0DVolumeCoupler{CVM}
+struct Pressure3D0DVolumeCoupler
     chamber_surface_name::String
     displacement_symbol::Symbol
     pressure_symbol::Symbol
-    volume_method::CVM
 end
 
 is_facet_item_model(::Pressure3D0DVolumeCoupler) = true
@@ -93,7 +90,6 @@ algebraic_variables(model::Pressure3D0DVolumeCoupler) = (model.pressure_symbol,)
     # Which chamber this cache serves. `pressure_index` cannot say so: it is a position in the
     # subdomain's augmented tail, and the subdomains differ in `ndofs_per_cell`.
     pressure_symbol
-    volume_method
 end
 
 duplicate_for_device(device, cache::Pressure3D0DVolumeCouplerCache) =
@@ -102,7 +98,6 @@ duplicate_for_device(device, cache::Pressure3D0DVolumeCouplerCache) =
         cache.displacement_range,
         cache.pressure_index,
         cache.pressure_symbol,
-        cache.volume_method,
     )
 
 # The chamber pressure belongs to no cell, so it enters the facet items' local system as their
@@ -141,28 +136,27 @@ function FerriteOperators.setup_facet_item_cache(
         dof_range(sdh, model.displacement_symbol),
         only(global_dof_range),
         model.pressure_symbol,
-        model.volume_method,
     )
 end
 
 """
-    _chamber_volume_facet(fv, coords, dₑ, volume_method) -> V
+    _chamber_volume_facet(fv, coords, dₑ) -> V
 
 One facet's contribution to `∫_Γ V³ᴰ(u) dΓ`, over a `FacetValues` already reinitialized on it.
 
-The single spelling of the surrogate's quadrature loop. Three consumers integrate through it: the
-tying kernel's chamber row, the [`ChamberVolumeFunctional`](@ref) reduction, and the reference
+The single spelling of the volume integral's quadrature loop. Three consumers integrate through it:
+the tying kernel's chamber row, the [`ChamberVolumeFunctional`](@ref) reduction, and the reference
 volume [`compute_chamber_volume`](@ref) evaluates before any operator exists — so none of the three
 can drift from the others.
 """
-function _chamber_volume_facet(fv, coords, dₑ, volume_method)
+function _chamber_volume_facet(fv, coords, dₑ)
     V = zero(eltype(dₑ))
     for qp in 1:getnquadpoints(fv)
         ∇d = function_gradient(fv, qp, dₑ)
         F  = one(∇d) + ∇d
         d  = function_value(fv, qp, dₑ)
         x  = spatial_coordinate(fv, qp, coords)
-        V += volume_integral(x, d, F, getnormal(fv, qp), volume_method) * getdetJdV(fv, qp)
+        V += volume_integral(x, d, F, getnormal(fv, qp)) * getdetJdV(fv, qp)
     end
     return V
 end
@@ -233,7 +227,7 @@ function _assemble_3D0D_coupling_facet!(
     args::FerriteOperators.FacetArgs,
     local_facet_index::Int,
 )
-    (; fv, displacement_range, pressure_index, volume_method) = element_cache
+    (; fv, displacement_range, pressure_index) = element_cache
     geometry_cache = args.cell
 
     reinit!(fv, geometry_cache, local_facet_index)
@@ -294,8 +288,8 @@ function _assemble_3D0D_coupling_facet!(
             x = spatial_coordinate(fv, qp, coords)
             # Via chain rule we obtain:
             #   δV(u,F(u)) = δu ⋅ dVdu + δF : dVdF
-            ∂V∂u = Tensors.gradient(u_ -> volume_integral(x, u_, F, n₀, volume_method), d)
-            ∂V∂F = Tensors.gradient(u_ -> volume_integral(x, d, u_, n₀, volume_method), F)
+            ∂V∂u = Tensors.gradient(u_ -> volume_integral(x, u_, F, n₀), d)
+            ∂V∂F = Tensors.gradient(u_ -> volume_integral(x, d, u_, n₀), F)
             for j ∈ 1:getnbasefunctions(fv)
                 δuⱼ = shape_value(fv, qp, j)
                 ∇δuⱼ = shape_gradient(fv, qp, j)
@@ -305,7 +299,7 @@ function _assemble_3D0D_coupling_facet!(
         end
     end
 
-    residual && (req.r[pdof] += _chamber_volume_facet(fv, coords, dₑ, volume_method))
+    residual && (req.r[pdof] += _chamber_volume_facet(fv, coords, dₑ))
 
     return nothing
 end
@@ -339,7 +333,7 @@ function FerriteOperators.evaluate_facet_functional(
     kind.pressure_symbol === cache.pressure_symbol || return nothing
     reinit!(cache.fv, args.cell, local_facet_index)
     dₑ = @view args.states.u[cache.displacement_range]
-    return _chamber_volume_facet(cache.fv, getcoordinates(args.cell), dₑ, cache.volume_method)
+    return _chamber_volume_facet(cache.fv, getcoordinates(args.cell), dₑ)
 end
 
 # The chambers an operator's tying facets serve. A reduction for a symbol none of them names would

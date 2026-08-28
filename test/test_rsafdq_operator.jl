@@ -59,7 +59,7 @@ function rsafdq_reference_state(; seed = 42)
         longitudinal_upper = 0.4,
         apex_inner         = scaling_factor * 1.3,
         apex_outer         = scaling_factor * 1.5,
-        with_control_point = true,
+        with_valvular_plane = true,
     )
 
     # Pinned sequential like the operator below: the reference is bit-reproducible only if its
@@ -85,32 +85,27 @@ function rsafdq_reference_state(; seed = 42)
         microstructure_model,
     )
 
-    dbcs = [
-        Dirichlet(:d, getnodeset(mesh, "MyocardialAnchor1"), (x, t) -> (0.0, 0.0, 0.0), [1, 2, 3]),
-        Dirichlet(:d, getnodeset(mesh, "MyocardialAnchor2"), (x, t) -> (0.0, 0.0), [2, 3]),
-        Dirichlet(:d, getnodeset(mesh, "MyocardialAnchor3"), (x, t) -> (0.0,), [3]),
-        Dirichlet(:d, getnodeset(mesh, "MyocardialAnchor4"), (x, t) -> (0.0,), [3]),
-    ]
+    # No Dirichlet condition: the epicardial Robin spring pins the rigid body modes, and the base
+    # stays free -- the valvular plane is what closes the chamber surface while it moves.
     solid_model = QuasiStaticModel(
         :d,
         constitutive_model,
-        (NormalSpringBC(0.1, "Epicardium"), NormalSpringBC(0.1, "Base")),
+        (RobinBC(0.1, "Epicardium"), NormalSpringBC(0.1, "Base")),
+    )
+    # The cap is a carrier, not tissue: soft, isotropic, passive, without microstructure.
+    valvular_plane_model = QuasiStaticModel(
+        :d,
+        PK1Model(
+            BioNeoHookean(; α = 0.1, mpU = SimpleCompressionPenalty(1.0)),
+            NoMicrostructureModel(),
+        ),
     )
     coupler = LumpedFluidSolidCoupler(
-        [
-            ChamberVolumeCoupling(
-                "Endocardium",
-                "lv-volume-control",
-                RSAFDQ2022SurrogateVolume(),
-                :Vₗᵥ,
-                :pₗᵥ,
-                :pₗᵥ,
-            ),
-        ],
+        [ChamberVolumeCoupling("LVChamberSurface", :Vₗᵥ, :pₗᵥ, :pₗᵥ)],
         :d,
     )
     coupled_model = RSAFDQ2022Model(
-        Dict("myocardium" => solid_model),
+        Dict("myocardium" => solid_model, "valvular-plane" => valvular_plane_model),
         RSAFDQ2022LumpedCicuitModel(; lv_pressure_given = false),
         coupler,
     )
@@ -119,7 +114,6 @@ function rsafdq_reference_state(; seed = 42)
         RSAFDQ2022Split(coupled_model),
         FiniteElementDiscretization(
             Dict(:d => LagrangeCollection{1}()^3);
-            dbcs,
             # Pinned reference: deterministic summation needs the sequential device.
             assembly_strategy = Thunderbolt.SequentialAssemblyStrategy(Thunderbolt.SequentialCPUDevice()),
         ),
@@ -277,7 +271,7 @@ end
         # ... and the direct, operator-free evaluation `create_chamber_tyings` still uses for the
         # reference volume: one integrand, two routes, `≈` because the traversals differ in order.
         chamber = only(state.f.tying_info.chambers)
-        @test V ≈ Thunderbolt.compute_chamber_volume(dh, state.u, "Endocardium", chamber) rtol = 1.0e-12
+        @test V ≈ Thunderbolt.compute_chamber_volume(dh, state.u, "LVChamberSurface", chamber) rtol = 1.0e-12
 
         # Nothing was written into the operator by evaluating it.
         J₂, r₂ = assemble_pair(state.op, state.u, state.p, state.ctx)
@@ -364,12 +358,7 @@ function two_chamber_state(; seed = 7, device = Thunderbolt.SequentialCPUDevice(
     # The closed chamber surfaces: endocardium plus the plate face that caps it.
     chamber_surface_names = ("LVChamberSurface", "LAChamberSurface")
     couplers = ntuple(2) do i
-        Pressure3D0DVolumeCoupler(
-            chamber_surface_names[i],
-            :d,
-            pressure_symbols[i],
-            RSAFDQ2022SurrogateVolume(),
-        )
+        Pressure3D0DVolumeCoupler(chamber_surface_names[i], :d, pressure_symbols[i])
     end
     # The plate is a carrier, not tissue: passive, three orders of magnitude below the wall and
     # nearly free to change volume, so it follows the annulus without stiffening it.
@@ -562,10 +551,10 @@ end
     end
 
     @testset "each chamber row is its closed volume" begin
-        # `RSAFDQ2022SurrogateVolume` measures `-∮ (x + d - b) ⋅ ĥ n̂ dΓ` along one axis, which is
-        # the enclosed volume only on a closed surface -- and then it is the same along every axis,
-        # and independent of `b`. The plate is meshed, so the closure moves with the wall and the
-        # deformed surface is still closed.
+        # The chamber row measures `-∮ (x + d) ⋅ n̂ dΓ / 3`, which is the enclosed volume only on a
+        # closed surface -- and then it agrees with the single-axis form `-∮ xᵢ n̂ᵢ dΓ` for every
+        # axis. The plate is meshed, so the closure moves with the wall and the deformed surface is
+        # still closed.
         deformed = deformed_coordinates(dh, state.u)
         for (i, name) in enumerate(("LVChamberSurface", "LAChamberSurface"))
             volumes = surface_volumes(dh.grid, getfacetset(dh.grid, name), deformed)

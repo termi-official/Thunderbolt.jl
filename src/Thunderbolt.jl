@@ -321,6 +321,7 @@ export
     LinYinPassiveModel,
     LinYinActiveModel,
     HumphreyStrumpfYinModel,
+    BioNeoHookean,
     Guccione1991PassiveModel,
     Guccione1993ActiveModel,
     LinearSpringModel,
@@ -351,9 +352,7 @@ export
     MTKLumpedCicuitModel,
     # FSI
     RSAFDQ2022Model,
-    RSAFDQ2022SurrogateVolume,
     RSAFDQ2022Split,
-    Hirschvogel2017SurrogateVolume,
     LumpedFluidSolidCoupler,
     ChamberVolumeCoupling,
     Pressure3D0DVolumeCoupler,
@@ -367,6 +366,7 @@ export
     TransverselyIsotropicMicrostructureModel,
     TransverselyIsotropicMicrostructure,
     ODB25LTMicrostructureParameters,
+    NoMicrostructureModel,
     create_microstructure_model,
     # Coordinate system
     LVCoordinateSystem,

@@ -578,7 +578,92 @@ function _fan_wedge_cells!(cells, ring, singular, nc::Int, nr::Int, flip::Bool)
 end
 
 """
-    generate_ideal_lv_mesh(num_elements_circumferential::Int, num_elements_radial::Int, num_elements_longitudinal::Int; inner_radius::T = Float64(0.7), outer_radius::T = Float64(1.0), longitudinal_upper::T = Float64(0.2), apex_inner::T = Float64(1.3), apex_outer::T = Float64(1.5), septum_fraction = 1//3)
+Push the valvular plate that closes a circular orifice of radius `orifice_radius` in the plane
+`z = plane_height`, and return `(cells, ventricular_face, opposite_face)` -- the plate's cell ids and
+its two faces as facetsets.
+
+The plate is a slab of thickness `thickness` centered on the plane. It attaches to the endocardial
+rim ring `rim` -- the `nc` nodes of the orifice, at the azimuths of `circumferential_angles` --
+without duplicating or collapsing nodes: an innermost wedge fan around the plate's center edge,
+`np - 2` annular hexahedral layers, and an outermost ring of wedges whose triangular faces are
+radial-vertical with the rim node as the third vertex, so the plate tapers to a knife edge exactly at
+the orifice.
+
+Both generators using this put the ventricle above the plane, so `ventricular_face` is the plate's
+`+z` side.
+"""
+function _valvular_plate!(
+    cells,
+    nodes,
+    rim,
+    circumferential_angles,
+    orifice_radius,
+    plane_height,
+    thickness,
+    np::Int,
+)
+    nc     = length(circumferential_angles)
+    top    = plane_height + thickness/2
+    bottom = plane_height - thickness/2
+
+    # The plate's interior rings, at the two plate faces, and its center edge. Its outermost ring is
+    # the rim ring itself, which is why it is not built here.
+    node_offset = length(nodes)
+    for j = 1:(np-1), z ∈ (top, bottom), φ ∈ circumferential_angles
+        radius = orifice_radius*j/np
+        push!(nodes, Node(Vec((radius*cos(φ), radius*sin(φ), z))))
+    end
+    plate_array = reshape(collect((node_offset+1):length(nodes)), (nc, 2, np-1))
+    plate_axis  = (length(nodes)+1):(length(nodes)+2)
+    push!(nodes, Node(Vec((zero(top), zero(top), top))))
+    push!(nodes, Node(Vec((zero(top), zero(top), bottom))))
+
+    # From the center outwards. The cells stack from the ventricular face to the opposite one, which
+    # is what the fan's flipped winding and the transposed node array of the annular layers are for
+    # -- both builders stack along their last index.
+    offset = length(cells)
+    _fan_wedge_cells!(cells, view(plate_array, :, :, 1), plate_axis, nc, 1, true)
+    fan = collect((offset+1):length(cells))
+
+    offset = length(cells)
+    _shell_hex_cells!(cells, permutedims(plate_array, (1, 3, 2)), nc, np-2, 1)
+    hex = collect((offset+1):length(cells))
+
+    # The knife edge: each wedge stands on two radial-vertical triangles that run from the outermost
+    # plate ring to a single rim node, so the plate ends on the shared ring without a node of its own
+    # there and without any collapsed edge.
+    offset = length(cells)
+    for i = 1:nc
+        i_next = (i == nc) ? 1 : i + 1
+        push!(
+            cells,
+            Wedge((
+                plate_array[i, 2, np-1],
+                plate_array[i, 1, np-1],
+                rim[i],
+                plate_array[i_next, 2, np-1],
+                plate_array[i_next, 1, np-1],
+                rim[i_next],
+            )),
+        )
+    end
+    taper = collect((offset+1):length(cells))
+
+    ventricular_face = OrderedSet{FacetIndex}([
+        [FacetIndex(cl, 1) for cl in fan]
+        [FacetIndex(cl, 1) for cl in hex]
+        [FacetIndex(cl, 4) for cl in taper]
+    ])
+    opposite_face = OrderedSet{FacetIndex}([
+        [FacetIndex(cl, 5) for cl in fan]
+        [FacetIndex(cl, 6) for cl in hex]
+        [FacetIndex(cl, 3) for cl in taper]
+    ])
+    return [fan; hex; taper], ventricular_face, opposite_face
+end
+
+"""
+    generate_ideal_lv_mesh(num_elements_circumferential::Int, num_elements_radial::Int, num_elements_longitudinal::Int; inner_radius::T = Float64(0.7), outer_radius::T = Float64(1.0), longitudinal_upper::T = Float64(0.2), apex_inner::T = Float64(1.3), apex_outer::T = Float64(1.5), with_valvular_plane = false, valvular_plane_thickness = (outer_radius - inner_radius)/9, num_elements_valvular_plane = 3, septum_fraction = 1//3)
 
 Generate an idealized left ventricle as a truncated ellipsoid.
 The number of elements per axis are controlled by the first three parameters.
@@ -588,12 +673,32 @@ The number of elements per axis are controlled by the first three parameters.
 a quadrant above it. It is an angle here, unlike on the ring generators where the identically named
 keyword is an axial extent.
 
-The mesh carries the two internal facetsets `SRidgePost` and `SRidgeAnt` that
-[`compute_lv_coordinate_system`](@ref) needs. An idealized ventricle has no right ventricle to
-attach to, so the ridges are placed by convention: `SRidgePost` at `φ = 0` and `SRidgeAnt` such that
-the septum between them covers `septum_fraction` of the circumference. They snap to the nearest
-element interface, so the split is exact only when `num_elements_circumferential * septum_fraction`
-is an integer.
+# Sets
+
+Facetsets `"Endocardium"`, `"Epicardium"` and `"Base"`, the annular top face of the wall, plus the
+two internal sheets `"SRidgePost"` and `"SRidgeAnt"` that [`compute_lv_coordinate_system`](@ref)
+needs. An idealized ventricle has no right ventricle to attach to, so the ridges are placed by
+convention: `SRidgePost` at `φ = 0` and `SRidgeAnt` such that the septum between them covers
+`septum_fraction` of the circumference. They snap to the nearest element interface, so the split is
+exact only when `num_elements_circumferential * septum_fraction` is an integer.
+
+Nodesets `"Apex"`, `"ApexInOut"` and `"MyocardialAnchor1"`-`"MyocardialAnchor4"`, four basal nodes
+that pin the rigid body modes of a free-floating ventricle. Cellset `"myocardium"`.
+
+# Valvular plane
+
+`with_valvular_plane` closes the basal orifice with the same plate the two-chamber
+[`generate_ideal_lh_mesh`](@ref) puts in the mitral orifice: cellset `"valvular-plane"`, a slab of
+thickness `valvular_plane_thickness` centered on the basal plane, `num_elements_valvular_plane`
+elements from its center edge to the knife edge it tapers to on the shared endocardial rim ring. It
+is meshed rather than imposed, so it deforms with the wall; downstream gives it a soft passive
+material, which carries the plate along without adding meaningful stiffness.
+
+Its two faces are the facetsets `"LVValvularPlane"`, the ventricular one, and
+`"ValvularPlaneOuter"`, and `"LVChamberSurface"` is the union of `"Endocardium"` with the former --
+the *closed* surface a 3D-0D volume coupler integrates over. The endocardium alone is open at the
+orifice, and its divergence-theorem volume is then neither direction-independent nor correct under
+deformation, which is what closing it fixes for a base that moves.
 """
 function generate_ideal_lv_mesh(
     num_elements_circumferential::Int,
@@ -604,7 +709,9 @@ function generate_ideal_lv_mesh(
     longitudinal_upper::T = Float64(0.2),
     apex_inner::T = Float64(1.3),
     apex_outer::T = Float64(1.5),
-    with_control_point::Bool = false,
+    with_valvular_plane::Bool = false,
+    valvular_plane_thickness::T = (outer_radius - inner_radius)/9,
+    num_elements_valvular_plane::Int = 3,
     septum_fraction = 1//3,
 ) where {T}
     # Generate a rectangle in cylindrical coordinates and transform coordinates back to carthesian.
@@ -648,7 +755,7 @@ function generate_ideal_lv_mesh(
 
     # Generate all cells but the apex
     node_array = reshape(collect(1:n_nodes), (n_nodes_c, n_nodes_r, n_nodes_l))
-    cells = with_control_point ? Union{Hexahedron, Wedge, Point}[] : Union{Hexahedron, Wedge}[]
+    cells = Union{Hexahedron, Wedge}[]
     _shell_hex_cells!(
         cells,
         node_array,
@@ -723,15 +830,32 @@ function generate_ideal_lv_mesh(
         i == i_ant-1 && push!(facetsets["SRidgeAnt"], FacetIndex(cl, 3))
     end
 
-    if with_control_point
-        push!(nodes, Node(Vec((0.0, 0.0, 0.0))))
-        push!(cells, Point(length(nodes)))
-        cellsets = Dict([
-            "myocardium" => OrderedSet(1:(length(cells)-1)),
-            "lv-volume-control" => OrderedSet([length(cells)]),
-        ])
-    else
-        cellsets = Dict(["myocardium" => OrderedSet(1:length(cells))])
+    cellsets = Dict{String, OrderedSet{Int}}("myocardium" => OrderedSet(1:length(cells)))
+
+    if with_valvular_plane
+        num_elements_valvular_plane ≥ 2 || error(
+            "`num_elements_valvular_plane` ($(num_elements_valvular_plane)) is below 2: the " *
+            "valvular plate needs at least its center fan and its tapering outer ring.",
+        )
+        valvular_plane_thickness > 0.0 || error(
+            "`valvular_plane_thickness` ($(valvular_plane_thickness)) has to be positive.",
+        )
+        basal_angle = longitudinal_angle[end]
+        plate_cells, plate_face, outer_face = _valvular_plate!(
+            cells,
+            nodes,
+            view(node_array, :, 1, n_nodes_l),
+            circumferential_angle[1:(end-1)],
+            inner_radius*sin(basal_angle),
+            apex_outer*cos(basal_angle),
+            valvular_plane_thickness,
+            num_elements_valvular_plane,
+        )
+        cellsets["valvular-plane"]      = OrderedSet{Int}(plate_cells)
+        facetsets["LVValvularPlane"]    = plate_face
+        facetsets["ValvularPlaneOuter"] = outer_face
+        # The closed surface a chamber volume is measured over.
+        facetsets["LVChamberSurface"]   = union(facetsets["Endocardium"], plate_face)
     end
 
     return to_mesh(
@@ -933,21 +1057,6 @@ function generate_ideal_lh_mesh(
         push!(nodes, Node(atrium_point(0.0, 0.0, radius_percent)))
     end
 
-    # The plate's interior rings, at the two plate faces, and its center edge. Its outermost ring is
-    # the endocardial rim ring itself, which is why it is not built here.
-    orifice_radius = rim_radius(0.0)
-    plate_top      = rim_height + valvular_plane_thickness/2
-    plate_bottom   = rim_height - valvular_plane_thickness/2
-    plate_offset   = length(nodes)
-    for j = 1:(np-1), z ∈ (plate_top, plate_bottom), φ ∈ circumferential_angle
-        radius = orifice_radius*j/np
-        push!(nodes, Node(Vec((radius*cos(φ), radius*sin(φ), z))))
-    end
-    plate_array = reshape(collect((plate_offset+1):length(nodes)), (nc, 2, np-1))
-    plate_axis  = (length(nodes)+1):(length(nodes)+2)
-    push!(nodes, Node(Vec((zero(T), zero(T), plate_top))))
-    push!(nodes, Node(Vec((zero(T), zero(T), plate_bottom))))
-
     cells = Union{Hexahedron, Wedge}[]
 
     _shell_hex_cells!(cells, ventricle_array, nc, nr, n_lv)
@@ -967,36 +1076,16 @@ function generate_ideal_lh_mesh(
     _fan_wedge_cells!(cells, view(atrium_array, :, :, n_la+1), roof_nodes, nc, nr, true)
     roof_fan = reshape(collect((offset+1):length(cells)), (nc, nr))
 
-    # The plate, from its center outwards. Its cells stack from the ventricular face to the atrial
-    # one, which is what the fan's flipped winding and the transposed node array of the annular
-    # layers are for -- both builders stack along their last index.
-    offset = length(cells)
-    _fan_wedge_cells!(cells, view(plate_array, :, :, 1), plate_axis, nc, 1, true)
-    plate_fan = collect((offset+1):length(cells))
-
-    offset = length(cells)
-    _shell_hex_cells!(cells, permutedims(plate_array, (1, 3, 2)), nc, np-2, 1)
-    plate_hex = collect((offset+1):length(cells))
-
-    # The knife edge: each wedge stands on two radial-vertical triangles that run from the
-    # outermost plate ring to a single rim node, so the plate ends on the shared ring without a node
-    # of its own there and without any collapsed edge.
-    offset = length(cells)
-    for i = 1:nc
-        i_next = (i == nc) ? 1 : i + 1
-        push!(
-            cells,
-            Wedge((
-                plate_array[i, 2, np-1],
-                plate_array[i, 1, np-1],
-                ventricle_array[i, 1, end],
-                plate_array[i_next, 2, np-1],
-                plate_array[i_next, 1, np-1],
-                ventricle_array[i_next, 1, end],
-            )),
-        )
-    end
-    plate_taper = collect((offset+1):length(cells))
+    plate_cells, lv_plate_face, la_plate_face = _valvular_plate!(
+        cells,
+        nodes,
+        view(ventricle_array, :, 1, size(ventricle_array, 3)),
+        circumferential_angle,
+        rim_radius(0.0),
+        rim_height,
+        valvular_plane_thickness,
+        np,
+    )
 
     facetsets = Dict{String, OrderedSet{FacetIndex}}()
     facetsets["LVEndocardium"] = OrderedSet{FacetIndex}([
@@ -1018,16 +1107,8 @@ function generate_ideal_lh_mesh(
     facetsets["Endocardium"] = union(facetsets["LVEndocardium"], facetsets["LAEndocardium"])
     facetsets["Epicardium"]  = union(facetsets["LVEpicardium"], facetsets["LAEpicardium"])
 
-    facetsets["LVValvularPlane"] = OrderedSet{FacetIndex}([
-        [FacetIndex(cl, 1) for cl in plate_fan];
-        [FacetIndex(cl, 1) for cl in plate_hex];
-        [FacetIndex(cl, 4) for cl in plate_taper]
-    ])
-    facetsets["LAValvularPlane"] = OrderedSet{FacetIndex}([
-        [FacetIndex(cl, 5) for cl in plate_fan];
-        [FacetIndex(cl, 6) for cl in plate_hex];
-        [FacetIndex(cl, 3) for cl in plate_taper]
-    ])
+    facetsets["LVValvularPlane"] = lv_plate_face
+    facetsets["LAValvularPlane"] = la_plate_face
     # The closed surfaces a chamber volume is measured over. The endocardia alone are open at the
     # orifice, where the plate closes them.
     facetsets["LVChamberSurface"] =
@@ -1064,7 +1145,7 @@ function generate_ideal_lh_mesh(
     cellsets = Dict{String, OrderedSet{Int}}(
         "ventricle"      => OrderedSet{Int}([ventricle_hex[:]; apex_fan[:]]),
         "atrium"         => OrderedSet{Int}([atrium_hex[:]; roof_fan[:]]),
-        "valvular-plane" => OrderedSet{Int}([plate_fan; plate_hex; plate_taper]),
+        "valvular-plane" => OrderedSet{Int}(plate_cells),
     )
 
     return to_mesh(
