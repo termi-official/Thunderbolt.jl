@@ -92,11 +92,13 @@ function rsafdq_reference_state(; seed = 42)
         constitutive_model,
         (RobinBC(0.1, "Epicardium"), NormalSpringBC(0.1, "Base")),
     )
-    # The cap is a carrier, not tissue: soft, isotropic, passive, without microstructure.
+    # The cap is a stiff closure, not tissue: it carries the chamber pressure on its ventricular
+    # face without bulging, and is compressible so the single element it is thick does not lock.
+    # Same parameters as the `cm03_3d0d-coupling` tutorial, which states the contract.
     valvular_plane_model = QuasiStaticModel(
         :d,
         PK1Model(
-            BioNeoHookean(; α = 0.1, mpU = SimpleCompressionPenalty(1.0)),
+            BioNeoHookean(; α = 16000.0, mpU = SimpleCompressionPenalty(16000.0)),
             NoMicrostructureModel(),
         ),
     )
@@ -360,11 +362,11 @@ function two_chamber_state(; seed = 7, device = Thunderbolt.SequentialCPUDevice(
     couplers = ntuple(2) do i
         Pressure3D0DVolumeCoupler(chamber_surface_names[i], :d, pressure_symbols[i])
     end
-    # The plate is a carrier, not tissue: passive, three orders of magnitude below the wall and
-    # nearly free to change volume, so it follows the annulus without stiffening it.
+    # The plate is a stiff closure, not tissue: both chamber pressures act on it, and it carries
+    # them without bulging. Same parameters as the `cm03_3d0d-coupling` tutorial.
     plate_material = PK1Model(
-        Guccione1991PassiveModel(; C₀ = 1.0e-3, mpU = SimpleCompressionPenalty(5.0e-2)),
-        atrium_microstructure,
+        BioNeoHookean(; α = 16000.0, mpU = SimpleCompressionPenalty(16000.0)),
+        NoMicrostructureModel(),
     )
     # All three subdomains carry both couplers: the declarations have to agree across a domain
     # split, and each coupler only ever traverses the facets of its own chamber. The plate is not

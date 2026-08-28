@@ -142,7 +142,7 @@ include(joinpath(@__DIR__, "testfixtures.jl"))
         # The basal plane of the default geometry and the thickness of the plate centered on it.
         z_base          = 1.5*cos(1.2*π/2)
         orifice_radius  = 0.7*sin(1.2*π/2)
-        plate_thickness = (1.0 - 0.7)/9
+        plate_thickness = (1.0 - 0.7)/3
 
         @testset "the plate is additive" begin
             # The ventricle itself is untouched by the closure: same nodes, same cells, same sets,
@@ -246,9 +246,9 @@ include(joinpath(@__DIR__, "testfixtures.jl"))
             coarse = -volumes[1]
             fine   = -surface_volumes(fine_mesh, getfacetset(fine_mesh, "LVChamberSurface"))[1]
             # The facetted cavity is inscribed in the smooth one, and the ventricular half of the
-            # plate displaces another ~1% of it, so both stay below and converge to just under it.
+            # plate displaces another ~2.5% of it, so both stay below and converge to just under it.
             @test coarse < fine < reference
-            @test fine ≈ reference rtol = 0.035
+            @test fine ≈ reference rtol = 0.05
         end
 
         @testset "parameter feasibility" begin
@@ -273,7 +273,7 @@ include(joinpath(@__DIR__, "testfixtures.jl"))
         # The annulus plane of the default geometry, where the two shells meet, and the thickness of
         # the plate centered on it.
         z_rim = 1.5*cos(1.2*π/2)
-        plate_thickness = (1.0 - 0.7)/9
+        plate_thickness = (1.0 - 0.7)/3
         test_detJ(mesh)
         @test min_detJdV(fine_mesh) > 0
 
@@ -397,9 +397,9 @@ include(joinpath(@__DIR__, "testfixtures.jl"))
             coarse = -surface_volumes(mesh, getfacetset(mesh, "LVChamberSurface"))[1]
             fine   = -surface_volumes(fine_mesh, getfacetset(fine_mesh, "LVChamberSurface"))[1]
             # The facetted cavity is inscribed in the smooth one, and the ventricular half of the
-            # plate displaces another 0.8% of it, so both stay below and converge to just under it.
+            # plate displaces another ~2.5% of it, so both stay below and converge to just under it.
             @test coarse < fine < reference
-            @test fine ≈ reference rtol = 0.035
+            @test fine ≈ reference rtol = 0.05
         end
 
         @testset "rim sharing" begin

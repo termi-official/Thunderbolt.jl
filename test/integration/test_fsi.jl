@@ -24,11 +24,13 @@ function test_solve_contractile_ideal_lv_3D0D(
         constitutive_model,
         (RobinBC(0.1, "Epicardium"), NormalSpringBC(0.1, "Base")),
     )
-    # The cap closing the basal orifice: soft, isotropic, passive, dragged along by the annulus.
+    # The cap closing the basal orifice: a stiff isotropic closure that carries the chamber pressure
+    # on its ventricular face without bulging, compressible so the single element it is thick does
+    # not lock. Same parameters as the `cm03_3d0d-coupling` tutorial, which states the contract.
     valvular_plane_model = QuasiStaticModel(
         :d,
         PK1Model(
-            BioNeoHookean(; α = 0.1, mpU = SimpleCompressionPenalty(1.0)),
+            BioNeoHookean(; α = 16000.0, mpU = SimpleCompressionPenalty(16000.0)),
             NoMicrostructureModel(),
         ),
     )

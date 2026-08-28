@@ -663,7 +663,7 @@ function _valvular_plate!(
 end
 
 """
-    generate_ideal_lv_mesh(num_elements_circumferential::Int, num_elements_radial::Int, num_elements_longitudinal::Int; inner_radius::T = Float64(0.7), outer_radius::T = Float64(1.0), longitudinal_upper::T = Float64(0.2), apex_inner::T = Float64(1.3), apex_outer::T = Float64(1.5), with_valvular_plane = false, valvular_plane_thickness = (outer_radius - inner_radius)/9, num_elements_valvular_plane = 3, septum_fraction = 1//3)
+    generate_ideal_lv_mesh(num_elements_circumferential::Int, num_elements_radial::Int, num_elements_longitudinal::Int; inner_radius::T = Float64(0.7), outer_radius::T = Float64(1.0), longitudinal_upper::T = Float64(0.2), apex_inner::T = Float64(1.3), apex_outer::T = Float64(1.5), with_valvular_plane = false, valvular_plane_thickness = (outer_radius - inner_radius)/3, num_elements_valvular_plane = 3, septum_fraction = 1//3)
 
 Generate an idealized left ventricle as a truncated ellipsoid.
 The number of elements per axis are controlled by the first three parameters.
@@ -690,9 +690,16 @@ that pin the rigid body modes of a free-floating ventricle. Cellset `"myocardium
 `with_valvular_plane` closes the basal orifice with the same plate the two-chamber
 [`generate_ideal_lh_mesh`](@ref) puts in the mitral orifice: cellset `"valvular-plane"`, a slab of
 thickness `valvular_plane_thickness` centered on the basal plane, `num_elements_valvular_plane`
-elements from its center edge to the knife edge it tapers to on the shared endocardial rim ring. It
-is meshed rather than imposed, so it deforms with the wall; downstream gives it a soft passive
-material, which carries the plate along without adding meaningful stiffness.
+elements from its center edge to the knife edge it tapers to on the shared endocardial rim ring. The
+plate is always *one* element thick; `valvular_plane_thickness` therefore also sets that element's
+aspect ratio, and the default keeps it within a factor of about two of the radial element size. A
+markedly thinner plate is a single trilinear element in bending and locks.
+
+The plate is meshed rather than imposed, and a 3D-0D coupler puts the chamber pressure on its
+ventricular face, so downstream has to give it a material stiff enough to carry that pressure
+without bulging -- see the `cm03_3d0d-coupling` tutorial for the contract. A plate soft enough to be
+merely "carried along" is the most compliant part of the chamber and absorbs the volume change that
+the wall should be doing.
 
 Its two faces are the facetsets `"LVValvularPlane"`, the ventricular one, and
 `"ValvularPlaneOuter"`, and `"LVChamberSurface"` is the union of `"Endocardium"` with the former --
@@ -710,7 +717,7 @@ function generate_ideal_lv_mesh(
     apex_inner::T = Float64(1.3),
     apex_outer::T = Float64(1.5),
     with_valvular_plane::Bool = false,
-    valvular_plane_thickness::T = (outer_radius - inner_radius)/9,
+    valvular_plane_thickness::T = (outer_radius - inner_radius)/3,
     num_elements_valvular_plane::Int = 3,
     septum_fraction = 1//3,
 ) where {T}
@@ -864,7 +871,7 @@ function generate_ideal_lv_mesh(
 end
 
 """
-    generate_ideal_lh_mesh(num_elements_circumferential::Int, num_elements_radial::Int, num_elements_longitudinal::Int, num_elements_longitudinal_la::Int; inner_radius = 0.7, outer_radius = 1.0, longitudinal_upper = 0.2, apex_inner = 1.3, apex_outer = 1.5, la_cavity_radius = outer_radius, la_cavity_depth = inner_radius, la_wall_thickness = (outer_radius - inner_radius)/3, valvular_plane_thickness = la_wall_thickness/3, num_elements_valvular_plane = 3, septum_fraction = 1//3)
+    generate_ideal_lh_mesh(num_elements_circumferential::Int, num_elements_radial::Int, num_elements_longitudinal::Int, num_elements_longitudinal_la::Int; inner_radius = 0.7, outer_radius = 1.0, longitudinal_upper = 0.2, apex_inner = 1.3, apex_outer = 1.5, la_cavity_radius = outer_radius, la_cavity_depth = inner_radius, la_wall_thickness = (outer_radius - inner_radius)/3, valvular_plane_thickness = la_wall_thickness, num_elements_valvular_plane = 3, septum_fraction = 1//3)
 
 Generate an idealized left heart: the truncated ellipsoid of [`generate_ideal_lv_mesh`](@ref), a
 thin-walled left atrium grown from the far side of its basal rim, and a valvular plate closing the
@@ -912,12 +919,18 @@ thickness there to `la_wall_thickness` at the roof.
 
 # Valvular plate
 
-`"valvular-plane"` is a thin solid plate of thickness `valvular_plane_thickness`, centered on the
-annulus plane, that closes the mitral orifice so that each chamber has a closed surface: without it
-the endocardial sets are open at the orifice and the divergence-theorem chamber volume is neither
-direction-independent nor correct under deformation. It is meshed rather than imposed, so it deforms
-with the wall; downstream gives it a soft dummy material, which carries the plate along without
-adding meaningful stiffness.
+`"valvular-plane"` is a solid plate of thickness `valvular_plane_thickness`, centered on the annulus
+plane, that closes the mitral orifice so that each chamber has a closed surface: without it the
+endocardial sets are open at the orifice and the divergence-theorem chamber volume is neither
+direction-independent nor correct under deformation. The plate is always *one* element thick, and
+its default thickness is the atrial wall's, which keeps that element within a factor of about two of
+the radial element size; a markedly thinner plate is a single trilinear element in bending and locks.
+
+It is meshed rather than imposed, and a 3D-0D coupler puts each chamber's pressure on the face
+bounding it, so downstream has to give the plate a material stiff enough to carry those pressures
+without bulging -- see the `cm03_3d0d-coupling` tutorial for the contract. A plate soft enough to be
+merely "carried along" is the most compliant part of the chambers and absorbs the volume change that
+the walls should be doing.
 
 It attaches to the *shared* endocardial rim ring, without duplicating or collapsing nodes: an
 innermost wedge fan around the plate's center edge, `num_elements_valvular_plane - 2` annular
@@ -962,7 +975,7 @@ function generate_ideal_lh_mesh(
     la_cavity_radius::T = outer_radius,
     la_cavity_depth::T = inner_radius,
     la_wall_thickness::T = (outer_radius - inner_radius)/3,
-    valvular_plane_thickness::T = la_wall_thickness/3,
+    valvular_plane_thickness::T = la_wall_thickness,
     num_elements_valvular_plane::Int = 3,
     septum_fraction = 1//3,
 ) where {T}
