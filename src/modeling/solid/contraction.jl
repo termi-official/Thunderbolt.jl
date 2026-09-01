@@ -38,10 +38,9 @@ steady state material needs neither, which is what makes it the one kind of cond
 continuation solver such as [`HomotopyPathSolver`](@ref) can carry: growth and remodelling, where the
 trajectory does not matter and only the final state does.
 
-No such material exists in this package yet, so the local solver for the category is deliberately
-unwritten. What exists is the type, the [`SteadyStateEvolution`](@ref) trait value that selects it,
-and `material_routine`/`reduced_material_routine` arities that take the current `Q` alone and report
-the missing piece by name.
+A material in this category supplies `solve_local_constraint` and `solve_local_state!` in their
+eight-argument form (no `Qknownflat`, no `Δt`); everything else — the element cache, the corrector
+store, the dof layout — is the machinery the rate type materials already use.
 """
 abstract type SteadyStateCondensationMaterialStateCache <: AbstractCondensationMaterialStateCache end
 struct EmptySteadyStateCondensationMaterialStateCache <: SteadyStateCondensationMaterialStateCache end

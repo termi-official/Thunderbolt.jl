@@ -4,10 +4,15 @@
 Solve the nonlinear problem `F(u,t)=0` with given time increments `Δt`on some interval `[t_begin, t_end]`
 where `t` is some pseudo-time parameter.
 """
-struct HomotopyPathSolver <: AbstractSolver
+struct HomotopyPathSolver{LS} <: AbstractSolver
     # Read once, at setup, to build the nonlinear solver cache.
     inner_solver::AbstractNonlinearSolver
+    # Solves `0 = L(F, Q)` per quadrature point for a `SteadyStateEvolution` material.
+    local_solver::LS
 end
+
+HomotopyPathSolver(inner_solver::AbstractNonlinearSolver) =
+    HomotopyPathSolver(inner_solver, GenericLocalNonlinearSolver())
 
 mutable struct HomotopyPathSolverCache{SFT, T, VT <: AbstractVector{T}, VTprev} <:
                AbstractTimeSolverCache
@@ -93,12 +98,24 @@ end
 # Continuation poses the internal forces alone: no previous solution, no timestep, no inertia. The
 # handler is the function's own, because for these functions the solution vector and the weak form
 # live on the same one.
+setup_local_solver_cache(f::QuasiStaticFunction, solver::HomotopyPathSolver) =
+    _setup_local_solver_cache(solver.local_solver, f.integrator, f.dh, f.lvh)
+
+# A function that is not a quasi-static one poses no quadrature point local problem the continuation
+# could solve -- a `NullFunction` has no elements at all.
+setup_local_solver_cache(f, ::HomotopyPathSolver) = nothing
+
 setup_stage_operator(
     f::AbstractSemidiscreteFunction,
     solver::HomotopyPathSolver,
     local_solver_cache,
     t₀,
-) = setup_operator(get_strategy(f), get_volume_integrator(f), f.dh; slots = THUNDERBOLT_STAGE_SLOTS)
+) = setup_operator(
+    get_strategy(f),
+    _annotate_with_local_solver_cache(get_volume_integrator(f), local_solver_cache),
+    f.dh;
+    slots = THUNDERBOLT_STAGE_SLOTS,
+)
 
 # A `NullFunction` matches both the null method (any solver) and the continuation method (any
 # function), and neither signature dominates. The answer is the null operator either way.
@@ -123,7 +140,14 @@ setup_stage_operator(
 # carries the pseudo-time alone and the scheme matrix is the plain `∂F/∂u`. `f` selects the
 # parameter bag: most functions need none, but e.g. `RSAFDQ20223DFunction` overrides this to carry
 # the solver-supplied chamber reference volumes (see `rsafdq2022.jl`).
-_homotopy_stage_evaluation(f, t) = StageEvaluation(; ctx = TimeIntegrationContext(t, zero(t), zero(t)))
+_homotopy_stage_evaluation(f, t) = StageEvaluation(;
+    ctx       = TimeIntegrationContext(t, zero(t), zero(t)),
+    condensed = _homotopy_condenses(f),
+)
+
+# Only a solid mechanics function can carry a condensed tail, and only that one answers the query.
+_homotopy_condenses(f) = false
+_homotopy_condenses(f::AbstractSolidMechanicsFunction) = has_internal_variables(f)
 
 function setup_solver_cache(
     f::AbstractSemidiscreteFunction,
@@ -139,7 +163,12 @@ function setup_solver_cache(
     # The stage carries the operator, so it is built before the solver cache that works on it. A
     # continuation offers neither a previous solution nor a timestep, so its context is the bare
     # pseudo-time; `_homotopy_stage_evaluation` decides what else `f` needs in `p`.
-    stage_function = FullStateStage(f, setup_stage_operator(f, solver, nothing, t₀), _homotopy_stage_evaluation(f, t₀))
+    local_solver_cache = setup_local_solver_cache(f, solver)
+    stage_function = FullStateStage(
+        f,
+        setup_stage_operator(f, solver, local_solver_cache, t₀),
+        _homotopy_stage_evaluation(f, t₀),
+    )
     inner_solver_cache = setup_solver_cache(stage_function, solver.inner_solver)
 
     vtype = Vector{Float64}
@@ -191,6 +220,11 @@ end
 
 contraction_rate_cache(cache::HomotopyPathSolverCache) =
     global_newton_cache(cache.inner_solver_cache)
+
+# A rejected load step discards the trial `q` along with `u`, so the correctors computed for it have
+# to go too -- the generic `restore_state!` only copies.
+restore_state!(u::AbstractVector, uprev::AbstractVector, cache::HomotopyPathSolverCache) =
+    rollback_stage!(u, uprev, cache.stage_function)
 
 # --- convergence driven step size control --------------------------------------------------------
 #

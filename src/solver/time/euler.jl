@@ -596,6 +596,20 @@ function _setup_internal_cache_annotation_unwrap(
     wrapper::LocalSolverCacheAnnotation{<:QuasiStaticModel},
     material_model::AbstractMaterialModel,
     internal_cache,
+    ::SteadyStateEvolution,
+    qr::QuadratureRule,
+    sdh::SubDofHandler,
+)
+    return GenericSteadyStateCondensationMaterialStateCache(
+        material_model,
+        internal_cache,
+        wrapper.local_solver_cache,
+    )
+end
+function _setup_internal_cache_annotation_unwrap(
+    wrapper::LocalSolverCacheAnnotation{<:QuasiStaticModel},
+    material_model::AbstractMaterialModel,
+    internal_cache,
     ::FirstOrderEvolution,
     qr::QuadratureRule,
     sdh::SubDofHandler,

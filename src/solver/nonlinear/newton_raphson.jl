@@ -114,18 +114,19 @@ end
 
 Allocate the Newton work buffers for the stage `sf`.
 
-The residual is sized by the stage's unknowns rather than by the linear system, which for a
-condensed solid mechanics function is longer than `getJ` -- the internal variables live in the
-solution vector but not in the global system. The asymmetry is deliberate: only the leading
-`size(J, 1)` entries ever reach the linear solve.
+The residual is sized by the *linear system*, i.e. by [`uncondensed_range`](@ref), not by the stage's
+unknowns. The two coincide unless the function condenses internal variables at quadrature point
+level, in which case the condensed tail lives in the solution vector but has no equation in the
+global system -- and `apply_zero!` would refuse a right hand side longer than the matrix.
 """
 function setup_solver_cache(sf::AbstractStageFunction, solver::NewtonRaphsonSolver{T}) where {T}
     @unpack inner_solver = solver
     f = getfunction(sf)
     op = getoperator(sf)
     J = getJ(op)
-    residual = Vector{T}(undef, stage_size(sf))
-    Δu = Vector{T}(undef, stage_size(sf))
+    nlinear = length(uncondensed_range(sf))
+    residual = Vector{T}(undef, nlinear)
+    Δu = Vector{T}(undef, nlinear)
 
     # Connect both solver caches
     inner_prob  = LinearSolve.LinearProblem(J, residual; u0 = Δu)

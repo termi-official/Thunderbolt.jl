@@ -230,6 +230,18 @@ const RateTypeCondensationMaterialStateCache = Union{
     RateDependentCondensationMaterialStateCache,
 }
 
+"""
+    AnyCondensationMaterialStateCache
+
+Every cache whose material carries a condensed internal variable, rate type or steady state. It is
+what the `frozen_` entry points take: evaluating the stress at a state someone else solved for is the
+same operation whichever local problem produced it.
+"""
+const AnyCondensationMaterialStateCache = Union{
+    SteadyStateCondensationMaterialStateCache,
+    RateTypeCondensationMaterialStateCache,
+}
+
 # Uniform five-argument entry point. A rate-independent material answers through its existing
 # four-argument method with a zero rate tangent, so the element assembles one expression either way.
 @inline stress_and_tangent(
@@ -553,6 +565,70 @@ condense_material_state!(
 ) = rate_dependent_material_needs_rate(material_model)
 
 """
+    condense_material_routine(model, kinematics, coefficient_cache, state_cache, geometry_cache, qp, time, Qflat)
+
+The steady state form: solve `0 = L(F, Q)`, write the converged state into `Qflat`, and return the
+tangent correction. No `Qknownflat`, no `Δt` — the local problem carries no time derivative, which is
+the whole content of the [`SteadyStateEvolution`](@ref) category.
+
+`Qflat` arrives holding the previous trial point's state, so a local solver reading it as its initial
+guess is warm started for free.
+"""
+function condense_material_routine(
+    material_model::AbstractMaterialModel,
+    kinematics::DeformationGradient,
+    coefficient_cache,
+    state_cache::SteadyStateCondensationMaterialStateCache,
+    geometry_cache::Ferrite.CellCache,
+    qp::QuadraturePoint,
+    time,
+    Qflat,
+)
+    coefficients = evaluate_coefficient(coefficient_cache, geometry_cache, qp, time)
+    _, ∂P∂QdQdF = solve_local_constraint(
+        deformation_gradient(kinematics),
+        coefficients,
+        material_model,
+        state_cache,
+        geometry_cache,
+        qp,
+        time,
+        Qflat,
+    )
+    return KinematicSensitivities(∂P∂QdQdF)
+end
+
+"""
+    condense_material_state!(model, kinematics, coefficient_cache, state_cache, geometry_cache, qp, time, Qflat)
+
+The solve half of the steady state [`condense_material_routine`](@ref), for a residual-only
+condensation.
+"""
+function condense_material_state!(
+    material_model::AbstractMaterialModel,
+    kinematics::DeformationGradient,
+    coefficient_cache,
+    state_cache::SteadyStateCondensationMaterialStateCache,
+    geometry_cache::Ferrite.CellCache,
+    qp::QuadraturePoint,
+    time,
+    Qflat,
+)
+    coefficients = evaluate_coefficient(coefficient_cache, geometry_cache, qp, time)
+    solve_local_state!(
+        deformation_gradient(kinematics),
+        coefficients,
+        material_model,
+        state_cache,
+        geometry_cache,
+        qp,
+        time,
+        Qflat,
+    )
+    return nothing
+end
+
+"""
     frozen_material_routine(model, kinematics, coefficient_cache, state_cache, geometry_cache, qp, time, Qflat)
 
 Stress and the partial sensitivities at the internal state `Qflat` holds -- a pure function of
@@ -563,7 +639,7 @@ function frozen_material_routine(
     material_model::AbstractMaterialModel,
     kinematics::AbstractKinematics,
     coefficient_cache,
-    state_cache::RateTypeCondensationMaterialStateCache,
+    state_cache::AnyCondensationMaterialStateCache,
     geometry_cache::Ferrite.CellCache,
     qp::QuadraturePoint,
     time,
@@ -587,7 +663,7 @@ function frozen_reduced_material_routine(
     material_model::AbstractMaterialModel,
     kinematics::AbstractKinematics,
     coefficient_cache,
-    state_cache::RateTypeCondensationMaterialStateCache,
+    state_cache::AnyCondensationMaterialStateCache,
     geometry_cache::Ferrite.CellCache,
     qp::QuadraturePoint,
     time,
@@ -731,9 +807,10 @@ surface as this message rather than as a wrong answer.
     "declares `internal_variable_evolution(...) = SteadyStateEvolution()` and poses `0 = L(F, Q)`.",
 )
 
-# The steady state category: `0 = L(F, Q)`, condensed but rate free, hence assembled on the bare
-# `time` path. No material in this package poses that problem yet, so the local solver for it is an
-# open extension point rather than a stub that would return something plausible and wrong.
+# A steady state material reached the uncondensed assembly path, which cannot solve `0 = L(F, Q)` and
+# has no `Q` to evaluate at. This should have been prevented by `quasistatic_element_cache_type`
+# handing such a model the condensed steady element cache; the method is the safety net for a path
+# that built the wrong cache.
 material_routine(
     material_model::AbstractMaterialModel,
     F::Tensor{2},
@@ -742,8 +819,7 @@ material_routine(
     geometry_cache::Ferrite.CellCache,
     qp::QuadraturePoint,
     time,
-    Qflat,
-) = steady_state_local_solver_missing(material_model, "material_routine")
+) = steady_state_material_needs_condensation(material_model)
 
 reduced_material_routine(
     material_model::AbstractMaterialModel,
@@ -753,23 +829,19 @@ reduced_material_routine(
     geometry_cache::Ferrite.CellCache,
     qp::QuadraturePoint,
     time,
-    Qflat,
-) = steady_state_local_solver_missing(material_model, "reduced_material_routine")
+) = steady_state_material_needs_condensation(material_model)
 
 """
-    steady_state_local_solver_missing(material_model, entry_point)
+    steady_state_material_needs_condensation(material_model)
 
-Names the one piece a steady state condensation material has to supply.
-
-The category is wired through the rest of the machinery — trait, state cache, element cache, dof
-layout — so that implementing a growth or remodelling model is a matter of writing its local solver
-and this method, not of extending the framework.
+A material declaring [`SteadyStateEvolution`](@ref) was assembled through the uncondensed element
+cache, which never solves a local problem and passes no `Q`.
 """
-@noinline steady_state_local_solver_missing(material_model, entry_point) = error(
-    "$(typeof(material_model).name.name) declares `SteadyStateEvolution()`, but no local solver " *
-    "for the algebraic constraint `0 = L(F, Q)` is implemented for it. Add a method " *
-    "`Thunderbolt.$entry_point(model, F, coefficient_cache, state_cache, geometry_cache, qp, " *
-    "time, Qflat)` that solves it for the current `Q` and returns the stress.",
+@noinline steady_state_material_needs_condensation(material_model) = error(
+    "$(typeof(material_model).name.name) declares `SteadyStateEvolution()`, so its stress is only " *
+    "defined at a `Q` solving `0 = L(F, Q)`, but it was assembled through the uncondensed element " *
+    "cache. Implement `Thunderbolt.solve_local_constraint(F, coefficients, model, state_cache, " *
+    "geometry_cache, qp, time, Qflat)` and `Thunderbolt.solve_local_state!` with the same signature.",
 )
 
 function reduced_material_routine(
@@ -1340,6 +1412,35 @@ function duplicate_for_device(
     cache::GenericFirstOrderRateIndependentCondensationMaterialStateCache,
 )
     return GenericFirstOrderRateIndependentCondensationMaterialStateCache(
+        cache.model,
+        duplicate_for_device(device, cache.model_cache),
+        duplicate_for_device(device, cache.local_solver_cache),
+    )
+end
+
+"""
+    GenericSteadyStateCondensationMaterialStateCache
+
+The [`SteadyStateEvolution`](@ref) counterpart of
+[`GenericFirstOrderRateIndependentCondensationMaterialStateCache`](@ref): same data, but its local
+problem is the algebraic `0 = L(F, Q)`, so it needs neither a timestep nor a previous state. That is
+what makes it the one condensation a continuation solver can carry.
+"""
+struct GenericSteadyStateCondensationMaterialStateCache{
+    LocalModelType,
+    LocalModelCacheType,
+    LocalSolverType,
+} <: SteadyStateCondensationMaterialStateCache
+    model::LocalModelType
+    model_cache::LocalModelCacheType
+    local_solver_cache::LocalSolverType
+end
+
+function duplicate_for_device(
+    device,
+    cache::GenericSteadyStateCondensationMaterialStateCache,
+)
+    return GenericSteadyStateCondensationMaterialStateCache(
         cache.model,
         duplicate_for_device(device, cache.model_cache),
         duplicate_for_device(device, cache.local_solver_cache),
