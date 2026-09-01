@@ -238,7 +238,7 @@ end
             # machine precision: the atomic scatter perturbs the assembled entries by ~1e-16, which
             # re-steers the CG iteration. Measured at 2 threads: 3e-12 transmural, 2e-9
             # apicobasal, 5e-9 rotational; the tolerance leaves a 20x margin over that.
-            sequential = Thunderbolt.SequentialAssemblyStrategy(Thunderbolt.SequentialCPUDevice())
+            sequential = Thunderbolt.AssemblyStrategy(Thunderbolt.SequentialCPUDevice())
             cs_seq1 = compute_lv_coordinate_system(mesh; strategy = sequential)
             cs_seq2 = compute_lv_coordinate_system(mesh; strategy = sequential)
             @test cs_seq1.u_transmural == cs_seq2.u_transmural
@@ -425,7 +425,7 @@ end
             mesh;
             ridge_anterior = nothing,
             ridge_posterior = nothing,
-            strategy = Thunderbolt.SequentialAssemblyStrategy(Thunderbolt.SequentialCPUDevice()),
+            strategy = Thunderbolt.AssemblyStrategy(Thunderbolt.SequentialCPUDevice()),
         )
         @test cs.u_transmural ≈ cs_seq.u_transmural rtol = 1.0e-7
         @test cs.u_rotational ≈ cs_seq.u_rotational rtol = 1.0e-7

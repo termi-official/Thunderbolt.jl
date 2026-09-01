@@ -149,7 +149,7 @@ the positive-definite Laplacian stiffness matrix `∫ ∇v ⋅ ∇u dx` this mod
 is loaded. The scatter's summation order perturbs the assembled entries at machine precision, which
 re-steers the Krylov solve, so the coordinates reproduce run to run only to the linear solver's
 tolerance (measured at 2 threads: ~1e-9 relative on the apicobasal and rotational coordinates) — fine
-for read-only geometric data. Pass `SequentialAssemblyStrategy(SequentialCPUDevice())` for
+for read-only geometric data. Pass `AssemblyStrategy(SequentialCPUDevice())` for
 bit-reproducible coordinates.
 """
 function _assemble_laplacian(dh::DofHandler, strategy::AbstractAssemblyStrategy = default_strategy())

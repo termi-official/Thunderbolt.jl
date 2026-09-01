@@ -175,7 +175,7 @@ function setup_solver_cache(
     bilinear_operator = setup_operator(get_strategy(f), f.bilinear_term, solver, dh)
     # ... + ∫f δu dV
     source_operator = setup_operator(
-        ElementAssemblyStrategy(get_strategy(f).device), #The EA strategy should always outperform other strats for the linear operator
+        AssemblyStrategy(get_strategy(f).device; form = ElementAssembly()), #The EA strategy should always outperform other strats for the linear operator
         f.source_term,
         solver,
         dh,

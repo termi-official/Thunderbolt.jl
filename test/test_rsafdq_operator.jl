@@ -67,7 +67,7 @@ function rsafdq_reference_state(; seed = 42)
     cs = compute_lv_coordinate_system(
         mesh;
         subdomains = ["myocardium"],
-        strategy   = Thunderbolt.SequentialAssemblyStrategy(Thunderbolt.SequentialCPUDevice()),
+        strategy   = Thunderbolt.AssemblyStrategy(Thunderbolt.SequentialCPUDevice()),
     )
     microstructure_model = create_microstructure_model(
         cs,
@@ -117,7 +117,7 @@ function rsafdq_reference_state(; seed = 42)
         FiniteElementDiscretization(
             Dict(:d => LagrangeCollection{1}()^3);
             # Pinned reference: deterministic summation needs the sequential device.
-            assembly_strategy = Thunderbolt.SequentialAssemblyStrategy(Thunderbolt.SequentialCPUDevice()),
+            assembly_strategy = Thunderbolt.AssemblyStrategy(Thunderbolt.SequentialCPUDevice()),
         ),
         mesh,
     )
@@ -344,7 +344,7 @@ function two_chamber_state(; seed = 7, device = Thunderbolt.SequentialCPUDevice(
         base_name        = "MitralAnnulus",
         endocardium_name = "LVEndocardium",
         epicardium_name  = "LVEpicardium",
-        strategy         = Thunderbolt.SequentialAssemblyStrategy(Thunderbolt.SequentialCPUDevice()),
+        strategy         = Thunderbolt.AssemblyStrategy(Thunderbolt.SequentialCPUDevice()),
     )
     ventricle_microstructure = create_microstructure_model(
         cs,
@@ -401,7 +401,7 @@ function two_chamber_state(; seed = 7, device = Thunderbolt.SequentialCPUDevice(
             dbcs,
             # Pinned reference: deterministic summation needs the sequential device (the default
             # here); the threaded-vs-sequential equivalence test overrides it via `device`.
-            assembly_strategy = Thunderbolt.SequentialAssemblyStrategy(device),
+            assembly_strategy = Thunderbolt.AssemblyStrategy(device),
         ),
         mesh,
     )
