@@ -174,12 +174,7 @@ function setup_solver_cache(
     # Affine right hand side, e.g. ∫D grad(u) grad(δu) dV + ...
     bilinear_operator = setup_operator(get_strategy(f), f.bilinear_term, solver, dh)
     # ... + ∫f δu dV
-    source_operator = setup_operator(
-        AssemblyStrategy(get_strategy(f).device; form = ElementAssembly()), #The EA strategy should always outperform other strats for the linear operator
-        f.source_term,
-        solver,
-        dh,
-    )
+    source_operator = setup_operator(get_strategy(f), f.source_term, solver, dh)
 
     inner_prob  = LinearSolve.LinearProblem(A, b; u0)
     inner_cache = init(inner_prob, inner_solver)

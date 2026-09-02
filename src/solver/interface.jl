@@ -31,14 +31,6 @@ function setup_operator(
     LinearNullOperator{value_type(strategy.device), ndofs(dh)}()
 end
 function setup_operator(
-    strategy::AssemblyStrategy{<:Union{ElementAssembly, <:ElementAssemblyData}, <:AbstractSchedulingPolicy, <:AbstractCPUDevice},
-    ::LinearIntegrator{<:NoStimulationProtocol},
-    solver::AbstractSolver,
-    dh::AbstractDofHandler,
-)
-    LinearNullOperator{value_type(strategy.device), ndofs(dh)}()
-end
-function setup_operator(
     strategy::AssemblyStrategy{<:FullAssembly, SequentialScheduling, <:AbstractGPUDevice},
     ::LinearIntegrator{<:NoStimulationProtocol},
     solver::AbstractSolver,
@@ -48,14 +40,6 @@ function setup_operator(
 end
 function setup_operator(
     strategy::AssemblyStrategy{<:FullAssembly, <:ColoredScheduling, <:AbstractGPUDevice},
-    ::LinearIntegrator{<:NoStimulationProtocol},
-    solver::AbstractSolver,
-    dh::AbstractDofHandler,
-)
-    LinearNullOperator{value_type(strategy.device), ndofs(dh)}()
-end
-function setup_operator(
-    strategy::AssemblyStrategy{<:Union{ElementAssembly, <:ElementAssemblyData}, <:AbstractSchedulingPolicy, <:AbstractGPUDevice},
     ::LinearIntegrator{<:NoStimulationProtocol},
     solver::AbstractSolver,
     dh::AbstractDofHandler,
