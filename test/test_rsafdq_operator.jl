@@ -233,6 +233,10 @@ end
         # outside the first facet's subdomain. The declared set *is* the traversal, and a facet
         # whose cell a subdomain does not own is a setup error, so what is left to check here is
         # that the per-subdomain declarations cover the chamber surfaces without duplication.
+        #
+        # The declaration is the union over every facet term, so it also carries the two springs the
+        # myocardium wears; what may not happen is a facet appearing twice, which would assemble it
+        # twice.
         integrator = state.f.structural_function.integrator
         declared = [
             facet for sdh in dh.subdofhandlers for
@@ -240,8 +244,12 @@ end
         ]
         chamber_facets =
             union((Set(chamber.facets) for chamber in state.f.tying_info.chambers)...)
-        @test length(declared) == length(chamber_facets)
-        @test Set(declared) == chamber_facets
+        @test length(declared) == length(unique(declared))
+        @test chamber_facets ⊆ Set(declared)
+        @test setdiff(Set(declared), chamber_facets) ⊆ union(
+            Set(getfacetset(dh.grid, "Epicardium")),
+            Set(getfacetset(dh.grid, "Base")),
+        )
     end
 
     pdof = only(reference.pressure_dofs)

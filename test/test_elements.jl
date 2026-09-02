@@ -1,10 +1,11 @@
 using Test, Thunderbolt, Tensors
 using JET: @test_opt
 @testset "Element API" begin
-    import Thunderbolt: setup_element_cache, setup_boundary_cache
+    import Thunderbolt: setup_element_cache
     import Thunderbolt: BilinearMassIntegrator, BilinearDiffusionIntegrator
     import FerriteOperators
-    import FerriteOperators: assemble_cell!, assemble_facet!, is_facet_in_cache, reinit_values!
+    import FerriteOperators: setup_facet_item_cache
+    import FerriteOperators: assemble_cell!, assemble_facet!, reinit_values!
     import FerriteOperators: CellArgs, FacetArgs, TimeIntegrationContext
     import FerriteOperators:
         ResidualRequest, JacobianRequest, JacobianResidualRequest, WeightedJacobianRequest
@@ -19,24 +20,28 @@ using JET: @test_opt
             FerriteOperators.CompositeVolumetricElementCache((element_cache, element_cache)),
         )
     end
-    function setup_test_composite_surface_cache(kwargs...)
+    function setup_test_composite_surface_cache(facets, kwargs...)
         element_cache = FerriteOperators.duplicate_for_device(
             PolyesterDevice(),
-            setup_boundary_cache(kwargs...),
+            setup_facet_item_cache(kwargs...),
         )
         return FerriteOperators.duplicate_for_device(
             PolyesterDevice(),
-            FerriteOperators.CompositeSurfaceElementCache((element_cache, element_cache)),
+            FerriteOperators.CompositeFacetItemCache(
+                (element_cache, element_cache),
+                (facets, facets),
+            ),
         )
     end
 
-    # The framework's facet driver walks every facet of a cell and calls the kernel only where
-    # `is_facet_in_cache` says the cache contributes. A hand-driven kernel call applies the same gate,
-    # which is also what a `CompositeSurfaceElementCache` applies to each of its inners.
-    facets_in_cache(cell, cache) = Iterators.filter(
-        lfi -> is_facet_in_cache(FacetIndex(cellid(cell), lfi), cell, cache),
-        1:nfacets(cell),
+    # A weak boundary condition's facetset IS its traversal, so a hand-driven kernel call walks the
+    # facets of that set the cell owns -- which is also the set a `CompositeFacetItemCache` gates
+    # each of its inners on.
+    declared_facets(cell, name) = Set{FacetIndex}(
+        FacetIndex(cellid(cell), lfi) for lfi = 1:nfacets(cell) if
+        FacetIndex(cellid(cell), lfi) ∈ getfacetset(cell.grid, name)
     )
+    local_facets(cell, name) = sort!([facet[2] for facet in declared_facets(cell, name)])
 
     grid = generate_grid(Hexahedron, (1, 1, 1))
     qrc  = QuadratureRuleCollection(3)
@@ -189,9 +194,10 @@ using JET: @test_opt
 
         args = FacetArgs((u = uₑv,), cell_cache_v, nothing, ctx)
 
-        element_cache = setup_boundary_cache(model, qrf, sdhv)
+        element_cache = setup_facet_item_cache(model, qrf, sdhv)
+        lfis = local_facets(cell_cache_v, "left")
 
-        for local_facet_index in facets_in_cache(cell_cache_v, element_cache)
+        for local_facet_index in lfis
             assemble_facet!(
                 JacobianResidualRequest(Kₑ¹, rₑ¹),
                 element_cache,
@@ -208,11 +214,16 @@ using JET: @test_opt
             @test Kₑ² ≈ Kₑ¹
         end
 
-        composite_element_cache = setup_test_composite_surface_cache(model, qrf, sdhv)
+        composite_element_cache = setup_test_composite_surface_cache(
+            declared_facets(cell_cache_v, "left"),
+            model,
+            qrf,
+            sdhv,
+        )
 
         Kₑ¹ .= 0.0
         rₑ¹ .= 0.0
-        for local_facet_index in facets_in_cache(cell_cache_v, element_cache)
+        for local_facet_index in lfis
             assemble_facet!(
                 JacobianResidualRequest(Kₑ¹, rₑ¹),
                 composite_element_cache,
@@ -225,7 +236,7 @@ using JET: @test_opt
 
         Kₑ² .= 0.0
         rₑ² .= 0.0
-        for local_facet_index in facets_in_cache(cell_cache_v, element_cache)
+        for local_facet_index in lfis
             assemble_facet!(ResidualRequest(rₑ²), composite_element_cache, args, local_facet_index)
             assemble_facet!(
                 JacobianRequest{:u}(Kₑ²),
@@ -250,8 +261,8 @@ using JET: @test_opt
         uprev = uₑv ./ 3
         ∂v∂u = inv(Δt)
 
-        cache = setup_boundary_cache(model, qrf, sdhv)
-        lfis = collect(facets_in_cache(cell_cache_v, cache))
+        cache = setup_facet_item_cache(model, qrf, sdhv)
+        lfis = local_facets(cell_cache_v, "left")
 
         rate_args(slope) = FacetArgs(
             (u = uₑv, v = slope .* (uₑv .- uprev)),
@@ -307,7 +318,7 @@ using JET: @test_opt
         @test rh ≈ 2 .* r¹
 
         # The traction is linear in the viscosity, which is the whole of `damping_tensor`.
-        stiffer = setup_boundary_cache(
+        stiffer = setup_facet_item_cache(
             model isa ViscousRobinBC ? ViscousRobinBC(6.0, "left") :
             ViscousNormalSpringBC(6.0, "left"),
             qrf,
@@ -338,9 +349,10 @@ using JET: @test_opt
     end
 
     @testset "Mixed spring/dashpot boundary" begin
-        # One `FacetArgs` serves a composite whose inners read *different* slots: the spring reads the
-        # trial displacement `:u`, the dashpot the reconstructed rate `:v`. The fan-out hands both the
-        # same record, and each takes the slot it needs from it.
+        # Two terms supported on the SAME surface, which is what the facet-item composite's union of
+        # declarations makes legal: one item, both inners assembling it. One `FacetArgs` serves a
+        # composite whose inners read *different* slots -- the spring reads the trial displacement
+        # `:u`, the dashpot the reconstructed rate `:v` -- and each takes the slot it needs from it.
         n      = ndofs(dhv)
         uprev  = uₑv ./ 3
         ∂v∂u   = inv(Δt)
@@ -351,10 +363,11 @@ using JET: @test_opt
             ctx,
         )
 
-        spring = setup_boundary_cache(NormalSpringBC(5.0, "left"), qrf, sdhv)
-        dashpot = setup_boundary_cache(ViscousRobinBC(3.0, "left"), qrf, sdhv)
-        composite = FerriteOperators.CompositeSurfaceElementCache((spring, dashpot))
-        lfis = collect(facets_in_cache(cell_cache_v, spring))
+        spring = setup_facet_item_cache(NormalSpringBC(5.0, "left"), qrf, sdhv)
+        dashpot = setup_facet_item_cache(ViscousRobinBC(3.0, "left"), qrf, sdhv)
+        facets = declared_facets(cell_cache_v, "left")
+        composite = FerriteOperators.CompositeFacetItemCache((spring, dashpot), (facets, facets))
+        lfis = local_facets(cell_cache_v, "left")
 
         rs = zeros(n);
         rd = zeros(n);

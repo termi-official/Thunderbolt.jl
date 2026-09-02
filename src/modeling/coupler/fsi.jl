@@ -79,8 +79,6 @@ struct Pressure3D0DVolumeCoupler
     pressure_symbol::Symbol
 end
 
-is_facet_item_model(::Pressure3D0DVolumeCoupler) = true
-
 algebraic_variables(model::Pressure3D0DVolumeCoupler) = (model.pressure_symbol,)
 
 @concrete struct Pressure3D0DVolumeCouplerCache <: AbstractSurfaceElementCache
@@ -341,6 +339,8 @@ end
 # `chamber_volume` rejects it here instead.
 _chamber_symbols(cache) = ()
 _chamber_symbols(cache::Pressure3D0DVolumeCouplerCache) = (cache.pressure_symbol,)
+_chamber_symbols(cache::FerriteOperators.CompositeFacetItemCache) =
+    Tuple(sym for inner in cache.inner_caches for sym in _chamber_symbols(inner))
 _tied_chamber_symbols(op) = unique!(Symbol[
     sym for sc in get_subdomain_caches(op)
     if sc.domain isa FacetItemDomain

@@ -21,10 +21,6 @@ function setup_element_cache(i::NonlinearIntegrator, sdh::SubDofHandler)
     return setup_element_cache(i.volume_model, getquadraturerule(i.qrc, sdh), sdh)
 end
 
-function setup_boundary_cache(i::NonlinearIntegrator, sdh::SubDofHandler)
-    return setup_boundary_cache(i.facet_model, getquadraturerule(i.fqrc, sdh), sdh)
-end
-
 # `get_number_of_internal_dofs_per_element` dispatches on the *element cache*, since that is what
 # determines how many condensed unknowns a cell carries; per cache type methods live next to the
 # cache they describe. Subdomains carrying no volumetric model contribute none.
@@ -37,14 +33,13 @@ get_number_of_internal_dofs_per_element(
 """
     _facet_item_models(integrator)
 
-The facet terms of `integrator` belonging to the facet-item family, in declaration order.
+The facet terms of `integrator`, in declaration order.
 
-Everything the integrator declares beyond the cell sweep — facet-item global dofs, facet items,
-algebraic items — is derived from these, and the fused boundary cache is built from their complement,
-so a term belongs to exactly one of the two routes.
+Every facet term is a facet-item term: it declares the facets it acts on and assembles as its own
+work item. Everything the integrator declares beyond the cell sweep — facet-item global dofs, facet
+items, algebraic items — is derived from these.
 """
-_facet_item_models(facet_models) = filter(is_facet_item_model, _facet_model_tuple(facet_models))
-_facet_item_models(integrator::NonlinearIntegrator) = _facet_item_models(integrator.facet_model)
+_facet_item_models(integrator::NonlinearIntegrator) = _facet_model_tuple(integrator.facet_model)
 
 # The local system of a facet item is `[celldofs(cell); the global dofs of the item models, in
 # declaration order]`. The declaration is the facet-item family's own, so the subdomain's cell sweep
@@ -53,9 +48,20 @@ FerriteOperators.facet_item_global_dofs(integrator::NonlinearIntegrator, sdh::Su
     Int[dof for model in _facet_item_models(integrator)
         for dof in FerriteOperators.facet_item_global_dofs(model, sdh)]
 
-FerriteOperators.facet_items(integrator::NonlinearIntegrator, sdh::SubDofHandler) =
-    FacetIndex[facet for model in _facet_item_models(integrator)
-               for facet in FerriteOperators.facet_items(model, sdh)]
+# The UNION of the terms' declarations, sorted. Taking the union is what makes two terms supported on
+# the same facet legal -- a spring and a dashpot on one surface are one item, declared once and
+# assembled by both, which `CompositeFacetItemCache` below re-gates per term. Sorted for the same
+# reason `resolve_facet_items` sorts: neither a facetset's iteration order nor the order the terms
+# happen to sit in may decide the item order.
+function FerriteOperators.facet_items(integrator::NonlinearIntegrator, sdh::SubDofHandler)
+    declared = Set{FacetIndex}()
+    for model in _facet_item_models(integrator),
+        facet in FerriteOperators.facet_items(model, sdh)
+
+        push!(declared, facet)
+    end
+    return sort!(collect(declared); by = facet -> (facet[1], facet[2]))
+end
 
 function FerriteOperators.setup_facet_item_cache(
     integrator::NonlinearIntegrator,
@@ -70,7 +76,15 @@ function FerriteOperators.setup_facet_item_cache(
         FerriteOperators.setup_facet_item_cache(models[k], qr, sdh, offset .+ (1:widths[k]))
     end
     length(caches) == 1 && return only(caches)
-    return FacetItemMultiplexCache(caches, _facet_item_owners(models, sdh))
+    # `CompositeFacetItemCache` re-gates the fan-out on each term's own declared set, so terms
+    # supported on the *same* facet -- a spring and a dashpot on one surface, or a spring on a
+    # surface the chamber tying also integrates over -- share one item and are both assembled. Every
+    # term keeps a cache, declaring facets on this subdomain or not, because the offsets above are
+    # positions in the tail the whole declaration order spans.
+    return FerriteOperators.CompositeFacetItemCache(
+        caches,
+        map(model -> Set{FacetIndex}(FerriteOperators.facet_items(model, sdh)), models),
+    )
 end
 
 # One item per declaring model, in declaration order -- the same order `facet_item_global_dofs` above
@@ -97,65 +111,4 @@ function FerriteOperators.setup_algebraic_cache(
         "has to serve every declared item; which item a kernel stands on arrives as `args.item`.",
     )
     return only(caches)
-end
-
-"""
-    FacetItemMultiplexCache(caches, facet_owner)
-
-The facet item cache of a subdomain whose declared facets come from several facet-item models.
-
-FerriteOperators admits one facet item cache per subdomain, so the models sharing a subdomain are
-multiplexed here: `facet_owner` names which of `caches` a facet belongs to.
-"""
-struct FacetItemMultiplexCache{CS <: Tuple} <: AbstractSurfaceElementCache
-    caches::CS
-    facet_owner::Dict{FacetIndex, Int}
-end
-
-duplicate_for_device(device, cache::FacetItemMultiplexCache) = FacetItemMultiplexCache(
-    map(inner -> duplicate_for_device(device, inner), cache.caches),
-    cache.facet_owner,
-)
-
-FerriteOperators.provides_analytic(
-    ::Type{<:FacetItemMultiplexCache{CS}},
-    kind,
-) where {CS <: Tuple} = all(C -> FerriteOperators.provides_analytic(C, kind), fieldtypes(CS))
-
-function FerriteOperators.assemble_facet!(
-    req::FerriteOperators.AbstractAssemblyRequest,
-    cache::FacetItemMultiplexCache,
-    args::FerriteOperators.FacetArgs,
-    local_facet_index::Int,
-)
-    owner = cache.facet_owner[FacetIndex(cellid(args.cell), local_facet_index)]
-    return assemble_facet!(req, cache.caches[owner], args, local_facet_index)
-end
-
-# The reduction side of the same multiplexing: a functional reaches the cache owning the facet, and
-# that cache decides whether the facet is one of its own (a foreign chamber returns `nothing`).
-function FerriteOperators.evaluate_facet_functional(
-    kind,
-    cache::FacetItemMultiplexCache,
-    args::FerriteOperators.FacetArgs,
-    local_facet_index::Int,
-)
-    owner = cache.facet_owner[FacetIndex(cellid(args.cell), local_facet_index)]
-    return FerriteOperators.evaluate_facet_functional(
-        kind, cache.caches[owner], args, local_facet_index)
-end
-
-_chamber_symbols(cache::FacetItemMultiplexCache) =
-    Tuple(sym for inner in cache.caches for sym in _chamber_symbols(inner))
-
-function _facet_item_owners(models, sdh::SubDofHandler)
-    owner = Dict{FacetIndex, Int}()
-    for (k, model) in enumerate(models), facet in FerriteOperators.facet_items(model, sdh)
-        haskey(owner, facet) && error(
-            "The facet $facet is declared as a facet item by more than one facet model. A facet " *
-            "item is one local system, assembled by exactly one term.",
-        )
-        owner[facet] = k
-    end
-    return owner
 end

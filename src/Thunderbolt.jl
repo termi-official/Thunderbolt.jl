@@ -34,9 +34,7 @@ import FerriteOperators:
     AbstractNonlinearOperator,
     QuadratureRuleCollection,
     getquadraturerule,
-    setup_boundary_cache,
     setup_element_cache,
-    compose_boundary_caches,
     AbstractVolumetricElementCache,
     AbstractSurfaceElementCache,
     EmptySurfaceElementCache,
@@ -73,7 +71,6 @@ import FerriteOperators:
     internal_variable_offset,
     AbstractBilinearIntegrator,
     AbstractLinearIntegrator,
-    is_facet_in_cache,
     assemble_facet!,
     functional_value_type,
     value_type

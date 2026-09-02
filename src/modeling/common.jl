@@ -107,18 +107,6 @@ The declaration belongs to the term that reads the unknown, so a model states it
 """
 algebraic_variables(term) = ()
 
-"""
-    is_facet_item_model(facet_model) -> Bool
-
-Which of the two families a member of a model's `facet_models` belongs to.
-
-Fused-boundary members — the default, and what every weak boundary condition is — ride the cell
-sweep: each facet of each cell is offered to them and `is_facet_in_cache` decides. Facet-item members
-declare their facets up front and assemble as their own work items, which is what lets them carry
-`facet_item_global_dofs`, `algebraic_items` and hence unknowns of their own.
-"""
-is_facet_item_model(facet_model) = false
-
 # A model's facet terms as a tuple. A single term may be given unwrapped, and a solver-side
 # annotation wrapping the collection is transparent here.
 _facet_model_tuple(facet_models::Tuple) = facet_models

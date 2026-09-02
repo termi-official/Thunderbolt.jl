@@ -650,13 +650,8 @@ function setup_internal_cache(
     )
 end
 
-function setup_boundary_cache(wrapper::LocalSolverCacheAnnotation, fqr, sdh)
-    # TODO this technically unlocks differential boundary conditions, if done correctly.
-    setup_boundary_cache(wrapper.f, fqr, sdh)
-end
-
-# The annotation carries solver-owned state into the element caches and leaves the family split of
-# the terms it wraps untouched.
+# The annotation carries solver-owned state into the element caches and leaves the terms it wraps
+# untouched: the facet terms it holds are the ones it was handed, each declaring its own facets.
 _facet_model_tuple(wrapper::AbstractModelAnnotation) = _facet_model_tuple(wrapper.f)
 
 OrdinaryDiffEqCore.is_constant_cache(::BackwardEulerSolverCache) = false

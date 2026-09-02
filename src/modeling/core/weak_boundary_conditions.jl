@@ -1,10 +1,3 @@
-# Only the fused-boundary family rides the cell sweep; the facet-item members of the same
-# `facet_models` declare their own traversal and are served by `setup_facet_item_cache`.
-function setup_boundary_cache(boundary_models::Tuple, qr::FacetQuadratureRule, sdh::SubDofHandler)
-    fused = filter(!is_facet_item_model, boundary_models)
-    return compose_boundary_caches(ntuple(i->setup_boundary_cache(fused[i], qr, sdh), length(fused)))
-end
-
 @doc raw"""
 Any boundary condition stated in the weak form
 ```math
@@ -12,6 +5,23 @@ Any boundary condition stated in the weak form
 ```
 """
 abstract type AbstractWeakBoundaryCondition end
+
+"""
+    getboundaryname(bc::AbstractWeakBoundaryCondition)
+
+The facetset `bc` acts on. That set *is* the term's traversal, so it is also its
+`FerriteOperators.facet_items` declaration.
+"""
+@inline getboundaryname(bc::AbstractWeakBoundaryCondition) = bc.boundary_name
+
+# The declared set restricted to the subdomain that owns the cells: a facet item's local system is
+# its owning cell's, so each `SubDofHandler` declares the part of the surface it owns. Nothing here
+# couples to a dof outside that cell, so `facet_item_global_dofs` keeps the framework default `()`
+# and the item's local system stays cell-shaped.
+FerriteOperators.facet_items(bc::AbstractWeakBoundaryCondition, sdh::SubDofHandler) = filter(
+    facet -> facet[1] ∈ sdh.cellset,
+    getfacetset(get_grid(sdh.dh), getboundaryname(bc)),
+)
 
 function field_name_of_weak_boundary_condition(
     bc::AbstractWeakBoundaryCondition,
@@ -185,9 +195,6 @@ end
 function duplicate_for_device(device, cache::SimpleFacetCache)
     return SimpleFacetCache(cache.mp, duplicate_for_device(device, cache.fv), cache.dof_range)
 end
-@inline is_facet_in_cache(facet::FacetIndex, cell, facet_cache::SimpleFacetCache) =
-    facet ∈ getfacetset(cell.grid, getboundaryname(facet_cache))
-@inline getboundaryname(facet_cache::SimpleFacetCache) = facet_cache.mp.boundary_name
 
 FerriteOperators.provides_analytic(
     ::Type{<:SimpleFacetCache},
@@ -209,10 +216,14 @@ FerriteOperators.provides_analytic(
 # displacement-only boundary condition contributes nothing to it.
 @inline _u_weight(weights::NamedTuple) = haskey(weights, :u) ? weights.u : false
 
-function setup_boundary_cache(
+# `global_dof_range` is the slice of the facet items' global-dof tail this term owns, which for a weak
+# boundary condition is empty -- it is a parameter of the hook, not of this family. The same holds for
+# the two `setup_facet_item_cache` methods below.
+function FerriteOperators.setup_facet_item_cache(
     facet_model::AbstractWeakBoundaryCondition,
     qr::FacetQuadratureRule,
     sdh::SubDofHandler,
+    global_dof_range = (),
 )
     field_name = field_name_of_weak_boundary_condition(facet_model, sdh)
     ip         = Ferrite.getfieldinterpolation(sdh, field_name)
@@ -836,9 +847,6 @@ end
 function duplicate_for_device(device, cache::ViscousFacetCache)
     return ViscousFacetCache(cache.mp, duplicate_for_device(device, cache.fv), cache.dof_range)
 end
-@inline is_facet_in_cache(facet::FacetIndex, cell, facet_cache::ViscousFacetCache) =
-    facet ∈ getfacetset(cell.grid, getboundaryname(facet_cache))
-@inline getboundaryname(facet_cache::ViscousFacetCache) = facet_cache.mp.boundary_name
 
 FerriteOperators.provides_analytic(
     ::Type{<:ViscousFacetCache},
@@ -853,10 +861,11 @@ FerriteOperators.provides_analytic(
     ::FerriteOperators.WeightedJacobianKind,
 ) = true
 
-function setup_boundary_cache(
+function FerriteOperators.setup_facet_item_cache(
     facet_model::AbstractViscousWeakBoundaryCondition,
     qr::FacetQuadratureRule,
     sdh::SubDofHandler,
+    global_dof_range = (),
 )
     field_name = field_name_of_weak_boundary_condition(facet_model, sdh)
     ip         = Ferrite.getfieldinterpolation(sdh, field_name)
@@ -970,13 +979,6 @@ function duplicate_for_device(device, cache::ConsistencyCheckWeakBoundaryConditi
         cache.Δ,
     )
 end
-@inline is_facet_in_cache(
-    facet::FacetIndex,
-    cell,
-    facet_cache::ConsistencyCheckWeakBoundaryConditionCache,
-) = is_facet_in_cache(facet, cell, facet_cache.inner_cache)
-@inline getboundaryname(facet_cache::ConsistencyCheckWeakBoundaryConditionCache) =
-    getboundaryname(facet_cache.inner_cache)
 @inline getboundaryname(check::ConsistencyCheckWeakBoundaryCondition) = getboundaryname(check.bc)
 
 FerriteOperators.provides_analytic(
@@ -989,14 +991,18 @@ FerriteOperators.provides_analytic(
     ::FerriteOperators.WeightedJacobianKind,
 ) = true
 
-function setup_boundary_cache(
+function FerriteOperators.setup_facet_item_cache(
     ccc::ConsistencyCheckWeakBoundaryCondition,
     qr::FacetQuadratureRule,
     sdh::SubDofHandler,
+    global_dof_range = (),
 )
+    # The scratch is the local system the referee differences over, which for a weak boundary
+    # condition is its owning cell's -- the family's global-dof tail is empty for everything this
+    # referee wraps.
     N = ndofs_per_cell(sdh)
     return ConsistencyCheckWeakBoundaryConditionCache(
-        setup_boundary_cache(ccc.bc, qr, sdh),
+        FerriteOperators.setup_facet_item_cache(ccc.bc, qr, sdh, global_dof_range),
         zeros(N, N),
         zeros(N),
         zeros(N),
@@ -1082,3 +1088,14 @@ function _check_weak_bc_tangent!(
         @info args.states.u
     end
 end
+
+
+# No weak boundary condition contributes to a facet reduction. `nothing` is the fold's "no
+# contribution", and stating it is what lets one share a facet item with a term that *does*
+# contribute -- a spring supported on a surface the chamber tying integrates over.
+FerriteOperators.evaluate_facet_functional(
+    kind,
+    ::Union{SimpleFacetCache, ViscousFacetCache, ConsistencyCheckWeakBoundaryConditionCache},
+    args,
+    lfi::Int,
+) = nothing

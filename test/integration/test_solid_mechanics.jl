@@ -556,10 +556,10 @@ end
             end
         end
 
-        # Regression: `setup_boundary_cache` for `NonlinearMultiDomainIntegrator2` used to look the
+        # Regression: the boundary hooks of `NonlinearMultiDomainIntegrator2` used to look the
         # subdomain name up in the *surface* subdomains, which is a different namespace from the
-        # volumetric one its subintegrators are keyed by. It therefore returned an empty cache and
-        # silently dropped every weak boundary condition.
+        # volumetric one its subintegrators are keyed by. They therefore claimed nothing and silently
+        # dropped every weak boundary condition.
         #
         # The testsets above do not catch it: `generate_grid` names its facetsets "front"/"back", so
         # the cellset names they use collide with facetset names and accidentally match. Here the

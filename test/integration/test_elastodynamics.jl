@@ -663,7 +663,7 @@ end
     f   = elastodynamic_bar()
     dh  = f.dh
     sdh = first(dh.subdofhandlers)
-    cache = Thunderbolt.setup_boundary_cache(
+    cache = FerriteOperators.setup_facet_item_cache(
         ViscousRobinBC(1.0e4, "right", :d),
         FacetQuadratureRule{RefHexahedron}(2),
         sdh,
@@ -680,10 +680,13 @@ end
         FerriteOperators.TimeIntegrationContext(0.0, Δt, Δt),
     )
 
+    # The declared facetset is the traversal, so a hand-driven call walks the facets of "right" that
+    # this cell owns.
+    right = getfacetset(Ferrite.get_grid(dh), "right")
     function damping_block(slope)
         K = zeros(n, n)
         for lfi = 1:nfacets(cell)
-            if FerriteOperators.is_facet_in_cache(FacetIndex(cellid(cell), lfi), cell, cache)
+            if FacetIndex(cellid(cell), lfi) ∈ right
                 FerriteOperators.assemble_facet!(
                     FerriteOperators.WeightedJacobianRequest(K, (u = 1.0, v = slope)),
                     cache,
