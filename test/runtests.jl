@@ -1,9 +1,10 @@
 using Thunderbolt
 using ParallelTestRunner
 
-# Each test file runs in its own module, in its own worker process. That is why every file under
-# `test/` carries its own `using` header and includes `testfixtures.jl` itself — keep it that way, or
-# it will pass here and fail when run on its own (and vice versa).
+# Each test file runs in its own module, on a worker process it shares with the other files that
+# worker picks up. That is why every file under `test/` carries its own `using` header and includes
+# `testfixtures.jl` itself — keep it that way, or it will pass here and fail when run on its own (and
+# vice versa).
 #
 # Useful invocations:
 #   julia --project=. -e 'using Pkg; Pkg.test()'                         # all files, parallel
@@ -50,20 +51,11 @@ const init_code = quote
     using Thunderbolt
 end
 
-# The integration tests are the ones that exercise the threaded per-color assembly, so give those
-# workers real threads. `addworker` otherwise pins JULIA_NUM_THREADS=1, which would silently drop
-# that coverage; `-t` overrides the env var. Keep the product of jobs x threads at or below the core
-# count — Polyester spins, so oversubscription hurts more than it helps.
-test_worker(name) =
-    if startswith(name, "integration/")
-        addworker(; exeflags = ["--threads=$(INTEGRATION_THREADS)"])
-    elseif name == "test_rsafdq_operator"
-        # Its threaded-vs-sequential equivalence testset needs a second real worker thread to
-        # exercise `PolyesterDevice`'s atomic scatter at all -- without this it would silently
-        # assemble both sides on the same one thread `addworker` otherwise pins.
-        addworker(; exeflags = ["--threads=2"])
-    else
-        nothing
-    end
-
-runtests(Thunderbolt, args; testsuite, init_code, test_worker)
+# Every worker gets `INTEGRATION_THREADS` threads. `addworker` otherwise pins JULIA_NUM_THREADS=1,
+# which would silently drop the coverage of the threaded per-color assembly the integration tests
+# and `test_rsafdq_operator`'s threaded-vs-sequential equivalence testset rely on; `-t` overrides the
+# env var. Passing `exeflags` here rather than through a per-file `test_worker` keeps the process
+# count at `jobs`: a `test_worker` spawns its own worker while the file still holds a pool slot.
+# Keep the product of jobs x threads at or below the core count — Polyester spins, so
+# oversubscription hurts more than it helps.
+runtests(Thunderbolt, args; testsuite, init_code, exeflags = ["--threads=$(INTEGRATION_THREADS)"])
