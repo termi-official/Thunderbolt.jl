@@ -48,7 +48,6 @@ ViscousNormalSpringBC
 Thunderbolt.AbstractViscousWeakBoundaryCondition
 Thunderbolt.damping_tensor
 Thunderbolt.get_time
-Thunderbolt.facet_velocity
 ```
 
 ## Kinematic Diagnostics
