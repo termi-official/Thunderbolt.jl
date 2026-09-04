@@ -1,6 +1,15 @@
 #####################################################################
 #  This file contains optimized forward and backward Euler solvers  #
 #####################################################################
+"""
+    BackwardEulerSolver(; inner_solver, solution_vector_type, system_matrix_type)
+
+First order implicit time integration of a semidiscrete problem.
+
+`inner_solver` is a `LinearSolve` algorithm for an affine problem and a nonlinear solver for a
+quasi-static one; it is read once, when the solver cache is set up. The scheme carries no local
+error estimate, so it steps at a fixed `dt` unless a convergence driven `controller` is passed.
+"""
 Base.@kwdef struct BackwardEulerSolver{SolutionVectorType, SystemMatrixType} <: AbstractSolver
     # Read once, by `setup_solver_cache`: a `LinearSolve` algorithm for an affine problem, a nonlinear
     # solver for a quasi-static one. The two share no supertype, and typing the scheme on either would

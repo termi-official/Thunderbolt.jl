@@ -37,6 +37,8 @@ Errors if a multi-domain model does not agree on a single displacement symbol ac
 """
 structural_displacement_symbol(model::QuasiStaticModel) = model.displacement_symbol
 
+# Not an `AbstractMaterialModel`, and it never reaches the material path: `semidiscretize` lowers it
+# to a `QuasiStaticModel`, which is what the element caches are built from.
 @doc raw"""
     ElastodynamicsModel(displacement_sym, velocity_symbol, material_model, facet_models, ρ)
 
@@ -56,8 +58,6 @@ i.e. the [`QuasiStaticModel`](@ref) with a mass term on top.
     and reconstructs the velocity from it. The acceleration is not stored either way: it follows from
     the balance of momentum.
 """
-# Not an `AbstractMaterialModel`, and it never reaches the material path: `semidiscretize` lowers it
-# to a `QuasiStaticModel`, which is what the element caches are built from.
 struct ElastodynamicsModel{MaterialModel#= <: AbstractMaterialModel =#, FM, CoefficientType}
     displacement_symbol::Symbol
     velocity_symbol::Symbol

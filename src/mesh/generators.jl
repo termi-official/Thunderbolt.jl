@@ -1430,6 +1430,12 @@ function generate_ideal_lv_mesh_hex(
     return to_mesh(Grid(cells, nodes, nodesets = nodesets, facetsets = facetsets))
 end
 
+"""
+    generate_mesh(args...) -> SimpleMesh
+
+`Ferrite.generate_grid(args...)` passed through [`to_mesh`](@ref). Accepts and forwards whatever
+`generate_grid` accepts.
+"""
 generate_mesh(args...) = to_mesh(generate_grid(args...))
 
 function generate_simple_disc_grid(::Type{Quadrilateral}, n; radius = 1.0)

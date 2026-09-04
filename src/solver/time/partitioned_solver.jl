@@ -166,6 +166,15 @@ function repack_subdomain(cache::ForwardEulerCellSolverCache, i)
     )
 end
 
+"""
+    AdaptiveForwardEulerSubstepper(; substeps, reaction_threshold, solution_vector_type, batch_size_hint)
+
+Explicit pointwise solver which spends its work where the reaction is active: a local system whose
+transmembrane potential rate stays below `reaction_threshold` takes a single forward Euler step over
+the outer `Δt`, and one that exceeds it takes `substeps` steps of `Δt/substeps` instead.
+
+The decision is made per local system and per step, from the rate at the beginning of the step.
+"""
 Base.@kwdef struct AdaptiveForwardEulerSubstepper{T, SolutionVectorType <: AbstractVector{T}} <:
                    AbstractPointwiseSolver
     substeps::Int                                  = 10

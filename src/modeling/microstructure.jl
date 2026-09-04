@@ -37,6 +37,13 @@ Base.zero(::Type{AnisotropicPlanarMicrostructure{T}}) where {T} =
     return λ[1] * M.f ⊗ M.f + λ[2] * M.s ⊗ M.s
 end
 
+"""
+    AnisotropicPlanarMicrostructureModel(fiber_coefficient, sheetlet_coefficient)
+
+A planar microstructure assembled from two direction coefficients. Evaluating it at a 2D quadrature
+point evaluates both coefficients there and orthogonalizes them into an
+`AnisotropicPlanarMicrostructure` with fiber `f` and sheetlet `s`.
+"""
 struct AnisotropicPlanarMicrostructureModel{FiberCoefficientType, SheetletCoefficientType}
     fiber_coefficient::FiberCoefficientType
     sheetlet_coefficient::SheetletCoefficientType
@@ -137,6 +144,13 @@ Base.zero(::Type{OrthotropicMicrostructure{T}}) where {T} =
     return λ[1] * M.f ⊗ M.f + λ[2] * M.s ⊗ M.s + λ[3] * M.n ⊗ M.n
 end
 
+"""
+    OrthotropicMicrostructureModel(fiber_coefficient, sheetlet_coefficient, normal_coefficient)
+
+A three-dimensional microstructure assembled from three direction coefficients. Evaluating it at a
+3D quadrature point evaluates all three coefficients there and orthogonalizes them into an
+`OrthotropicMicrostructure` with fiber `f`, sheetlet `s` and normal `n`.
+"""
 struct OrthotropicMicrostructureModel{
     FiberCoefficientType,
     SheetletCoefficientType,

@@ -178,6 +178,16 @@ function materialize_all_entities!(mesh::SimpleMesh)
     materialize_vertices!(mesh)
 end
 
+"""
+    to_mesh(grid::Grid) -> SimpleMesh
+
+Wrap a Ferrite `Grid` in a [`SimpleMesh`](@ref), deriving the subdomain descriptors the domain
+management works on: cellsets become volumetric subdomains and facetsets become surface subdomains,
+each split by cell type so that mixed grids stay well defined. A grid without cellsets gets a single
+volumetric subdomain named `""` covering it.
+
+Face, edge and vertex index maps start empty and are materialized on first use.
+"""
 function to_mesh(grid::Grid)
     mfaces = OrderedDict{NTuple{3, Int}, Int}()
     medges = OrderedDict{NTuple{2, Int}, Int}()

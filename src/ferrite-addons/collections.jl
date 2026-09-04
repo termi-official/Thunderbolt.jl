@@ -37,6 +37,15 @@ function getinterpolation(ic::InterfaceCollection, cell::InterfaceCell)
 end
 
 # Wildcard
+"""
+    getinterpolation(ipc::InterpolationCollection, cell::AbstractCell)
+    getinterpolation(ipc::InterpolationCollection, ::Type{<:AbstractRefShape})
+    getinterpolation(ipc::InterpolationCollection, sdh::SubDofHandler)
+
+The collection's interpolation for a reference shape: the cell's own, or -- the form the
+discretization uses -- the shape of the subdomain's first cell, shared by every cell of a
+`SubDofHandler`.
+"""
 getinterpolation(ipc::InterpolationCollection, sdh::SubDofHandler) =
     getinterpolation(ipc, get_first_cell(sdh))
 
@@ -245,6 +254,16 @@ struct ApproximationDescriptor
     ipc::InterpolationCollection
 end
 
+"""
+    add_subdomain!(dh, name::String, approximations::Vector{ApproximationDescriptor})
+    add_subdomain!(dh, name::String, sym => interpolation_collection)
+    add_subdomain!(dh, approximations)
+
+Add the fields described by `approximations` to `dh` on the mesh's volumetric subdomain `name`, one
+`SubDofHandler` per cell type occurring there. Errors if the mesh has no subdomain of that name.
+
+The form without a name applies to the mesh's only subdomain and asserts that there is exactly one.
+"""
 function add_subdomain!(
     dh::DofHandler{<:Any, <:SimpleMesh},
     name::String,

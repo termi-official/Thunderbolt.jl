@@ -1,3 +1,12 @@
+"""
+    hexahedralize(grid::Grid{3}) -> Grid
+    hexahedralize(mesh::SimpleMesh{3}) -> SimpleMesh
+
+Split every cell into hexahedra, turning a mixed or simplicial 3D mesh into a purely hexahedral one.
+Hexahedra, wedges and tetrahedra are supported; an already hexahedral mesh is returned unchanged.
+
+Cellsets, facetsets and nodesets are transferred to the refined mesh.
+"""
 function hexahedralize(grid::Grid{3, Hexahedron})
     return grid
 end
@@ -254,6 +263,14 @@ function hexahedralize_cell(
     ]
 end
 
+"""
+    uniform_refinement(grid::Grid{3}) -> Grid
+    uniform_refinement(mesh::SimpleMesh) -> SimpleMesh
+
+Refine every cell once by splitting it at its edge, face and cell centers.
+
+Only cells and nodes are carried over: the refined result has no cellsets, facetsets or nodesets.
+"""
 function uniform_refinement(grid::Grid{3})
     return _uniform_refinement(to_mesh(grid))
 end

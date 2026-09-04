@@ -288,7 +288,7 @@ end
     of the scheme's own. The condensed internal variables stay linear; they have no derivative here.
 """
 velocity(cache::NewmarkSolverCache) = cache.vₙ
-acceleration(cache::NewmarkSolverCache) = cache.aₙ
+@doc (@doc velocity) acceleration(cache::NewmarkSolverCache) = cache.aₙ
 velocity(integrator::ThunderboltTimeIntegrator) = velocity(integrator.cache)
 acceleration(integrator::ThunderboltTimeIntegrator) = acceleration(integrator.cache)
 

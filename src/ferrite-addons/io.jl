@@ -15,6 +15,16 @@ end
 ParaViewWriter(filename::String; kwargs...) =
     ParaViewWriter(filename, __paraview_collection("$filename.pvd"; kwargs...), nothing)
 
+"""
+    store_timestep!(io, t, grid)
+    store_timestep!(f::Function, io, t, grid)
+
+Open the output step for time `t` on `grid`. Data written afterwards through
+[`store_timestep_field!`](@ref) and [`store_timestep_celldata!`](@ref) lands in this step until
+[`finalize_timestep!`](@ref) closes it.
+
+The `do`-block form opens the step, calls `f(io)` and closes the step again.
+"""
 function store_timestep!(io::ParaViewWriter, t, grid::AbstractGrid; write_discontinuous = false)
     if io.current_file === nothing
         mkpath(io.filename)
@@ -73,11 +83,23 @@ function store_timestep_field!(
     return store_timestep_field!(io, t, v.dh, field_view(u, v), v.name, name)
 end
 
+"""
+    store_timestep_celldata!(io, t, u, name::String)
+
+Write one value per cell, `u`, into the open step under `name`. Requires a step opened by
+[`store_timestep!`](@ref).
+"""
 function store_timestep_celldata!(io::ParaViewWriter, t, u, coeff_name::String)
     @assert io.current_file !== nothing
     WriteVTK.vtk_cell_data(io.current_file, u, coeff_name)
 end
 
+"""
+    finalize_timestep!(io, t)
+
+Close the step opened by [`store_timestep!`](@ref) and commit it to the output at time `t`. A no-op
+for writers that commit each write eagerly.
+"""
 function finalize_timestep!(io::ParaViewWriter, t)
     WriteVTK.vtk_save(io.current_file.vtk)
     io.pvd[t] = io.current_file
@@ -86,6 +108,11 @@ function finalize_timestep!(io::ParaViewWriter, t)
     WriteVTK.save_file(io.pvd.xdoc, io.pvd.path)
 end
 
+"""
+    finalize!(io)
+
+Close the writer. No further timesteps can be stored afterwards.
+"""
 function finalize!(io::ParaViewWriter)
     close!(io.pvd)
 end
