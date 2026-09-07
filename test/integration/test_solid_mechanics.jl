@@ -34,10 +34,7 @@ function test_solve_passive_structure(mesh, models)
 
     quasistaticform = semidiscretize(
         models,
-        FiniteElementDiscretization(
-            Dict(:d => LagrangeCollection{1}()^3);
-            dbcs,
-        ),
+        FiniteElementDiscretization(Dict(:d => LagrangeCollection{1}()^3); dbcs),
         mesh,
     )
 
@@ -202,10 +199,7 @@ function solve_contractile_cuboid(mesh, model, timestepper)
 
     quasistaticform = semidiscretize(
         model,
-        FiniteElementDiscretization(
-            Dict(:d => LagrangeCollection{1}()^3);
-            dbcs,
-        ),
+        FiniteElementDiscretization(Dict(:d => LagrangeCollection{1}()^3); dbcs),
         mesh,
     )
 
@@ -253,10 +247,7 @@ function test_solve_contractile_ideal_lv(
                 PressureFieldBC(ConstantCoefficient(0.01), "Endocardium"),
             ),
         ),
-        FiniteElementDiscretization(
-            Dict(:d => LagrangeCollection{1}()^3);
-            dbcs,
-        ),
+        FiniteElementDiscretization(Dict(:d => LagrangeCollection{1}()^3); dbcs),
         mesh,
     )
 
@@ -1381,13 +1372,13 @@ end
     )
     @test integrator.sol.retcode == SciMLBase.ReturnCode.Success
 
-    stage  = integrator.cache.stage
-    sf     = stage.stage_function
-    op     = Thunderbolt.getoperator(sf)
-    p      = Thunderbolt.stage_user_parameters(sf)
-    ctx    = Thunderbolt.stage_context(sf)
-    w      = Thunderbolt.stage_weights(sf)
-    J      = Thunderbolt.getJ(op)
+    stage = integrator.cache.stage
+    sf    = stage.stage_function
+    op    = Thunderbolt.getoperator(sf)
+    p     = Thunderbolt.stage_user_parameters(sf)
+    ctx   = Thunderbolt.stage_context(sf)
+    w     = Thunderbolt.stage_weights(sf)
+    J     = Thunderbolt.getJ(op)
 
     # Both routes have to start from the same point: the phase writes `q` into the very vector it
     # reads `u` from, so a second condensation would otherwise warm start off the first one's answer.

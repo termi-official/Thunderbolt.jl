@@ -119,7 +119,7 @@ include(joinpath(@__DIR__, "testfixtures.jl"))
                 Ferrite.geometric_interpolation(typeof(cell)),
             )
             reinit!(cv, cc)
-            for qp in 1:getnquadpoints(cv)
+            for qp = 1:getnquadpoints(cv)
                 smallest = min(smallest, getdetJdV(cv, qp))
             end
         end
@@ -131,14 +131,13 @@ include(joinpath(@__DIR__, "testfixtures.jl"))
     function analytic_lv_cavity(; inner_radius, apex_inner, apex_outer, longitudinal_upper)
         cap(θ) = cos(θ)^3/3 - cos(θ) + 2/3
         basal_angle = (1.0 + longitudinal_upper)*π/2
-        return π*inner_radius^2 *
-               (apex_inner*cap(π/2) + apex_outer*(cap(basal_angle) - cap(π/2)))
+        return π * inner_radius^2 * (apex_inner*cap(π/2) + apex_outer*(cap(basal_angle) - cap(π/2)))
     end
 
     @testset "Ideal LV valvular plane" begin
         nc, nr, nl, np = 8, 2, 3, 3
         plain = generate_ideal_lv_mesh(nc, nr, nl)
-        mesh  = generate_ideal_lv_mesh(nc, nr, nl; with_valvular_plane = true)
+        mesh = generate_ideal_lv_mesh(nc, nr, nl; with_valvular_plane = true)
         # The basal plane of the default geometry and the thickness of the plate centered on it.
         z_base          = 1.5*cos(1.2*π/2)
         orifice_radius  = 0.7*sin(1.2*π/2)
@@ -168,13 +167,8 @@ include(joinpath(@__DIR__, "testfixtures.jl"))
             # With the orifice plated over, the boundary is the endocardium, the epicardium, the
             # basal annulus and the two plate faces -- and nothing else.
             parts = Tuple(
-                getfacetset(mesh, name) for name in (
-                    "Endocardium",
-                    "Epicardium",
-                    "Base",
-                    "LVValvularPlane",
-                    "ValvularPlaneOuter",
-                )
+                getfacetset(mesh, name) for name in
+                ("Endocardium", "Epicardium", "Base", "LVValvularPlane", "ValvularPlaneOuter")
             )
             for (i, a) in enumerate(parts), b in parts[(i+1):end]
                 @test isempty(intersect(a, b))
@@ -221,15 +215,14 @@ include(joinpath(@__DIR__, "testfixtures.jl"))
             # The chamber surface is traversed from the cells bounding the chamber, so its normals
             # point into it and the enclosed volume comes out negative.
             translated = [
-                Ferrite.get_node_coordinate(node) + Vec((3.0, -2.0, 5.0)) for
-                node in getnodes(mesh)
+                Ferrite.get_node_coordinate(node) + Vec((3.0, -2.0, 5.0)) for node in getnodes(mesh)
             ]
             volumes = surface_volumes(mesh, getfacetset(mesh, "LVChamberSurface"))
             @test volumes[1] ≈ volumes[2] rtol = 1.0e-10
             @test volumes[1] ≈ volumes[3] rtol = 1.0e-10
             # A rigid translation moves no volume, which only a closed surface can honour.
-            @test surface_volumes(mesh, getfacetset(mesh, "LVChamberSurface"), translated) ≈
-                  volumes rtol = 1.0e-8
+            @test surface_volumes(mesh, getfacetset(mesh, "LVChamberSurface"), translated) ≈ volumes rtol =
+                1.0e-8
 
             # Negative control: the endocardium alone is open at the orifice, so the three axes give
             # three different numbers and none of them is a volume.
@@ -245,7 +238,7 @@ include(joinpath(@__DIR__, "testfixtures.jl"))
             )
             fine_mesh = generate_ideal_lv_mesh(24, 2, 8; with_valvular_plane = true)
             coarse = -volumes[1]
-            fine   = -surface_volumes(fine_mesh, getfacetset(fine_mesh, "LVChamberSurface"))[1]
+            fine = -surface_volumes(fine_mesh, getfacetset(fine_mesh, "LVChamberSurface"))[1]
             # The facetted cavity is inscribed in the smooth one, and the ventricular half of the
             # plate displaces another ~2.5% of it, so both stay below and converge to just under it.
             @test coarse < fine < reference
@@ -254,12 +247,16 @@ include(joinpath(@__DIR__, "testfixtures.jl"))
 
         @testset "parameter feasibility" begin
             @test_throws ErrorException generate_ideal_lv_mesh(
-                4, 1, 1;
+                4,
+                1,
+                1;
                 with_valvular_plane = true,
                 num_elements_valvular_plane = 1,
             )
             @test_throws ErrorException generate_ideal_lv_mesh(
-                4, 1, 1;
+                4,
+                1,
+                1;
                 with_valvular_plane = true,
                 valvular_plane_thickness = -0.1,
             )
@@ -325,11 +322,14 @@ include(joinpath(@__DIR__, "testfixtures.jl"))
             # `compute_lv_coordinate_system(mesh; subdomains = ["ventricle"])` reads these, so they
             # may not reach into the atrium.
             ventricle = getcellset(mesh, "ventricle")
-            for name in ("SRidgePost", "SRidgeAnt", "LVEndocardium", "LVEpicardium", "MitralAnnulus")
+            for name in
+                ("SRidgePost", "SRidgeAnt", "LVEndocardium", "LVEpicardium", "MitralAnnulus")
                 @test all(facet -> facet[1] ∈ ventricle, getfacetset(mesh, name))
             end
-            @test all(facet -> facet[1] ∈ getcellset(mesh, "atrium"),
-                      getfacetset(mesh, "LAEndocardium"))
+            @test all(
+                facet -> facet[1] ∈ getcellset(mesh, "atrium"),
+                getfacetset(mesh, "LAEndocardium"),
+            )
             plate = getcellset(mesh, "valvular-plane")
             for name in ("LVValvularPlane", "LAValvularPlane")
                 @test all(facet -> facet[1] ∈ plate, getfacetset(mesh, name))
@@ -338,7 +338,7 @@ include(joinpath(@__DIR__, "testfixtures.jl"))
 
         @testset "valvular plate" begin
             plate = getcellset(mesh, "valvular-plane")
-            rim   = getnodeset(mesh, "MitralAnnulusRing")
+            rim = getnodeset(mesh, "MitralAnnulusRing")
             coordinate(n) = Ferrite.get_node_coordinate(getnodes(mesh, n))
 
             @test min_detJdV(mesh) > 0
@@ -371,8 +371,7 @@ include(joinpath(@__DIR__, "testfixtures.jl"))
             # The chamber surfaces are traversed from the cells bounding the chamber, so their
             # normals point into it and the enclosed volume comes out negative.
             translated = [
-                Ferrite.get_node_coordinate(node) + Vec((3.0, -2.0, 5.0)) for
-                node in getnodes(mesh)
+                Ferrite.get_node_coordinate(node) + Vec((3.0, -2.0, 5.0)) for node in getnodes(mesh)
             ]
             for name in ("LVChamberSurface", "LAChamberSurface")
                 volumes = surface_volumes(mesh, getfacetset(mesh, name))
@@ -396,7 +395,7 @@ include(joinpath(@__DIR__, "testfixtures.jl"))
                 longitudinal_upper = 0.2,
             )
             coarse = -surface_volumes(mesh, getfacetset(mesh, "LVChamberSurface"))[1]
-            fine   = -surface_volumes(fine_mesh, getfacetset(fine_mesh, "LVChamberSurface"))[1]
+            fine = -surface_volumes(fine_mesh, getfacetset(fine_mesh, "LVChamberSurface"))[1]
             # The facetted cavity is inscribed in the smooth one, and the ventricular half of the
             # plate displaces another ~2.5% of it, so both stay below and converge to just under it.
             @test coarse < fine < reference
@@ -439,13 +438,19 @@ include(joinpath(@__DIR__, "testfixtures.jl"))
             # its endocardial and on its epicardial layer.
             @test_throws ErrorException generate_ideal_lh_mesh(4, 1, 1, 1; la_cavity_radius = 0.1)
             @test_throws ErrorException generate_ideal_lh_mesh(
-                4, 1, 1, 1;
+                4,
+                1,
+                1,
+                1;
                 la_cavity_radius = 0.7,
                 la_wall_thickness = 0.01,
             )
             @test_throws ErrorException generate_ideal_lh_mesh(4, 1, 1, 1; la_wall_thickness = -0.1)
             @test_throws ErrorException generate_ideal_lh_mesh(
-                4, 1, 1, 1;
+                4,
+                1,
+                1,
+                1;
                 num_elements_valvular_plane = 1,
             )
         end

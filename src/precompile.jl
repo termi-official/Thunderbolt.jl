@@ -16,8 +16,9 @@ using PrecompileTools: @setup_workload, @compile_workload
 
 if Preferences.@load_preference("precompile_workload", true)
     @setup_workload begin
-        hex  = generate_mesh(Hexahedron, (1, 1, 1))
-        quad = to_mesh(generate_grid(Quadrilateral, (2, 2), Vec{2}((-2.5, -2.5)), Vec{2}((2.5, 2.5))))
+        hex = generate_mesh(Hexahedron, (1, 1, 1))
+        quad =
+            to_mesh(generate_grid(Quadrilateral, (2, 2), Vec{2}((-2.5, -2.5)), Vec{2}((2.5, 2.5))))
         orthotropic_coefficient = ConstantCoefficient(
             OrthotropicMicrostructure(
                 Vec((1.0, 0.0, 0.0)),
@@ -125,11 +126,7 @@ if Preferences.@load_preference("precompile_workload", true)
                         quad,
                     )
                     integrator = init(
-                        OS.OperatorSplittingProblem(
-                            form,
-                            zeros(solution_size(form)),
-                            (0.0, 1.0),
-                        ),
+                        OS.OperatorSplittingProblem(form, zeros(solution_size(form)), (0.0, 1.0)),
                         OS.LieTrotterGodunov((BackwardEulerSolver(), ForwardEulerCellSolver())),
                         dt = 1.0,
                         verbose = false,

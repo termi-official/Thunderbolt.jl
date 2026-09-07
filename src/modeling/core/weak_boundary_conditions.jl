@@ -18,10 +18,8 @@ The facetset `bc` acts on. That set *is* the term's traversal, so it is also its
 # its owning cell's, so each `SubDofHandler` declares the part of the surface it owns. Nothing here
 # couples to a dof outside that cell, so `facet_item_global_dofs` keeps the framework default `()`
 # and the item's local system stays cell-shaped.
-FerriteOperators.facet_items(bc::AbstractWeakBoundaryCondition, sdh::SubDofHandler) = filter(
-    facet -> facet[1] ∈ sdh.cellset,
-    getfacetset(get_grid(sdh.dh), getboundaryname(bc)),
-)
+FerriteOperators.facet_items(bc::AbstractWeakBoundaryCondition, sdh::SubDofHandler) =
+    filter(facet -> facet[1] ∈ sdh.cellset, getfacetset(get_grid(sdh.dh), getboundaryname(bc)))
 
 function field_name_of_weak_boundary_condition(
     bc::AbstractWeakBoundaryCondition,
@@ -922,9 +920,12 @@ function FerriteOperators.assemble_facet!(
     lfi::Int,
 )
     @unpack mp, fv = cache
-    haskey(req.weights, :v) || throw(ArgumentError(
-        "A dashpot boundary condition contributes `∂v∂u ⋅ D` to the `:v` slot, but the weighted " *
-        "Jacobian was requested with weights $(keys(req.weights)) and no `:v` entry."))
+    haskey(req.weights, :v) || throw(
+        ArgumentError(
+            "A dashpot boundary condition contributes `∂v∂u ⋅ D` to the `:v` slot, but the weighted " *
+            "Jacobian was requested with weights $(keys(req.weights)) and no `:v` entry.",
+        ),
+    )
     wv = req.weights.v
 
     reinit!(fv, args.cell, lfi)
@@ -1070,10 +1071,7 @@ function _check_weak_bc_tangent!(
             FerriteOperators.assemble_facet!(
                 FerriteOperators.ResidualRequest(residualₑfd),
                 inner_cache,
-                with_states(
-                    args,
-                    merge(args.states, NamedTuple{(slot,)}((uₑfd,))),
-                ),
+                with_states(args, merge(args.states, NamedTuple{(slot,)}((uₑfd,)))),
                 lfi,
             )
             residualₑfd .-= residualₑref

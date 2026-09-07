@@ -38,8 +38,8 @@ here.
 Damping is not supported yet; the model is `M ü + f_int(u) = f_ext`.
 """
 Base.@kwdef struct NewmarkSolver{T, SystemMatrixType} <: AbstractSolver
-    β::T                                       = 1 / 4
-    γ::T                                       = 1 / 2
+    β::T = 1 / 4
+    γ::T = 1 / 2
     # Read once, at setup, to build the stage's nonlinear solver cache.
     inner_solver::AbstractNonlinearSolver      = MultiLevelNewtonRaphsonSolver()
     system_matrix_type::Type{SystemMatrixType} = ThreadedSparseMatrixCSR{Float64, Int64}
@@ -63,8 +63,7 @@ nonlinear solver keeps seeing a plain operator.
 the same choice [`BackwardEulerAffineODEStage`](@ref) makes, and it is what keeps a change of `Δt`
 cheap — the mass matrix is constant, only its scalar weight moves.
 """
-mutable struct NewmarkStageOperator{OpType, MassOpType, VectorType, T} <:
-               AbstractNonlinearOperator
+mutable struct NewmarkStageOperator{OpType, MassOpType, VectorType, T} <: AbstractNonlinearOperator
     const op::OpType
     const M::MassOpType
     # Displacement predictor ũ of the current step, written once per step
@@ -420,7 +419,10 @@ function setup_stage_operator(
     )
     mass_operator = setup_operator(get_strategy(f), f.mass_term, solver, dh)
     @timeit_debug "mass assembly" update_operator!(
-        mass_operator, nothing, TimeIntegrationContext(t₀, zero(t₀), zero(t₀)))
+        mass_operator,
+        nothing,
+        TimeIntegrationContext(t₀, zero(t₀), zero(t₀)),
+    )
 
     nfe = ndofs(dh)
     return NewmarkStageOperator(
@@ -542,7 +544,7 @@ function _consistent_initial_acceleration(f::ElastodynamicsFunction, stage_op, u
     uᵥ = copy(z)
     @inbounds @views @.. uᵥ[fe] = z[fe] - v₀ / ∂v∂u
     ztrial = copy(z)
-    e      = _newmark_stage_evaluation(structural, t₀, eps(Float64), ∂v∂u, uᵥ, copy(z))
+    e = _newmark_stage_evaluation(structural, t₀, eps(Float64), ∂v∂u, uᵥ, copy(z))
     states = merge((u = ztrial,), e.slots)
     if e.condensed
         states = merge(states, (q = InternalSource(ztrial),))

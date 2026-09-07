@@ -186,11 +186,7 @@ reduction from and a fabricated factor would be read as one.
 
 Read after the sweep's own solves have written their slots, so what it folds is this pass.
 """
-function cell_condensation_report(
-    local_solver_cache::GenericLocalNonlinearSolverCache,
-    cellid,
-    nqp,
-)
+function cell_condensation_report(local_solver_cache::GenericLocalNonlinearSolverCache, cellid, nqp)
     converged        = true
     iterations       = 0
     worst_iterations = 0

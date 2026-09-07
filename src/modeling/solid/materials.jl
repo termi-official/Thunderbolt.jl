@@ -237,10 +237,8 @@ Every cache whose material carries a condensed internal variable, rate type or s
 what the `frozen_` entry points take: evaluating the stress at a state someone else solved for is the
 same operation whichever local problem produced it.
 """
-const AnyCondensationMaterialStateCache = Union{
-    SteadyStateCondensationMaterialStateCache,
-    RateTypeCondensationMaterialStateCache,
-}
+const AnyCondensationMaterialStateCache =
+    Union{SteadyStateCondensationMaterialStateCache, RateTypeCondensationMaterialStateCache}
 
 # Uniform five-argument entry point. A rate-independent material answers through its existing
 # four-argument method with a zero rate tangent, so the element assembles one expression either way.
@@ -1436,10 +1434,7 @@ struct GenericSteadyStateCondensationMaterialStateCache{
     local_solver_cache::LocalSolverType
 end
 
-function duplicate_for_device(
-    device,
-    cache::GenericSteadyStateCondensationMaterialStateCache,
-)
+function duplicate_for_device(device, cache::GenericSteadyStateCondensationMaterialStateCache)
     return GenericSteadyStateCondensationMaterialStateCache(
         cache.model,
         duplicate_for_device(device, cache.model_cache),
@@ -1647,14 +1642,7 @@ function solve_internal_timestep(
     # the internal variable's own dynamics, so it is reported as one an adaptive integrator could
     # act on by shortening `dt`.
     if !internal_state_in_bounds(contraction_model, Q)
-        record_local_solve!(
-            lcache,
-            cid,
-            qp.i,
-            SciMLBase.ReturnCode.Infeasible,
-            residualnorm,
-            iters,
-        )
+        record_local_solve!(lcache, cid, qp.i, SciMLBase.ReturnCode.Infeasible, residualnorm, iters)
         @debug "Local Newton converged to an inadmissible state at cell $cid qp $(qp.i). ||r|| = $residualnorm" _group =
             :nlsolve
         return Q, Jfac

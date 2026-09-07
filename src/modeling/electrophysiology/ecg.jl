@@ -9,10 +9,7 @@ one `CellValues` and one coefficient cache — together with the per-quadrature-
 Evaluation only: it belongs to no integrator family, and its operator
 (`setup_evaluation_operator`) holds the engine and no payload.
 """
-struct Plonsey1964ECGIntegrator{
-    DiffusionIntegratorType <: BilinearDiffusionIntegrator,
-    QVectorType,
-}
+struct Plonsey1964ECGIntegrator{DiffusionIntegratorType <: BilinearDiffusionIntegrator, QVectorType}
     diffusion::DiffusionIntegratorType
     κ∇φₘ::QVectorType
 end
@@ -29,10 +26,7 @@ struct Plonsey1964ECGElementCache{DiffusionCacheType, QVectorType} <: AbstractVo
 end
 
 setup_element_cache(integrator::Plonsey1964ECGIntegrator, sdh::SubDofHandler) =
-    Plonsey1964ECGElementCache(
-        setup_element_cache(integrator.diffusion, sdh),
-        integrator.κ∇φₘ,
-    )
+    Plonsey1964ECGElementCache(setup_element_cache(integrator.diffusion, sdh), integrator.κ∇φₘ)
 
 duplicate_for_device(device, cache::Plonsey1964ECGElementCache) =
     Plonsey1964ECGElementCache(duplicate_for_device(device, cache.diffusion), cache.κ∇φₘ)
@@ -138,14 +132,7 @@ function Plonsey1964ECGGaussCache(op::BilinearFerriteOperator, φₘ::AbstractVe
     @assert length(dh.field_names) == 1 "Multiple fields detected. Problem setup might be broken..."
     sdim  = Ferrite.getspatialdim(get_grid(dh))
     κ∇φₘ  = setup_qvector(Vec{sdim, T}, dh, op.integrator.qrc)
-    cache = Plonsey1964ECGGaussCache(
-        κ∇φₘ,
-        setup_evaluation_operator(
-            get_strategy(op),
-            Plonsey1964ECGIntegrator(op.integrator, κ∇φₘ),
-            dh,
-        ),
-    )
+    cache = Plonsey1964ECGGaussCache(κ∇φₘ, setup_evaluation_operator(get_strategy(op), Plonsey1964ECGIntegrator(op.integrator, κ∇φₘ), dh))
     update_ecg!(cache, φₘ)
     return cache
 end

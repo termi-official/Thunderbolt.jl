@@ -156,16 +156,12 @@ function _check_rsafdq_internal_variables(structural_problem)
     return nothing
 end
 
-function create_chamber_tyings(
-    coupler::LumpedFluidSolidCoupler,
-    structural_problem,
-    circuit_model,
-)
+function create_chamber_tyings(coupler::LumpedFluidSolidCoupler, structural_problem, circuit_model)
     num_unknowns_structure = solution_size(structural_problem)
     chamber_tyings = RSAFDQ2022SingleChamberTying[]
     for i = 1:length(coupler.chamber_couplings)
         # Get i-th ChamberVolumeCoupling
-        coupling = coupler.chamber_couplings[i]
+        coupling                    = coupler.chamber_couplings[i]
         (; dh)                      = structural_problem
         pressure_dof_index          = only(algebraic_dofs(dh, coupling.pressure_symbol_3D))
         chamber_facetset            = getfacetset(get_grid(dh), coupling.chamber_surface_setname)
@@ -180,7 +176,7 @@ function create_chamber_tyings(
             coupler.displacement_symbol,
             NaN,
             # The chamber volume, in the circuit block that follows the 3D unknowns.
-            num_unknowns_structure+chamber_volume_idx_lumped,
+            num_unknowns_structure + chamber_volume_idx_lumped,
         )
         tying.V⁰ᴰval =
             compute_chamber_volume(dh, zeros(ndofs(dh)), coupling.chamber_surface_setname, tying)

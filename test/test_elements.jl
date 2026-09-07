@@ -38,8 +38,8 @@ using JET: @test_opt
     # facets of that set the cell owns -- which is also the set a `CompositeFacetItemCache` gates
     # each of its inners on.
     declared_facets(cell, name) = Set{FacetIndex}(
-        FacetIndex(cellid(cell), lfi) for lfi = 1:nfacets(cell) if
-        FacetIndex(cellid(cell), lfi) ∈ getfacetset(cell.grid, name)
+        FacetIndex(cellid(cell), lfi) for
+        lfi = 1:nfacets(cell) if FacetIndex(cellid(cell), lfi) ∈ getfacetset(cell.grid, name)
     )
     local_facets(cell, name) = sort!([facet[2] for facet in declared_facets(cell, name)])
 
@@ -353,15 +353,10 @@ using JET: @test_opt
         # declarations makes legal: one item, both inners assembling it. One `FacetArgs` serves a
         # composite whose inners read *different* slots -- the spring reads the trial displacement
         # `:u`, the dashpot the reconstructed rate `:v` -- and each takes the slot it needs from it.
-        n      = ndofs(dhv)
-        uprev  = uₑv ./ 3
-        ∂v∂u   = inv(Δt)
-        args   = FacetArgs(
-            (u = uₑv, v = ∂v∂u .* (uₑv .- uprev)),
-            cell_cache_v,
-            nothing,
-            ctx,
-        )
+        n     = ndofs(dhv)
+        uprev = uₑv ./ 3
+        ∂v∂u  = inv(Δt)
+        args  = FacetArgs((u = uₑv, v = ∂v∂u .* (uₑv .- uprev)), cell_cache_v, nothing, ctx)
 
         spring = setup_facet_item_cache(NormalSpringBC(5.0, "left"), qrf, sdhv)
         dashpot = setup_facet_item_cache(ViscousRobinBC(3.0, "left"), qrf, sdhv)

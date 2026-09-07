@@ -44,9 +44,10 @@ _facet_item_models(integrator::NonlinearIntegrator) = _facet_model_tuple(integra
 # The local system of a facet item is `[celldofs(cell); the global dofs of the item models, in
 # declaration order]`. The declaration is the facet-item family's own, so the subdomain's cell sweep
 # is not augmented by it and the volumetric kernels see the pure field system.
-FerriteOperators.facet_item_global_dofs(integrator::NonlinearIntegrator, sdh::SubDofHandler) =
-    Int[dof for model in _facet_item_models(integrator)
-        for dof in FerriteOperators.facet_item_global_dofs(model, sdh)]
+FerriteOperators.facet_item_global_dofs(integrator::NonlinearIntegrator, sdh::SubDofHandler) = Int[
+    dof for model in _facet_item_models(integrator) for
+    dof in FerriteOperators.facet_item_global_dofs(model, sdh)
+]
 
 # The UNION of the terms' declarations, sorted. Taking the union is what makes two terms supported on
 # the same facet legal -- a spring and a dashpot on one surface are one item, declared once and
@@ -55,8 +56,7 @@ FerriteOperators.facet_item_global_dofs(integrator::NonlinearIntegrator, sdh::Su
 # happen to sit in may decide the item order.
 function FerriteOperators.facet_items(integrator::NonlinearIntegrator, sdh::SubDofHandler)
     declared = Set{FacetIndex}()
-    for model in _facet_item_models(integrator),
-        facet in FerriteOperators.facet_items(model, sdh)
+    for model in _facet_item_models(integrator), facet in FerriteOperators.facet_items(model, sdh)
 
         push!(declared, facet)
     end
@@ -91,19 +91,19 @@ end
 # puts them in the local system's tail, so the two agree without a shared lookup. `algebraic_items` is declared
 # once per `DofHandler` rather than per subdomain, so the dofs it names do not depend on which
 # subdomain's copy of the integrator answers.
-FerriteOperators.algebraic_items(integrator::NonlinearIntegrator, dh::DofHandler) =
-    Vector{Int}[item for model in _facet_item_models(integrator)
-                for item in FerriteOperators.algebraic_items(model, dh)]
+FerriteOperators.algebraic_items(integrator::NonlinearIntegrator, dh::DofHandler) = Vector{Int}[
+    item for model in _facet_item_models(integrator) for
+    item in FerriteOperators.algebraic_items(model, dh)
+]
 
-function FerriteOperators.setup_algebraic_cache(
-    integrator::NonlinearIntegrator,
-    dh::DofHandler,
-)
+function FerriteOperators.setup_algebraic_cache(integrator::NonlinearIntegrator, dh::DofHandler)
     caches = unique(
         typeof,
-        [FerriteOperators.setup_algebraic_cache(model, dh) for
-         model in _facet_item_models(integrator) if
-         !isempty(FerriteOperators.algebraic_items(model, dh))],
+        [
+            FerriteOperators.setup_algebraic_cache(model, dh) for
+            model in _facet_item_models(integrator) if
+            !isempty(FerriteOperators.algebraic_items(model, dh))
+        ],
     )
     length(caches) == 1 || error(
         "FerriteOperators admits one algebraic cache per `DofHandler`, but the facet models of " *

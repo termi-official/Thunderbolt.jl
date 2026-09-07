@@ -27,9 +27,8 @@ function setup_stage_operator(
 
     # The tying facets write into one dof shared by every chamber facet, which no coloring can make
     # race free, so the scheduling is sequential regardless of what the discretization asked for.
-    couplings = Tuple(
-        _chamber_coupling(chamber.displacement_symbol, chamber) for chamber in chambers
-    )
+    couplings =
+        Tuple(_chamber_coupling(chamber.displacement_symbol, chamber) for chamber in chambers)
     # CSC blocks, not the CSR of FerriteOperators' own blocked-assembly example:
     # `SchurComplementLinearSolver`'s inner `UMFPACKFactorization` factorizes the (1,1) block, which
     # needs CSC.

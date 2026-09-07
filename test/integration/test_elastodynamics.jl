@@ -653,15 +653,15 @@ end
     # Asserted on the element tangent rather than by comparing two solves at different `γ`: `γ` also
     # changes the scheme's own velocity update and its numerical dissipation, so a displacement
     # difference across `γ` measures the scheme at least as much as it measures the boundary condition.
-    Δt, β, γ = 0.05, 1 / 4, 1 / 2
+    Δt, β, γ             = 0.05, 1 / 4, 1 / 2
     newmark_slope        = γ / (β * Δt)
     backward_euler_slope = inv(Δt)
     @test newmark_slope ≉ backward_euler_slope
 
     # The boundary condition names its field explicitly, which is the case the `dof_range` indexing
     # exists for: this handler carries `:d` and `:v` in one `SubDofHandler`.
-    f   = elastodynamic_bar()
-    dh  = f.dh
+    f = elastodynamic_bar()
+    dh = f.dh
     sdh = first(dh.subdofhandlers)
     cache = FerriteOperators.setup_facet_item_cache(
         ViscousRobinBC(1.0e4, "right", :d),

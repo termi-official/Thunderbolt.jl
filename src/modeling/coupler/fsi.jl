@@ -52,8 +52,7 @@ This is a volume only where the surface is closed -- an endocardium open at the 
 gives a number that depends on the origin and is not the cavity. Closing it is the mesh's job, see
 the `with_valvular_plane` keyword of [`generate_ideal_lv_mesh`](@ref).
 """
-volume_integral(x::Vec, d::Vec, F::Tensor, N::Vec) =
-    -det(F) * (x + d) ⋅ (transpose(inv(F)) ⋅ N) / 3
+volume_integral(x::Vec, d::Vec, F::Tensor, N::Vec) = -det(F) * (x + d) ⋅ (transpose(inv(F)) ⋅ N) / 3
 
 """
     Pressure3D0DVolumeCoupler(chamber_surface_name, displacement_symbol, pressure_symbol)
@@ -149,12 +148,12 @@ can drift from the others.
 """
 function _chamber_volume_facet(fv, coords, dₑ)
     V = zero(eltype(dₑ))
-    for qp in 1:getnquadpoints(fv)
+    for qp = 1:getnquadpoints(fv)
         ∇d = function_gradient(fv, qp, dₑ)
         F  = one(∇d) + ∇d
         d  = function_value(fv, qp, dₑ)
         x  = spatial_coordinate(fv, qp, coords)
-        V += volume_integral(x, d, F, getnormal(fv, qp)) * getdetJdV(fv, qp)
+        V  += volume_integral(x, d, F, getnormal(fv, qp)) * getdetJdV(fv, qp)
     end
     return V
 end
@@ -174,8 +173,11 @@ duplicate_for_device(device, cache::ChamberBalanceCache) = cache
 # `V⁰ᴰ` is solver-supplied data, not element state: it arrives fresh through `p` on every sweep
 # rather than through a mutable field the cache (and its per-worker duplicates) would hold a
 # reference to.
-FerriteOperators.query_cell_parameters(::ChamberBalanceCache, item::FerriteOperators.AlgebraicItem, p) =
-    p.V⁰ᴰ[item.index]
+FerriteOperators.query_cell_parameters(
+    ::ChamberBalanceCache,
+    item::FerriteOperators.AlgebraicItem,
+    p,
+) = p.V⁰ᴰ[item.index]
 
 FerriteOperators.assemble_algebraic!(
     req::FerriteOperators.ResidualRequest,
@@ -237,14 +239,11 @@ function _assemble_3D0D_coupling_facet!(
     p = uₑ[pdof]
     coords = getcoordinates(geometry_cache)
 
-    residual = req isa Union{
-        FerriteOperators.ResidualRequest,
-        FerriteOperators.JacobianResidualRequest,
-    }
-    jacobian = req isa Union{
-        FerriteOperators.JacobianRequest{:u},
-        FerriteOperators.JacobianResidualRequest,
-    }
+    residual =
+        req isa Union{FerriteOperators.ResidualRequest, FerriteOperators.JacobianResidualRequest}
+    jacobian =
+        req isa
+        Union{FerriteOperators.JacobianRequest{:u}, FerriteOperators.JacobianResidualRequest}
 
     for qp in QuadratureIterator(fv)
         # Part 1: Surface pressure part
@@ -341,11 +340,12 @@ _chamber_symbols(cache) = ()
 _chamber_symbols(cache::Pressure3D0DVolumeCouplerCache) = (cache.pressure_symbol,)
 _chamber_symbols(cache::FerriteOperators.CompositeFacetItemCache) =
     Tuple(sym for inner in cache.inner_caches for sym in _chamber_symbols(inner))
-_tied_chamber_symbols(op) = unique!(Symbol[
-    sym for sc in get_subdomain_caches(op)
-    if sc.domain isa FacetItemDomain
-    for sym in _chamber_symbols(sc.domain.element)
-])
+_tied_chamber_symbols(op) = unique!(
+    Symbol[
+        sym for sc in get_subdomain_caches(op) if sc.domain isa FacetItemDomain for
+        sym in _chamber_symbols(sc.domain.element)
+    ],
+)
 
 """
     chamber_volume(op, pressure_symbol, states, p = nothing, ctx = nothing) -> V³ᴰ
@@ -359,12 +359,19 @@ residual balances against `V⁰ᴰ`. A symbol naming no chamber of `op` is an `A
 """
 function chamber_volume(op, pressure_symbol::Symbol, states::NamedTuple, p = nothing, ctx = nothing)
     served = _tied_chamber_symbols(op)
-    pressure_symbol ∈ served || throw(ArgumentError(
-        "The operator carries no tying facets for a chamber named `$pressure_symbol`; it serves " *
-        "$(served). A chamber volume is the integral over that chamber's own declared facets.",
-    ))
+    pressure_symbol ∈ served || throw(
+        ArgumentError(
+            "The operator carries no tying facets for a chamber named `$pressure_symbol`; it serves " *
+            "$(served). A chamber volume is the integral over that chamber's own declared facets.",
+        ),
+    )
     return FerriteOperators.evaluate_functional(
-        op, ChamberVolumeFunctional(pressure_symbol), states, p, ctx)
+        op,
+        ChamberVolumeFunctional(pressure_symbol),
+        states,
+        p,
+        ctx,
+    )
 end
 chamber_volume(op, pressure_symbol::Symbol, u::AbstractVector, p = nothing, ctx = nothing) =
     chamber_volume(op, pressure_symbol, (u = u,), p, ctx)

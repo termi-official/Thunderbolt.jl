@@ -9,15 +9,7 @@ module CuThunderboltExt
 using Thunderbolt
 
 import CUDA:
-    CUDA,
-    CuArray,
-    CuVector,
-    CUSPARSE,
-    blockDim,
-    blockIdx,
-    threadIdx,
-    @cuda,
-    launch_configuration
+    CUDA, CuArray, CuVector, CUSPARSE, blockDim, blockIdx, threadIdx, @cuda, launch_configuration
 
 import Thunderbolt:
     AbstractSemidiscreteFunction,

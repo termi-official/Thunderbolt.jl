@@ -179,8 +179,13 @@ struct StageEvaluation{S <: NamedTuple, P, C, W <: NamedTuple}
     weights::W
     condensed::Bool
 end
-StageEvaluation(; slots = (;), p = nothing, ctx = nothing, weights = (u = true,), condensed = false) =
-    StageEvaluation(slots, p, ctx, weights, condensed)
+StageEvaluation(;
+    slots = (;),
+    p = nothing,
+    ctx = nothing,
+    weights = (u = true,),
+    condensed = false,
+) = StageEvaluation(slots, p, ctx, weights, condensed)
 
 """
     THUNDERBOLT_STAGE_SLOTS
@@ -397,11 +402,7 @@ Returns `false` when a local problem did not converge, having described the fail
 step failure that no residual norm can be quoted for, since the sweeps that would have filled the
 residual never ran.
 """
-function condense_stage!(
-    sf::AbstractStageFunction,
-    states::NamedTuple,
-    weights = stage_weights(sf),
-)
+function condense_stage!(sf::AbstractStageFunction, states::NamedTuple, weights = stage_weights(sf))
     stage_is_condensed(sf) || return true
     report = condense_internal!(
         getoperator(sf),

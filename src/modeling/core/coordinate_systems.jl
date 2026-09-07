@@ -152,9 +152,16 @@ tolerance (measured at 2 threads: ~1e-9 relative on the apicobasal and rotationa
 for read-only geometric data. Pass `AssemblyStrategy(SequentialCPUDevice())` for
 bit-reproducible coordinates.
 """
-function _assemble_laplacian(dh::DofHandler, strategy::AbstractAssemblyStrategy = default_strategy())
+function _assemble_laplacian(
+    dh::DofHandler,
+    strategy::AbstractAssemblyStrategy = default_strategy(),
+)
     field_name = first(Ferrite.getfieldnames(dh))
-    integrator = BilinearDiffusionIntegrator(ConstantCoefficient(-1.0), QuadratureRuleCollection(2), field_name)
+    integrator = BilinearDiffusionIntegrator(
+        ConstantCoefficient(-1.0),
+        QuadratureRuleCollection(2),
+        field_name,
+    )
     op = setup_operator(strategy, integrator, dh)
     update_operator!(op, nothing, TimeIntegrationContext(0.0, 0.0, 0.0))
     return op.A

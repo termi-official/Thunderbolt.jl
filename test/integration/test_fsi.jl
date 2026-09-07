@@ -35,7 +35,9 @@ end
 # testsets pin is then the model that is solved, not a look-alike.
 scaling_factor = 3.9
 ideal_lv_mesh = generate_ideal_lv_mesh(
-    6, 1, 2;
+    6,
+    1,
+    2;
     inner_radius        = scaling_factor * 0.7,
     outer_radius        = scaling_factor * 1.0,
     longitudinal_upper  = 0.4,
@@ -147,12 +149,7 @@ end
     test_solve_contractile_ideal_lv_3D0D(
         sol.u[end],
         RSAFDQ2022LumpedCicuitModel(; lv_pressure_given = false),
-        LumpedFluidSolidCoupler(
-            [
-                ChamberVolumeCoupling("LVChamberSurface", :Vₗᵥ, :pₗᵥ, :pₗᵥ),
-            ],
-            :d,
-        ),
+        LumpedFluidSolidCoupler([ChamberVolumeCoupling("LVChamberSurface", :Vₗᵥ, :pₗᵥ, :pₗᵥ)], :d),
         1.0,
         1.0,
     )
@@ -240,10 +237,7 @@ Returns `(; f, op, u, p, ctx, pressure_symbol, n_chambers)`.
 function single_chamber_state(; seed = 42)
     splitform = ideal_lv_3d0d_splitform(
         RSAFDQ2022LumpedCicuitModel(; lv_pressure_given = false),
-        LumpedFluidSolidCoupler(
-            [ChamberVolumeCoupling("LVChamberSurface", :Vₗᵥ, :pₗᵥ, :pₗᵥ)],
-            :d,
-        ),
+        LumpedFluidSolidCoupler([ChamberVolumeCoupling("LVChamberSurface", :Vₗᵥ, :pₗᵥ, :pₗᵥ)], :d),
     )
     f = splitform.functions[1]
 
@@ -253,7 +247,7 @@ function single_chamber_state(; seed = 42)
     n = Thunderbolt.solution_size(f)
     n_chambers = length(f.tying_info.chambers)
     u = 0.05 .* (_pinned_uniform(n, seed) .- 0.5)
-    u[(n - n_chambers + 1):n] .= PINNED_PRESSURE
+    u[(n-n_chambers+1):n] .= PINNED_PRESSURE
     for chamber in f.tying_info.chambers
         chamber.V⁰ᴰval = PINNED_V⁰ᴰ
     end
@@ -274,7 +268,8 @@ end
         # The chamber pressures are the trailing block and the field dofs keep the leading one, which
         # is what the block split below rests on. The dof the tying info carries is the same one the
         # handler hands out -- it is the row the chamber balance is assembled into.
-        @test pressure_dofs == [chamber.pressure_dof_index for chamber in state.f.tying_info.chambers]
+        @test pressure_dofs ==
+              [chamber.pressure_dof_index for chamber in state.f.tying_info.chambers]
         @test pressure_dofs == n_field_dofs .+ (1:state.n_chambers)
     end
 
@@ -300,14 +295,11 @@ end
             facet for sdh in dh.subdofhandlers for
             facet in Thunderbolt.FerriteOperators.facet_items(integrator, sdh)
         ]
-        chamber_facets =
-            union((Set(chamber.facets) for chamber in state.f.tying_info.chambers)...)
+        chamber_facets = union((Set(chamber.facets) for chamber in state.f.tying_info.chambers)...)
         @test length(declared) == length(unique(declared))
         @test chamber_facets ⊆ Set(declared)
-        @test setdiff(Set(declared), chamber_facets) ⊆ union(
-            Set(getfacetset(dh.grid, "Epicardium")),
-            Set(getfacetset(dh.grid, "Base")),
-        )
+        @test setdiff(Set(declared), chamber_facets) ⊆
+              union(Set(getfacetset(dh.grid, "Epicardium")), Set(getfacetset(dh.grid, "Base")))
     end
 
     pdof = only(pressure_dofs)
@@ -339,7 +331,8 @@ end
         # ... and the direct, operator-free evaluation `create_chamber_tyings` still uses for the
         # reference volume: one integrand, two routes, `≈` because the traversals differ in order.
         chamber = only(state.f.tying_info.chambers)
-        @test V ≈ Thunderbolt.compute_chamber_volume(dh, state.u, "LVChamberSurface", chamber) rtol = 1.0e-12
+        @test V ≈ Thunderbolt.compute_chamber_volume(dh, state.u, "LVChamberSurface", chamber) rtol =
+            1.0e-12
 
         # Nothing was written into the operator by evaluating it.
         J₂, r₂ = assemble_pair(state.op, state.u, state.p, state.ctx)
@@ -386,7 +379,10 @@ Returns `(; f, op, u, pressure_symbols, chamber_surface_names, pressure_dofs, n_
 function two_chamber_state(; seed = 7, device = Thunderbolt.SequentialCPUDevice())
     scaling_factor = 3.9
     mesh = generate_ideal_lh_mesh(
-        6, 1, 2, 2;
+        6,
+        1,
+        2,
+        2;
         inner_radius       = scaling_factor * 0.7,
         outer_radius       = scaling_factor * 1.0,
         longitudinal_upper = 0.4,
@@ -536,8 +532,7 @@ end
     @testset "declared unknowns" begin
         # The couplers own the pressures, so the model derives them rather than being told.
         for model in values(state.models)
-            @test collect(Thunderbolt.algebraic_variables(model)) ==
-                  collect(state.pressure_symbols)
+            @test collect(Thunderbolt.algebraic_variables(model)) == collect(state.pressure_symbols)
         end
         @test dh.algebraic_names == collect(state.pressure_symbols)
         @test state.pressure_dofs == state.n_u .+ (1:n_chambers)
@@ -628,7 +623,8 @@ end
         # One sweep per chamber over an operator whose facet items carry both: a facet of the other
         # chamber contributes nothing, which is what makes the two values differ and what makes each
         # of them the row's own integral half.
-        volumes = [Thunderbolt.chamber_volume(state.op, sym, state.u) for sym in state.pressure_symbols]
+        volumes =
+            [Thunderbolt.chamber_volume(state.op, sym, state.u) for sym in state.pressure_symbols]
         for (i, V) in pairs(volumes)
             @test V ≈ r[state.pressure_dofs[i]] + V⁰ᴰ[i] rtol = 1.0e-12
         end
@@ -636,7 +632,8 @@ end
 
         # A name no coupler declared would have every facet decline, which the engine reads as a
         # legitimate empty sum -- so the entry point rejects it rather than reporting a zero volume.
-        err = @test_throws ArgumentError Thunderbolt.chamber_volume(state.op, :not_a_chamber, state.u)
+        err =
+            @test_throws ArgumentError Thunderbolt.chamber_volume(state.op, :not_a_chamber, state.u)
         @test occursin("no tying facets for a chamber named", err.value.msg)
     end
 

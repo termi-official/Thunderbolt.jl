@@ -383,11 +383,7 @@ stage: it is the annotated one, carrying the local solver cache down to the elem
 
     # Placeholder parameters of the same type the step function writes, so that the field stays
     # concretely typed across the first assignment.
-    sf = FullStateStage(
-        f,
-        op,
-        _backward_euler_stage_evaluation(f, t₀, zero(t₀), uprev),
-    )
+    sf = FullStateStage(f, op, _backward_euler_stage_evaluation(f, t₀, zero(t₀), uprev))
 
     return BackwardEulerStageCache(
         sf,

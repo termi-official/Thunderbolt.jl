@@ -77,13 +77,18 @@ end
 # declaration already speaks for the whole handler. A subdomain that declares nothing forwards to the
 # framework default, `()`. This silently drops a declaration that is present on only SOME
 # subintegrators; nothing in this package does that today.
-function FerriteOperators.algebraic_items(integrator::NonlinearMultiDomainIntegrator2, dh::DofHandler)
+function FerriteOperators.algebraic_items(
+    integrator::NonlinearMultiDomainIntegrator2,
+    dh::DofHandler,
+)
     isempty(integrator.subintegrators) && return ()
     return FerriteOperators.algebraic_items(first(values(integrator.subintegrators)), dh)
 end
 
-FerriteOperators.setup_algebraic_cache(integrator::NonlinearMultiDomainIntegrator2, dh::DofHandler) =
-    FerriteOperators.setup_algebraic_cache(first(values(integrator.subintegrators)), dh)
+FerriteOperators.setup_algebraic_cache(
+    integrator::NonlinearMultiDomainIntegrator2,
+    dh::DofHandler,
+) = FerriteOperators.setup_algebraic_cache(first(values(integrator.subintegrators)), dh)
 
 struct BilinearMultiIntegrator <: AbstractBilinearIntegrator
     subintegrators::Dict{<: String, <: AbstractBilinearIntegrator}

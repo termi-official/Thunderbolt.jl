@@ -181,8 +181,14 @@ end
 
 # --- rate-free elements --------------------------------------------------------------------------
 
-FerriteOperators.provides_analytic(::Type{<:QuasiStaticElementCache}, ::FerriteOperators.JacobianKind{:u}) = true
-FerriteOperators.provides_analytic(::Type{<:QuasiStaticElementCache}, ::FerriteOperators.JacobianResidualKind) = true
+FerriteOperators.provides_analytic(
+    ::Type{<:QuasiStaticElementCache},
+    ::FerriteOperators.JacobianKind{:u},
+) = true
+FerriteOperators.provides_analytic(
+    ::Type{<:QuasiStaticElementCache},
+    ::FerriteOperators.JacobianResidualKind,
+) = true
 
 # TODO how to control dispatch on required input for the material routine?
 # TODO finer granularity on the dispatch here. depending on the evolution law of the internal variable this routine looks slightly different.
@@ -276,7 +282,10 @@ FerriteOperators.assemble_cell!(
 ) = _assemble_quasistatic_jacobian!(req, element_cache, args, true)
 
 # A rate-free element is a function of `(u, t)` alone, so only the `:u` weight acts on it.
-FerriteOperators.provides_analytic(::Type{<:QuasiStaticElementCache}, ::FerriteOperators.WeightedJacobianKind) = true
+FerriteOperators.provides_analytic(
+    ::Type{<:QuasiStaticElementCache},
+    ::FerriteOperators.WeightedJacobianKind,
+) = true
 FerriteOperators.assemble_cell!(
     req::FerriteOperators.WeightedJacobianRequest,
     element_cache::QuasiStaticElementCache,
@@ -373,9 +382,12 @@ A weighted sweep over a rate-coupled material must name the `v` slot: without it
 rate sensitivity would be dropped silently, leaving a descent direction rather than a Newton one.
 """
 @inline function _qs_rate_weight(weights::NamedTuple)
-    haskey(weights, :v) || throw(ArgumentError(
-        "A weighted Jacobian over a rate-coupled material must weigh the `v` slot; got slots " *
-        "$(keys(weights)). The rate sensitivity ∂P/∂Ḟ enters through it and through nothing else."))
+    haskey(weights, :v) || throw(
+        ArgumentError(
+            "A weighted Jacobian over a rate-coupled material must weigh the `v` slot; got slots " *
+            "$(keys(weights)). The rate sensitivity ∂P/∂Ḟ enters through it and through nothing else.",
+        ),
+    )
     return weights.v
 end
 
@@ -402,11 +414,26 @@ solve's, and a `Consistent` tangent cannot be formed without them.
 FerriteOperators.invalidate_correctors!(e::AnyQuasiStaticCondensedElementCache) =
     (FerriteOperators.invalidate_item_states!(e.correctors); nothing)
 
-FerriteOperators.provides_analytic(::Type{<:QuasiStaticCondensedODEElementCache}, ::FerriteOperators.JacobianKind{:u}) = true
-FerriteOperators.provides_analytic(::Type{<:QuasiStaticCondensedODEElementCache}, ::FerriteOperators.JacobianResidualKind) = true
-FerriteOperators.provides_analytic(::Type{<:QuasiStaticCondensedDAEElementCache}, ::FerriteOperators.JacobianKind{:u}) = true
-FerriteOperators.provides_analytic(::Type{<:QuasiStaticCondensedDAEElementCache}, ::FerriteOperators.JacobianResidualKind) = true
-FerriteOperators.provides_analytic(::Type{<:QuasiStaticCondensedDAEElementCache}, ::FerriteOperators.WeightedJacobianKind) = true
+FerriteOperators.provides_analytic(
+    ::Type{<:QuasiStaticCondensedODEElementCache},
+    ::FerriteOperators.JacobianKind{:u},
+) = true
+FerriteOperators.provides_analytic(
+    ::Type{<:QuasiStaticCondensedODEElementCache},
+    ::FerriteOperators.JacobianResidualKind,
+) = true
+FerriteOperators.provides_analytic(
+    ::Type{<:QuasiStaticCondensedDAEElementCache},
+    ::FerriteOperators.JacobianKind{:u},
+) = true
+FerriteOperators.provides_analytic(
+    ::Type{<:QuasiStaticCondensedDAEElementCache},
+    ::FerriteOperators.JacobianResidualKind,
+) = true
+FerriteOperators.provides_analytic(
+    ::Type{<:QuasiStaticCondensedDAEElementCache},
+    ::FerriteOperators.WeightedJacobianKind,
+) = true
 
 """
     condense_cell!(cache, args, weights)
@@ -428,11 +455,11 @@ function FerriteOperators.condense_cell!(
     weights::NamedTuple,
 )
     @unpack constitutive_model, internal_cache, cv, coefficient_cache = element_cache
-    dₑ     = args.states.u
-    Qₑ     = _qs_internal_block(element_cache, args.states.q)
+    dₑ = args.states.u
+    Qₑ = _qs_internal_block(element_cache, args.states.q)
     Qₑprev = _qs_internal_block(element_cache, args.states.qprev)
-    t      = FerriteOperators.evaluation_time(args.ctx)
-    Δt     = FerriteOperators.stage_scaling(args.ctx)
+    t = FerriteOperators.evaluation_time(args.ctx)
+    Δt = FerriteOperators.stage_scaling(args.ctx)
     correctors = _qs_corrector_buffer(element_cache.correctors)
 
     @inbounds for qp ∈ QuadratureIterator(cv)
@@ -475,11 +502,11 @@ function FerriteOperators.condense_cell!(
     ::Nothing,
 )
     @unpack constitutive_model, internal_cache, cv, coefficient_cache = element_cache
-    dₑ     = args.states.u
-    Qₑ     = _qs_internal_block(element_cache, args.states.q)
+    dₑ = args.states.u
+    Qₑ = _qs_internal_block(element_cache, args.states.q)
     Qₑprev = _qs_internal_block(element_cache, args.states.qprev)
-    t      = FerriteOperators.evaluation_time(args.ctx)
-    Δt     = FerriteOperators.stage_scaling(args.ctx)
+    t = FerriteOperators.evaluation_time(args.ctx)
+    Δt = FerriteOperators.stage_scaling(args.ctx)
 
     @inbounds for qp ∈ QuadratureIterator(cv)
         kinematics = compute_kinematic_quantities(element_cache, qp, dₑ, args.states)
@@ -510,11 +537,11 @@ function _assemble_condensed_cell!(
     linearization,
 )
     @unpack constitutive_model, internal_cache, cv, coefficient_cache = element_cache
-    ndofs  = getnbasefunctions(cv)
-    dₑ     = args.states.u
-    Qₑ     = _qs_internal_block(element_cache, args.states.q)
+    ndofs = getnbasefunctions(cv)
+    dₑ = args.states.u
+    Qₑ = _qs_internal_block(element_cache, args.states.q)
     correctors = _qs_correctors(element_cache, args)
-    t      = FerriteOperators.evaluation_time(args.ctx)
+    t = FerriteOperators.evaluation_time(args.ctx)
 
     @inbounds for qp ∈ QuadratureIterator(cv)
         dΩ = getdetJdV(cv, qp)
@@ -554,15 +581,28 @@ FerriteOperators.assemble_cell!(
     req::FerriteOperators.JacobianResidualRequest,
     element_cache::QuasiStaticCondensedElementCache,
     args::FerriteOperators.CellArgs,
-) = _assemble_condensed_cell!(req, element_cache, args, _qs_linearization(element_cache, true, false))
+) = _assemble_condensed_cell!(
+    req,
+    element_cache,
+    args,
+    _qs_linearization(element_cache, true, false),
+)
 
 FerriteOperators.assemble_cell!(
     req::FerriteOperators.JacobianRequest{:u},
     element_cache::QuasiStaticCondensedElementCache,
     args::FerriteOperators.CellArgs,
-) = _assemble_condensed_cell!(req, element_cache, args, _qs_linearization(element_cache, true, false))
+) = _assemble_condensed_cell!(
+    req,
+    element_cache,
+    args,
+    _qs_linearization(element_cache, true, false),
+)
 
-FerriteOperators.provides_analytic(::Type{<:QuasiStaticCondensedODEElementCache}, ::FerriteOperators.WeightedJacobianKind) = true
+FerriteOperators.provides_analytic(
+    ::Type{<:QuasiStaticCondensedODEElementCache},
+    ::FerriteOperators.WeightedJacobianKind,
+) = true
 FerriteOperators.assemble_cell!(
     req::FerriteOperators.WeightedJacobianRequest,
     element_cache::QuasiStaticCondensedODEElementCache,
@@ -582,11 +622,7 @@ FerriteOperators.assemble_cell!(
     req,
     element_cache,
     args,
-    _qs_linearization(
-        element_cache,
-        _qs_state_weight(req.weights),
-        _qs_rate_weight(req.weights),
-    ),
+    _qs_linearization(element_cache, _qs_state_weight(req.weights), _qs_rate_weight(req.weights)),
 )
 
 function FerriteOperators.assemble_cell!(
@@ -595,10 +631,10 @@ function FerriteOperators.assemble_cell!(
     args::FerriteOperators.CellArgs,
 )
     @unpack constitutive_model, internal_cache, cv, coefficient_cache = element_cache
-    ndofs  = getnbasefunctions(cv)
-    dₑ     = args.states.u
-    Qₑ     = _qs_internal_block(element_cache, args.states.q)
-    t      = FerriteOperators.evaluation_time(args.ctx)
+    ndofs = getnbasefunctions(cv)
+    dₑ = args.states.u
+    Qₑ = _qs_internal_block(element_cache, args.states.q)
+    t = FerriteOperators.evaluation_time(args.ctx)
 
     @inbounds for qp ∈ QuadratureIterator(cv)
         dΩ = getdetJdV(cv, qp)
@@ -630,16 +666,21 @@ end
 # -- with the time discretization removed: the local problem is `0 = L(F, Q)`, so it takes neither
 # `Δt` nor `qprev` and the material entry points lose those two arguments.
 
-FerriteOperators.provides_analytic(::Type{<:QuasiStaticCondensedSteadyElementCache}, ::FerriteOperators.JacobianKind{:u}) = true
-FerriteOperators.provides_analytic(::Type{<:QuasiStaticCondensedSteadyElementCache}, ::FerriteOperators.JacobianResidualKind) = true
-FerriteOperators.provides_analytic(::Type{<:QuasiStaticCondensedSteadyElementCache}, ::FerriteOperators.WeightedJacobianKind) = true
+FerriteOperators.provides_analytic(
+    ::Type{<:QuasiStaticCondensedSteadyElementCache},
+    ::FerriteOperators.JacobianKind{:u},
+) = true
+FerriteOperators.provides_analytic(
+    ::Type{<:QuasiStaticCondensedSteadyElementCache},
+    ::FerriteOperators.JacobianResidualKind,
+) = true
+FerriteOperators.provides_analytic(
+    ::Type{<:QuasiStaticCondensedSteadyElementCache},
+    ::FerriteOperators.WeightedJacobianKind,
+) = true
 
-@inline compute_kinematic_quantities(
-    e::QuasiStaticCondensedSteadyElementCache,
-    qp,
-    dₑ,
-    states,
-) = (∇u = function_gradient(e.cv, qp, dₑ); DeformationGradient(one(∇u) + ∇u))
+@inline compute_kinematic_quantities(e::QuasiStaticCondensedSteadyElementCache, qp, dₑ, states) =
+    (∇u = function_gradient(e.cv, qp, dₑ); DeformationGradient(one(∇u) + ∇u))
 
 @inline _qs_linearization(::QuasiStaticCondensedSteadyElementCache, wu, wv) =
     KinematicLinearization(wu)
@@ -652,7 +693,7 @@ function FerriteOperators.condense_cell!(
     @unpack constitutive_model, internal_cache, cv, coefficient_cache = element_cache
     dₑ = args.states.u
     Qₑ = _qs_internal_block(element_cache, args.states.q)
-    t  = FerriteOperators.evaluation_time(args.ctx)
+    t = FerriteOperators.evaluation_time(args.ctx)
     correctors = _qs_corrector_buffer(element_cache.correctors)
 
     @inbounds for qp ∈ QuadratureIterator(cv)
@@ -684,7 +725,7 @@ function FerriteOperators.condense_cell!(
     @unpack constitutive_model, internal_cache, cv, coefficient_cache = element_cache
     dₑ = args.states.u
     Qₑ = _qs_internal_block(element_cache, args.states.q)
-    t  = FerriteOperators.evaluation_time(args.ctx)
+    t = FerriteOperators.evaluation_time(args.ctx)
 
     @inbounds for qp ∈ QuadratureIterator(cv)
         kinematics = compute_kinematic_quantities(element_cache, qp, dₑ, args.states)
@@ -714,10 +755,10 @@ function _assemble_steady_condensed_cell!(
 )
     @unpack constitutive_model, internal_cache, cv, coefficient_cache = element_cache
     ndofs = getnbasefunctions(cv)
-    dₑ    = args.states.u
-    Qₑ    = _qs_internal_block(element_cache, args.states.q)
+    dₑ = args.states.u
+    Qₑ = _qs_internal_block(element_cache, args.states.q)
     correctors = _qs_correctors(element_cache, args)
-    t     = FerriteOperators.evaluation_time(args.ctx)
+    t = FerriteOperators.evaluation_time(args.ctx)
 
     @inbounds for qp ∈ QuadratureIterator(cv)
         dΩ = getdetJdV(cv, qp)
@@ -779,9 +820,9 @@ function FerriteOperators.assemble_cell!(
 )
     @unpack constitutive_model, internal_cache, cv, coefficient_cache = element_cache
     ndofs = getnbasefunctions(cv)
-    dₑ    = args.states.u
-    Qₑ    = _qs_internal_block(element_cache, args.states.q)
-    t     = FerriteOperators.evaluation_time(args.ctx)
+    dₑ = args.states.u
+    Qₑ = _qs_internal_block(element_cache, args.states.q)
+    t = FerriteOperators.evaluation_time(args.ctx)
 
     @inbounds for qp ∈ QuadratureIterator(cv)
         dΩ = getdetJdV(cv, qp)

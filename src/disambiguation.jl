@@ -1,7 +1,8 @@
 # Some dispatches to make the dispatcher happy.
 # The two ModelingToolkit-typed ones live in `ThunderboltMTKExt`.
-*(::ThreadedSparseMatrixCSR, ::SciMLBase.AbstractNoTimeSolution{T, 1} where {T}) =
-    error("Multiplying a `ThreadedSparseMatrixCSR` with a `SciMLBase.AbstractNoTimeSolution` is not implemented.")
+*(::ThreadedSparseMatrixCSR, ::SciMLBase.AbstractNoTimeSolution{T, 1} where {T}) = error(
+    "Multiplying a `ThreadedSparseMatrixCSR` with a `SciMLBase.AbstractNoTimeSolution` is not implemented.",
+)
 *(A::ThreadedSparseMatrixCSR, v::BlockArrays.FillArrays.AbstractZeros{<:Any, 1}) = mul(A, v)
 *(A::ThreadedSparseMatrixCSR, v::BlockArrays.ArrayLayouts.LayoutVector) = mul(A, v)
 *(

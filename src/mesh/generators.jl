@@ -512,9 +512,7 @@ function _shell_ring_nodes!(
     radii_in_percent,
     circumferential_angles,
 )
-    for l ∈ longitudinal_parameters,
-        radius_percent ∈ radii_in_percent,
-        φ ∈ circumferential_angles
+    for l ∈ longitudinal_parameters, radius_percent ∈ radii_in_percent, φ ∈ circumferential_angles
 
         push!(nodes, Node(point(l, φ, radius_percent)))
     end
@@ -564,14 +562,7 @@ function _fan_wedge_cells!(cells, ring, singular, nc::Int, nr::Int, flip::Bool)
         a, b = flip ? (i_next, i) : (i, i_next)
         push!(
             cells,
-            Wedge((
-                singular[j],
-                ring[a, j],
-                ring[b, j],
-                singular[j+1],
-                ring[a, j+1],
-                ring[b, j+1],
-            )),
+            Wedge((singular[j], ring[a, j], ring[b, j], singular[j+1], ring[a, j+1], ring[b, j+1])),
         )
     end
     return cells
@@ -622,7 +613,7 @@ function _valvular_plate!(
     # is what the fan's flipped winding and the transposed node array of the annular layers are for
     # -- both builders stack along their last index.
     offset = length(cells)
-    _fan_wedge_cells!(cells, view(plate_array, :, :, 1), plate_axis, nc, 1, true)
+    _fan_wedge_cells!(cells, view(plate_array,:,:,1), plate_axis, nc, 1, true)
     fan = collect((offset+1):length(cells))
 
     offset = length(cells)
@@ -649,16 +640,20 @@ function _valvular_plate!(
     end
     taper = collect((offset+1):length(cells))
 
-    ventricular_face = OrderedSet{FacetIndex}([
-        [FacetIndex(cl, 1) for cl in fan]
-        [FacetIndex(cl, 1) for cl in hex]
-        [FacetIndex(cl, 4) for cl in taper]
-    ])
-    opposite_face = OrderedSet{FacetIndex}([
-        [FacetIndex(cl, 5) for cl in fan]
-        [FacetIndex(cl, 6) for cl in hex]
-        [FacetIndex(cl, 3) for cl in taper]
-    ])
+    ventricular_face = OrderedSet{FacetIndex}(
+        [
+            [FacetIndex(cl, 1) for cl in fan]
+            [FacetIndex(cl, 1) for cl in hex]
+            [FacetIndex(cl, 4) for cl in taper]
+        ],
+    )
+    opposite_face = OrderedSet{FacetIndex}(
+        [
+            [FacetIndex(cl, 5) for cl in fan]
+            [FacetIndex(cl, 6) for cl in hex]
+            [FacetIndex(cl, 3) for cl in taper]
+        ],
+    )
     return [fan; hex; taper], ventricular_face, opposite_face
 end
 
@@ -822,7 +817,7 @@ function generate_ideal_lv_mesh(
     apex_offset = length(cells)
     _fan_wedge_cells!(
         cells,
-        view(node_array, :, :, 1),
+        view(node_array,:,:,1),
         apex_nodes,
         num_elements_circumferential,
         num_elements_radial,
@@ -844,9 +839,8 @@ function generate_ideal_lv_mesh(
             "`num_elements_valvular_plane` ($(num_elements_valvular_plane)) is below 2: the " *
             "valvular plate needs at least its center fan and its tapering outer ring.",
         )
-        valvular_plane_thickness > 0.0 || error(
-            "`valvular_plane_thickness` ($(valvular_plane_thickness)) has to be positive.",
-        )
+        valvular_plane_thickness > 0.0 ||
+            error("`valvular_plane_thickness` ($(valvular_plane_thickness)) has to be positive.")
         basal_angle = longitudinal_angle[end]
         plate_cells, plate_face, outer_face = _valvular_plate!(
             cells,
@@ -858,11 +852,11 @@ function generate_ideal_lv_mesh(
             valvular_plane_thickness,
             num_elements_valvular_plane,
         )
-        cellsets["valvular-plane"]      = OrderedSet{Int}(plate_cells)
-        facetsets["LVValvularPlane"]    = plate_face
+        cellsets["valvular-plane"] = OrderedSet{Int}(plate_cells)
+        facetsets["LVValvularPlane"] = plate_face
         facetsets["ValvularPlaneOuter"] = outer_face
         # The closed surface a chamber volume is measured over.
-        facetsets["LVChamberSurface"]   = union(facetsets["Endocardium"], plate_face)
+        facetsets["LVChamberSurface"] = union(facetsets["Endocardium"], plate_face)
     end
 
     return to_mesh(
@@ -987,7 +981,7 @@ function generate_ideal_lh_mesh(
     np        = num_elements_valvular_plane
 
     basal_angle = (1.0 + longitudinal_upper)*π/2
-    rim_height  = apex_outer*cos(basal_angle)
+    rim_height = apex_outer*cos(basal_angle)
     rim_radius(rp) = (inner_radius*(1.0-rp) + outer_radius*rp)*sin(basal_angle)
 
     min(la_cavity_depth, la_wall_thickness, valvular_plane_thickness) > 0.0 || error(
@@ -1080,13 +1074,13 @@ function generate_ideal_lh_mesh(
     atrium_hex = reshape(collect((offset+1):length(cells)), (nc, nr, n_la))
 
     offset = length(cells)
-    _fan_wedge_cells!(cells, view(ventricle_array, :, :, 1), apex_nodes, nc, nr, false)
+    _fan_wedge_cells!(cells, view(ventricle_array,:,:,1), apex_nodes, nc, nr, false)
     apex_fan = reshape(collect((offset+1):length(cells)), (nc, nr))
 
     # The roof fan sits beyond the *last* atrial ring, where the apex fan sits before the first
     # ventricular one, so its cells are wound the other way.
     offset = length(cells)
-    _fan_wedge_cells!(cells, view(atrium_array, :, :, n_la+1), roof_nodes, nc, nr, true)
+    _fan_wedge_cells!(cells, view(atrium_array,:,:,(n_la+1)), roof_nodes, nc, nr, true)
     roof_fan = reshape(collect((offset+1):length(cells)), (nc, nr))
 
     plate_cells, lv_plate_face, la_plate_face = _valvular_plate!(
@@ -1101,33 +1095,39 @@ function generate_ideal_lh_mesh(
     )
 
     facetsets = Dict{String, OrderedSet{FacetIndex}}()
-    facetsets["LVEndocardium"] = OrderedSet{FacetIndex}([
-        [FacetIndex(cl, 2) for cl in ventricle_hex[:, 1, :][:]];
-        [FacetIndex(cl, 1) for cl in apex_fan[:, 1][:]]
-    ])
-    facetsets["LVEpicardium"] = OrderedSet{FacetIndex}([
-        [FacetIndex(cl, 4) for cl in ventricle_hex[:, end, :][:]];
-        [FacetIndex(cl, 5) for cl in apex_fan[:, end][:]]
-    ])
-    facetsets["LAEndocardium"] = OrderedSet{FacetIndex}([
-        [FacetIndex(cl, 2) for cl in atrium_hex[:, 1, :][:]];
-        [FacetIndex(cl, 1) for cl in roof_fan[:, 1][:]]
-    ])
-    facetsets["LAEpicardium"] = OrderedSet{FacetIndex}([
-        [FacetIndex(cl, 4) for cl in atrium_hex[:, end, :][:]];
-        [FacetIndex(cl, 5) for cl in roof_fan[:, end][:]]
-    ])
+    facetsets["LVEndocardium"] = OrderedSet{FacetIndex}(
+        [
+            [FacetIndex(cl, 2) for cl in ventricle_hex[:, 1, :][:]];
+            [FacetIndex(cl, 1) for cl in apex_fan[:, 1][:]]
+        ],
+    )
+    facetsets["LVEpicardium"] = OrderedSet{FacetIndex}(
+        [
+            [FacetIndex(cl, 4) for cl in ventricle_hex[:, end, :][:]];
+            [FacetIndex(cl, 5) for cl in apex_fan[:, end][:]]
+        ],
+    )
+    facetsets["LAEndocardium"] = OrderedSet{FacetIndex}(
+        [
+            [FacetIndex(cl, 2) for cl in atrium_hex[:, 1, :][:]];
+            [FacetIndex(cl, 1) for cl in roof_fan[:, 1][:]]
+        ],
+    )
+    facetsets["LAEpicardium"] = OrderedSet{FacetIndex}(
+        [
+            [FacetIndex(cl, 4) for cl in atrium_hex[:, end, :][:]];
+            [FacetIndex(cl, 5) for cl in roof_fan[:, end][:]]
+        ],
+    )
     facetsets["Endocardium"] = union(facetsets["LVEndocardium"], facetsets["LAEndocardium"])
-    facetsets["Epicardium"]  = union(facetsets["LVEpicardium"], facetsets["LAEpicardium"])
+    facetsets["Epicardium"] = union(facetsets["LVEpicardium"], facetsets["LAEpicardium"])
 
     facetsets["LVValvularPlane"] = lv_plate_face
     facetsets["LAValvularPlane"] = la_plate_face
     # The closed surfaces a chamber volume is measured over. The endocardia alone are open at the
     # orifice, where the plate closes them.
-    facetsets["LVChamberSurface"] =
-        union(facetsets["LVEndocardium"], facetsets["LVValvularPlane"])
-    facetsets["LAChamberSurface"] =
-        union(facetsets["LAEndocardium"], facetsets["LAValvularPlane"])
+    facetsets["LVChamberSurface"] = union(facetsets["LVEndocardium"], facetsets["LVValvularPlane"])
+    facetsets["LAChamberSurface"] = union(facetsets["LAEndocardium"], facetsets["LAValvularPlane"])
 
     facetsets["MitralAnnulus"] =
         OrderedSet{FacetIndex}(FacetIndex(cl, 6) for cl in ventricle_hex[:, :, end][:])
@@ -1135,29 +1135,31 @@ function generate_ideal_lh_mesh(
     # As on the single ventricle: the ridges are placed by convention, they run from the rim down to
     # the singular apex edge, and each facet is stored on its septal cell.
     i_ant = clamp(round(Int, nc*septum_fraction), 1, nc-1) + 1
-    facetsets["SRidgePost"] = OrderedSet{FacetIndex}([
-        [FacetIndex(cl, 5) for cl in ventricle_hex[1, :, :][:]];
-        [FacetIndex(cl, 2) for cl in apex_fan[1, :][:]]
-    ])
-    facetsets["SRidgeAnt"] = OrderedSet{FacetIndex}([
-        [FacetIndex(cl, 3) for cl in ventricle_hex[i_ant-1, :, :][:]];
-        [FacetIndex(cl, 3) for cl in apex_fan[i_ant-1, :][:]]
-    ])
+    facetsets["SRidgePost"] = OrderedSet{FacetIndex}(
+        [
+            [FacetIndex(cl, 5) for cl in ventricle_hex[1, :, :][:]];
+            [FacetIndex(cl, 2) for cl in apex_fan[1, :][:]]
+        ],
+    )
+    facetsets["SRidgeAnt"] = OrderedSet{FacetIndex}(
+        [
+            [FacetIndex(cl, 3) for cl in ventricle_hex[i_ant-1, :, :][:]];
+            [FacetIndex(cl, 3) for cl in apex_fan[i_ant-1, :][:]]
+        ],
+    )
 
     nodesets = Dict{String, OrderedSet{Int}}()
     nodesets["MyocardialAnchor1"] = OrderedSet{Int}([ventricle_array[1, 1, end]])
     nodesets["MyocardialAnchor2"] = OrderedSet{Int}([ventricle_array[1, end, end]])
-    nodesets["MyocardialAnchor3"] =
-        OrderedSet{Int}([ventricle_array[ceil(Int, 1+nc/4), 1, end]])
-    nodesets["MyocardialAnchor4"] =
-        OrderedSet{Int}([ventricle_array[ceil(Int, 1+3*nc/4), 1, end]])
-    nodesets["Apex"]          = OrderedSet{Int}([last(apex_nodes)])
-    nodesets["ApexInOut"]     = OrderedSet{Int}([first(apex_nodes), last(apex_nodes)])
+    nodesets["MyocardialAnchor3"] = OrderedSet{Int}([ventricle_array[ceil(Int, 1+nc/4), 1, end]])
+    nodesets["MyocardialAnchor4"] = OrderedSet{Int}([ventricle_array[ceil(Int, 1+3*nc/4), 1, end]])
+    nodesets["Apex"] = OrderedSet{Int}([last(apex_nodes)])
+    nodesets["ApexInOut"] = OrderedSet{Int}([first(apex_nodes), last(apex_nodes)])
     nodesets["MitralAnnulusRing"] = OrderedSet{Int}(ventricle_array[:, :, end][:])
 
     cellsets = Dict{String, OrderedSet{Int}}(
-        "ventricle"      => OrderedSet{Int}([ventricle_hex[:]; apex_fan[:]]),
-        "atrium"         => OrderedSet{Int}([atrium_hex[:]; roof_fan[:]]),
+        "ventricle" => OrderedSet{Int}([ventricle_hex[:]; apex_fan[:]]),
+        "atrium" => OrderedSet{Int}([atrium_hex[:]; roof_fan[:]]),
         "valvular-plane" => OrderedSet{Int}(plate_cells),
     )
 
