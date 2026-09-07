@@ -26,6 +26,7 @@ import FerriteOperators:
     AssemblyStrategy,
     default_strategy,
     FullAssembly,
+    StandardOperatorSpecification,
     SequentialScheduling,
     ColoredScheduling,
     AbstractGPUDevice,

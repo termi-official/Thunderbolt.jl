@@ -69,6 +69,15 @@ function setup_operator(
     setup_assembled_operator(strategy, integrator, solver.system_matrix_type, dh)
 end
 
+function setup_operator(
+    strategy::AssemblyStrategy{<:FullAssembly, <:Any, <:AbstractGPUDevice},
+    integrator::AbstractBilinearIntegrator,
+    solver::AbstractSolver,
+    dh::AbstractDofHandler,
+)
+    setup_assembled_operator(strategy, integrator, solver.system_matrix_type, dh)
+end
+
 """
     setup_assembled_operator(strategy, integrator, system_matrix_type, dh)
 
@@ -82,6 +91,10 @@ stage reads the mass and diffusion matrices only through `nonzeros`, and every h
 the same ordering for one dof handler, so the requested format is simply not needed here. Across a
 device boundary that no longer holds, and the extension method returns a
 [`MirroredBilinearOperator`](@ref) instead.
+
+Where the strategy names a *device*, there is no mirror: the operator assembles straight into
+`system_matrix_type`, so the format is threaded onto the operator specification and the two knobs
+have to name the same one.
 """
 function setup_assembled_operator(
     strategy::AssemblyStrategy{<:FullAssembly, SequentialScheduling, <:AbstractCPUDevice},
@@ -90,6 +103,56 @@ function setup_assembled_operator(
     dh::AbstractDofHandler,
 )
     setup_operator(strategy, integrator, dh)
+end
+
+@doc (@doc setup_assembled_operator)
+function setup_assembled_operator(
+    strategy::AssemblyStrategy{<:FullAssembly, <:Any, <:AbstractGPUDevice},
+    integrator::AbstractBilinearIntegrator,
+    system_matrix_type::Type,
+    dh::AbstractDofHandler,
+)
+    return setup_operator(_device_assembly_strategy(strategy, system_matrix_type), integrator, dh)
+end
+
+# The two knobs meet here. A device assembly writes the entries of `system_matrix_type` itself, so it
+# has to be a format Ferrite ships a device assembler for -- CSC, not CSR -- and the operator
+# specification is where `FerriteOperators` reads the type from.
+function _device_assembly_strategy(
+    strategy::AssemblyStrategy{<:FullAssembly, <:Any, <:AbstractGPUDevice},
+    system_matrix_type::Type,
+)
+    spec = strategy.form.operator_specification
+    # Anything but the standard specification is rejected for a device by FerriteOperators, with a
+    # message naming the limitation. Hand it over untouched rather than rebuilding it into one.
+    spec isa StandardOperatorSpecification || return strategy
+    hasmethod(Ferrite.start_assemble, Tuple{system_matrix_type}) || error(
+        "Cannot assemble on $(nameof(typeof(strategy.device))) into $system_matrix_type: Ferrite " *
+        "has no device assembler for it. Device assembly needs a CSC device matrix -- a CSR one is " *
+        "allocatable but not assemblable -- so pass `system_matrix_type = CuSparseMatrixCSC{Tv, Ti}` " *
+        "to the solver. A CSR system matrix stays available with a host assembly strategy, which " *
+        "assembles on the host and mirrors into the device matrix.",
+    )
+    declared = spec.matrix_type
+    declared === nothing ||
+        declared === system_matrix_type ||
+        error(
+            "The assembly strategy's operator specification names the matrix type $declared while " *
+            "the solver asks for $system_matrix_type. The device assembles directly into the " *
+            "solver's system matrix, so the two have to name the same type -- drop the one on the " *
+            "specification.",
+        )
+    return AssemblyStrategy(
+        FullAssembly(
+            StandardOperatorSpecification(;
+                algebraic_couplings = spec.algebraic_couplings,
+                constraint_handler  = spec.constraint_handler,
+                matrix_type         = system_matrix_type,
+            ),
+        ),
+        strategy.scheduling,
+        strategy.device,
+    )
 end
 
 """

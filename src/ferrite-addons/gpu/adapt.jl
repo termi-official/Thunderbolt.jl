@@ -1,19 +1,8 @@
 ############
 # adapt.jl #
 ############
+# Rules for this package's own values types. `CellValues` is Ferrite's, and its `FerriteKAExt`
+# supplies the rule the device path needs -- a `CellValues` whose fields are device arrays, which is
+# what the struct-of-arrays worker views are built from.
 Adapt.@adapt_structure QuadratureValuesIterator
 Adapt.@adapt_structure StaticQuadratureValues
-
-function Adapt.adapt_structure(to, cv::CellValues)
-    fv = Adapt.adapt(to, StaticInterpolationValues(cv.fun_values))
-    gm = Adapt.adapt(to, StaticInterpolationValues(cv.geo_mapping))
-    n_quadoints = cv.qr.weights |> length
-    weights = Adapt.adapt(to, ntuple(i -> cv.qr.weights[i], n_quadoints))
-    ξs = Adapt.adapt(to, ntuple(i -> Adapt.adapt(to, cv.qr.points[i]), n_quadoints))
-    FVT = typeof(fv)
-    GMT = typeof(gm)
-    Nqp = length(weights)
-    T = eltype(weights)
-    dim = ξs |> first |> length
-    return StaticCellValues{FVT, GMT, Nqp, T, dim}(fv, gm, weights, ξs)
-end

@@ -1,19 +1,17 @@
-# TODO retarget onto the FerriteOperators GPU device slice (the "true GPU assembly" work item):
-# this file compares a host assembled linear operator against a device assembled one, and the device
-# assembly strategy it names (`ElementAssemblyStrategy`, `CudaDevice`) no longer exists. Assembly on
-# the GPU is a FerriteOperators device concern now, so this test has no target until that device
-# type ships. Not included by `runtests.jl` until then.
+# The stimulus linear form, assembled on the device against the same form assembled on the host.
+# `AnalyticalCoefficientElementCache` is the one element cache on the electrophysiology path that
+# maps the quadrature points itself instead of `reinit!`ing its values object, so it exercises the
+# other half of the device element contract: a cache whose values object is shared read-only.
 
-@testset "Operator API" begin
-    left  = Vec((-1.0f0, -1.0f0)) # define the left bottom corner of the grid.
-    right = Vec((1.0f0, 1.0f0)) # define the right top corner of the grid.
+@testset "Linear operator, host versus device assembly" begin
+    left  = Vec((-1.0f0, -1.0f0))
+    right = Vec((1.0f0, 1.0f0))
     grid  = generate_grid(Quadrilateral, (287, 1), left, right)
     dh    = DofHandler(grid)
     add!(dh, :u, Lagrange{RefQuadrilateral, 1}())
     close!(dh)
     qrc = QuadratureRuleCollection{2}()
-
-    cs = CartesianCoordinateSystem(grid)
+    cs  = CartesianCoordinateSystem(grid)
 
     linint = Thunderbolt.LinearIntegrator(
         AnalyticalTransmembraneStimulationProtocol(
@@ -22,16 +20,22 @@
         ),
         qrc,
     )
+    ctx = TimeIntegrationContext(0.0f0, 0.0f0, 0.0f0)
 
-    cpustrategy =
-        Thunderbolt.SequentialAssemblyStrategy(Thunderbolt.SequentialCPUDevice{Float32, Int32}())
-    linop = Thunderbolt.setup_operator(cpustrategy, linint, BackwardEulerSolver(), dh)
-    Thunderbolt.update_operator!(linop, 0.0f0)
+    host = Thunderbolt.setup_operator(host_assembly_strategy(), linint, dh)
+    Thunderbolt.update_operator!(host, nothing, ctx)
 
-    gpustrategy = Thunderbolt.ElementAssemblyStrategy(Thunderbolt.CudaDevice())
-    cuda_op = Thunderbolt.setup_operator(gpustrategy, linint, BackwardEulerSolver(), dh)
+    device = Thunderbolt.setup_operator(device_assembly_strategy(), linint, dh)
+    # A linear operator's vector is allocated by the device, so no matrix type is involved.
+    @test device.b isa CuVector{Float32}
+    Thunderbolt.update_operator!(device, nothing, ctx)
 
-    Thunderbolt.update_operator!(cuda_op, 0.0f0)
+    # Both arms sum the same Float32 quadrature contributions; what separates them is the order the
+    # colored device sweep accumulates a shared dof in, measured here below 1e-7 relative.
+    @test Array(device.b) ≈ host.b rtol = 1.0f-5
 
-    @test Vector(cuda_op.b) ≈ linop.b
+    # Coloring fixes that order per entry, so a repeated sweep reproduces the previous one exactly.
+    first_run = Array(device.b)
+    Thunderbolt.update_operator!(device, nothing, ctx)
+    @test first_run == Array(device.b)
 end

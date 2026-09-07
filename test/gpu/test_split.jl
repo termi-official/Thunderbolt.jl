@@ -1,9 +1,10 @@
-# The whole monodomain solve of the first EP tutorial, on the device: host assembly mirrored into a
-# `CuSparseMatrix`, a device CG for the heat child, a kernel for the reaction child, and the operator
-# splitting itself running on `CuVector`s. The host arm is the same problem in the same precision, so
-# what separates the two is the order the two CG implementations reduce in, nothing else.
+# The whole monodomain solve of the first EP tutorial, on the device, in the two shapes a device
+# solve comes in: host assembly mirrored into a `CuSparseMatrix`, and assembly on the device itself.
+# Both run a device CG for the heat child, a kernel for the reaction child, and the operator
+# splitting on `CuVector`s. The host arm is the same problem in the same precision, so what separates
+# it from either is the order the reductions run in, nothing else.
 
-function _monodomain_form(; n = 32)
+function _monodomain_form(; n = 32, assembly_strategy = Thunderbolt.default_strategy())
     mesh = generate_mesh(Quadrilateral, (n, n), Vec{2}((0.0, 0.0)), Vec{2}((2.5, 2.5)))
     ep_model = MonodomainModel(
         ConstantCoefficient(1.0),
@@ -17,7 +18,7 @@ function _monodomain_form(; n = 32)
     )
     return semidiscretize(
         ReactionDiffusionSplit(ep_model),
-        FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}())),
+        FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}()); assembly_strategy),
         mesh,
     )
 end
@@ -37,7 +38,7 @@ end
     Δt     = 1.0f0
     nsteps = 5
 
-    function build(u0, VT, SpMatType)
+    function build(form, u0, VT, SpMatType)
         timestepper = LieTrotterGodunov((
             BackwardEulerSolver(
                 solution_vector_type = VT,
@@ -46,11 +47,17 @@ end
             ),
             AdaptiveForwardEulerSubstepper(solution_vector_type = VT, reaction_threshold = 0.1f0),
         ))
-        return init(OperatorSplittingProblem(odeform, u0, tspan), timestepper; dt = Δt)
+        return init(OperatorSplittingProblem(form, u0, tspan), timestepper; dt = Δt)
     end
 
-    cpu = build(copy(u₀), Vector{Float32}, ThreadedSparseMatrixCSR{Float32, Int32})
-    gpu = build(CuVector(u₀), CuVector{Float32}, CUDA.CUSPARSE.CuSparseMatrixCSR{Float32, Int32})
+    # The device assembly arm needs its own semidiscretization: which device assembles is the model
+    # side's `assembly_strategy`, not a solver option, and the matrix type has to be the CSC one
+    # Ferrite ships a device assembler for.
+    devform = _monodomain_form(; assembly_strategy = device_assembly_strategy())
+
+    cpu = build(odeform, copy(u₀), Vector{Float32}, ThreadedSparseMatrixCSR{Float32, Int32})
+    gpu = build(odeform, CuVector(u₀), CuVector{Float32}, CuCSR)
+    gpu_assembled = build(devform, CuVector(u₀), CuVector{Float32}, CuCSC)
 
     # The heat child addresses a contiguous stretch of the state, so on the device it gets a plain
     # `CuArray` over the parent's storage rather than a gather through an uploaded index vector.
@@ -58,19 +65,32 @@ end
     @test gpu.child_subintegrators[1].u isa CuVector{Float32}
     @test gpu.child_subintegrators[2].u isa CuVector{Float32}
 
+    # Host assembly mirrors, device assembly does not: the operator owns the device matrix outright.
+    @test gpu.child_subintegrators[1].cache.stage.M isa Thunderbolt.MirroredBilinearOperator
+    let stage = gpu_assembled.child_subintegrators[1].cache.stage
+        @test stage.M isa Thunderbolt.BilinearFerriteOperator
+        @test stage.M.A isa CuCSC
+        @test stage.K.A isa CuCSC
+    end
+
     φₘ = solution_variable(odeform, :φₘ)
     for _ = 1:nsteps
         step!(cpu)
         step!(gpu)
+        step!(gpu_assembled)
         @test gpu.t == cpu.t
+        @test gpu_assembled.t == cpu.t
         # Both arms run the same Float32 arithmetic and both CGs converge to the same tolerance, so
         # what separates them is the order the two implementations reduce in: measured at 8e-8
         # relative over these five steps, a few Float32 ulps. The tolerance leaves two orders of
         # magnitude of headroom for a different CUSPARSE reduction order and is still four orders
-        # below what a stale mirror or a misordered `nonzeros` would produce.
+        # below what a stale mirror or a misordered `nonzeros` would produce. The device assembled
+        # arm adds the colored sweep's accumulation order to that, one more ulp scale difference.
         @test getvariable(Array(gpu.u), φₘ) ≈ getvariable(cpu.u, φₘ) rtol = 1.0f-5
+        @test getvariable(Array(gpu_assembled.u), φₘ) ≈ getvariable(cpu.u, φₘ) rtol = 1.0f-5
     end
     @test Array(gpu.u) ≈ cpu.u rtol = 1.0f-5
+    @test Array(gpu_assembled.u) ≈ cpu.u rtol = 1.0f-5
     # The wave moved, so the agreement above is not two copies of the initial condition.
     @test cpu.u ≉ u₀
 end

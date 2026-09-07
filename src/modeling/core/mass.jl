@@ -82,14 +82,30 @@ function FerriteOperators.assemble_cell!(
     end
 end
 
-function setup_element_cache(element_model::BilinearMassIntegrator, sdh)
+setup_element_cache(element_model::BilinearMassIntegrator, sdh) = _setup_mass_element_cache(
+    element_model,
+    sdh,
+    getquadraturerule(element_model.qrc, sdh),
+    Float64,
+)
+
+# The eltype channel: `T` is the assembling device's `value_type`, so a `Float32` device gets a
+# `Float32` quadrature rule and `Float32` `CellValues`.
+setup_element_cache(element_model::BilinearMassIntegrator, sdh, ::Type{T}) where {T} =
+    _setup_mass_element_cache(element_model, sdh, getquadraturerule(element_model.qrc, sdh, T), T)
+
+function _setup_mass_element_cache(
+    element_model::BilinearMassIntegrator,
+    sdh,
+    qr,
+    ::Type{T},
+) where {T}
     @assert length(sdh.dh.field_names) == 1 "Support for multiple fields not yet implemented."
-    qr = getquadraturerule(element_model.qrc, sdh)
     field_name = first(sdh.dh.field_names)
     ip = Ferrite.getfieldinterpolation(sdh, field_name)
     ip_geo = geometric_subdomain_interpolation(sdh)
     return BilinearMassElementCache(
         setup_coefficient_cache(element_model.ρ, qr, sdh),
-        CellValues(qr, ip, ip_geo),
+        CellValues(T, qr, ip, ip_geo),
     )
 end

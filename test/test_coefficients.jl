@@ -237,9 +237,8 @@ using JET: @test_opt, @test_call
     end
 
     @testset "StaticCellValues" begin
-        # `StaticCellValues` is what the GPU path adapts a `CellValues` into, so it answers every
-        # query the same way -- but it stores no cell geometry and is handed the coordinates
-        # instead of being `reinit!`ed.
+        # `StaticCellValues` answers every query a `CellValues` does -- but it stores no cell
+        # geometry and is handed the coordinates instead of being `reinit!`ed.
         ip = Lagrange{RefHexahedron, 1}()
         coords = [
             Vec((0.0, 0.0, 0.0)),

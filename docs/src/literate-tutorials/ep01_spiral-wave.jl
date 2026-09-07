@@ -187,10 +187,43 @@ problem = OperatorSplittingProblem(odeform, u₀, tspan);
 #     * The output loop below reads the solution through Ferrite, which indexes it elementwise, so it
 #       needs a host copy: `Thunderbolt.store_timestep_field!(file, t, Array(u), φₘ)`.
 #
-# !!! note
-#     The system matrix moves to the device, the assembly does not: the operators are assembled on
-#     the host with the model's assembly strategy and mirrored into the device matrix. What runs on
-#     the GPU is the linear solve, the reaction step and the splitting itself.
+#     In this variant the system matrix moves to the device but the assembly does not: the operators
+#     are assembled on the host with the model's assembly strategy and mirrored into the device
+#     matrix. What runs on the GPU is the linear solve, the reaction step and the splitting itself.
+#
+# !!! tip
+#     The assembly moves to the device separately, through the model side's `assembly_strategy`.
+#     Which device assembles is a property of the discretization, not of the solver, so both knobs
+#     are set -- and they have to agree on the matrix type.
+#     ```
+#     using CUDA, FerriteOperators
+#
+#     spatial_discretization_method = FiniteElementDiscretization(
+#         Dict(:φₘ => LagrangeCollection{1}()),
+#         assembly_strategy = AssemblyStrategy(
+#             KernelAbstractionsDevice(CUDABackend(); value_type=Float32, index_type=Int32);
+#             scheduling = ColoredScheduling(),
+#         ),
+#     )
+#
+#     heat_timestepper = BackwardEulerSolver(
+#       solution_vector_type=CuVector{Float32},
+#       system_matrix_type=CUDA.CUSPARSE.CuSparseMatrixCSC{Float32, Int32},
+#       inner_solver=KrylovJL_CG(atol=1.0f-6, rtol=1.0f-5),
+#     )
+#     ```
+#     Three things are worth knowing about this one.
+#
+#     * The matrix type is **CSC**, not the CSR of the mirrored variant above. Ferrite ships a device
+#       assembler for CSC device matrices only, and the operator now writes its entries itself
+#       instead of receiving a copy of a host matrix. Asking for CSR here is an error naming that.
+#     * `ColoredScheduling` is not a tuning choice: the device matrix assembler accumulates without
+#       atomics, so a colored partition is what makes the scatter race free. It also fixes the
+#       accumulation order per entry, which is what makes a device assembled operator reproducible.
+#     * `value_type` is the precision the element caches are built in, so the quadrature rules and
+#       `CellValues` behind the mass and diffusion forms become `Float32` here. The coefficients keep
+#       whatever precision the model gave them -- `κ` above is a `Float64` tensor, and a `Float32`
+#       one is worth naming for a device run.
 
 # Now we initialize our time integrator as usual.
 integrator = init(problem, timestepper, dt=dt₀);

@@ -43,12 +43,14 @@ WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192"
 AlgebraicMultigrid = "2169fc97-5a83-5252-b627-83903c6c433c"
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 FerriteMultigrid = "69a0a054-a29c-4d77-8818-cd7ec12cfcdc"
+KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
 ModelingToolkit = "961ee093-0014-501f-94e3-6117800e7a78"
 SciCompDSL = "91a8cdf1-4ca6-467b-a780-87fda3fff15e"
 
 [extensions]
 CuThunderboltExt = "CUDA"
 ThunderboltFerriteMultigridExt = ["AlgebraicMultigrid", "FerriteMultigrid"]
+ThunderboltKernelAbstractionsExt = "KernelAbstractions"
 ThunderboltMTKExt = "ModelingToolkit"
 ThunderboltMTKModelsExt = ["ModelingToolkit", "SciCompDSL"]
 
@@ -67,6 +69,7 @@ FerriteMultigrid = "0.2"
 FerriteOperators = "0.4"
 ForwardDiff = "1"
 JET = "0.9, 0.11"
+KernelAbstractions = "0.9"
 LinearSolve = "3"
 Logging = "1.10"
 MatrixDepot = "1.0.13"
