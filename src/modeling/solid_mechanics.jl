@@ -18,6 +18,17 @@ get_field_variable_names(model::QuasiStaticModel) = (model.displacement_symbol,)
 get_volumetric_weak_form_names(model::QuasiStaticModel) = (model.displacement_symbol,)
 
 """
+    algebraic_variables(model::QuasiStaticModel)
+
+The unknowns the model's facet terms need beyond the displacement field, in `facet_models` order.
+
+The model owns them because its terms do: a chamber tying term reads the chamber pressure, so it is
+the term that says the pressure is an unknown, and the discretization only has to put it in the
+`DofHandler`.
+"""
+algebraic_variables(model::QuasiStaticModel) = _model_algebraic_variables(model.facet_models)
+
+"""
     structural_displacement_symbol(model)
 
 Returns the displacement symbol of a (possibly multi-domain) structural model, i.e. either a single
@@ -26,6 +37,8 @@ Errors if a multi-domain model does not agree on a single displacement symbol ac
 """
 structural_displacement_symbol(model::QuasiStaticModel) = model.displacement_symbol
 
+# Not an `AbstractMaterialModel`, and it never reaches the material path: `semidiscretize` lowers it
+# to a `QuasiStaticModel`, which is what the element caches are built from.
 @doc raw"""
     ElastodynamicsModel(displacement_sym, velocity_symbol, material_model, facet_models, ρ)
 
@@ -45,8 +58,6 @@ i.e. the [`QuasiStaticModel`](@ref) with a mass term on top.
     and reconstructs the velocity from it. The acceleration is not stored either way: it follows from
     the balance of momentum.
 """
-# Not an `AbstractMaterialModel`, and it never reaches the material path: `semidiscretize` lowers it
-# to a `QuasiStaticModel`, which is what the element caches are built from.
 struct ElastodynamicsModel{MaterialModel#= <: AbstractMaterialModel =#, FM, CoefficientType}
     displacement_symbol::Symbol
     velocity_symbol::Symbol
@@ -67,6 +78,8 @@ get_field_variable_names(model::ElastodynamicsModel) =
 get_volumetric_weak_form_names(model::ElastodynamicsModel) = (model.displacement_symbol,)
 
 structural_displacement_symbol(model::ElastodynamicsModel) = model.displacement_symbol
+
+algebraic_variables(model::ElastodynamicsModel) = _model_algebraic_variables(model.facet_models)
 
 # Stated once for both model families: a domain split must agree on one displacement field. The generic
 # `_shared_symbol_or_error` does the work, so this stays one line rather than a second implementation.

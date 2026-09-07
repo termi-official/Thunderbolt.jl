@@ -39,8 +39,8 @@ PressureFieldBC
 ### Viscous Boundary Conditions
 
 The rate analogues of the Robin family. These resist the velocity rather than the displacement, so they
-require a time integrator; see [`Thunderbolt.facet_velocity`](@ref) for how the reconstruction reaches
-the element.
+require a time integrator: the element reads the velocity the scheme reconstructs from the displacement
+out of the `:v` slot.
 
 ```@docs
 ViscousRobinBC
@@ -48,7 +48,6 @@ ViscousNormalSpringBC
 Thunderbolt.AbstractViscousWeakBoundaryCondition
 Thunderbolt.damping_tensor
 Thunderbolt.get_time
-Thunderbolt.facet_velocity
 ```
 
 ## Kinematic Diagnostics
@@ -87,7 +86,7 @@ LinYinPassiveModel
 LinYinActiveModel
 HumphreyStrumpfYinModel
 Guccione1991PassiveModel
-Thunderbolt.BioNeoHookean
+BioNeoHookean
 ```
 
 ### Active Energies
@@ -176,8 +175,11 @@ Thunderbolt.AbstractCoupler
 
 ```@docs
 LumpedFluidSolidCoupler
-Hirschvogel2017SurrogateVolume
-RSAFDQ2022SurrogateVolume
+Pressure3D0DVolumeCoupler
+ChamberVolumeCoupling
+Thunderbolt.volume_integral
 RSAFDQ2022Split
 RSAFDQ2022Model
+chamber_volume
+ChamberVolumeFunctional
 ```

@@ -644,29 +644,67 @@ end
     @test !Thunderbolt.is_inverted(report)
 end
 
-@testset "Newmark reconstructs the facet velocity with its own slope" begin
-    # `facet_velocity` exists so that a dashpot is written once against the reconstruction rather than
-    # once per scheme. Newmark's slope is `γ/(βΔt)`, not backward Euler's `1/Δt`, and the facet has to
-    # be handed *that* one.
+@testset "A dashpot's tangent carries the scheme's reconstruction slope" begin
+    # A dashpot is written once against the reconstructed `:v` slot rather than once per scheme. Its
+    # tangent block `∂v∂u ⋅ D` is not part of ∂F/∂u -- `:v` is frozen under that request -- and is
+    # served by the weighted Jacobian, whose `:v` weight is the reconstruction slope the scheme
+    # supplies. Newmark's is `γ/(βΔt)`, backward Euler's is `1/Δt`.
     #
-    # Asserted on the query rather than by comparing two solves at different `γ`: `γ` also changes the
-    # scheme's own velocity update and its numerical dissipation, so a displacement difference across
-    # `γ` measures the scheme at least as much as it measures the boundary condition.
-    Δt, β, γ = 0.05, 1 / 4, 1 / 2
-    uprev = zeros(4)
-    scheme_velocity = Thunderbolt.AffineVelocity(γ / (β * Δt), uprev)
-    p = Thunderbolt.NewmarkElementParameters(nothing, 0.0, Δt, scheme_velocity, uprev)
+    # Asserted on the element tangent rather than by comparing two solves at different `γ`: `γ` also
+    # changes the scheme's own velocity update and its numerical dissipation, so a displacement
+    # difference across `γ` measures the scheme at least as much as it measures the boundary condition.
+    Δt, β, γ             = 0.05, 1 / 4, 1 / 2
+    newmark_slope        = γ / (β * Δt)
+    backward_euler_slope = inv(Δt)
+    @test newmark_slope ≉ backward_euler_slope
 
-    @test Thunderbolt.facet_velocity(p) === scheme_velocity
-    @test Thunderbolt.facet_velocity(p).∂v∂u ≈ γ / (β * Δt)
-    # The whole point: reading `Δt` at the facet would give the backward Euler quotient, which for
-    # these coefficients is off by a factor of two.
-    @test Thunderbolt.facet_velocity(p).∂v∂u ≉ inv(Δt)
+    # The boundary condition names its field explicitly, which is the case the `dof_range` indexing
+    # exists for: this handler carries `:d` and `:v` in one `SubDofHandler`.
+    f = elastodynamic_bar()
+    dh = f.dh
+    sdh = first(dh.subdofhandlers)
+    cache = FerriteOperators.setup_facet_item_cache(
+        ViscousRobinBC(1.0e4, "right", :d),
+        FacetQuadratureRule{RefHexahedron}(2),
+        sdh,
+    )
 
-    # ... and backward Euler's own parameters still give exactly `1/Δt`, so the two schemes really are
-    # served by the one query.
-    gto1 = FerriteOperators.GenericFirstOrderTimeElementParameters(nothing, 0.0, Δt, uprev)
-    @test Thunderbolt.facet_velocity(gto1).∂v∂u ≈ inv(Δt)
+    cell = Ferrite.CellCache(sdh)
+    Ferrite.reinit!(cell, first(getfacetset(Ferrite.get_grid(dh), "right"))[1])
+    n = ndofs_per_cell(sdh)
+    # The damping block depends on neither slot value, only on the weight.
+    args = FerriteOperators.FacetArgs(
+        (u = zeros(n), v = zeros(n)),
+        cell,
+        nothing,
+        FerriteOperators.TimeIntegrationContext(0.0, Δt, Δt),
+    )
+
+    # The declared facetset is the traversal, so a hand-driven call walks the facets of "right" that
+    # this cell owns.
+    right = getfacetset(Ferrite.get_grid(dh), "right")
+    function damping_block(slope)
+        K = zeros(n, n)
+        for lfi = 1:nfacets(cell)
+            if FacetIndex(cellid(cell), lfi) ∈ right
+                FerriteOperators.assemble_facet!(
+                    FerriteOperators.WeightedJacobianRequest(K, (u = 1.0, v = slope)),
+                    cache,
+                    args,
+                    lfi,
+                )
+            end
+        end
+        return K
+    end
+
+    K_newmark        = damping_block(newmark_slope)
+    K_backward_euler = damping_block(backward_euler_slope)
+    @test !iszero(K_newmark)
+    # The block is linear in the slope, so handing the facet the wrong scheme's quotient scales the
+    # whole damping tangent -- for these coefficients, by a factor of two.
+    @test K_newmark ≈ (newmark_slope / backward_euler_slope) .* K_backward_euler
+    @test K_newmark ≉ K_backward_euler
 end
 
 @testset "A dashpot damps under Newmark" begin

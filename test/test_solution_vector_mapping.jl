@@ -33,7 +33,7 @@ end
 function _ivh(dh, n)
     ncells = getncells(Thunderbolt.get_grid(dh))
     offsets = [(cid - 1) * n for cid = 1:(ncells+1)]
-    return Thunderbolt.InternalVariableHandler(offsets, ndofs(dh), ncells * n)
+    return Thunderbolt.InternalVariableHandler(offsets, nothing, ndofs(dh), ncells * n)
 end
 
 @testset "SolutionVectorMapping" begin

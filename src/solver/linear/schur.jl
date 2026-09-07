@@ -195,24 +195,3 @@ function LinearSolve.solve!(
         retcode = LinearSolve.ReturnCode.Success,
     )
 end
-
-function inner_solve_schur(J::BlockMatrix, r::AbstractBlockArray)
-    # TODO optimize
-    Jdd = @view J[Block(1, 1)]
-    rd = @view r[Block(1)]
-    rp = @view r[Block(2)]
-    v = -(Jdd \ rd)
-    Jdp = @view J[Block(1, 2)]
-    Jpd = @view J[Block(2, 1)]
-    w = Jdd \ Vector(Jdp[:, 1])
-
-    Jpdv = Jpd*v
-    Jpdw = Jpd*w
-    # Δp = [(rp[i] - Jpdv[i]) / Jpdw[i] for i ∈ 1:length(Jpdw)]
-    Δp = (-rp[1] - Jpdv[1]) / Jpdw[1]
-    wΔp = w*Δp
-    Δd = -(v+wΔp) #-[-(v + wΔp[i]) for i in 1:length(v)]
-
-    Δu = BlockVector([Δd; [Δp]], blocksizes(r, 1))
-    return Δu
-end

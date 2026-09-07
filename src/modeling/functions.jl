@@ -10,22 +10,9 @@ Supertype for all functions coming from PDE discretizations.
     get_strategy(::AbstractSemidiscreteFunction)
 """
 abstract type AbstractSemidiscreteFunction <: SciMLBase.AbstractDiffEqFunction{true} end
-get_strategy(::AbstractSemidiscreteFunction) = SequentialAssemblyStrategy(SequentialCPUDevice())
+get_strategy(::AbstractSemidiscreteFunction) = default_strategy()
 
 abstract type AbstractPointwiseFunction <: AbstractSemidiscreteFunction end
-
-"""
-    AbstractSemidiscreteBlockedFunction <: AbstractSemidiscreteFunction
-
-Supertype for all functions coming from PDE discretizations with blocked structure.
-
-## Interface
-
-    BlockArrays.blocksizes(::AbstractSemidiscreteFunction)
-    BlockArrays.blocks(::AbstractSemidiscreteFunction) -> Iterable
-"""
-abstract type AbstractSemidiscreteBlockedFunction <: AbstractSemidiscreteFunction end
-solution_size(f::AbstractSemidiscreteBlockedFunction) = sum(blocksizes(f))
 
 """
     NullFunction(ndofs)
@@ -204,6 +191,16 @@ subset of the fields -- must ask for that subset by name instead.
 fe_dof_range(f::AbstractSolidMechanicsFunction) = Base.OneTo(ndofs(f.dh))
 
 """
+    has_internal_variables(f)
+
+Whether the solution vector of `f` carries a condensed internal tail at all.
+
+A scheme asks this to decide whether its stage runs the condensation phase; a model with no condensed
+material has nothing for that traversal to solve and skips it.
+"""
+has_internal_variables(f) = !isempty(internal_variable_range(f))
+
+"""
     internal_variable_range(f)
     internal_variable_range(dh, lvh)
 
@@ -365,6 +362,18 @@ end
 # is what finally gives `default_initial_state` a consumer.
 default_initial_state!(Q::AbstractVector, model::AbstractIonicModel) =
     (Q .= default_initial_state(model); Q)
+
+"""
+    InternalVariableInfo(name, size)
+
+One named block of a model's quadrature-point-local state and how many entries it occupies. The
+blocks a model declares are what `FerriteOperators` lays the [`InternalVariableHandler`](@ref) out
+from, so `size` is a per-quadrature-point count, not a per-cell one.
+"""
+struct InternalVariableInfo
+    name::Symbol
+    size::Int
+end
 
 """
     gather_internal_variable_infos(model) -> Tuple{Vararg{InternalVariableInfo}}

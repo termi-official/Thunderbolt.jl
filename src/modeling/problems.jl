@@ -13,6 +13,12 @@ SciMLBase.isinplace(::AbstractSemidiscreteProblem) = true
 solution_size(prob::AbstractSemidiscreteProblem) = solution_size(prob.f)
 
 
+"""
+    AbstractPointwiseProblem <: AbstractSemidiscreteProblem
+
+Supertype for problems whose right hand side decouples into independent local systems -- one cell
+model per dof batch -- so that a pointwise solver can advance each of them on its own.
+"""
 abstract type AbstractPointwiseProblem <: AbstractSemidiscreteProblem end
 
 # """
@@ -168,6 +174,12 @@ function ElastodynamicsProblem(
 end
 
 
+"""
+    PointwiseODEProblem(f::AbstractPointwiseFunction, [u0,] tspan)
+
+The pointwise ODE system described by `f` over `tspan`, to be advanced by an
+`AbstractPointwiseSolver`. `u0` defaults to zeros of length `solution_size(f)`.
+"""
 struct PointwiseODEProblem{fType <: AbstractPointwiseFunction, uType, tType, pType} <:
        AbstractPointwiseProblem
     f::fType
@@ -185,6 +197,15 @@ PointwiseODEProblem(
 ) = PointwiseODEProblem(f, u0, tspan, SciMLBase.NullParameters())
 
 
+"""
+    Thunderbolt.ODEProblem(f::AbstractSemidiscreteFunction, [u0,] tspan)
+
+The semidiscrete problem described by `f` over `tspan`. `u0` defaults to zeros of length
+`ndofs(f.dh)`.
+
+Distinct from `SciMLBase.ODEProblem`: it carries a Thunderbolt semidiscrete function, which holds
+the assembly strategy and the dof handler rather than a bare right hand side.
+"""
 struct ODEProblem{fType <: AbstractSemidiscreteFunction, uType, tType, pType} <:
        AbstractSemidiscreteProblem
     f::fType

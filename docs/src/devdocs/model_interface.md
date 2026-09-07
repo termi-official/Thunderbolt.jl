@@ -167,6 +167,7 @@ allocates and does this in one step.
 ## Assembly-facing protocol
 
 Anything contributing to a residual or matrix additionally implements the `FerriteOperators`
-protocol — `setup_element_cache`, `setup_boundary_cache`, `assemble_element!` and
-`duplicate_for_device`. `duplicate_for_device` is not optional: shared-memory parallel assembly
-gives every worker its own cache, so any cache holding mutable scratch must implement it.
+protocol — `setup_element_cache` and `assemble_element!` for a volumetric term, `facet_items` and
+`setup_facet_item_cache` for a facet term, which declares the facetset it acts on and assembles as
+its own work item. `duplicate_for_device` is not optional: shared-memory parallel assembly gives
+every worker its own cache, so any cache holding mutable scratch must implement it.

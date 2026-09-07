@@ -1,7 +1,5 @@
 module Thunderbolt
 
-import KernelAbstractions as KA
-
 using TimerOutputs: @timeit_debug
 
 import SciMLLogging: Standard, AbstractVerbosityPreset, @SciMLMessage
@@ -22,47 +20,78 @@ import FerriteOperators:
     SequentialCPUDevice,
     PolyesterDevice,
     duplicate_for_device,
-    EAVector,
     InternalVariableHandler,
     AbstractAssemblyStrategy,
     AbstractCPUDevice,
-    SequentialAssemblyStrategy,
-    PerColorAssemblyStrategy,
-    ElementAssemblyStrategy,
+    AssemblyStrategy,
+    default_strategy,
+    FullAssembly,
+    SequentialScheduling,
+    ColoredScheduling,
     AbstractGPUDevice,
     AbstractNonlinearIntegrator,
+    AbstractCondensedNonlinearIntegrator,
+    AbstractNonlinearOperator,
     QuadratureRuleCollection,
     getquadraturerule,
-    setup_boundary_cache,
     setup_element_cache,
     AbstractVolumetricElementCache,
     AbstractSurfaceElementCache,
     EmptySurfaceElementCache,
     EmptyVolumetricElementCache,
+    FacetItemDomain,
     update_linearization!,
-    residual!,
-    assemble_element!,
+    evaluate!,
+    assemble_cell!,
+    assemble_algebraic!,
+    reinit_values!,
+    provides_analytic,
+    has_internal_state,
+    get_number_of_internal_dofs_per_element,
+    setup_internal_variable_handler,
+    condense_cell!,
+    condense_internal!,
+    CondensationReport,
+    ResidualRequest,
+    JacobianRequest,
+    JacobianResidualRequest,
+    WeightedJacobianRequest,
+    JacobianKind,
+    JacobianResidualKind,
+    WeightedJacobianKind,
+    CellArgs,
+    FacetArgs,
+    with_states,
+    TimeIntegrationContext,
+    evaluation_time,
+    stage_scaling,
+    AffineRate,
+    InternalSource,
+    assemble_weighted_jacobian!,
     internal_variable_offset,
     AbstractBilinearIntegrator,
     AbstractLinearIntegrator,
-    is_facet_in_cache,
     assemble_facet!,
+    functional_value_type,
     value_type
 
 import FerriteInterfaceElements:
     InterfaceCellInterpolation, InterfaceCellValues, InterfaceCell, getdetJdV_average
 
 import FerriteOperators:
-    LinearizedFerriteOperator,
     BilinearFerriteOperator,
     LinearFerriteOperator,
-    AbstractBlockOperator,
-    AbstractLinearOperator,
     LinearNullOperator,
+    NullOperator,
     setup_operator,
-    update_operator!
-
-import FerriteOperators: CompositeSurfaceElementCache
+    setup_evaluation_operator,
+    update_operator!,
+    setup_qvector,
+    get_range_for_cell,
+    evaluate_quadrature!,
+    get_dof_handler,
+    get_strategy,
+    get_subdomain_caches
 
 import Unrolled: @unroll
 import FastBroadcast: @..
@@ -146,9 +175,6 @@ include("mesh/meshes.jl")
 
 include("utils.jl")
 
-include("devices.jl")
-
-include("ferrite-addons/InternalVariableHandler.jl")
 include("ferrite-addons/transfer_operators.jl")
 include("ferrite-addons/point.jl")
 
@@ -195,6 +221,9 @@ include("disambiguation.jl")
 include("modeling/rsafdq2022.jl")
 include("discretization/rsafdq-operator.jl")
 
+# Last: the workload solves have to see every model, discretization and solver above.
+include("precompile.jl")
+
 # The `MTKModels` circuit definitions live in `ThunderboltMTKExt`; reach them via `mtk_models()`.
 
 # TODO put exports into the individual submodules above!
@@ -237,8 +266,10 @@ export
     generate_quadratic_ring_mesh,
     generate_quadratic_open_ring_mesh,
     generate_ideal_lv_mesh,
+    generate_ideal_lh_mesh,
     # Mesh utilities
     hexahedralize,
+    separate_chamber_surfaces,
     to_mesh,
     # Generic models
     TransientDiffusionModel,
@@ -281,6 +312,7 @@ export
     LinYinPassiveModel,
     LinYinActiveModel,
     HumphreyStrumpfYinModel,
+    BioNeoHookean,
     Guccione1991PassiveModel,
     Guccione1993ActiveModel,
     LinearSpringModel,
@@ -311,11 +343,12 @@ export
     MTKLumpedCicuitModel,
     # FSI
     RSAFDQ2022Model,
-    RSAFDQ2022SurrogateVolume,
     RSAFDQ2022Split,
-    Hirschvogel2017SurrogateVolume,
     LumpedFluidSolidCoupler,
     ChamberVolumeCoupling,
+    Pressure3D0DVolumeCoupler,
+    ChamberVolumeFunctional,
+    chamber_volume,
     # Microstructure
     AnisotropicPlanarMicrostructureModel,
     AnisotropicPlanarMicrostructure,
@@ -324,6 +357,7 @@ export
     TransverselyIsotropicMicrostructureModel,
     TransverselyIsotropicMicrostructure,
     ODB25LTMicrostructureParameters,
+    NoMicrostructureModel,
     create_microstructure_model,
     # Coordinate system
     LVCoordinateSystem,

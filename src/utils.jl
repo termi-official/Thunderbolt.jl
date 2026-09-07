@@ -399,6 +399,12 @@ Base.getindex(v::DenseDataRange, i::Int) = getindex(v.data, i)
 
 Base.eltype(data::DenseDataRange) = eltype(data.data)
 
+"""
+    get_data_for_index(r::DenseDataRange, i::Integer) -> SubArray
+
+A view on the block of `r` belonging to outer index `i`, delimited by `r.offsets[i]` and
+`r.offsets[i+1]`.
+"""
 @inline function get_data_for_index(r::DenseDataRange, i::Integer)
     i1 = r.offsets[i]
     i2 = r.offsets[i+1]-1

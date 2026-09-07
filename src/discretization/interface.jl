@@ -16,7 +16,9 @@ that types owned by other packages can act as models too. At minimum a model nee
   - `get_volumetric_weak_form_names` - the volumetric weak forms it contributes, as a `Tuple`
   - a `semidiscretize` method
 
-and, if it carries quadrature-point-local state, [`gather_internal_variable_infos`](@ref).
+and, if it carries quadrature-point-local state, [`gather_internal_variable_infos`](@ref). A model
+whose terms introduce unknowns outside the mesh also implements [`algebraic_variables`](@ref); the
+discretization puts what it declares into the `DofHandler`.
 """
 semidiscretize
 

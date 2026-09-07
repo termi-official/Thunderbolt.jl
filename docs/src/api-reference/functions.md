@@ -6,19 +6,13 @@ DocTestSetup = :(using Thunderbolt)
 
 ```@docs
 Thunderbolt.AbstractSemidiscreteFunction
-Thunderbolt.AbstractSemidiscreteBlockedFunction
-Thunderbolt.AbstractSemidiscreteODEFunction
-Thunderbolt.AbstractSemidiscreteDAEFunction
 Thunderbolt.AbstractSolidMechanicsFunction
-TransientDiffusionFunction
-SteadyDiffusionFunction
 PointwiseODEFunction
-QuasiStaticNonlinearFunction
-RSAFDQ20223DFunction
+QuasiStaticFunction
+Thunderbolt.RSAFDQ20223DFunction
 ElastodynamicsFunction
 ```
 
 ```@docs
-AbstractOperatorSplitFunction
 GenericSplitFunction
 ```

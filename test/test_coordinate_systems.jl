@@ -80,7 +80,7 @@ end
         dh = DofHandler(mesh)
         Thunderbolt.add_subdomain!(dh, [Thunderbolt.ApproximationDescriptor(:coordinates, ipc)])
         Ferrite.close!(dh)
-        K = Thunderbolt._assemble_laplacian(dh, ipc)
+        K = Thunderbolt._assemble_laplacian(dh)
         u = Thunderbolt._solve_dirichlet_laplace(
             K,
             dh,
@@ -230,6 +230,23 @@ end
             for nc in (12, 24)
                 @test azimuth_error(nc, 2, 8; apical_cutoff = 1.0) < 5.0e-3
             end
+        end
+
+        @testset "assembly strategy keyword" begin
+            # Honored, not merely accepted: two sequential assemblies reproduce each other exactly.
+            # The parallel default differs from them at the linear solver's tolerance, not at
+            # machine precision: the atomic scatter perturbs the assembled entries by ~1e-16, which
+            # re-steers the CG iteration. Measured at 2 threads: 3e-12 transmural, 2e-9
+            # apicobasal, 5e-9 rotational; the tolerance leaves a 20x margin over that.
+            sequential = Thunderbolt.AssemblyStrategy(Thunderbolt.SequentialCPUDevice())
+            cs_seq1 = compute_lv_coordinate_system(mesh; strategy = sequential)
+            cs_seq2 = compute_lv_coordinate_system(mesh; strategy = sequential)
+            @test cs_seq1.u_transmural == cs_seq2.u_transmural
+            @test cs_seq1.u_apicobasal == cs_seq2.u_apicobasal
+            @test cs_seq1.u_rotational == cs_seq2.u_rotational
+            @test cs.u_transmural ≈ cs_seq1.u_transmural rtol = 1.0e-7
+            @test cs.u_apicobasal ≈ cs_seq1.u_apicobasal rtol = 1.0e-7
+            @test cs.u_rotational ≈ cs_seq1.u_rotational rtol = 1.0e-7
         end
 
         @testset "quadrature point evaluation" begin
@@ -404,6 +421,14 @@ end
             ridge_anterior = nothing,
             ridge_posterior = nothing,
         )
+        cs_seq = compute_midmyocardial_section_coordinate_system(
+            mesh;
+            ridge_anterior = nothing,
+            ridge_posterior = nothing,
+            strategy = Thunderbolt.AssemblyStrategy(Thunderbolt.SequentialCPUDevice()),
+        )
+        @test cs.u_transmural ≈ cs_seq.u_transmural rtol = 1.0e-7
+        @test cs.u_rotational ≈ cs_seq.u_rotational rtol = 1.0e-7
 
         @test all(isfinite, cs.u_rotational)
         @test max_element_rotational_spread(cs) ≈ 1 / num_c atol = 1.0e-8

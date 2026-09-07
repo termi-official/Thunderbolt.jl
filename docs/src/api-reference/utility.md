@@ -34,8 +34,6 @@ JLD2Writer
 store_timestep!
 store_timestep_celldata!
 store_timestep_field!
-store_coefficient!
-store_green_lagrange!
 finalize_timestep!
 finalize!
 ```

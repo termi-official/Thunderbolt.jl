@@ -203,6 +203,10 @@ end
 
 # --- indices -----------------------------------------------------------------------------------------
 
+# A `DofHandler` carrying algebraic variables has dofs that belong to no spatial field, so "a single
+# field" no longer means "every dof".
+_has_algebraic_variables(dh) = hasproperty(dh, :algebraic_names) && !isempty(dh.algebraic_names)
+
 """
     variable_indices(v) -> AbstractVector{Int}
 
@@ -213,7 +217,7 @@ rather than calling it per timestep.
 """
 function variable_indices(v::FieldVariable)
     fieldnames = Ferrite.getfieldnames(v.dh)
-    length(fieldnames) == 1 && return collect(v.dofs)
+    length(fieldnames) == 1 && !_has_algebraic_variables(v.dh) && return collect(v.dofs)
     dofs = Int[]
     for sdh in v.dh.subdofhandlers
         v.name in sdh.field_names || continue

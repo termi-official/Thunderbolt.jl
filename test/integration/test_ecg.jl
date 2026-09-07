@@ -42,12 +42,14 @@ import Thunderbolt: to_mesh, OrderedSet
         )
 
         op = Thunderbolt.setup_assembled_operator(
-            Thunderbolt.SequentialAssemblyStrategy(Thunderbolt.SequentialCPUDevice()),
+            Thunderbolt.AssemblyStrategy(Thunderbolt.SequentialCPUDevice()),
             Thunderbolt.BilinearDiffusionIntegrator(κ, QuadratureRuleCollection(2), :φₘ),
             Thunderbolt.SparseMatrixCSC,
             heart_fun.dh,
         )
-        Thunderbolt.update_operator!(op, 0.0) # trigger assembly
+        # Trigger assembly. The conductivity is stationary, so the sweep carries no step to integrate
+        # over; `p` is the user parameter bag.
+        Thunderbolt.update_operator!(op, nothing, Thunderbolt.TimeIntegrationContext(0.0, 0.0, 0.0))
 
         torso_grid_ =
             generate_grid(geo, nel_torso, Vec((-size, -size, -size)), Vec((size, size, size)))
@@ -92,7 +94,9 @@ import Thunderbolt: to_mesh, OrderedSet
 
             @testset "Plonsey1964" begin
                 Thunderbolt.update_ecg!(plonsey_ecg, u)
-                @test Thunderbolt.evaluate_ecg(plonsey_ecg, electrodes, 1.0) .≈ 0.0
+                ecg_vals = Thunderbolt.evaluate_ecg(plonsey_ecg, electrodes, 1.0)
+                @test length(ecg_vals) == length(electrodes)
+                @test all(ecg_vals .≈ 0.0)
             end
 
             @testset "Poisson" begin
@@ -163,6 +167,15 @@ import Thunderbolt: to_mesh, OrderedSet
                         1.0,
                     ) ≈ 0.0 atol=1e-4
                 end
+
+                # The vector overload loops the scalar one, so agreement is bit-exact; this pins
+                # per-electrode assignment at a state where the electrodes genuinely differ.
+                probe_electrodes = [
+                    Vec{3}([i==dim ? size : 0.0 for i = 1:3]),
+                    Vec{3}([i==dim ? -size : 0.0 for i = 1:3]),
+                ]
+                @test Thunderbolt.evaluate_ecg(plonsey_ecg, probe_electrodes, 1.0) ==
+                      [Thunderbolt.evaluate_ecg(plonsey_ecg, e, 1.0) for e in probe_electrodes]
             end
 
             @testset "Poisson xᵢ³" begin

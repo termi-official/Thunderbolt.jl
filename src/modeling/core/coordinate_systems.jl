@@ -140,33 +140,31 @@ getrotationalinterpolation(cs::LVCoordinateSystem, cell::AbstractCell) =
 @inline wrap_rotational(r::T) where {T <: Real} = mod(r, one(T))
 
 """
-Assemble the scalar Laplacian on all subdomains of `dh`.
+Assemble the scalar Laplacian on all subdomains of `dh`, via FerriteOperators' `BilinearDiffusionIntegrator`.
+
+`BilinearDiffusionIntegrator` computes `a(u,v) = -∫ ∇v ⋅ D ∇u dx`; conductivity `D = -1` turns that into
+the positive-definite Laplacian stiffness matrix `∫ ∇v ⋅ ∇u dx` this module solves with.
+
+`strategy` defaults to `FerriteOperators.default_strategy`, i.e. parallel with an atomic scatter where Polyester
+is loaded. The scatter's summation order perturbs the assembled entries at machine precision, which
+re-steers the Krylov solve, so the coordinates reproduce run to run only to the linear solver's
+tolerance (measured at 2 threads: ~1e-9 relative on the apicobasal and rotational coordinates) — fine
+for read-only geometric data. Pass `AssemblyStrategy(SequentialCPUDevice())` for
+bit-reproducible coordinates.
 """
-function _assemble_laplacian(dh::DofHandler, ip_collection)
-    cv_collection = CellValueCollection(QuadratureRuleCollection(2), ip_collection)
-    K = allocate_matrix(dh)
-    assembler = start_assemble(K)
-    for sdh in dh.subdofhandlers
-        cellvalues = getcellvalues(cv_collection, getcells(get_grid(dh), first(sdh.cellset)))
-        n_basefuncs = getnbasefunctions(cellvalues)
-        Ke = zeros(n_basefuncs, n_basefuncs)
-        @inbounds for cell in CellIterator(sdh)
-            fill!(Ke, 0)
-            reinit!(cellvalues, cell)
-            for qp in QuadratureIterator(cellvalues)
-                dΩ = getdetJdV(cellvalues, qp)
-                for i = 1:n_basefuncs
-                    ∇v = shape_gradient(cellvalues, qp, i)
-                    for j = 1:n_basefuncs
-                        ∇u = shape_gradient(cellvalues, qp, j)
-                        Ke[i, j] += (∇v ⋅ ∇u) * dΩ
-                    end
-                end
-            end
-            assemble!(assembler, celldofs(cell), Ke)
-        end
-    end
-    return K
+function _assemble_laplacian(
+    dh::DofHandler,
+    strategy::AbstractAssemblyStrategy = default_strategy(),
+)
+    field_name = first(Ferrite.getfieldnames(dh))
+    integrator = BilinearDiffusionIntegrator(
+        ConstantCoefficient(-1.0),
+        QuadratureRuleCollection(2),
+        field_name,
+    )
+    op = setup_operator(strategy, integrator, dh)
+    update_operator!(op, nothing, TimeIntegrationContext(0.0, 0.0, 0.0))
+    return op.A
 end
 
 """
@@ -882,6 +880,9 @@ Meshes without ridges fall back to the plain azimuth around the long axis. That 
 chart -- it distributes the coordinate by angle rather than by the position of the right ventricular
 insertions -- so two hearts only agree under it if they are aligned the same way in space. Pass
 `ridge_anterior = ridge_posterior = nothing` to ask for it deliberately.
+
+`strategy` is the FerriteOperators assembly strategy for the underlying Laplacian solve
+(`_assemble_laplacian`); it defaults to `FerriteOperators.default_strategy`.
 """
 function compute_lv_coordinate_system(
     mesh::SimpleMesh{3, <:Any, T};
@@ -898,14 +899,14 @@ function compute_lv_coordinate_system(
     rotational_zero_direction::Union{Nothing, Vec{3}} = nothing,
     apicobasal_bins::Int = 200,
     solver = LinearSolve.KrylovJL_CG(), # FIXME add AMG preconditioner
+    strategy::AbstractAssemblyStrategy = default_strategy(),
 ) where {T}
     ip_collection = LagrangeCollection{1}()
     ip_collection_rotational = DiscontinuousLagrangeCollection{1}()
     dh, dh_rotational =
         _coordinate_dofhandlers(mesh, subdomains, ip_collection, ip_collection_rotational)
 
-    # TODO use bilinear operator for performance
-    K = _assemble_laplacian(dh, ip_collection)
+    K = _assemble_laplacian(dh, strategy)
 
     transmural = _transmural_coordinate(mesh, K, dh, solver, endocardium_name, epicardium_name)
 
@@ -967,6 +968,9 @@ is built exactly as in the LV case: from the two ridges when the section carries
 plain azimuth around `up` otherwise, which is what a plain ring gets. Either way it is stored
 discontinuously, so its jump sits on an element interface instead of being smeared across a layer of
 elements.
+
+`strategy` is the FerriteOperators assembly strategy for the underlying Laplacian solve
+(`_assemble_laplacian`); it defaults to `FerriteOperators.default_strategy`.
 """
 function compute_midmyocardial_section_coordinate_system(
     mesh::SimpleMesh{3, <:Any, T},
@@ -980,14 +984,14 @@ function compute_midmyocardial_section_coordinate_system(
     ridge_posterior::Union{Nothing, String} = "SRidgePost",
     rotational_zero_direction::Union{Nothing, Vec{3}} = nothing,
     solver = LinearSolve.KrylovJL_CG(), # FIXME add AMG preconditioner
+    strategy::AbstractAssemblyStrategy = default_strategy(),
 ) where {T}
     ip_collection = LagrangeCollection{1}()
     ip_collection_rotational = DiscontinuousLagrangeCollection{1}()
     dh, dh_rotational =
         _coordinate_dofhandlers(mesh, subdomains, ip_collection, ip_collection_rotational)
 
-    # TODO use bilinear operator from FerriteOperators to parallelize assembly
-    K = _assemble_laplacian(dh, ip_collection)
+    K = _assemble_laplacian(dh, strategy)
 
     transmural = _transmural_coordinate(mesh, K, dh, solver, endocardium_name, epicardium_name)
 

@@ -34,11 +34,7 @@ function test_solve_passive_structure(mesh, models)
 
     quasistaticform = semidiscretize(
         models,
-        FiniteElementDiscretization(
-            Dict(:d => LagrangeCollection{1}()^3);
-            dbcs,
-            assembly_strategy = Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(3)),
-        ),
+        FiniteElementDiscretization(Dict(:d => LagrangeCollection{1}()^3); dbcs),
         mesh,
     )
 
@@ -203,11 +199,7 @@ function solve_contractile_cuboid(mesh, model, timestepper)
 
     quasistaticform = semidiscretize(
         model,
-        FiniteElementDiscretization(
-            Dict(:d => LagrangeCollection{1}()^3);
-            dbcs,
-            assembly_strategy = Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(3)),
-        ),
+        FiniteElementDiscretization(Dict(:d => LagrangeCollection{1}()^3); dbcs),
         mesh,
     )
 
@@ -255,11 +247,7 @@ function test_solve_contractile_ideal_lv(
                 PressureFieldBC(ConstantCoefficient(0.01), "Endocardium"),
             ),
         ),
-        FiniteElementDiscretization(
-            Dict(:d => LagrangeCollection{1}()^3);
-            dbcs,
-            assembly_strategy = Thunderbolt.PerColorAssemblyStrategy(PolyesterDevice(3)),
-        ),
+        FiniteElementDiscretization(Dict(:d => LagrangeCollection{1}()^3); dbcs),
         mesh,
     )
 
@@ -499,11 +487,10 @@ end
             )
         end
 
-        # The facet path reaches the time the same way: a surface cache is handed whatever
-        # `query_element_parameters` produced for the *volumetric* cache of its subdomain, and
-        # `PressureFieldBC` queries `get_time` on it rather than passing its trailing argument to
-        # `evaluate_coefficient` unexamined. On a rate-free subdomain that object is the element local
-        # form of the `gto1` parameters, not a bare time, which is what this pins.
+        # The facet path reaches the time the same way a cell kernel does: `PressureFieldBC` reads
+        # `evaluation_time(args.ctx)` and hands *that* to `evaluate_coefficient`, rather than anything
+        # out of `args.p`, which carries configuration only. This pins a time dependent facet
+        # coefficient on a subdomain whose element is rate-free.
         let facemodels_tdep = (
                 NormalSpringBC(0.0, "right"),
                 ConstantPressureBC(0.0, "back"),
@@ -560,10 +547,10 @@ end
             end
         end
 
-        # Regression: `setup_boundary_cache` for `NonlinearMultiDomainIntegrator2` used to look the
+        # Regression: the boundary hooks of `NonlinearMultiDomainIntegrator2` used to look the
         # subdomain name up in the *surface* subdomains, which is a different namespace from the
-        # volumetric one its subintegrators are keyed by. It therefore returned an empty cache and
-        # silently dropped every weak boundary condition.
+        # volumetric one its subintegrators are keyed by. They therefore claimed nothing and silently
+        # dropped every weak boundary condition.
         #
         # The testsets above do not catch it: `generate_grid` names its facetsets "front"/"back", so
         # the cellset names they use collide with facetset names and accidentally match. Here the
@@ -1000,7 +987,13 @@ end
 The condensed cuboid of the two testsets above, solved with whichever global Newton is handed in.
 Fully activated, so the local problems are genuinely nonlinear at every quadrature point.
 """
-function solve_condensed_cuboid(sarcomere, newton, Δt, tend)
+function solve_condensed_cuboid(
+    sarcomere,
+    newton,
+    Δt,
+    tend,
+    local_solver = Thunderbolt.GenericLocalNonlinearSolver(),
+)
     mesh = generate_mesh(Hexahedron, (2, 2, 1), Vec((0.0, 0.0, 0.0)), Vec((1.0, 1.0, 0.2)))
     microstructure = OrthotropicMicrostructureModel(
         ConstantCoefficient(Vec((1.0, 0.0, 0.0))),
@@ -1031,7 +1024,10 @@ function solve_condensed_cuboid(sarcomere, newton, Δt, tend)
     problem = QuasiStaticProblem(quasistaticform, (0.0, tend))
     Thunderbolt.default_initial_condition!(problem.u0, problem.f)
     timestepper = BackwardEulerSolver(
-        inner_solver = Thunderbolt.MultiLevelNewtonRaphsonSolver(newton = newton),
+        inner_solver = Thunderbolt.MultiLevelNewtonRaphsonSolver(
+            newton = newton,
+            local_solver = local_solver,
+        ),
     )
     integrator = init(problem, timestepper, dt = Δt, verbose = false)
     solve!(integrator)
@@ -1211,6 +1207,266 @@ end
         # residual-only assembly path could stop being exercised and every test here stay green.
         @test msimplified.steps > 2 * mref.steps
     end
+end
+
+@testset "The condensation report counts the local solves" begin
+    # `condense_internal!` is what the stage reads to decide whether a step is usable, so its report
+    # has to describe the solves that actually ran. Re-run on the converged step, where every
+    # quadrature point poses a genuinely nonlinear local problem.
+    integrator = solve_condensed_cuboid(
+        Thunderbolt.RDQ20MFModel(),
+        NewtonRaphsonSolver(
+            inner_solver = UMFPACKFactorization(),
+            max_iter = 20,
+            tol = 1e-8,
+            enforce_monotonic_convergence = false,
+        ),
+        2.5,
+        2.5,
+    )
+    @test integrator.sol.retcode == SciMLBase.ReturnCode.Success
+
+    sf = integrator.cache.stage.stage_function
+    report = Thunderbolt.condense_internal!(
+        Thunderbolt.getoperator(sf),
+        Thunderbolt.stage_weights(sf),
+        Thunderbolt.stage_states(sf, integrator.cache.uₙ),
+        Thunderbolt.stage_user_parameters(sf),
+        Thunderbolt.stage_context(sf),
+    )
+    ncells = getncells(Thunderbolt.get_grid(integrator.f.dh))
+
+    @test report.converged
+    # One local problem per quadrature point of every cell, and a sarcomere Newton takes at least
+    # one pass -- a report of zeros is what the hook returned before it counted anything.
+    @test report.solves ≥ ncells
+    @test report.solves % ncells == 0
+    @test report.iterations ≥ report.solves
+    @test report.worst_iterations ≥ 1
+    # The argmax carriers survive the fold across cells: a cellid (positive, this being the cell
+    # family) and one of that cell's quadrature points.
+    @test 1 ≤ report.worst_cell ≤ ncells
+    @test 1 ≤ report.worst_qp ≤ report.solves ÷ ncells
+    @test report.worst_iterations ≤ report.iterations
+    @test isfinite(report.worst_residual) && report.worst_residual ≥ 0.0
+    # No stepper here is adaptive, so the sweep asks for no step reduction.
+    @test report.dt_factor == 1.0
+end
+
+@testset "The condensation phase owns the local solves" begin
+    # The assembly sweeps are pure evaluations at the state `condense_internal!` wrote, correcting
+    # their tangent with what it stored. Two consequences, and this is what asserts them: a sweep
+    # solves nothing, and a tangent sweep will not run before a condensation has produced its
+    # correction.
+    integrator = solve_condensed_cuboid(
+        Thunderbolt.RDQ20MFModel(),
+        NewtonRaphsonSolver(
+            inner_solver = UMFPACKFactorization(),
+            max_iter = 20,
+            tol = 1e-8,
+            enforce_monotonic_convergence = false,
+        ),
+        2.5,
+        2.5,
+    )
+    @test integrator.sol.retcode == SciMLBase.ReturnCode.Success
+
+    stage  = integrator.cache.stage
+    sf     = stage.stage_function
+    op     = Thunderbolt.getoperator(sf)
+    states = Thunderbolt.stage_states(sf, integrator.cache.uₙ)
+    p      = Thunderbolt.stage_user_parameters(sf)
+    ctx    = Thunderbolt.stage_context(sf)
+    w      = Thunderbolt.stage_weights(sf)
+    J      = Thunderbolt.getJ(op)
+    r      = zeros(Thunderbolt.FerriteOperators.residual_size(op))
+    lsc    = stage.nlsolver.local_solver_cache
+
+    @test Thunderbolt.condense_internal!(op, w, states, p, ctx).converged
+
+    # Every local solve of this iterate is recorded by the condensation phase, so a sweep that
+    # records nothing is a sweep that solved nothing -- a sarcomere Newton always takes a pass.
+    Thunderbolt.reset_local_solve_status!(lsc)
+    Thunderbolt.evaluate!(op, r, states, p, ctx)
+    Thunderbolt.assemble_weighted_jacobian!(J, op, w, states, p, ctx)
+    @test all(report -> report.iterations == 0, lsc.reports.data)
+    @test !any(Thunderbolt._local_solve_failed, lsc.reports.data)
+
+    # A rejected step discards the correctors along with the trial they belong to.
+    Thunderbolt.rollback_state!(integrator, integrator.cache)
+    states = Thunderbolt.stage_states(sf, integrator.cache.uₙ)
+    @test_throws ArgumentError Thunderbolt.assemble_weighted_jacobian!(J, op, w, states, p, ctx)
+    # The residual is a function of the state alone, so it needs no corrector and stays available.
+    Thunderbolt.evaluate!(op, r, states, p, ctx)
+    Thunderbolt.condense_internal!(op, w, states, p, ctx)
+    Thunderbolt.assemble_weighted_jacobian!(J, op, w, states, p, ctx)
+end
+
+@testset "A failed local solve says where it failed" begin
+    # One local Newton pass against a tolerance no sarcomere reaches: every quadrature point exits
+    # with `MaxIters`, so the condensation phase cannot converge and the step has to end. What is
+    # asserted is that it ends *audibly* -- a step that aborts without naming the offender leaves
+    # nothing to debug a material model with.
+    logger = Test.TestLogger(min_level = Logging.Debug)
+    integrator = Logging.with_logger(logger) do
+        solve_condensed_cuboid(
+            Thunderbolt.RDQ20MFModel(),
+            NewtonRaphsonSolver(inner_solver = UMFPACKFactorization(), max_iter = 20, tol = 1e-8),
+            2.5,
+            2.5,
+            Thunderbolt.GenericLocalNonlinearSolver(max_iters = 1, tol = 1e-14),
+        )
+    end
+    @test integrator.sol.retcode != SciMLBase.ReturnCode.Success
+
+    messages = [string(record.message) for record in logger.logs]
+    # The folded report: that it failed, and the worst offender it carries.
+    @test any(m -> occursin("Local solve did not converge", m), messages)
+    @test any(m -> occursin("NOT converged", m), messages)
+    @test any(m -> occursin(r"worst cell \d+ qp \d+ at \d+ iterations", m), messages)
+    # The per-point detail only the multilevel solver's store can give, listing every failing point
+    # rather than the one the fold kept.
+    @test any(m -> occursin("Local solve failures of this pass", m), messages)
+    @test any(m -> occursin(r"cell \d+ qp \d+: MaxIters", m), messages)
+end
+
+@testset "A converged condensation stays quiet" begin
+    # The counterpart of the diagnostic above: it must fire on failure and only on failure, or it
+    # stops carrying information.
+    logger = Test.TestLogger(min_level = Logging.Debug)
+    integrator = Logging.with_logger(logger) do
+        solve_condensed_cuboid(
+            Thunderbolt.RDQ20MFModel(),
+            NewtonRaphsonSolver(
+                inner_solver = UMFPACKFactorization(),
+                max_iter = 20,
+                tol = 1e-8,
+                enforce_monotonic_convergence = false,
+            ),
+            2.5,
+            2.5,
+        )
+    end
+    @test integrator.sol.retcode == SciMLBase.ReturnCode.Success
+
+    messages = [string(record.message) for record in logger.logs]
+    @test !any(m -> occursin("Local solve did not converge", m), messages)
+    @test !any(m -> occursin("Local solve failures of this pass", m), messages)
+end
+
+@testset "Residual-only condensation solves the same and stores nothing" begin
+    # A residual sweep reads the condensed state and no corrector, so the corrector is waste there.
+    # Eliding it is only admissible if it changes nothing about the state -- the election governs
+    # what is formed after the local solve, never the solve -- and that is asserted bitwise, not to
+    # a tolerance: a tolerance would hide exactly the kind of drift this is guarding against.
+    integrator = solve_condensed_cuboid(
+        Thunderbolt.RDQ20MFModel(),
+        NewtonRaphsonSolver(
+            inner_solver = UMFPACKFactorization(),
+            max_iter = 20,
+            tol = 1e-8,
+            enforce_monotonic_convergence = false,
+        ),
+        2.5,
+        2.5,
+    )
+    @test integrator.sol.retcode == SciMLBase.ReturnCode.Success
+
+    stage = integrator.cache.stage
+    sf    = stage.stage_function
+    op    = Thunderbolt.getoperator(sf)
+    p     = Thunderbolt.stage_user_parameters(sf)
+    ctx   = Thunderbolt.stage_context(sf)
+    w     = Thunderbolt.stage_weights(sf)
+    J     = Thunderbolt.getJ(op)
+
+    # Both routes have to start from the same point: the phase writes `q` into the very vector it
+    # reads `u` from, so a second condensation would otherwise warm start off the first one's answer.
+    z0     = copy(integrator.cache.uₙ)
+    z      = copy(z0)
+    states = Thunderbolt.stage_states(sf, z)
+    nres   = Thunderbolt.FerriteOperators.residual_size(op)
+
+    weighted_report = Thunderbolt.condense_internal!(op, w, states, p, ctx)
+    @test weighted_report.converged
+    q_weighted = copy(z)
+    r_weighted = zeros(nres)
+    Thunderbolt.evaluate!(op, r_weighted, states, p, ctx)
+
+    z .= z0
+    residual_only_report = Thunderbolt.condense_internal!(op, nothing, states, p, ctx)
+    @test residual_only_report.converged
+    q_residual_only = copy(z)
+    r_residual_only = zeros(nres)
+    Thunderbolt.evaluate!(op, r_residual_only, states, p, ctx)
+
+    @test q_residual_only == q_weighted
+    @test r_residual_only == r_weighted
+    # The solves themselves are the same solves, so the report they fold is the same report.
+    @test residual_only_report.solves == weighted_report.solves
+    @test residual_only_report.iterations == weighted_report.iterations
+
+    # What it does cost: the correctors are gone, and a tangent that needs them says so instead of
+    # combining whatever the last weighted condensation happened to leave behind.
+    err = try
+        Thunderbolt.assemble_weighted_jacobian!(J, op, w, states, p, ctx)
+        nothing
+    catch e
+        e
+    end
+    @test err isa ArgumentError
+    @test occursin("has no valid state", err.msg)
+    # Condensing with weights again restores them.
+    Thunderbolt.condense_internal!(op, w, states, p, ctx)
+    Thunderbolt.assemble_weighted_jacobian!(J, op, w, states, p, ctx)
+
+    # And the wiring: the residual half of the stage protocol is what elects it, so a tangent sweep
+    # straight after one is refused for the same reason.
+    Thunderbolt.condense_internal!(op, w, states, p, ctx)
+    @test Thunderbolt.evaluate_stage_residual!(sf, zeros(nres), z)
+    @test_throws ArgumentError Thunderbolt.assemble_weighted_jacobian!(J, op, w, states, p, ctx)
+end
+
+@testset "The consistency referee checks the weighted route" begin
+    # `ConsistencyCheckWeakBoundaryCondition` differences the combination the request it is serving
+    # claims to assemble. Backward Euler poses the weighted one, and that is the only route carrying
+    # a dashpot's rate term into the matrix -- so it is also the only route on which that term is
+    # checkable at all. A silent run is the assertion: a referee that dropped the `:v` perturbation
+    # would difference the rate term against zero and warn.
+    mesh = generate_mesh(Hexahedron, (2, 2, 2))
+    material = Thunderbolt.LinearMaxwellMaterial(E₀ = 70e3, E₁ = 20e3, μ = 1e3, η₁ = 1e3, ν = 0.3)
+    dbcs = [Dirichlet(:d, getfacetset(mesh, "left"), (x, t) -> (0.0, 0.0, 0.0), [1, 2, 3])]
+    form = semidiscretize(
+        QuasiStaticModel(
+            :d,
+            material,
+            (
+                ConstantPressureBC(-1e3, "right"),
+                Thunderbolt.ConsistencyCheckWeakBoundaryCondition(
+                    ViscousRobinBC(5e3, "right"),
+                    1.0e-6,
+                ),
+            ),
+        ),
+        FiniteElementDiscretization(Dict(:d => LagrangeCollection{1}()^3); dbcs),
+        mesh,
+    )
+    integrator = init(
+        QuasiStaticProblem(form, (0.0, 0.2)),
+        BackwardEulerSolver(
+            inner_solver = Thunderbolt.MultiLevelNewtonRaphsonSolver(
+                newton = NewtonRaphsonSolver(
+                    inner_solver = UMFPACKFactorization(),
+                    max_iter = 10,
+                    tol = 1e-8,
+                ),
+            ),
+        ),
+        dt = 0.1,
+        verbose = false,
+    )
+    @test_logs min_level = Logging.Warn solve!(integrator)
+    @test integrator.sol.retcode == SciMLBase.ReturnCode.Success
 end
 
 @testset "A rate dependent material rejects rate-free kinematics" begin

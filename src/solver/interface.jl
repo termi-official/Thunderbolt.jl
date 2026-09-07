@@ -15,7 +15,7 @@ setup_stage_operator(f::NullFunction, solver::AbstractSolver, local_solver_cache
 # Linear
 # Unrolled to disambiguate
 function setup_operator(
-    strategy::SequentialAssemblyStrategy{<:AbstractCPUDevice},
+    strategy::AssemblyStrategy{<:FullAssembly, SequentialScheduling, <:AbstractCPUDevice},
     ::LinearIntegrator{<:NoStimulationProtocol},
     solver::AbstractSolver,
     dh::AbstractDofHandler,
@@ -23,7 +23,7 @@ function setup_operator(
     LinearNullOperator{value_type(strategy.device), ndofs(dh)}()
 end
 function setup_operator(
-    strategy::PerColorAssemblyStrategy{<:AbstractCPUDevice},
+    strategy::AssemblyStrategy{<:FullAssembly, <:ColoredScheduling, <:AbstractCPUDevice},
     ::LinearIntegrator{<:NoStimulationProtocol},
     solver::AbstractSolver,
     dh::AbstractDofHandler,
@@ -31,7 +31,7 @@ function setup_operator(
     LinearNullOperator{value_type(strategy.device), ndofs(dh)}()
 end
 function setup_operator(
-    strategy::ElementAssemblyStrategy{<:AbstractCPUDevice},
+    strategy::AssemblyStrategy{<:FullAssembly, SequentialScheduling, <:AbstractGPUDevice},
     ::LinearIntegrator{<:NoStimulationProtocol},
     solver::AbstractSolver,
     dh::AbstractDofHandler,
@@ -39,23 +39,7 @@ function setup_operator(
     LinearNullOperator{value_type(strategy.device), ndofs(dh)}()
 end
 function setup_operator(
-    strategy::SequentialAssemblyStrategy{<:AbstractGPUDevice},
-    ::LinearIntegrator{<:NoStimulationProtocol},
-    solver::AbstractSolver,
-    dh::AbstractDofHandler,
-)
-    LinearNullOperator{value_type(strategy.device), ndofs(dh)}()
-end
-function setup_operator(
-    strategy::PerColorAssemblyStrategy{<:AbstractGPUDevice},
-    ::LinearIntegrator{<:NoStimulationProtocol},
-    solver::AbstractSolver,
-    dh::AbstractDofHandler,
-)
-    LinearNullOperator{value_type(strategy.device), ndofs(dh)}()
-end
-function setup_operator(
-    strategy::ElementAssemblyStrategy{<:AbstractGPUDevice},
+    strategy::AssemblyStrategy{<:FullAssembly, <:ColoredScheduling, <:AbstractGPUDevice},
     ::LinearIntegrator{<:NoStimulationProtocol},
     solver::AbstractSolver,
     dh::AbstractDofHandler,
@@ -75,8 +59,8 @@ end
 # Bilinear
 function setup_operator(
     strategy::Union{
-        SequentialAssemblyStrategy{<:AbstractCPUDevice},
-        PerColorAssemblyStrategy{<:AbstractCPUDevice},
+        AssemblyStrategy{<:FullAssembly, SequentialScheduling, <:AbstractCPUDevice},
+        AssemblyStrategy{<:FullAssembly, <:ColoredScheduling, <:AbstractCPUDevice},
     },
     integrator::AbstractBilinearIntegrator,
     solver::AbstractSolver,
@@ -85,7 +69,7 @@ function setup_operator(
     setup_assembled_operator(strategy, integrator, solver.system_matrix_type, dh)
 end
 function setup_assembled_operator(
-    strategy::SequentialAssemblyStrategy{<:AbstractCPUDevice},
+    strategy::AssemblyStrategy{<:FullAssembly, SequentialScheduling, <:AbstractCPUDevice},
     integrator::AbstractBilinearIntegrator,
     system_matrix_type::Type,
     dh::AbstractDofHandler,
@@ -123,38 +107,6 @@ function update_constraints!(
 end
 
 update_constraints!(f, solver_cache::AbstractTimeSolverCache, t) = nothing
-
-function update_constraints!(
-    f::AbstractSemidiscreteBlockedFunction,
-    solver_cache::AbstractTimeSolverCache,
-    t,
-)
-    for (i, pi) ∈ enumerate(blocks(f))
-        update_constraints_block!(pi, Block(i), solver_cache, t)
-    end
-end
-
-function update_constraints_block!(
-    f::AbstractSemidiscreteFunction,
-    i::Block,
-    solver_cache::AbstractTimeSolverCache,
-    t,
-)
-    Ferrite.update!(getch(f), t)
-    u = @view solver_cache.uₙ[i]
-    apply!(u, getch(f))
-end
-
-update_constraints_block!(
-    f::SciMLBase.AbstractDiffEqFunction,
-    i::Block,
-    solver_cache::AbstractTimeSolverCache,
-    t,
-) = nothing
-
-update_constraints_block!(f::NullFunction, i::Block, solver_cache::AbstractTimeSolverCache, t) =
-    nothing
-
 
 create_system_matrix(T::Type{<:AbstractMatrix}, f::AbstractSemidiscreteFunction) =
     create_system_matrix(T, f.dh)

@@ -1,147 +1,17 @@
-# TODO try to reproduce this via the BlockOperator
-@concrete struct AssembledRSAFDQ2022Operator <: AbstractBlockOperator
-    J
-    strategy
-    subdomain_caches
-    dh
-    integrator
-    chambers
-    tying_caches
-end
+"""
+    _chamber_coupling(displacement_symbol, chamber)
 
-# Interface
-function FerriteOperators.update_linearization!(
-    op::AssembledRSAFDQ2022Operator,
-    u_::AbstractVector,
-    p,
+The sparsity the chamber pressure needs, as Ferrite's coupling descriptor.
+
+The pressure is the facet items' own tail (`facet_item_global_dofs`), so the only local systems it
+enters are the tying facets': `FacetCoupling` over the chamber surface allocates the displacement
+dofs of the adjacent cells and nothing beyond them. The cell sweep of those subdomains assembles the
+pure displacement system and never addresses a pressure entry.
+"""
+_chamber_coupling(displacement_symbol, chamber) = FacetCoupling(
+    chamber.facets;
+    algebraic_coupling = ((displacement_symbol, chamber.pressure_symbol),),
 )
-    error("Not implemented yet.")
-end
-function _update_tying_subdomain_Jr(assembler, sdh, u, p, tying_cache, chamber)
-    # FIXME allocator api
-    Kₑ = zeros(ndofs_per_cell(sdh)+1, ndofs_per_cell(sdh)+1)
-    rₑ = zeros(ndofs_per_cell(sdh)+1)
-    uₑ = zeros(ndofs_per_cell(sdh)+1)
-    for facet in FacetIterator(sdh, tying_cache.facets)
-        # FIXME loader function
-        dofs = [celldofs(facet); chamber.pressure_dof_index_local]
-        uₑ .= u[dofs]
-        fill!(Kₑ, 0.0)
-        fill!(rₑ, 0.0)
-        # FIXME use facet directly
-        assemble_facet!(Kₑ, rₑ, uₑ, facet.cc, facet.current_facet_id, tying_cache, p)
-        assemble!(assembler, dofs, Kₑ, rₑ)
-    end
-end
-function FerriteOperators.update_linearization!(
-    op::AssembledRSAFDQ2022Operator,
-    residual_::AbstractVector,
-    u_::AbstractVector,
-    p,
-)
-    (; J, strategy, subdomain_caches, chambers, tying_caches, dh) = op
-
-    bs = blocksizes(J)
-    s1 = bs[1, 1][1]
-    s2 = bs[2, 2][1]
-    u  = BlockedVector(u_, [s1, s2])
-    ud = @view u[Block(1)]
-    up = @view u[Block(2)]
-
-    residual  = BlockedVector(residual_, [s1, s2])
-    residuald = @view residual[Block(1)]
-    residualp = @view residual[Block(2)]
-    fill!(residuald, 0.0)
-    fill!(residualp, 0.0)
-
-    Jdd = @view J[Block(1, 1)]
-    Jpd = @view J[Block(2, 1)]
-    Jdp = @view J[Block(1, 2)]
-    fill!(Jpd, 0.0)
-    fill!(Jdp, 0.0)
-
-    # Pass 1: Assemble volume as usual
-    assembler = start_assemble(strategy, J, residual)
-    task = FerriteOperators.AssembleLinearizationJR(assembler, u, p)
-
-    FerriteOperators.execute_on_subdomains!(task, strategy, subdomain_caches)
-
-    # Pass 2: Assemble forward and backward coupling contributions
-    # TODO wrap into task system as boundary integration
-    @timeit_debug "assemble tying" for (chamber_index, chamber) ∈ enumerate(chambers)
-        V⁰ᴰ = chamber.V⁰ᴰval
-        chamber_pressure = u[chamber.pressure_dof_index_local] # We can also make this up[pressure_dof_index] with local index
-
-        for (sdh, tying_cache) in tying_caches[chamber_index]
-            _update_tying_subdomain_Jr(assembler, sdh, u, p, tying_cache, chamber)
-        end
-
-        residualp[chamber_index] -= V⁰ᴰ
-
-        @debug "Chamber $chamber_index" chamber_pressure V⁰ᴰ
-    end
-
-    FerriteOperators.finalize_assembly!(assembler)
-end
-function FerriteOperators.residual!(
-    op::AssembledRSAFDQ2022Operator,
-    residual_::AbstractVector,
-    u_::AbstractVector,
-    p,
-)
-    error("Not implemented yet.")
-end
-
-getJ(op::AssembledRSAFDQ2022Operator) = op.J
-getJ(op::AssembledRSAFDQ2022Operator, i::Block) = @view op.J[i]
-
-function _find_sdhs(dh, facetset)
-    facet = first(facetset)
-    sdhs = SubDofHandler[]
-    for sdh in dh.subdofhandlers
-        if facet[1] ∈ sdh.cellset
-            push!(sdhs, sdh)
-        end
-    end
-    return sdhs
-end
-
-function setup_3D0D_coupling_integrator(sdh, chamber, integrator::NonlinearIntegrator)
-    return setup_boundary_cache(
-        Pressure3D0DVolumeCouplerIntegrator(
-            integrator.fqrc,
-            integrator.volume_model.displacement_symbol,
-            chamber.pressure_symbol,
-            chamber.facets,
-            chamber.volume_method,
-        ),
-        sdh,
-    )
-end
-
-function setup_3D0D_coupling_integrator(sdh, chamber, integrator::NonlinearMultiDomainIntegrator2)
-    # FIXME tighter weaveing between sdh and chamber.facets
-    grid = get_grid(sdh.dh)
-    for (name, subintegrator) in integrator.subintegrators
-        has_volumetric_subdomain(grid, name) || continue
-        volumetric_subdomain = grid.volumetric_subdomains[name]
-        for cellset in values(volumetric_subdomain.data)
-            if CellIndex(first(sdh.cellset)) ∈ cellset # FIXME how to get around this fallacy here?
-                return setup_boundary_cache(
-                    Pressure3D0DVolumeCouplerIntegrator(
-                        subintegrator.fqrc,
-                        subintegrator.volume_model.displacement_symbol,
-                        chamber.pressure_symbol,
-                        chamber.facets,
-                        chamber.volume_method,
-                    ),
-                    sdh,
-                )
-            end
-        end
-    end
-    return FerriteOperators.EmptySurfaceElementCache()
-end
 
 function setup_stage_operator(
     f::RSAFDQ20223DFunction,
@@ -150,40 +20,30 @@ function setup_stage_operator(
     t₀,
 )
     (; tying_info, structural_function) = f
-    (; dh, integrator, assembly_strategy) = structural_function
+    (; dh, ch, integrator) = structural_function
+    chambers = tying_info.chambers
+    n_chambers = length(chambers)
+    n_u = ndofs(dh) - n_chambers
 
-    operator_strategy =
-        FerriteOperators.setup_operator_strategy_cache(assembly_strategy, integrator, dh)
-    # TODO we are missing a way to dynamically extend the sparsity pattern in FerriteOperators
-    J                = FerriteOperators.create_system_matrix(operator_strategy, dh)
-    subdomain_caches = FerriteOperators.setup_subdomain_caches(operator_strategy, integrator, dh)
-    # TODO this is also not possible yet
-    tying_caches = [
-        [
-            (sdh, setup_3D0D_coupling_integrator(sdh, chamber, integrator)) for
-            sdh in _find_sdhs(dh, chamber.facets)
-        ] for chamber in tying_info.chambers
-    ]
-
-    num_chambers = length(tying_info.chambers)
-    block_sizes = [ndofs(dh), num_chambers]
-    total_size = sum(block_sizes)
-    # First we initialize an empty dummy block array
-    Jblock = BlockArray(spzeros(total_size, total_size), block_sizes, block_sizes)
-    Jblock[Block(1, 1)] = J
-    # TODO optimize storage
-    Jblock[Block(1, 2)] = sparse(ones(ndofs(dh), num_chambers))
-    Jblock[Block(2, 1)] = sparse(ones(num_chambers, ndofs(dh)))
-    Jblock[Block(2, 2)] = sparse(ones(num_chambers, num_chambers))
-    Ferrite.fillzero!(Jblock)
-
-    return AssembledRSAFDQ2022Operator(
-        Jblock,
-        operator_strategy,
-        subdomain_caches,
-        dh,
-        integrator,
-        tying_info.chambers,
-        tying_caches,
+    # The tying facets write into one dof shared by every chamber facet, which no coloring can make
+    # race free, so the scheduling is sequential regardless of what the discretization asked for.
+    couplings =
+        Tuple(_chamber_coupling(chamber.displacement_symbol, chamber) for chamber in chambers)
+    # CSC blocks, not the CSR of FerriteOperators' own blocked-assembly example:
+    # `SchurComplementLinearSolver`'s inner `UMFPACKFactorization` factorizes the (1,1) block, which
+    # needs CSC.
+    strategy = AssemblyStrategy(
+        FullAssembly(
+            FerriteOperators.BlockedOperatorSpecification(
+                [n_u, n_chambers],
+                BlockMatrix{Float64, Matrix{SparseMatrixCSC{Float64, Int}}};
+                algebraic_couplings = couplings,
+                constraint_handler = ch,
+            ),
+        ),
+        SequentialScheduling(),
+        get_strategy(f).device,
     )
+
+    return setup_operator(strategy, integrator, dh; slots = THUNDERBOLT_STAGE_SLOTS)
 end

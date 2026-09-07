@@ -1,18 +1,25 @@
 """
-    HomotopyPathSolver{IS, T, PFUN}
+    HomotopyPathSolver(inner_solver)
 
 Solve the nonlinear problem `F(u,t)=0` with given time increments `Δt`on some interval `[t_begin, t_end]`
 where `t` is some pseudo-time parameter.
 """
-struct HomotopyPathSolver{IS} <: AbstractSolver
-    inner_solver::IS
+struct HomotopyPathSolver{LS} <: AbstractSolver
+    # Read once, at setup, to build the nonlinear solver cache.
+    inner_solver::AbstractNonlinearSolver
+    # Solves `0 = L(F, Q)` per quadrature point for a `SteadyStateEvolution` material.
+    local_solver::LS
 end
 
-mutable struct HomotopyPathSolverCache{SFT, ISC, T, VT <: AbstractVector{T}, VTprev} <:
+HomotopyPathSolver(inner_solver::AbstractNonlinearSolver) =
+    HomotopyPathSolver(inner_solver, GenericLocalNonlinearSolver())
+
+mutable struct HomotopyPathSolverCache{SFT, T, VT <: AbstractVector{T}, VTprev} <:
                AbstractTimeSolverCache
     # Continuation condenses nothing, so the stage unknowns are the function's.
     stage_function::SFT
-    inner_solver_cache::ISC
+    # Entered once per load step, through `nlsolve!`.
+    inner_solver_cache::AbstractNonlinearSolverCache
     uₙ::VT
     uₙ₋₁::VTprev
     tmp::VT
@@ -30,8 +37,6 @@ during setup, so that it is reported once with a name and a remedy instead of su
 from the assembly loop.
 """
 check_internal_variables_are_rate_free(f) = nothing
-check_internal_variables_are_rate_free(f::AbstractSemidiscreteBlockedFunction) =
-    foreach(check_internal_variables_are_rate_free, blocks(f))
 check_internal_variables_are_rate_free(f::QuasiStaticFunction) =
     foreach(_check_model_is_rate_free, _volume_models(get_volume_integrator(f)))
 
@@ -52,8 +57,6 @@ Without this the combination fails inside the assembly loop, where the message i
 `Float64` rather than a named boundary condition.
 """
 check_weak_boundary_conditions_are_rate_free(f) = nothing
-check_weak_boundary_conditions_are_rate_free(f::AbstractSemidiscreteBlockedFunction) =
-    foreach(check_weak_boundary_conditions_are_rate_free, blocks(f))
 check_weak_boundary_conditions_are_rate_free(f::QuasiStaticFunction) =
     foreach(_check_facet_model_is_rate_free, _facet_models(get_volume_integrator(f)))
 
@@ -95,12 +98,24 @@ end
 # Continuation poses the internal forces alone: no previous solution, no timestep, no inertia. The
 # handler is the function's own, because for these functions the solution vector and the weak form
 # live on the same one.
+setup_local_solver_cache(f::QuasiStaticFunction, solver::HomotopyPathSolver) =
+    _setup_local_solver_cache(solver.local_solver, f.integrator, f.dh, f.lvh)
+
+# A function that is not a quasi-static one poses no quadrature point local problem the continuation
+# could solve -- a `NullFunction` has no elements at all.
+setup_local_solver_cache(f, ::HomotopyPathSolver) = nothing
+
 setup_stage_operator(
     f::AbstractSemidiscreteFunction,
     solver::HomotopyPathSolver,
     local_solver_cache,
     t₀,
-) = setup_operator(get_strategy(f), get_volume_integrator(f), f.dh)
+) = setup_operator(
+    get_strategy(f),
+    _annotate_with_local_solver_cache(get_volume_integrator(f), local_solver_cache),
+    f.dh;
+    slots = THUNDERBOLT_STAGE_SLOTS,
+)
 
 # A `NullFunction` matches both the null method (any solver) and the continuation method (any
 # function), and neither signature dominates. The answer is the null operator either way.
@@ -121,6 +136,19 @@ setup_stage_operator(
     "to the function. Pose the continuation on `f.structural` to solve for the static equilibrium.",
 )
 
+# Continuation is load stepping: there is no timestep and no rate to reconstruct, so the context
+# carries the pseudo-time alone and the scheme matrix is the plain `∂F/∂u`. `f` selects the
+# parameter bag: most functions need none, but e.g. `RSAFDQ20223DFunction` overrides this to carry
+# the solver-supplied chamber reference volumes (see `rsafdq2022.jl`).
+_homotopy_stage_evaluation(f, t) = StageEvaluation(;
+    ctx       = TimeIntegrationContext(t, zero(t), zero(t)),
+    condensed = _homotopy_condenses(f),
+)
+
+# Only a solid mechanics function can carry a condensed tail, and only that one answers the query.
+_homotopy_condenses(f) = false
+_homotopy_condenses(f::AbstractSolidMechanicsFunction) = has_internal_variables(f)
+
 function setup_solver_cache(
     f::AbstractSemidiscreteFunction,
     solver::HomotopyPathSolver,
@@ -133,9 +161,14 @@ function setup_solver_cache(
     check_internal_variables_are_rate_free(f)
     check_weak_boundary_conditions_are_rate_free(f)
     # The stage carries the operator, so it is built before the solver cache that works on it. A
-    # continuation offers neither a previous solution nor a timestep, so its parameters are the bare
-    # pseudo-time.
-    stage_function = FullStateStage(f, setup_stage_operator(f, solver, nothing, t₀), t₀)
+    # continuation offers neither a previous solution nor a timestep, so its context is the bare
+    # pseudo-time; `_homotopy_stage_evaluation` decides what else `f` needs in `p`.
+    local_solver_cache = setup_local_solver_cache(f, solver)
+    stage_function = FullStateStage(
+        f,
+        setup_stage_operator(f, solver, local_solver_cache, t₀),
+        _homotopy_stage_evaluation(f, t₀),
+    )
     inner_solver_cache = setup_solver_cache(stage_function, solver.inner_solver)
 
     vtype = Vector{Float64}
@@ -169,60 +202,6 @@ function setup_solver_cache(
     return solver_cache
 end
 
-function setup_solver_cache(
-    f::AbstractSemidiscreteBlockedFunction,
-    solver::HomotopyPathSolver,
-    t₀;
-    uprev       = nothing,
-    u           = nothing,
-    alias_uprev = true,
-    alias_u     = false,
-)
-    check_internal_variables_are_rate_free(f)
-    check_weak_boundary_conditions_are_rate_free(f)
-    stage_function = FullStateStage(f, setup_stage_operator(f, solver, nothing, t₀), t₀)
-    inner_solver_cache = setup_solver_cache(stage_function, solver.inner_solver)
-
-    vtype = Vector{Float64}
-    if u === nothing
-        _u = mortar([vtype(undef, solution_size(fi)) for fi ∈ blocks(f)])
-        @warn "Cannot initialize u for $(typeof(solver))."
-    else
-        if alias_u
-            _u = u
-        else
-            _u = mortar([vtype(undef, solution_size(fi)) for fi ∈ blocks(f)])
-            _u .= u
-        end
-    end
-
-    if uprev === nothing
-        _uprev = mortar([vtype(undef, solution_size(fi)) for fi ∈ blocks(f)])
-        _uprev .= u
-    else
-        if alias_uprev
-            _uprev = uprev
-        else
-            _uprev = mortar([vtype(undef, solution_size(fi)) for fi ∈ blocks(f)])
-            _uprev .= uprev
-        end
-    end
-
-    solver_cache = HomotopyPathSolverCache(
-        stage_function,
-        inner_solver_cache,
-        _u,
-        _uprev,
-        mortar([vtype(undef, solution_size(fi)) for fi ∈ blocks(f)]),
-    )
-
-    # Make sure the initial state is consistent
-    perform_step!(f, solver_cache, t₀, 0.0) ||
-        error("Initial guess is not consistent with the model or the problem is not well-posed!")
-
-    return solver_cache
-end
-
 function perform_step!(
     f::AbstractSemidiscreteFunction,
     solver_cache::HomotopyPathSolverCache,
@@ -231,7 +210,7 @@ function perform_step!(
 )
     update_constraints!(f, solver_cache, t + Δt)
     sf = solver_cache.stage_function
-    set_stage_parameters!(sf, t + Δt)
+    set_stage_parameters!(sf, _homotopy_stage_evaluation(f, t + Δt))
     if !nlsolve!(solver_cache.uₙ, sf, solver_cache.inner_solver_cache, t + Δt)
         return false
     end
@@ -241,6 +220,11 @@ end
 
 contraction_rate_cache(cache::HomotopyPathSolverCache) =
     global_newton_cache(cache.inner_solver_cache)
+
+# A rejected load step discards the trial `q` along with `u`, so the correctors computed for it have
+# to go too -- the generic `restore_state!` only copies.
+restore_state!(u::AbstractVector, uprev::AbstractVector, cache::HomotopyPathSolverCache) =
+    rollback_stage!(u, uprev, cache.stage_function)
 
 # --- convergence driven step size control --------------------------------------------------------
 #

@@ -231,8 +231,9 @@ usually the one that sends the solve onto the spurious branch, and by the time t
 the evidence of where it went wrong is gone. `warn_below` can be raised above zero to catch a solve
 that is merely approaching a fold.
 """
-Base.@kwdef struct DeformationMonitor{MonitorType}
-    inner_monitor::MonitorType = DefaultProgressMonitor()
+Base.@kwdef struct DeformationMonitor
+    # Untyped for the same reason `NewtonRaphsonSolver.monitor` is: entered once per Newton iteration.
+    inner_monitor::Any = DefaultProgressMonitor()
     warn_below::Float64 = 0.0
     qr_order::Int = 2
 end

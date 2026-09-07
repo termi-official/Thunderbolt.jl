@@ -1,17 +1,24 @@
 #####################################################################
 #  This file contains optimized forward and backward Euler solvers  #
 #####################################################################
-Base.@kwdef struct BackwardEulerSolver{
-    SolverType,
-    SolutionVectorType,
-    SystemMatrixType,
-    MonitorType,
-} <: AbstractSolver
-    inner_solver::SolverType                       = LinearSolve.KrylovJL_CG()
+"""
+    BackwardEulerSolver(; inner_solver, solution_vector_type, system_matrix_type)
+
+First order implicit time integration of a semidiscrete problem.
+
+`inner_solver` is a `LinearSolve` algorithm for an affine problem and a nonlinear solver for a
+quasi-static one; it is read once, when the solver cache is set up. The scheme carries no local
+error estimate, so it steps at a fixed `dt` unless a convergence driven `controller` is passed.
+"""
+Base.@kwdef struct BackwardEulerSolver{SolutionVectorType, SystemMatrixType} <: AbstractSolver
+    # Read once, by `setup_solver_cache`: a `LinearSolve` algorithm for an affine problem, a nonlinear
+    # solver for a quasi-static one. The two share no supertype, and typing the scheme on either would
+    # respecialize the scheme, its cache and the integrator per solver choice.
+    inner_solver::Any                              = LinearSolve.KrylovJL_CG()
     solution_vector_type::Type{SolutionVectorType} = Vector{Float64}
     system_matrix_type::Type{SystemMatrixType}     = ThreadedSparseMatrixCSR{Float64, Int64}
     # DO NOT USE THIS (will be replaced by proper logging system)
-    monitor::MonitorType = DefaultProgressMonitor()
+    monitor::Any = DefaultProgressMonitor()
 end
 
 # Backward Euler *permits* a controller but does not bring one: the default below is the dummy, which
@@ -36,7 +43,6 @@ mutable struct BackwardEulerSolverCache{
     PrevSolutionType <: AbstractVector{T},
     TmpType <: AbstractVector{T},
     StageType,
-    MonitorType,
 } <: AbstractTimeSolverCache
     # Current solution buffer
     uₙ::SolutionType
@@ -46,8 +52,8 @@ mutable struct BackwardEulerSolverCache{
     tmp::TmpType
     # Utility to decide what kind of stage we solve (i.e. linear problem, full DAE or mass-matrix ODE)
     stage::StageType
-    # DO NOT USE THIS (will be replaced by proper logging system)
-    monitor::MonitorType
+    # DO NOT USE THIS (will be replaced by proper logging system). Read once per step, so untyped.
+    monitor::Any
 end
 
 # Performs a backward Euler step
@@ -76,6 +82,27 @@ mutable struct BackwardEulerAffineODEStage{
     linear_solver::SolverCacheType
     # Last time step length as a check if we have to update A
     Δt_last::T
+end
+
+@doc raw"""
+    _backward_euler_stage_evaluation(f, t, Δt, uprev)
+
+The discretization one backward Euler step hands the elements.
+
+The velocity is reconstructed from the unknown displacement as ``v = (u - u_{n-1})/\Delta t``, which
+is an [`AffineRate`](@ref) with slope ``1/\Delta t`` anchored at the previous solution. The same
+`Δt` is the interval the internal variable integrates over, so here the reconstruction slope and the
+stage scaling are reciprocals — the coincidence that makes this the one scheme a rate-coupled element
+could be written against by hand.
+"""
+function _backward_euler_stage_evaluation(f, t, Δt, uprev)
+    slope = inv(Δt)
+    return StageEvaluation(;
+        slots     = (uprev = uprev, qprev = InternalSource(uprev), v = AffineRate(slope, uprev)),
+        ctx       = TimeIntegrationContext(t, Δt, Δt),
+        weights   = (u = true, v = slope),
+        condensed = has_internal_variables(f),
+    )
 end
 
 function perform_backward_euler_step!(
@@ -126,7 +153,8 @@ function _implicit_euler_heat_solver_update_system_matrix!(A, M, K, Δt)
 end
 
 function implicit_euler_heat_update_source_term!(cache::BackwardEulerAffineODEStage, t)
-    needs_update(cache.source_term, t) && update_operator!(cache.source_term, t)
+    needs_update(cache.source_term, t) &&
+        update_operator!(cache.source_term, nothing, TimeIntegrationContext(t, zero(t), zero(t)))
 end
 
 function setup_solver_cache(
@@ -155,12 +183,7 @@ function setup_solver_cache(
     # Affine right hand side, e.g. ∫D grad(u) grad(δu) dV + ...
     bilinear_operator = setup_operator(get_strategy(f), f.bilinear_term, solver, dh)
     # ... + ∫f δu dV
-    source_operator = setup_operator(
-        ElementAssemblyStrategy(get_strategy(f).device), #The EA strategy should always outperform other strats for the linear operator
-        f.source_term,
-        solver,
-        dh,
-    )
+    source_operator = setup_operator(get_strategy(f), f.source_term, solver, dh)
 
     inner_prob  = LinearSolve.LinearProblem(A, b; u0)
     inner_cache = init(inner_prob, inner_solver)
@@ -180,9 +203,10 @@ function setup_solver_cache(
     )
 
     @timeit_debug "initial assembly" begin
-        update_operator!(mass_operator, t₀)
-        update_operator!(bilinear_operator, t₀)
-        update_operator!(source_operator, t₀)
+        ctx₀ = TimeIntegrationContext(t₀, zero(t₀), zero(t₀))
+        update_operator!(mass_operator, nothing, ctx₀)
+        update_operator!(bilinear_operator, nothing, ctx₀)
+        update_operator!(source_operator, nothing, ctx₀)
     end
 
     return cache
@@ -207,6 +231,11 @@ end
 # a linear problem fails by naming the stage instead of inventing a rate.
 contraction_rate_cache(cache::BackwardEulerSolverCache) = contraction_rate_cache(cache.stage)
 contraction_rate_cache(stage::BackwardEulerStageCache) = global_newton_cache(stage.nlsolver)
+
+restore_state!(u::AbstractVector, uprev::AbstractVector, cache::BackwardEulerSolverCache) =
+    restore_state!(u, uprev, cache.stage)
+restore_state!(u::AbstractVector, uprev::AbstractVector, stage::BackwardEulerStageCache) =
+    rollback_stage!(u, uprev, stage.stage_function)
 
 # Marks a model tree rewritten to carry solver-side information down to the element caches.
 abstract type AbstractModelAnnotation{T} end
@@ -324,13 +353,14 @@ setup_local_solver_cache(f::QuasiStaticFunction, solver::MultiLevelNewtonRaphson
 setup_local_solver_cache(f::ElastodynamicsFunction, solver::MultiLevelNewtonRaphsonSolver) =
     setup_local_solver_cache(f.structural, solver)
 
-# `gto1` supplies the previous solution and the timestep per call via
-# `GenericFirstOrderTimeParameters`, so only the local solver cache has to reach the element here.
+# The previous solution, the internal state and the reconstructed velocity reach the element as slots
+# of the step, so only the local solver cache has to be woven into the integrator here.
 setup_stage_operator(f::QuasiStaticFunction, solver::BackwardEulerSolver, local_solver_cache, t₀) =
     setup_operator(
         get_strategy(f),
         _annotate_with_local_solver_cache(f.integrator, local_solver_cache),
-        f.dh,
+        f.dh;
+        slots = THUNDERBOLT_STAGE_SLOTS,
     )
 
 """
@@ -353,11 +383,7 @@ stage: it is the annotated one, carrying the local solver cache down to the elem
 
     # Placeholder parameters of the same type the step function writes, so that the field stays
     # concretely typed across the first assignment.
-    sf = FullStateStage(
-        f,
-        op,
-        FerriteOperators.GenericFirstOrderTimeParameters(nothing, t₀, zero(t₀), uprev),
-    )
+    sf = FullStateStage(f, op, _backward_euler_stage_evaluation(f, t₀, zero(t₀), uprev))
 
     return BackwardEulerStageCache(
         sf,
@@ -508,11 +534,13 @@ function setup_quasistatic_element_cache(
     cv::CellValues,
 )
     internal_cache = setup_internal_cache(wrapper, qr, sdh)
-    return quasistatic_element_cache_type(internal_variable_evolution(material_model))(
+    evolution      = internal_variable_evolution(material_model)
+    return quasistatic_element_cache_type(evolution)(
         material_model,
         setup_coefficient_cache(material_model, qr, sdh),
         internal_cache,
         cv,
+        setup_condensation_correctors(evolution, material_model, qr, sdh)...,
     )
 end
 function setup_element_cache(
@@ -537,17 +565,11 @@ function perform_backward_euler_step!(
 )
     update_constraints!(f, cache, t + Δt)
     sf = stage_info.stage_function
-    # `gto1`: the previous solution and the timestep reach the element as *parameters* of the call,
-    # so nothing has to be written into the element caches first.
-    #
-    # The leading `nothing` is the inner parameter object, which FerriteOperators forwards to the
-    # element via `query_element_parameters(element, cell, ivh, p.p)`. It is the slot reserved for the
-    # parameters being *optimized* — not the model's parameters in general, which stay in the model
-    # struct. Nothing is optimized here, hence `nothing`. See the `nlsolve!` docstring.
-    set_stage_parameters!(
-        sf,
-        FerriteOperators.GenericFirstOrderTimeParameters(nothing, t + Δt, Δt, cache.uₙ₋₁),
-    )
+    # The previous solution and the timestep reach the element as *slots* and *context* of the call,
+    # so nothing has to be written into the element caches first. The `StageEvaluation`'s `p` stays
+    # at its `nothing` default: it is the slot reserved for the parameters being *optimized*, and
+    # nothing is optimized here. See the `nlsolve!` docstring.
+    set_stage_parameters!(sf, _backward_euler_stage_evaluation(f, t + Δt, Δt, cache.uₙ₋₁))
     # Nothing is condensed, so the stage vector aliases the state and both transfer hooks are no-ops.
     z = cache.uₙ
     init_stage!(z, sf, cache.uₙ)
@@ -569,6 +591,20 @@ function _setup_internal_cache_annotation_unwrap(
     sdh::SubDofHandler,
 )
     return internal_cache
+end
+function _setup_internal_cache_annotation_unwrap(
+    wrapper::LocalSolverCacheAnnotation{<:QuasiStaticModel},
+    material_model::AbstractMaterialModel,
+    internal_cache,
+    ::SteadyStateEvolution,
+    qr::QuadratureRule,
+    sdh::SubDofHandler,
+)
+    return GenericSteadyStateCondensationMaterialStateCache(
+        material_model,
+        internal_cache,
+        wrapper.local_solver_cache,
+    )
 end
 function _setup_internal_cache_annotation_unwrap(
     wrapper::LocalSolverCacheAnnotation{<:QuasiStaticModel},
@@ -619,9 +655,8 @@ function setup_internal_cache(
     )
 end
 
-function setup_boundary_cache(wrapper::LocalSolverCacheAnnotation, fqr, sdh)
-    # TODO this technically unlocks differential boundary conditions, if done correctly.
-    setup_boundary_cache(wrapper.f, fqr, sdh)
-end
+# The annotation carries solver-owned state into the element caches and leaves the terms it wraps
+# untouched: the facet terms it holds are the ones it was handed, each declaring its own facets.
+_facet_model_tuple(wrapper::AbstractModelAnnotation) = _facet_model_tuple(wrapper.f)
 
 OrdinaryDiffEqCore.is_constant_cache(::BackwardEulerSolverCache) = false

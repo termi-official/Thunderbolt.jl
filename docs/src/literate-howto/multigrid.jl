@@ -6,7 +6,6 @@ using AlgebraicMultigrid
 using TimerOutputs
 import LinearAlgebra: diag, mul!
 # using HybridSmoothers
-import KernelAbstractions as KA
 using FerriteOperators
 
 TimerOutputs.enable_debug_timings(AlgebraicMultigrid)  #src
@@ -52,7 +51,7 @@ active_stress_model = ActiveStressModel(
 mechanical_model = QuasiStaticModel(:displacement, active_stress_model, weak_boundary_conditions)
 spatial_discretization_method = FiniteElementDiscretization(
     Dict(:displacement => LagrangeCollection{2}()^3);
-    assembly_strategy = PerColorAssemblyStrategy(PolyesterDevice()),
+    assembly_strategy = AssemblyStrategy(PolyesterDevice(); scheduling = ColoredScheduling()),
 )
 quasistaticform = semidiscretize(mechanical_model, spatial_discretization_method, fine_mesh);
 

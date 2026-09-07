@@ -1,39 +1,104 @@
-function compute_quadrature_fluxes!(fluxdata, dh, u, field_name, integrator)
-    grid = get_grid(dh)
-    sdim = getspatialdim(grid)
-    for sdh in dh.subdofhandlers
-        ip         = Ferrite.getfieldinterpolation(sdh, field_name)
-        firstcell  = getcells(grid, first(sdh.cellset))
-        ip_geo     = Ferrite.geometric_interpolation(typeof(firstcell))^sdim
-        element_qr = getquadraturerule(integrator.qrc, firstcell)
-        cv         = CellValues(element_qr, ip, ip_geo)
-        _compute_quadrature_fluxes_on_subdomain!(fluxdata, sdh, cv, u, integrator)
-    end
+"""
+    Plonsey1964ECGIntegrator(diffusion::BilinearDiffusionIntegrator, κ∇φₘ)
+
+The element description behind [`Plonsey1964ECGGaussCache`](@ref). It carries the diffusion
+element's values and conductivity configuration — the ECG element is built from it, so both share
+one `CellValues` and one coefficient cache — together with the per-quadrature-point flux buffer
+`κ∇φₘ` that the cache's two sweeps write and read.
+
+Evaluation only: it belongs to no integrator family, and its operator
+(`setup_evaluation_operator`) holds the engine and no payload.
+"""
+struct Plonsey1964ECGIntegrator{DiffusionIntegratorType <: BilinearDiffusionIntegrator, QVectorType}
+    diffusion::DiffusionIntegratorType
+    κ∇φₘ::QVectorType
 end
 
-function _compute_quadrature_fluxes_on_subdomain!(
-    κ∇u,
-    sdh,
-    cv,
-    u,
-    integrator::BilinearDiffusionIntegrator,
-)
-    n_basefuncs = getnbasefunctions(cv)
-    for cell ∈ CellIterator(sdh)
-        κ∇ucell = get_data_for_index(κ∇u, cellid(cell))
+"""
+The cache associated with [`Plonsey1964ECGIntegrator`](@ref). Serves the per-quadrature-point flux
+sweep and the electrode integral ([`ElectrodePotentialFunctional`](@ref)) off the diffusion element
+cache it composes; `κ∇φₘ` is the operator-wide flux buffer, shared unduplicated across workers
+because the two sweeps touch disjoint cell slices of it.
+"""
+struct Plonsey1964ECGElementCache{DiffusionCacheType, QVectorType} <: AbstractVolumetricElementCache
+    diffusion::DiffusionCacheType
+    κ∇φₘ::QVectorType
+end
 
-        reinit!(cv, cell)
-        uₑ = @view u[celldofs(cell)]
+setup_element_cache(integrator::Plonsey1964ECGIntegrator, sdh::SubDofHandler) =
+    Plonsey1964ECGElementCache(setup_element_cache(integrator.diffusion, sdh), integrator.κ∇φₘ)
 
-        for qp in QuadratureIterator(cv)
-            D_loc = evaluate_coefficient(integrator.D, cell, qp, time)
-            # dΩ = getdetJdV(cellvalues, qp)
-            for i = 1:n_basefuncs
-                ∇Nᵢ = shape_gradient(cv, qp, i)
-                κ∇ucell[qp.i] += D_loc ⋅ ∇Nᵢ ⊗ uₑ[i]
-            end
-        end
+duplicate_for_device(device, cache::Plonsey1964ECGElementCache) =
+    Plonsey1964ECGElementCache(duplicate_for_device(device, cache.diffusion), cache.κ∇φₘ)
+
+Ferrite.getnquadpoints(cache::Plonsey1964ECGElementCache) = getnquadpoints(cache.diffusion)
+FerriteOperators.reinit_values!(cache::Plonsey1964ECGElementCache, cell) =
+    reinit_values!(cache.diffusion, cell)
+
+# Mandatory on every element cache, evaluation operator or not: the residual kernel is what setup
+# validates for. The ECG element adds evaluation hooks to the diffusion element and changes none of
+# its forms, so the residual is the composed element's — and no sweep of this operator issues it.
+FerriteOperators.assemble_cell!(
+    req::FerriteOperators.ResidualRequest,
+    cache::Plonsey1964ECGElementCache,
+    args::CellArgs,
+) = assemble_cell!(req, cache.diffusion, args)
+
+# κ(x̃, t)∇φₘ(x̃) at one quadrature point -- the integrand of the Plonsey electrode integral below.
+# A sweep carrying no context evaluates the conductivity at t = 0, which is what the Plonsey
+# simplifications assume; a transient conductivity is reached by handing `update_ecg!` the context.
+function _plonsey_quadrature_flux(φₘₑ, qp::Int, cell, cache::Plonsey1964ECGElementCache, pₑ, ctx)
+    (; Dcache, cellvalues) = cache.diffusion
+    κ = evaluate_coefficient(
+        Dcache,
+        cell,
+        QuadraturePoint(qp, Ferrite.getpoints(cellvalues.qr)[qp]),
+        _plonsey_time(ctx),
+    )
+    return κ ⋅ function_gradient(cellvalues, qp, φₘₑ)
+end
+
+_plonsey_time(::Nothing) = 0.0
+_plonsey_time(ctx) = evaluation_time(ctx)
+
+@doc raw"""
+    ElectrodePotentialFunctional(x::Vec)
+
+The reduction
+
+```math
+\int_\Omega \frac{\kappa \nabla \varphi_\mathrm{m}(\tilde{x}) \cdot (\tilde{x}-x)}{||\tilde{x}-x||^3} \mathrm{d}\tilde{x}
+```
+
+over the cells of a [`Plonsey1964ECGIntegrator`](@ref) operator, for the electrode at `x`. One
+sweep evaluates one electrode. The integral is volumetric, so the kind is declared over the cell
+family alone — an operator without the ECG element's cells fails the reduction's precondition
+instead of answering a silent zero.
+
+Reads the flux the last [`update_ecg!`](@ref) stored; evaluate through [`evaluate_ecg`](@ref),
+which applies the ``-1/(4\pi\kappa_\mathrm{t})`` prefactor.
+"""
+struct ElectrodePotentialFunctional{dim, T}
+    x::Vec{dim, T}
+end
+
+FerriteOperators.reduction_families(::Type{<:ElectrodePotentialFunctional}) = (:cells,)
+functional_value_type(::ElectrodePotentialFunctional{dim, T}) where {dim, T} = T
+
+function FerriteOperators.evaluate_cell_functional(
+    kind::ElectrodePotentialFunctional{dim, T},
+    cache::Plonsey1964ECGElementCache,
+    args::CellArgs,
+) where {dim, T}
+    cv     = cache.diffusion.cellvalues
+    coords = getcoordinates(args.cell)
+    κ∇φₘₑ  = get_range_for_cell(cache.κ∇φₘ, cellid(args.cell))
+    φₑ     = zero(T)
+    @inbounds for qp = 1:getnquadpoints(cv)
+        r = spatial_coordinate(cv, qp, coords) - kind.x
+        φₑ += κ∇φₘₑ[qp] ⋅ r/norm(r)^3 * getdetJdV(cv, qp)
     end
+    return φₑ
 end
 
 """
@@ -51,6 +116,10 @@ Calling [`evaluate_ecg`](@ref) with this method simply evaluates the following i
 The important simplifications taken are:
    1. Surrounding volume is an infinite, homogeneous sphere with isotropic conductivity
    2. The extracellular space and surrounding volume share the same isotropic, homogeneous conductivity tensor
+
+The cache owns a payload-free [`Plonsey1964ECGIntegrator`](@ref) operator over `op`'s dof handler,
+configured from `op`'s diffusion element. Both the flux sweep ([`update_ecg!`](@ref)) and the
+electrode integral ([`evaluate_ecg`](@ref)) run through it; nothing is assembled.
 """
 struct Plonsey1964ECGGaussCache{BufferType, OperatorType}
     # Buffer for storing "κ(x) ∇φₘ(x,t)" at the quadrature points
@@ -59,13 +128,13 @@ struct Plonsey1964ECGGaussCache{BufferType, OperatorType}
 end
 
 function Plonsey1964ECGGaussCache(op::BilinearFerriteOperator, φₘ::AbstractVector{T}) where {T}
-    @unpack dh, integrator = op
+    dh = get_dof_handler(op)
     @assert length(dh.field_names) == 1 "Multiple fields detected. Problem setup might be broken..."
-    grid = get_grid(dh)
-    sdim = Ferrite.getspatialdim(grid)
-    κ∇φₘ = construct_qvector(Vector{Vec{sdim, T}}, Vector{Int64}, grid, integrator.qrc)
-    compute_quadrature_fluxes!(κ∇φₘ, dh, φₘ, dh.field_names[1], integrator)
-    Plonsey1964ECGGaussCache(κ∇φₘ, op)
+    sdim  = Ferrite.getspatialdim(get_grid(dh))
+    κ∇φₘ  = setup_qvector(Vec{sdim, T}, dh, op.integrator.qrc)
+    cache = Plonsey1964ECGGaussCache(κ∇φₘ, setup_evaluation_operator(get_strategy(op), Plonsey1964ECGIntegrator(op.integrator, κ∇φₘ), dh))
+    update_ecg!(cache, φₘ)
+    return cache
 end
 
 """
@@ -78,72 +147,33 @@ Compute the pseudo ECG at a given point x by evaluating:
 For more information please read the docstring for [`Plonsey1964ECGGaussCache`](@ref)
 """
 function evaluate_ecg(method::Plonsey1964ECGGaussCache, x::Vec, κₜ::Real)
-    φₑ = 0.0
-    @unpack κ∇φₘ, op = method
-    @unpack dh = op
-    @assert length(dh.field_names) == 1 "Multiple fields detected. Problem setup might be broken..."
-    grid = get_grid(dh)
-    sdim = getspatialdim(grid)
-    for sdh in dh.subdofhandlers
-        ip         = Ferrite.getfieldinterpolation(sdh, first(dh.field_names))
-        firstcell  = getcells(grid, first(sdh.cellset))
-        ip_geo     = Ferrite.geometric_interpolation(typeof(firstcell))^sdim
-        element_qr = getquadraturerule(op.integrator.qrc, firstcell)
-        cv         = CellValues(element_qr, ip, ip_geo)
-        # Function barrier
-        φₑ += _evaluate_ecg_inner!(κ∇φₘ, method, x, κₜ, sdh, cv)
-    end
-
+    φₑ = FerriteOperators.evaluate_functional(
+        method.op,
+        ElectrodePotentialFunctional(x),
+        (;),
+        nothing,
+    )
     return -φₑ / (4π*κₜ)
 end
 
 function evaluate_ecg(method::Plonsey1964ECGGaussCache, x::AbstractVector{<:Vec}, κₜ::Real)
     φₑ = zeros(length(x))
     for i in eachindex(x)
-        φₑ = evaluate_ecg(method, x[i], κₜ)
+        φₑ[i] = evaluate_ecg(method, x[i], κₜ)
     end
     return φₑ
 end
 
-function _evaluate_ecg_inner!(κ∇φₘ, method::Plonsey1964ECGGaussCache, x::Vec, κₜ::Real, sdh, cv)
-    φₑ = 0.0
-    for cell ∈ CellIterator(sdh)
-        reinit!(cv, cell)
-        coords = getcoordinates(cell)
-        κ∇φₘe = get_data_for_index(κ∇φₘ, cellid(cell))
-        φₑ += _evaluate_ecg_plonsey_gauss(κ∇φₘe, coords, cv, x)
-    end
-    return φₑ
-end
+"""
+    update_ecg!(cache::Plonsey1964ECGGaussCache, φₘ::AbstractVector, ctx = nothing)
 
-function _evaluate_ecg_plonsey_gauss(
-    κ∇φₘ,
-    coords::AbstractVector{Vec{sdim, T}},
-    cv,
-    x::Vec{sdim, T},
-) where {sdim, T}
-    φₑ_local = 0.0
-    n_geom_basefuncs = Ferrite.getngeobasefunctions(cv)
-    @inbounds for (qp, w) in pairs(Ferrite.getweights(cv.qr))
-        # Compute dΩ
-        mapping = Ferrite.calculate_mapping(cv.geo_mapping, qp, coords)
-        dΩ = Ferrite.calculate_detJ(Ferrite.getjacobian(mapping)) * w
-        # Compute x̃
-        x̃ = spatial_coordinate(cv, qp, coords)
-        # Evaluate κ∇φₘ*(x̃-x)/||x̃-x||³
-        φₑ_local += κ∇φₘ[qp] ⋅ (x̃-x)/norm((x̃-x))^3 * dΩ
-    end
-    return φₑ_local
-end
-
-
-function update_ecg!(cache::Plonsey1964ECGGaussCache, φₘ::AbstractVector{T}) where {T}
-    @unpack op = cache
-    @unpack dh, integrator = op
-    grid = get_grid(dh)
-    sdim = Ferrite.getspatialdim(grid)
-    fill!(cache.κ∇φₘ.data, zero(eltype(cache.κ∇φₘ)))
-    compute_quadrature_fluxes!(cache.κ∇φₘ, dh, φₘ, dh.field_names[1], integrator)
+Refill the per-quadrature-point flux buffer `κ∇φₘ` from the transmembrane potential `φₘ`, in one
+sweep of the cache's operator. `ctx` is what the conductivity is evaluated at; without one it is
+the stationary `t = 0`.
+"""
+function update_ecg!(cache::Plonsey1964ECGGaussCache, φₘ::AbstractVector, ctx = nothing)
+    evaluate_quadrature!(cache.κ∇φₘ, cache.op, φₘ, nothing, _plonsey_quadrature_flux; ctx)
+    return nothing
 end
 
 """
@@ -224,7 +254,7 @@ function PoissonECGReconstructionCache(
     solution_vector_type = Vector{Float64},
     system_matrix_type = ThreadedSparseMatrixCSR{Float64, Int64},
     extracellular_potential_symbol = :φₑ,
-    strategy = SequentialAssemblyStrategy(SequentialCPUDevice()),
+    strategy = default_strategy(),
 )
     heart_dh = heart_fun.dh
     heart_grid = get_grid(heart_dh)
@@ -266,7 +296,7 @@ function PoissonECGReconstructionCache(
         system_matrix_type,
         torso_dh,
     )
-    update_operator!(source_op, 0.0) # Trigger assembly
+    update_operator!(source_op, nothing, TimeIntegrationContext(0.0, 0.0, 0.0)) # Trigger assembly
 
     torso_op = setup_assembled_operator(
         strategy,
@@ -278,7 +308,7 @@ function PoissonECGReconstructionCache(
         system_matrix_type,
         torso_dh,
     )
-    update_operator!(torso_op, 0.0) # Trigger assembly
+    update_operator!(torso_op, nothing, TimeIntegrationContext(0.0, 0.0, 0.0)) # Trigger assembly
 
     # Setup electrodes
     ph = PointEvalHandler(torso_grid, electrode_positions; warn = false)
@@ -310,7 +340,7 @@ function PoissonECGReconstructionCache(
     linear_solver        = LinearSolve.KrylovJL_CG(),
     solution_vector_type = Vector{Float64},
 )
-    torso_dh = torso_op.dh
+    torso_dh = get_dof_handler(torso_op)
     torso_ch = torso_fun.ch
     grid = get_grid(torso_dh)
     length(Ferrite.getfieldnames(torso_dh)) == 1 ||
@@ -354,7 +384,7 @@ end
 
 # Batch evaluate all electrodes
 function evaluate_ecg(cache::PoissonECGReconstructionCache)
-    dh = cache.torso_op.dh
+    dh = get_dof_handler(cache.torso_op)
     return evaluate_at_points(cache.ph, dh, cache.ϕₑ, first(dh.field_names))
 end
 
@@ -474,7 +504,7 @@ function Geselowitz1989ECGLeadCache(
     solution_vector_type = Vector{Float64},
     system_matrix_type   = ThreadedSparseMatrixCSR{Float64, Int64},
     lead_field_sym       = :Z,
-    strategy             = SequentialAssemblyStrategy(SequentialCPUDevice()),
+    strategy             = default_strategy(),
 )
     tmpsym = heart_fun.bilinear_term.sym
     lead_field_model = SteadyDiffusionModel(
@@ -510,7 +540,7 @@ function Geselowitz1989ECGLeadCache(
         system_matrix_type,
         sourcefun.dh,
     )
-    update_operator!(ϕₘ_op, 0.0) # Trigger assembly
+    update_operator!(ϕₘ_op, nothing, TimeIntegrationContext(0.0, 0.0, 0.0)) # Trigger assembly
 
     lead_op = setup_assembled_operator(
         strategy,
@@ -518,7 +548,7 @@ function Geselowitz1989ECGLeadCache(
         system_matrix_type,
         lead_field_fun.dh,
     )
-    update_operator!(lead_op, 0.0) # Trigger assembly
+    update_operator!(lead_op, nothing, TimeIntegrationContext(0.0, 0.0, 0.0)) # Trigger assembly
 
     lead_field_dh = lead_field_fun.dh
     heart_dh = heart_fun.dh
@@ -555,7 +585,7 @@ function Geselowitz1989ECGLeadCache(
     solution_vector_type = Vector{Float64},
     lead_field_sym       = :Z,
 )
-    lead_dh = lead_op.dh
+    lead_dh = get_dof_handler(lead_op)
     length(Ferrite.getfieldnames(lead_dh)) == 1 ||
         @warn "Multiple fields detected. Setup might be broken..."
     nelectrodes = length(electrode_positions)

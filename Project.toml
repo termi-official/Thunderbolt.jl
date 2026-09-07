@@ -1,6 +1,6 @@
 name = "Thunderbolt"
 uuid = "909927c2-98d5-4a67-bba9-79f03a9ad49b"
-version = "0.0.4"
+version = "0.0.5"
 
 [deps]
 Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
@@ -14,7 +14,6 @@ FerriteInterfaceElements = "76cf2c14-24ca-44b2-b86c-6046d3cfcf82"
 FerriteOperators = "27d9367a-5072-424e-9c5f-fe582399bac3"
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
-KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 LinearSolve = "7ed4a6bd-45f5-4d41-b270-4a48e9bafcae"
 Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
@@ -22,6 +21,7 @@ OrderedCollections = "bac558e1-5e72-5ebc-8fee-abe8a469f55d"
 OrdinaryDiffEqCore = "bbf590c4-e513-4bbe-9b18-05decba2e5d8"
 OrdinaryDiffEqOperatorSplitting = "760fc936-9fa0-4281-9c1a-468957eedc89"
 Polyester = "f517fe37-dbe3-4b94-8317-1923a5111588"
+PrecompileTools = "aea7be01-6a6a-4083-8856-8a6e6704d82a"
 Preferences = "21216c6a-2e73-6563-6e65-726566657250"
 ReadVTK = "dc215faf-f008-4882-a9f7-a79a826fadc3"
 RecursiveArrayTools = "731186ca-8d62-57ce-b412-fbd966d074cd"
@@ -43,14 +43,12 @@ WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192"
 AlgebraicMultigrid = "2169fc97-5a83-5252-b627-83903c6c433c"
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 FerriteMultigrid = "69a0a054-a29c-4d77-8818-cd7ec12cfcdc"
-GPUArrays = "0c68f7d7-f131-5f86-a1c3-88cf8149b2d7"
 ModelingToolkit = "961ee093-0014-501f-94e3-6117800e7a78"
 SciCompDSL = "91a8cdf1-4ca6-467b-a780-87fda3fff15e"
 
 [extensions]
-CuThunderboltExt = ["CUDA", "GPUArrays"]
+CuThunderboltExt = "CUDA"
 ThunderboltFerriteMultigridExt = ["AlgebraicMultigrid", "FerriteMultigrid"]
-ThunderboltGPUArraysExt = "GPUArrays"
 ThunderboltMTKExt = "ModelingToolkit"
 ThunderboltMTKModelsExt = ["ModelingToolkit", "SciCompDSL"]
 
@@ -63,14 +61,12 @@ ConcreteStructs = "0.2.3"
 DiffEqBase = "7"
 DynamicQuantities = "1.13.0"
 FastBroadcast = "1"
-Ferrite = "1.6"
+Ferrite = "1.7"
 FerriteInterfaceElements = "1.0.0"
 FerriteMultigrid = "0.2"
-FerriteOperators = "0.3.7"
+FerriteOperators = "0.4"
 ForwardDiff = "1"
-GPUArrays = "11.4.0"
 JET = "0.9, 0.11"
-KernelAbstractions = "0.9.34"
 LinearSolve = "3"
 Logging = "1.10"
 MatrixDepot = "1.0.13"
@@ -80,6 +76,7 @@ OrdinaryDiffEqLowOrderRK = "2"
 OrdinaryDiffEqNonlinearSolve = "2"
 OrdinaryDiffEqOperatorSplitting = "0.4"
 OrdinaryDiffEqTsit5 = "2"
+PrecompileTools = "1"
 Preferences = "1"
 RecursiveArrayTools = "4"
 SciCompDSL = "1.0.0"
@@ -87,9 +84,15 @@ SciMLBase = "3"
 SciMLIterators = "1.0.0"
 SciMLLogging = "2.0.0"
 SymbolicIndexingInterface = "0.3.46"
+# SymbolicUtils 4.46 dropped the ImmutableDict constructor piracy Symbolics 7.36 still calls, which
+# breaks the whole ModelingToolkit test stack at precompile. Lift when Symbolics adapts.
+SymbolicUtils = "~4.45"
 UnPack = "1"
 julia = "1.10"
 
+# FerriteMultigrid is a weak dependency and a test extra, so `Pkg.develop` cannot record its path
+# without promoting it to a hard dependency. No registered version carries FerriteOperators 0.4
+# compat yet, so the local checkout is named here instead.
 [extras]
 AlgebraicMultigrid = "2169fc97-5a83-5252-b627-83903c6c433c"
 Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
@@ -107,8 +110,9 @@ Pkg = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
 SHA = "ea8e919c-243c-51af-8825-aaa63cd721ce"
 SciCompDSL = "91a8cdf1-4ca6-467b-a780-87fda3fff15e"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+SymbolicUtils = "d1185830-fcd6-423d-90d6-eec64667417b"
 Tensors = "48a634ad-e948-5137-8d70-aa71f2a747f4"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["AlgebraicMultigrid", "Aqua", "DelimitedFiles", "FerriteGmsh", "FerriteMultigrid", "JET", "ModelingToolkit", "OrdinaryDiffEqLowOrderRK", "OrdinaryDiffEqNonlinearSolve", "OrdinaryDiffEqTsit5", "ParallelTestRunner", "Pkg", "SHA", "SciCompDSL", "StaticArrays", "Tensors", "Test", "MatrixDepot"]
+test = ["AlgebraicMultigrid", "Aqua", "DelimitedFiles", "FerriteGmsh", "FerriteMultigrid", "JET", "ModelingToolkit", "OrdinaryDiffEqLowOrderRK", "OrdinaryDiffEqNonlinearSolve", "OrdinaryDiffEqTsit5", "ParallelTestRunner", "Pkg", "SHA", "SciCompDSL", "StaticArrays", "SymbolicUtils", "Tensors", "Test", "MatrixDepot"]

@@ -210,7 +210,7 @@ function OS.forward_sync_external!(
 )
     # Tying holds a buffer for the 3D problem with some meta information about the 0D problem
     for chamber ∈ sync.tying.chambers
-        pressure = outer_integrator.u[chamber.pressure_dof_index_global]
+        pressure = outer_integrator.u[chamber.pressure_dof_index]
         inner_integrator.p[chamber.pressure_parameter_index_local] = pressure
     end
 end
