@@ -20,7 +20,7 @@ mesh = generate_ideal_lv_mesh(16,4,19;
     longitudinal_upper = 0.4,
     apex_inner = scaling_factor* 1.3,
     apex_outer = scaling_factor*1.5,
-    with_control_point = true,
+    with_valvular_plane = true,
 )
 
 coordinate_system = compute_lv_coordinate_system(mesh; subdomains = ["myocardium"])
@@ -58,13 +58,19 @@ active_stress_model = ActiveStressModel(
 weak_boundary_conditions = (RobinBC(1.0, "Epicardium"),NormalSpringBC(100.0, "Base"))
 solid_model = QuasiStaticModel(:displacement, active_stress_model, weak_boundary_conditions);
 
+valvular_plane_model = QuasiStaticModel(
+    :displacement,
+    PK1Model(
+        BioNeoHookean(; α = 16000.0, mpU = SimpleCompressionPenalty(16000.0)),
+        NoMicrostructureModel(),
+    ),
+);
+
 fluid_model = RSAFDQ2022LumpedCicuitModel(; lv_pressure_given = false)
 coupler = LumpedFluidSolidCoupler(
     [
         ChamberVolumeCoupling(
-            "Endocardium",
-            "lv-volume-control",
-            RSAFDQ2022SurrogateVolume(),
+            "LVChamberSurface",
             :Vₗᵥ,
             :pₗᵥ,
             :pₗᵥ,
@@ -73,17 +79,14 @@ coupler = LumpedFluidSolidCoupler(
     :displacement,
 )
 
-coupled_model = RSAFDQ2022Model(Dict("myocardium" => solid_model), fluid_model, coupler);
+coupled_model = RSAFDQ2022Model(
+    Dict("myocardium" => solid_model, "valvular-plane" => valvular_plane_model),
+    fluid_model,
+    coupler,
+);
 
 spatial_discretization_method = FiniteElementDiscretization(
-    Dict(:displacement => LagrangeCollection{1}()^3);
-    dbcs = [
-        Dirichlet(:displacement, getfacetset(mesh, "Base"), (x,t) -> [0.0], [3]),
-        Dirichlet(:displacement, getnodeset(mesh, "MyocardialAnchor1"), (x,t) -> (0.0, 0.0, 0.0), [1,2,3]),
-        Dirichlet(:displacement, getnodeset(mesh, "MyocardialAnchor2"), (x,t) -> (0.0, 0.0), [2,3]),
-        Dirichlet(:displacement, getnodeset(mesh, "MyocardialAnchor3"), (x,t) -> (0.0,), [3]),
-        Dirichlet(:displacement, getnodeset(mesh, "MyocardialAnchor4"), (x,t) -> (0.0,), [3])
-    ],
+    Dict(:displacement => LagrangeCollection{1}()^3),
 )
 splitform = semidiscretize(
     RSAFDQ2022Split(coupled_model),
@@ -101,9 +104,7 @@ chamber_solver = HomotopyPathSolver(
     NewtonRaphsonSolver(;
         max_iter=10,
         tol=1e-2,
-        inner_solver=SchurComplementLinearSolver(
-            LinearSolve.UMFPACKFactorization()
-        )
+        inner_solver=SchurComplementLinearSolver(LinearSolve.UMFPACKFactorization())
     )
 )
 blood_circuit_solver = Tsit5()

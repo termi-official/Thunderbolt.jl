@@ -37,7 +37,7 @@ mesh = generate_ideal_lv_mesh(16,4,19;
     longitudinal_upper = 0.4,
     apex_inner = scaling_factor* 1.3,
     apex_outer = scaling_factor*1.5,
-    with_control_point = true,
+    with_valvular_plane = true,
 )
 
 coordinate_system = compute_lv_coordinate_system(mesh; subdomains = ["myocardium"])
@@ -74,15 +74,38 @@ active_stress_model = ActiveStressModel(
 )
 weak_boundary_conditions = (RobinBC(1.0, "Epicardium"),NormalSpringBC(100.0, "Base"))
 solid_model = QuasiStaticModel(:displacement, active_stress_model, weak_boundary_conditions);
+# The mesh was generated with a valvular plane, a meshed cap closing the basal orifice, so that the
+# chamber volume is the divergence-theorem integral over a *closed* surface and stays the cavity
+# volume however the base moves. The cap stands for the closed mitral valve together with its
+# annulus, and the chamber pressure of the coupler below acts on its ventricular face, so it has to
+# carry that pressure without bulging: it is a *stiff* isotropic closure, `α = 16000` giving a
+# Young's modulus of about 80 MPa, four orders of magnitude above the myocardial small-strain shear
+# modulus -- a fibrous rather than a muscular structure. At peak systolic pressure (≈ 14.6 kPa here)
+# that holds the cap's deflection relative to the annulus ring to ≈ 1.3 % of the cavity radius.
+#
+# `mpU` is set equal to `α`, i.e. a Poisson ratio of ≈ 0.29: the cap is a closure and not tissue, so
+# there is no reason to make it nearly incompressible, and a compressible one spares the single
+# element the plate is thick from volumetric locking. There is no active stress and no
+# microstructure.
+#
+# !!! warning
+#     A cap at tissue stiffness is by far the most compliant part of the chamber. It then takes up
+#     the volume change that the wall should be doing, and the ventricle never builds systolic
+#     pressure at all -- the mitral valve of the 0D circuit stays open and the chamber just fills.
+valvular_plane_model = QuasiStaticModel(
+    :displacement,
+    PK1Model(
+        BioNeoHookean(; α = 16000.0, mpU = SimpleCompressionPenalty(16000.0)),
+        NoMicrostructureModel(),
+    ),
+);
 
 # The solid model is now couple with the circuit model by adding a Lagrange multipliers constraining the 3D chamber volume to match the chamber volume in the 0D model.
 fluid_model = RSAFDQ2022LumpedCicuitModel(; lv_pressure_given = false)
 coupler = LumpedFluidSolidCoupler(
     [
         ChamberVolumeCoupling(
-            "Endocardium",
-            "lv-volume-control",
-            RSAFDQ2022SurrogateVolume(),
+            "LVChamberSurface",
             :Vₗᵥ,
             :pₗᵥ,
             :pₗᵥ,
@@ -92,21 +115,23 @@ coupler = LumpedFluidSolidCoupler(
 )
 # The structural model is keyed by the subdomain it lives on, exactly as for an uncoupled mechanics
 # problem. Note that the subdomain map goes *inside* the coupled model: `RSAFDQ2022Split` annotates
-# the whole 3D-0D problem, so it is not itself something that lives on a subdomain.
-coupled_model = RSAFDQ2022Model(Dict("myocardium" => solid_model), fluid_model, coupler);
+# the whole 3D-0D problem, so it is not itself something that lives on a subdomain. The cap is a
+# subdomain of the coupled problem like the wall is: the tying facets are the whole closed surface,
+# so the chamber pressure acts on the cap too and the coupler is added to both models.
+coupled_model = RSAFDQ2022Model(
+    Dict("myocardium" => solid_model, "valvular-plane" => valvular_plane_model),
+    fluid_model,
+    coupler,
+);
 # !!! todo
 #     Once we figure out a nicer way to do this we should add more detailed docs here.
 
 # Now we semidiscretize the model spatially as usual with finite elements and annotate the model with a stable split.
+# There is no Dirichlet condition: the epicardial Robin spring already pins every rigid body mode,
+# and the base is left to the pericardial spring above rather than clamped, because the cap is what
+# makes the chamber volume well defined while the base moves.
 spatial_discretization_method = FiniteElementDiscretization(
-    Dict(:displacement => LagrangeCollection{1}()^3);
-    dbcs = [
-        Dirichlet(:displacement, getfacetset(mesh, "Base"), (x,t) -> [0.0], [3]),
-        Dirichlet(:displacement, getnodeset(mesh, "MyocardialAnchor1"), (x,t) -> (0.0, 0.0, 0.0), [1,2,3]),
-        Dirichlet(:displacement, getnodeset(mesh, "MyocardialAnchor2"), (x,t) -> (0.0, 0.0), [2,3]),
-        Dirichlet(:displacement, getnodeset(mesh, "MyocardialAnchor3"), (x,t) -> (0.0,), [3]),
-        Dirichlet(:displacement, getnodeset(mesh, "MyocardialAnchor4"), (x,t) -> (0.0,), [3])
-    ],
+    Dict(:displacement => LagrangeCollection{1}()^3),
 )
 splitform = semidiscretize(
     RSAFDQ2022Split(coupled_model),
@@ -120,14 +145,14 @@ tspan = (0.0, 3*800.0)
 # This speeds up the CI #hide
 tspan = (0.0, 10.0);    #hide
 
-# The remaining code is very similar to how we use SciML solvers.
+# The remaining code is very similar to how we use SciML solvers. The 3D-0D operator assembles
+# into a block matrix, structural block and chamber-pressure block, so the inner solver is a
+# Schur complement solve around a factorization of the structural block.
 chamber_solver = HomotopyPathSolver(
     NewtonRaphsonSolver(;
         max_iter=10,
         tol=1e-2,
-        inner_solver=SchurComplementLinearSolver(
-            LinearSolve.UMFPACKFactorization()
-        )
+        inner_solver=SchurComplementLinearSolver(LinearSolve.UMFPACKFactorization())
     )
 )
 blood_circuit_solver = Tsit5()
