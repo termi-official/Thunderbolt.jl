@@ -1,3 +1,9 @@
+# TODO retarget onto the FerriteOperators GPU device slice (the "true GPU assembly" work item):
+# this file compares a host assembled linear operator against a device assembled one, and the device
+# assembly strategy it names (`ElementAssemblyStrategy`, `CudaDevice`) no longer exists. Assembly on
+# the GPU is a FerriteOperators device concern now, so this test has no target until that device
+# type ships. Not included by `runtests.jl` until then.
+
 @testset "Operator API" begin
     left  = Vec((-1.0f0, -1.0f0)) # define the left bottom corner of the grid.
     right = Vec((1.0f0, 1.0f0)) # define the right top corner of the grid.

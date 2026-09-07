@@ -155,9 +155,15 @@ problem = OperatorSplittingProblem(odeform, u₀, tspan);
 
 # !!! tip
 #     If we want to solve the problem on the GPU, or if we want to use special matrix and vector formats, we just need to adjust the vector and matrix types.
-#     For example, if we want to problem to be solved on a CUDA GPU with 32 bit precision, then we need to adjust the types as follows.
+#     For example, if we want the problem to be solved on a CUDA GPU with 32 bit precision, then we need to adjust the types as follows.
 #     ```
+#     cell_model = Thunderbolt.ParametrizedFHNModel{Float32}()
+#     ...
+#     u₀ = create_initial_condition(odeform, Float32)
+#     setvariable!(u₀, odeform, :φₘ) do x ... end
+#     setvariable!(u₀, odeform, :s) do x ... end
 #     u₀gpu = CuVector(u₀)
+#
 #     heat_timestepper = BackwardEulerSolver(
 #       solution_vector_type=CuVector{Float32},
 #       system_matrix_type=CUDA.CUSPARSE.CuSparseMatrixCSR{Float32, Int32},
@@ -170,6 +176,21 @@ problem = OperatorSplittingProblem(odeform, u₀, tspan);
 #     ...
 #     problem = OperatorSplittingProblem(odeform, u₀gpu, tspan)
 #     ```
+#     Four things are worth knowing about that variant.
+#
+#     * `create_initial_condition` and `setvariable!` write into a host vector by construction, so
+#       the initial condition is built first and transferred afterwards -- in that order.
+#     * The cell model is evaluated inside the reaction kernel, and `Thunderbolt.FHNModel` is
+#       `ParametrizedFHNModel{Float64}`, so it would run the hot loop in double precision against
+#       single precision storage. Naming the precision fixes that.
+#     * `reaction_threshold` carries the precision of the solution vector, hence `0.1f0`.
+#     * The output loop below reads the solution through Ferrite, which indexes it elementwise, so it
+#       needs a host copy: `Thunderbolt.store_timestep_field!(file, t, Array(u), φₘ)`.
+#
+# !!! note
+#     The system matrix moves to the device, the assembly does not: the operators are assembled on
+#     the host with the model's assembly strategy and mirrored into the device matrix. What runs on
+#     the GPU is the linear solve, the reaction step and the splitting itself.
 
 # Now we initialize our time integrator as usual.
 integrator = init(problem, timestepper, dt=dt₀);

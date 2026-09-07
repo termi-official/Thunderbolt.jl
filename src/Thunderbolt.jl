@@ -79,6 +79,7 @@ import FerriteInterfaceElements:
     InterfaceCellInterpolation, InterfaceCellValues, InterfaceCell, getdetJdV_average
 
 import FerriteOperators:
+    AbstractBilinearOperator,
     BilinearFerriteOperator,
     LinearFerriteOperator,
     LinearNullOperator,

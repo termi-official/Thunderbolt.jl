@@ -1,0 +1,92 @@
+# The heat subproblem on its own, which is the path a device system matrix takes: the operators are
+# assembled on the host and mirrored into a `CuSparseMatrix`, and everything the backward Euler stage
+# does afterwards -- combining the mass and diffusion nonzeros, `M uₙ₋₁`, the CG solve -- happens on
+# the device. A stimulus is applied so the source operator is non-null and its host vector actually
+# has to reach the device solution vector.
+
+function _diffusion_form(; n = 32)
+    mesh = generate_mesh(Quadrilateral, (n, n), Vec{2}((0.0, 0.0)), Vec{2}((2.5, 2.5)))
+    cs = CartesianCoordinateSystem(mesh)
+    model = TransientDiffusionModel(
+        ConstantCoefficient(SymmetricTensor{2, 2, Float64}((4.5e-5, 0.0, 2.0e-5))),
+        AnalyticalTransmembraneStimulationProtocol(
+            AnalyticalCoefficient((x, t) -> exp(-norm(x - Vec((1.25, 1.25)))^2), cs),
+            [SVector((0.0, 5.0))],
+        ),
+        :u,
+    )
+    return semidiscretize(
+        model,
+        FiniteElementDiscretization(Dict(:u => LagrangeCollection{1}())),
+        mesh,
+    )
+end
+
+@testset "Transient diffusion with a device system matrix" begin
+    odefun = _diffusion_form()
+    tspan  = (0.0f0, 1.0f0)
+    Δt     = 0.1f0
+    nsteps = 5
+
+    u₀ = zeros(Float32, solution_size(odefun))
+    u₀[1:2:end] .= 1.0f0
+
+    inner_solver() = KrylovJL_CG(atol = 1.0f-10, rtol = 1.0f-8)
+
+    cpu = init(
+        Thunderbolt.ODEProblem(odefun, copy(u₀), tspan),
+        BackwardEulerSolver(
+            solution_vector_type = Vector{Float32},
+            system_matrix_type   = ThreadedSparseMatrixCSR{Float32, Int32},
+            inner_solver         = inner_solver(),
+        );
+        dt = Δt,
+    )
+    for _ = 1:nsteps
+        step!(cpu)
+    end
+    @test cpu.u ≉ u₀
+
+    # Both device formats are exercised, because they carry different assumptions: the CSR is built
+    # by handing the CSC arrays over unchanged and is therefore the transpose (see
+    # `create_system_matrix` in `ext/CuThunderboltExt.jl`), while the CSC is a faithful upload.
+    # Agreeing with the host arm is what says the symmetry that licenses the former holds here.
+    @testset "$SpMatType" for SpMatType in (
+        CUDA.CUSPARSE.CuSparseMatrixCSR{Float32, Int32},
+        CUDA.CUSPARSE.CuSparseMatrixCSC{Float32, Int32},
+    )
+        gpu = init(
+            Thunderbolt.ODEProblem(odefun, CuVector(u₀), tspan),
+            BackwardEulerSolver(
+                solution_vector_type = CuVector{Float32},
+                system_matrix_type   = SpMatType,
+                inner_solver         = inner_solver(),
+            );
+            dt = Δt,
+        )
+        @test gpu.cache.stage.M isa Thunderbolt.MirroredBilinearOperator
+        @test gpu.cache.stage.M.A isa SpMatType
+        @test gpu.cache.stage.linear_solver.A isa SpMatType
+
+        for _ = 1:nsteps
+            step!(gpu)
+        end
+        # Same Float32 arithmetic on both arms; what separates them is the reduction order of the
+        # two CG implementations. See the tolerance note in `test_split.jl`.
+        @test Array(gpu.u) ≈ cpu.u rtol = 1.0f-5
+    end
+end
+
+@testset "Cross device vector addition" begin
+    n      = 64
+    host   = rand(Float64, n)
+    device = CuVector(rand(Float32, n))
+
+    b = copy(host)
+    Thunderbolt.FerriteOperators.__add_to_vector!(b, device)
+    @test b ≈ host .+ Array(device)
+
+    b = copy(device)
+    Thunderbolt.FerriteOperators.__add_to_vector!(b, host)
+    @test Array(b) ≈ Array(device) .+ host
+end

@@ -68,14 +68,73 @@ function setup_operator(
 )
     setup_assembled_operator(strategy, integrator, solver.system_matrix_type, dh)
 end
+
+"""
+    setup_assembled_operator(strategy, integrator, system_matrix_type, dh)
+
+Materialize `integrator` against `dh` into the operator a solver requesting `system_matrix_type` can
+step with.
+
+The device that assembles and the format the solver wants its system matrix in are independent
+choices -- the model carries `strategy`, the solver carries `system_matrix_type` -- and this is where
+they meet. Where both live on the host they may still differ in *format*: the affine backward Euler
+stage reads the mass and diffusion matrices only through `nonzeros`, and every host allocator emits
+the same ordering for one dof handler, so the requested format is simply not needed here. Across a
+device boundary that no longer holds, and the extension method returns a
+[`MirroredBilinearOperator`](@ref) instead.
+"""
 function setup_assembled_operator(
     strategy::AssemblyStrategy{<:FullAssembly, SequentialScheduling, <:AbstractCPUDevice},
     integrator::AbstractBilinearIntegrator,
     system_matrix_type::Type,
     dh::AbstractDofHandler,
 )
-    setup_operator(strategy, integrator, dh) # FIXME
+    setup_operator(strategy, integrator, dh)
 end
+
+"""
+    MirroredBilinearOperator(host_operator, A)
+
+A bilinear operator assembled by `host_operator` on the host, whose matrix is mirrored into `A`.
+
+`update_operator!` runs the host assembly and then refreshes `A`, so everything downstream --
+`mul!`, and the `nonzeros` the affine backward Euler stage combines -- sees only `A`. That
+correspondence is entrywise, so `A` has to be allocated by the same [`create_system_matrix`](@ref)
+call as the stage matrix it is combined into; nothing here can check that beyond the entry count.
+"""
+struct MirroredBilinearOperator{OperatorType, MatrixType, BufferType} <: AbstractBilinearOperator
+    host_operator::OperatorType
+    A::MatrixType
+    # Staging buffer in the mirror's value type. The host assembles in the strategy's value type,
+    # which is not in general the solver's, and a cross-device `copyto!` needs the two to match.
+    nzbuffer::BufferType
+end
+
+function MirroredBilinearOperator(host_operator, A)
+    nnz_host   = length(nonzeros(host_operator.A))
+    nnz_mirror = length(nonzeros(A))
+    nnz_host == nnz_mirror || error(
+        "Cannot mirror a $(nnz_host) entry matrix into a $(nnz_mirror) entry one. Both are " *
+        "allocated from the same dof handler, so the two allocators disagree about the sparsity " *
+        "pattern and the entrywise correspondence the mirror relies on does not exist.",
+    )
+    return MirroredBilinearOperator(
+        host_operator,
+        A,
+        Vector{eltype(nonzeros(A))}(undef, nnz_mirror),
+    )
+end
+
+function update_operator!(op::MirroredBilinearOperator, p, ctx = nothing)
+    update_operator!(op.host_operator, p, ctx)
+    op.nzbuffer .= nonzeros(op.host_operator.A)
+    copyto!(nonzeros(op.A), op.nzbuffer)
+    return nothing
+end
+
+mul!(out::AbstractVector, op::MirroredBilinearOperator, in::AbstractVector) = mul!(out, op.A, in)
+mul!(out::AbstractVector, op::MirroredBilinearOperator, in::AbstractVector, α, β) =
+    mul!(out, op.A, in, α, β)
 
 # Nonlinear
 """
@@ -111,6 +170,13 @@ update_constraints!(f, solver_cache::AbstractTimeSolverCache, t) = nothing
 create_system_matrix(T::Type{<:AbstractMatrix}, f::AbstractSemidiscreteFunction) =
     create_system_matrix(T, f.dh)
 
+# The CSC arrays are handed to the CSR type unchanged, so what this returns is the CSR of `Aᵀ`, and
+# every operator assembled into it is assumed symmetric. Deliberate, not incidental: the entrywise
+# `nonzeros` correspondence between this matrix and the CSC ones the operators own is what
+# `_implicit_euler_heat_solver_update_system_matrix!` combines them through, and a faithful CSC→CSR
+# conversion would reorder the entries and break it. The CUDA extension's
+# `create_system_matrix(::Type{<:CuSparseMatrixCSR}, dh)` carries the same assumption for the same
+# reason; the two have to be changed together.
 function create_system_matrix(
     ::Type{<:ThreadedSparseMatrixCSR{Tv, Ti}},
     dh::AbstractDofHandler,

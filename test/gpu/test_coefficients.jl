@@ -1,3 +1,9 @@
+# TODO retarget onto the FerriteOperators GPU device slice (the "true GPU assembly" work item):
+# this file evaluates every coefficient family at quadrature points inside a `@cuda` kernel over a
+# device dof handler, and both of those -- `Thunderbolt.CudaDevice()` and
+# `adapt_structure(device, dh)` -- were removed with the FerriteOperators transition. The hand
+# computed reference values below are the reason it is kept rather than deleted; they are what the
+# retargeted version should assert against. Not included by `runtests.jl` until then.
 
 """
     coeffs_kernel!(Vals, sdh, coeff_cache, cv, t)

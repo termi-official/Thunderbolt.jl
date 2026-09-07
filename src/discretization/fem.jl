@@ -370,6 +370,23 @@ function _cell_coordinates(model, dh, φsym, cellset = nothing)
     return cs === nothing ? nothing : evaluate_coefficient_at_dof_locations(cs, dh, φsym; cellset)
 end
 
+"""
+    _contiguous_if_possible(dofs)
+
+The same index set, as a `UnitRange` where the values allow it.
+
+A split's index sets are what `OrdinaryDiffEqOperatorSplitting` addresses the outer solution vector
+with, once per child per step. Over a `UnitRange` that is a contiguous view; over a `Vector{Int}` it
+is a gather, which on an accelerator additionally uploads the index vector on every access. Which
+one a set is, is a property of its values -- contiguous for a single domain state block, genuinely
+strided for the multi-domain sets built further below -- so it is read off rather than assumed.
+"""
+function _contiguous_if_possible(dofs::Vector{Int})
+    isempty(dofs) && return dofs
+    contiguous = first(dofs):last(dofs)
+    return dofs == contiguous ? contiguous : dofs
+end
+
 function semidiscretize(
     split::ReactionDiffusionSplit{<:MonodomainModel},
     discretization::FiniteElementDiscretization,
@@ -400,7 +417,7 @@ function semidiscretize(
     # construction rather than by a test noticing afterwards.
     φpoints = solution_variable(odefun, reaction_state_symbol(epmodel)).points
     φidx = transmembranepotential_index(ion)
-    heat_dofrange = [state_range(φpoints, j)[φidx] for j = 1:ndofsφ]
+    heat_dofrange = _contiguous_if_possible([state_range(φpoints, j)[φidx] for j = 1:ndofsφ])
     ode_dofrange = 1:(nstates_per_point*ndofsφ)
     #
     semidiscrete_ode = GenericSplitFunction(
