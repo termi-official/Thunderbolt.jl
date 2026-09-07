@@ -220,11 +220,6 @@ function _jld2_maybe_store(io::JLD2Writer, t, grid::AbstractGrid)
     io.grid = grid
 end
 
-function store_nodal_data!(io::JLD2Writer, t, grid::AbstractGrid, name::String)
-    _jld2_maybe_store(io, t, grid)
-    io.fd["timesteps/$t/nodal/$name"] = u
-end
-
 function store_timestep_field!(
     io::JLD2Writer,
     t,
@@ -240,7 +235,7 @@ function store_timestep_field!(
 end
 
 function store_timestep_celldata!(io::JLD2Writer, t, u, name::String)
-    @assert lengtu(u) === ncells(io.grid)
+    @assert length(u) === ncells(io.grid)
     io.fd["timesteps/$t/celldata/$name"] = u
 end
 
