@@ -68,7 +68,9 @@ function surface_volumes(grid, facets, coordinates = nothing)
         x =
             coordinates === nothing ? getcoordinates(grid, facet[1]) :
             [coordinates[nodeid] for nodeid in cell.nodes]
-        reinit!(fv, cell, x, facet[2])
+        # Qualified: the SciML stack exports a `reinit!` of its own, and this file is included into
+        # test modules that load it.
+        Ferrite.reinit!(fv, cell, x, facet[2])
         for qp = 1:getnquadpoints(fv)
             n  = getnormal(fv, qp)
             xq = spatial_coordinate(fv, qp, x)

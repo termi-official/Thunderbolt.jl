@@ -22,7 +22,7 @@ testsuite = find_tests(TESTDIR)   # NOT the `pwd()` default: from the repo root 
 # Not part of the suite:
 #   testfixtures — shared helpers, included by the files that need them
 #   gpu/*        — needs CUDA and its own project, no CI job yet
-#   data/*       — fixture data (e.g. the pinned RSAFDQ reference), read by the tests that need it
+#   data/*       — fixture data (meshes, exported fields), read by the tests that need it
 #
 # Part of the suite, less obviously so:
 #   validation/* — `land2015` reproduces a published benchmark; slow, but it runs on every invocation
@@ -53,9 +53,10 @@ end
 
 # Every worker gets `INTEGRATION_THREADS` threads. `addworker` otherwise pins JULIA_NUM_THREADS=1,
 # which would silently drop the coverage of the threaded per-color assembly the integration tests
-# and `test_rsafdq_operator`'s threaded-vs-sequential equivalence testset rely on; `-t` overrides the
-# env var. Passing `exeflags` here rather than through a per-file `test_worker` keeps the process
-# count at `jobs`: a `test_worker` spawns its own worker while the file still holds a pool slot.
+# rely on -- `test/integration/test_fsi.jl`'s threaded-vs-sequential equivalence testset degenerates
+# to a no-op on a single-threaded worker; `-t` overrides the env var. Passing `exeflags` here rather
+# than through a per-file `test_worker` keeps the process count at `jobs`: a `test_worker` spawns its
+# own worker while the file still holds a pool slot.
 # Keep the product of jobs x threads at or below the core count — Polyester spins, so
 # oversubscription hurts more than it helps.
 runtests(Thunderbolt, args; testsuite, init_code, exeflags = ["--threads=$(INTEGRATION_THREADS)"])

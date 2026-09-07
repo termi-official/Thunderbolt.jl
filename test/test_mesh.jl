@@ -146,7 +146,8 @@ include(joinpath(@__DIR__, "testfixtures.jl"))
 
         @testset "the plate is additive" begin
             # The ventricle itself is untouched by the closure: same nodes, same cells, same sets,
-            # in the same order. `test/test_rsafdq_operator.jl` pins assembled values on it.
+            # in the same order -- `test/integration/test_fsi.jl` builds its coupled operator on this
+            # mesh and pins the dof layout that this order decides.
             @test getnnodes(mesh) == getnnodes(plain) + 2*nc*(np-1) + 2
             @test getncells(mesh) == getncells(plain) + nc*np
             @test Set(getcellset(mesh, "myocardium")) == Set(1:getncells(plain))
@@ -451,7 +452,7 @@ include(joinpath(@__DIR__, "testfixtures.jl"))
 
         @testset "single chamber generator unchanged" begin
             # The refactor that gave both generators their shared builders may not move the
-            # single-chamber mesh: `test/test_rsafdq_operator.jl` pins assembled values on it.
+            # single-chamber mesh: `test/integration/test_fsi.jl` builds its coupled operator on it.
             lv = generate_ideal_lv_mesh(4, 2, 2)
             @test getnnodes(lv) == 4*3*3 + 3
             @test getncells(lv) == 4*2*2 + 4*2
