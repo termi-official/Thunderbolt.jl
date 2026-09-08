@@ -6,6 +6,39 @@ function FerriteOperators.getquadraturerule(
 end
 
 """
+    element_precision(qr) -> Type
+
+The scalar type an element built on `qr` evaluates in — the precision the
+integrator elected through its quadrature collection, read off the rule that
+collection produced. `CellValues(qr, ip, ip_geo)` is `Float64` whatever the rule
+carries, so every cache built here spells `CellValues(element_precision(qr), qr,
+ip, ip_geo)`.
+
+Read off the RULE rather than the collection so `src/` keeps loading against
+FerriteOperators versions whose collections are `Float64` only.
+"""
+element_precision(qr::QuadratureRule) = eltype(Ferrite.getweights(qr))
+element_precision(cv::Ferrite.AbstractValues) = eltype(Ferrite.shape_value_type(cv))
+
+"""
+    element_matrix_buffer(cv, sdh)
+    element_vector_buffer(cv, sdh)
+
+The element-local buffers of a cache evaluating through `cv`, in that values
+object's own precision — `Float32` values must not accumulate into `Float64`
+buffers.
+
+Spelled on FerriteOperators' `allocate_element_*` hooks rather than on its
+element precision trait, which `src/` cannot name while it also loads against
+FerriteOperators 0.4; against that version these return exactly the default they
+replace.
+"""
+element_matrix_buffer(cv, sdh) =
+    zeros(element_precision(cv), ndofs_per_cell(sdh), ndofs_per_cell(sdh))
+@doc (@doc element_matrix_buffer) element_vector_buffer(cv, sdh) =
+    zeros(element_precision(cv), ndofs_per_cell(sdh))
+
+"""
     InterpolationCollection
 
 A collection of compatible interpolations over some (possilby different) cells.

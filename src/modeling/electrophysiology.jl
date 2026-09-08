@@ -270,8 +270,7 @@ function setup_element_cache(
     protocol::AnalyticalTransmembraneStimulationProtocol,
     qr,
     sdh::SubDofHandler,
-    ::Type{T} = Float64,
-) where {T}
+)
     @assert length(sdh.dh.field_names) == 1 "Support for multiple fields not yet implemented."
     field_name = first(sdh.dh.field_names)
     ip = Ferrite.getfieldinterpolation(sdh, field_name)
@@ -279,7 +278,7 @@ function setup_element_cache(
     AnalyticalCoefficientElementCache(
         setup_coefficient_cache(protocol.f, qr, sdh),
         protocol.nonzero_intervals,
-        CellValues(T, qr, ip, ip_geo), # TODO something more lightweight
+        CellValues(element_precision(qr), qr, ip, ip_geo), # TODO something more lightweight
     )
 end
 

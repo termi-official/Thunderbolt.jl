@@ -200,6 +200,7 @@ problem = OperatorSplittingProblem(odeform, u₀, tspan);
 #
 #     spatial_discretization_method = FiniteElementDiscretization(
 #         Dict(:φₘ => LagrangeCollection{1}()),
+#         qrcs = Dict(:φₘ => QuadratureRuleCollection(Float32, 2)),
 #         assembly_strategy = AssemblyStrategy(
 #             KernelAbstractionsDevice(CUDABackend(); value_type=Float32, index_type=Int32);
 #             scheduling = ColoredScheduling(),
@@ -220,10 +221,13 @@ problem = OperatorSplittingProblem(odeform, u₀, tspan);
 #     * `ColoredScheduling` is not a tuning choice: the device matrix assembler accumulates without
 #       atomics, so a colored partition is what makes the scatter race free. It also fixes the
 #       accumulation order per entry, which is what makes a device assembled operator reproducible.
-#     * `value_type` is the precision the element caches are built in, so the quadrature rules and
-#       `CellValues` behind the mass and diffusion forms become `Float32` here. The coefficients keep
-#       whatever precision the model gave them -- `κ` above is a `Float64` tensor, and a `Float32`
-#       one is worth naming for a device run.
+#     * The two precisions are separate knobs. `value_type` is the GLOBAL system's, and the
+#       precision the element caches evaluate in is the integrator's, elected through its quadrature
+#       collection -- which is what `qrcs` above names, and what makes the quadrature rules and
+#       `CellValues` behind the mass and diffusion forms `Float32`. Leaving `qrcs` out assembles
+#       `Float64` elements into the `Float32` system, which is legal and just slower. The
+#       coefficients keep whatever precision the model gave them -- `κ` above is a `Float64` tensor,
+#       and a `Float32` one is worth naming for a device run.
 
 # Now we initialize our time integrator as usual.
 integrator = init(problem, timestepper, dt=dt₀);

@@ -84,38 +84,20 @@ function FerriteOperators.assemble_cell!(
     end
 end
 
-setup_element_cache(element_model::BilinearDiffusionIntegrator, sdh::SubDofHandler) =
-    _setup_diffusion_element_cache(
-        element_model,
-        sdh,
-        getquadraturerule(element_model.qrc, sdh),
-        Float64,
-    )
+FerriteOperators.allocate_element_matrix(c::BilinearDiffusionElementCache, sdh) =
+    element_matrix_buffer(c.cellvalues, sdh)
+FerriteOperators.allocate_element_unknown_vector(c::BilinearDiffusionElementCache, sdh) =
+    element_vector_buffer(c.cellvalues, sdh)
+FerriteOperators.allocate_element_residual_vector(c::BilinearDiffusionElementCache, sdh) =
+    element_vector_buffer(c.cellvalues, sdh)
 
-# The eltype channel: `T` is the assembling device's `value_type`, so a `Float32` device gets a
-# `Float32` quadrature rule and `Float32` `CellValues`.
-setup_element_cache(
-    element_model::BilinearDiffusionIntegrator,
-    sdh::SubDofHandler,
-    ::Type{T},
-) where {T} = _setup_diffusion_element_cache(
-    element_model,
-    sdh,
-    getquadraturerule(element_model.qrc, sdh, T),
-    T,
-)
-
-function _setup_diffusion_element_cache(
-    element_model::BilinearDiffusionIntegrator,
-    sdh::SubDofHandler,
-    qr,
-    ::Type{T},
-) where {T}
+function setup_element_cache(element_model::BilinearDiffusionIntegrator, sdh::SubDofHandler)
+    qr     = getquadraturerule(element_model.qrc, sdh)
     ip     = Ferrite.getfieldinterpolation(sdh, element_model.sym)
     ip_geo = geometric_subdomain_interpolation(sdh)
     return BilinearDiffusionElementCache(
         setup_coefficient_cache(element_model.D, qr, sdh),
-        CellValues(T, qr, ip, ip_geo),
+        CellValues(element_precision(qr), qr, ip, ip_geo),
     )
 end
 

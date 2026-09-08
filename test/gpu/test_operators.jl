@@ -10,7 +10,7 @@
     dh    = DofHandler(grid)
     add!(dh, :u, Lagrange{RefQuadrilateral, 1}())
     close!(dh)
-    qrc = QuadratureRuleCollection{2}()
+    qrc = QuadratureRuleCollection(Float32, 2)
     cs  = CartesianCoordinateSystem(grid)
 
     linint = Thunderbolt.LinearIntegrator(

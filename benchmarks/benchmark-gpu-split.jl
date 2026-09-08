@@ -62,7 +62,11 @@ device_assembly_strategy(; matrix_type = nothing) = AssemblyStrategy(
     ),
 )
 
-function monodomain_form(n; assembly_strategy = Thunderbolt.default_strategy())
+function monodomain_form(
+    n;
+    assembly_strategy = Thunderbolt.default_strategy(),
+    qrcs = Dict{Symbol, Any}(),
+)
     mesh = generate_mesh(Quadrilateral, (n, n), Vec{2}((0.0, 0.0)), Vec{2}((2.5, 2.5)))
     ep_model = MonodomainModel(
         ConstantCoefficient(1.0),
@@ -76,7 +80,11 @@ function monodomain_form(n; assembly_strategy = Thunderbolt.default_strategy())
     )
     return semidiscretize(
         ReactionDiffusionSplit(ep_model),
-        FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}()); assembly_strategy),
+        FiniteElementDiscretization(
+            Dict(:φₘ => LagrangeCollection{1}());
+            qrcs,
+            assembly_strategy,
+        ),
         mesh,
     )
 end
@@ -183,7 +191,7 @@ function assembly_operators(strategy, matrix_type)
     dh = DofHandler(grid)
     add!(dh, :φₘ, Lagrange{RefQuadrilateral, 1}())
     close!(dh)
-    qrc = QuadratureRuleCollection(2)
+    qrc = QuadratureRuleCollection(Float32, 2)
     solver = BackwardEulerSolver(
         solution_vector_type = Vector{Float32},
         system_matrix_type   = matrix_type,
@@ -256,7 +264,12 @@ end
 
 function split_benchmark()
     form     = monodomain_form(N)
-    devform  = monodomain_form(N; assembly_strategy = device_assembly_strategy())
+    # `value_type` above is the global system's; the element precision is elected here.
+    devform = monodomain_form(
+        N;
+        assembly_strategy = device_assembly_strategy(),
+        qrcs = Dict(:φₘ => QuadratureRuleCollection(Float32, 2)),
+    )
     gathered = gathered_indices(form)
     u₀       = initial_condition(form)
     println(

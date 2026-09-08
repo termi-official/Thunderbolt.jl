@@ -13,7 +13,9 @@ end
 
 @testset "Bilinear operators, host versus device assembly" begin
     dh  = _ep_testbed()
-    qrc = QuadratureRuleCollection(2)
+    # The device's `value_type` is the global system's; the element precision is the integrator's,
+    # elected here on its quadrature collection.
+    qrc = QuadratureRuleCollection(Float32, 2)
     ctx = TimeIntegrationContext(0.0f0, 0.0f0, 0.0f0)
 
     # The coloring has to actually split the cells, or the sweep would run as one barrier and never
@@ -86,7 +88,7 @@ end
 
 @testset "Device assembled operators share the stage matrix pattern" begin
     dh  = _ep_testbed((8, 8))
-    qrc = QuadratureRuleCollection(2)
+    qrc = QuadratureRuleCollection(Float32, 2)
     ctx = TimeIntegrationContext(0.0f0, 0.0f0, 0.0f0)
 
     # `_implicit_euler_heat_solver_update_system_matrix!` combines the operators into the stage

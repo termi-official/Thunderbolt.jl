@@ -4,7 +4,11 @@
 # splitting on `CuVector`s. The host arm is the same problem in the same precision, so what separates
 # it from either is the order the reductions run in, nothing else.
 
-function _monodomain_form(; n = 32, assembly_strategy = Thunderbolt.default_strategy())
+function _monodomain_form(;
+    n = 32,
+    assembly_strategy = Thunderbolt.default_strategy(),
+    qrcs = Dict{Symbol, Any}(),
+)
     mesh = generate_mesh(Quadrilateral, (n, n), Vec{2}((0.0, 0.0)), Vec{2}((2.5, 2.5)))
     ep_model = MonodomainModel(
         ConstantCoefficient(1.0),
@@ -18,7 +22,11 @@ function _monodomain_form(; n = 32, assembly_strategy = Thunderbolt.default_stra
     )
     return semidiscretize(
         ReactionDiffusionSplit(ep_model),
-        FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}()); assembly_strategy),
+        FiniteElementDiscretization(
+            Dict(:φₘ => LagrangeCollection{1}());
+            qrcs,
+            assembly_strategy,
+        ),
         mesh,
     )
 end
@@ -53,7 +61,12 @@ end
     # The device assembly arm needs its own semidiscretization: which device assembles is the model
     # side's `assembly_strategy`, not a solver option, and the matrix type has to be the CSC one
     # Ferrite ships a device assembler for.
-    devform = _monodomain_form(; assembly_strategy = device_assembly_strategy())
+    # The element precision is elected on the quadrature collection, the device's `value_type` is
+    # the global system's; this arm names both `Float32`.
+    devform = _monodomain_form(;
+        assembly_strategy = device_assembly_strategy(),
+        qrcs = Dict(:φₘ => QuadratureRuleCollection(Float32, 2)),
+    )
 
     cpu = build(odeform, copy(u₀), Vector{Float32}, ThreadedSparseMatrixCSR{Float32, Int32})
     gpu = build(odeform, CuVector(u₀), CuVector{Float32}, CuCSR)
