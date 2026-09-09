@@ -55,7 +55,10 @@ It is assumed that the problem containing the reaction tangent is a [`PointwiseO
 end
 
 @inline @unroll function _get_reaction_tangent(subintegrators, n_reaction_tangents::Int = 0)
-    R = 0.0
+    # Bool is the strong zero: `max(false, x)` takes x's eltype, so the reaction
+    # tangent keeps the state's precision (a 0.0 literal promoted Float32 sweeps
+    # to Float64) while the floor-at-zero semantics stay bit-identical.
+    R = false
     @unroll for subintegrator in subintegrators
         if subintegrator isa Tuple || subintegrator isa OS.SplitSubIntegrator
             children = subintegrator isa Tuple ? subintegrator : subintegrator.child_subintegrators
