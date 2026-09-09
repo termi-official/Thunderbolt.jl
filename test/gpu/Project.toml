@@ -14,3 +14,4 @@ Thunderbolt = "909927c2-98d5-4a67-bba9-79f03a9ad49b"
 
 [sources]
 Thunderbolt = {path = "../.."}
+FerriteOperators = {path = "../../../FerriteOperators.jl"}

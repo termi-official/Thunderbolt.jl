@@ -378,8 +378,9 @@ The same index set, as a `UnitRange` where the values allow it.
 A split's index sets are what `OrdinaryDiffEqOperatorSplitting` addresses the outer solution vector
 with, once per child per step. Over a `UnitRange` that is a contiguous view; over a `Vector{Int}` it
 is a gather, which on an accelerator additionally uploads the index vector on every access. Which
-one a set is, is a property of its values -- contiguous for a single domain state block, genuinely
-strided for the multi-domain sets built further below -- so it is read off rather than assumed.
+one a set is, is a property of its values -- typically contiguous for a single domain state block,
+typically strided for the multi-domain sets built further below, in general neither guaranteed --
+so it is read off, applied at both sites, rather than assumed.
 """
 function _contiguous_if_possible(dofs::Vector{Int})
     isempty(dofs) && return dofs
@@ -553,7 +554,7 @@ function semidiscretize(
     # the unknowns, so this is not a partition of the solution vector.
     semidiscrete_ode = GenericSplitFunction(
         (heatfun, ionicfun),
-        (heat_dofrange, ionic_dofrange),
+        (_contiguous_if_possible(heat_dofrange), ionic_dofrange),
         # No transfer operators needed, because the the solutions variables overlap with the subproblems perfectly
     )
 

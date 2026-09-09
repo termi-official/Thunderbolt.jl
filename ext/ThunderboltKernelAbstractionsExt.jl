@@ -15,8 +15,6 @@ using Ferrite
 import Adapt: Adapt, adapt
 import KernelAbstractions as KA
 
-import FerriteOperators: AbstractGPUDevice, setup_device_instances, device_worker_view
-
 import Thunderbolt:
     AnalyticalCoefficientElementCache,
     BilinearDiffusionElementCache,
@@ -24,6 +22,18 @@ import Thunderbolt:
     SimpleMesh
 
 import StaticArrays: SVector
+
+# Registered FerriteOperators 0.4.0 has no `device_worker_view`, and KernelAbstractions is a hard
+# dependency of CUDA.jl -- so without this guard, `using Thunderbolt, CUDA` on the registered stack
+# triggers this extension and fails on the import below before any code here runs, for every CUDA
+# user regardless of whether they touch the device seam. Everything that names it, the import
+# included, is gated on the newer surface being present. The module import must precede the guard:
+# an `import FerriteOperators: name` binds only that name, never the module the guard inspects.
+import FerriteOperators
+
+if isdefined(FerriteOperators, :device_worker_view)
+
+import FerriteOperators: AbstractGPUDevice, setup_device_instances, device_worker_view
 
 # The coefficient caches the electrophysiology path reaches a device with are `isbits` -- constant
 # coefficients, the conductivity-to-diffusivity quotient over them, and the Cartesian coordinate
@@ -85,6 +95,10 @@ The rebuild redistributes the dofs, so it asserts that it reproduced the numberi
 matrix is indexed by. A device assembly against a handler that numbered differently would scatter
 into the wrong rows, which no later check would catch.
 """
+# TODO(Ferrite upstream): this method dies once FerriteKAExt.HostDofHandler's grid field bound
+# relaxes from `G <: Ferrite.Grid{sdim}` to `G <: AbstractGrid{sdim}` (dof_handler.jl:50) -- Ferrite's
+# own rule then covers a `SimpleMesh`-backed handler directly and this rebuild is dead code. Issue to
+# be filed by the maintainer.
 Adapt.adapt_structure(backend::KA.Backend, dh::DofHandler{sdim, <:SimpleMesh}) where {sdim} =
     adapt(backend, _grid_backed_handler(dh))
 
@@ -109,5 +123,7 @@ function _grid_backed_handler(dh::DofHandler{sdim, <:SimpleMesh}) where {sdim}
     )
     return rebuilt
 end
+
+end # isdefined(FerriteOperators, :device_worker_view)
 
 end

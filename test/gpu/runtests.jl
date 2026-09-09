@@ -1,6 +1,11 @@
 using Test
 using CUDA
 
+# This suite needs a FerriteOperators newer than the registered 0.4.0 -- the KernelAbstractionsDevice
+# GPU surface below is unreleased (do/gpu) -- which is why `[sources]` in this environment's
+# Project.toml points FerriteOperators at a local checkout; run with
+# `julia --project=test/gpu test/gpu/runtests.jl`.
+#
 # Everything below needs a device. Without one the suite reports that it did nothing rather than
 # failing, so it can be included unconditionally by a runner that does not know the machine.
 if !CUDA.functional()

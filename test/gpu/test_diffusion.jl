@@ -68,6 +68,11 @@ end
         @test gpu.cache.stage.M.A isa SpMatType
         @test gpu.cache.stage.linear_solver.A isa SpMatType
 
+        # `operator_payload` is what the inherited `Base.eltype`/`Base.size` (from
+        # `AbstractBilinearOperator <: AbstractNonlinearOperator`) read; without it they `MethodError`.
+        @test eltype(gpu.cache.stage.M) === eltype(gpu.cache.stage.M.A)
+        @test size(gpu.cache.stage.M) === size(gpu.cache.stage.M.A)
+
         for _ = 1:nsteps
             step!(gpu)
         end
@@ -77,16 +82,10 @@ end
     end
 end
 
-@testset "Cross device vector addition" begin
-    n      = 64
-    host   = rand(Float64, n)
-    device = CuVector(rand(Float32, n))
-
-    b = copy(host)
-    Thunderbolt.FerriteOperators.__add_to_vector!(b, device)
-    @test b ≈ host .+ Array(device)
-
-    b = copy(device)
-    Thunderbolt.FerriteOperators.__add_to_vector!(b, host)
-    @test Array(b) ≈ Array(device) .+ host
-end
+# The "Cross device vector addition" testset that stood here exercised
+# `FerriteOperators.__add_to_vector!` methods added for `Vector`/`CuVector` in
+# `ext/CuThunderboltExt.jl` — type piracy on FO's one private (double-underscore)
+# name, unreachable from any real Thunderbolt path (`Ferrite.add!(::AbstractVector,
+# ::AbstractLinearOperator)`, the only caller, is never invoked with mismatched
+# host/device vectors anywhere in this package). Removed along with the piracy;
+# no public path exercises the same cross-device add to rework the test onto.

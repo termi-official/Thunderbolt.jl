@@ -64,7 +64,9 @@ end
             solution_vector_type = CuVector{Float32},
             system_matrix_type   = CuCSR,
         )
-        err = @test_throws ErrorException Thunderbolt.setup_operator(
+        # FerriteOperators performs this capability check itself at setup (`ArgumentError`, unlike
+        # the plain `ErrorException` the double-naming reconciliation below raises).
+        err = @test_throws ArgumentError Thunderbolt.setup_operator(
             device_assembly_strategy(),
             first(integrators),
             solver,
@@ -105,4 +107,27 @@ end
 
     @test Array(stage.colPtr) == Array(op.A.colPtr)
     @test Array(stage.rowVal) == Array(op.A.rowVal)
+end
+
+@testset "The mirror path shares structure with its host source" begin
+    # `MirroredBilinearOperator.A` is `create_system_matrix(system_matrix_type, dh)` -- the same
+    # allocator the direct-assembly test above compares against -- while `host_operator.A` is
+    # `FerriteOperators`' own sparsity pattern. `update_operator!` copies `nonzeros` position for
+    # position between the two (see `MirroredBilinearOperator`'s `nzbuffer`), which only reproduces
+    # the host matrix if the two patterns agree entrywise, not just in nnz count.
+    dh  = _ep_testbed((8, 8))
+    qrc = QuadratureRuleCollection(Float32, 2)
+    ctx = TimeIntegrationContext(0.0f0, 0.0f0, 0.0f0)
+
+    mirror = Thunderbolt.setup_assembled_operator(
+        host_assembly_strategy(),
+        Thunderbolt.BilinearMassIntegrator(ConstantCoefficient(1.0f0), qrc, :φₘ),
+        CuCSC,
+        dh,
+    )
+    Thunderbolt.update_operator!(mirror, nothing, ctx)
+
+    @test Array(mirror.A.colPtr) == mirror.host_operator.A.colptr
+    @test Array(mirror.A.rowVal) == mirror.host_operator.A.rowval
+    @test Array(nonzeros(mirror.A)) ≈ nonzeros(mirror.host_operator.A)
 end

@@ -119,10 +119,16 @@ end
 ## Cross device vectors
 ##########################
 
-# A source term assembled on one device added into a solution vector living on the other.
-FerriteOperators.__add_to_vector!(b::Vector, a::CuVector) = b .+= Vector(a)
-FerriteOperators.__add_to_vector!(b::CuVector, a::Vector) = b .+= CuVector(a)
-
 Thunderbolt.adapt_vector_type(::Type{<:CuVector}, v::VT) where {VT <: Vector} = CuVector(v)
+
+# The vector-side counterpart of the matrix mirror: a host-assembled source operator adding
+# into a device-resident right-hand side uploads its vector per update. Null sources stay a
+# no-op. A source vector allocated in a caller-named type by FerriteOperators would remove
+# the per-step copy.
+Thunderbolt._add_source_term!(b::CuVector, source::FerriteOperators.LinearNullOperator) = b
+function Thunderbolt._add_source_term!(b::CuVector, source::FerriteOperators.AbstractLinearOperator)
+    b .+= CuVector{eltype(b)}(FerriteOperators.operator_payload(source))
+    return b
+end
 
 end

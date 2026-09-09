@@ -94,7 +94,10 @@ device boundary that no longer holds, and the extension method returns a
 
 Where the strategy names a *device*, there is no mirror: the operator assembles straight into
 `system_matrix_type`, so the format is threaded onto the operator specification and the two knobs
-have to name the same one.
+have to name the same one. Device assembly needs a CSC device matrix -- Ferrite ships no device
+assembler for CSR, so `FerriteOperators` rejects that pairing at setup -- and a CSR system matrix
+stays available only through a *host* assembly strategy, which assembles on the host and mirrors
+into the device matrix.
 """
 function setup_assembled_operator(
     strategy::AssemblyStrategy{<:FullAssembly, SequentialScheduling, <:AbstractCPUDevice},
@@ -126,13 +129,10 @@ function _device_assembly_strategy(
     # Anything but the standard specification is rejected for a device by FerriteOperators, with a
     # message naming the limitation. Hand it over untouched rather than rebuilding it into one.
     spec isa StandardOperatorSpecification || return strategy
-    hasmethod(Ferrite.start_assemble, Tuple{system_matrix_type}) || error(
-        "Cannot assemble on $(nameof(typeof(strategy.device))) into $system_matrix_type: Ferrite " *
-        "has no device assembler for it. Device assembly needs a CSC device matrix -- a CSR one is " *
-        "allocatable but not assemblable -- so pass `system_matrix_type = CuSparseMatrixCSC{Tv, Ti}` " *
-        "to the solver. A CSR system matrix stays available with a host assembly strategy, which " *
-        "assembles on the host and mirrors into the device matrix.",
-    )
+    # FerriteOperators performs the identical `hasmethod(Ferrite.start_assemble, ...)` capability
+    # check at its own setup (setup.jl:328-331, "CSC device matrices only"), so `setup_operator`
+    # below already rejects an unassemblable `system_matrix_type` -- a mirror here would outlive an
+    # upstream fix. See the docstring above for the CSR/host-mirror hint that check's message lacks.
     declared = spec.matrix_type
     declared === nothing ||
         declared === system_matrix_type ||
@@ -198,6 +198,12 @@ end
 mul!(out::AbstractVector, op::MirroredBilinearOperator, in::AbstractVector) = mul!(out, op.A, in)
 mul!(out::AbstractVector, op::MirroredBilinearOperator, in::AbstractVector, α, β) =
     mul!(out, op.A, in, α, β)
+
+# `MirroredBilinearOperator <: AbstractBilinearOperator <: AbstractNonlinearOperator`, whose
+# `Base.eltype`/`Base.size` read `FerriteOperators.operator_payload`; without this method they
+# `MethodError` instead of answering for the mirrored matrix `A`, which is what everything
+# downstream (`mul!`, the stage assembly) actually reads.
+FerriteOperators.operator_payload(op::MirroredBilinearOperator) = op.A
 
 # Nonlinear
 """

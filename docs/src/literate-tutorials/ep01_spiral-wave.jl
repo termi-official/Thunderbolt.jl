@@ -194,7 +194,9 @@ problem = OperatorSplittingProblem(odeform, u₀, tspan);
 # !!! tip
 #     The assembly moves to the device separately, through the model side's `assembly_strategy`.
 #     Which device assembles is a property of the discretization, not of the solver, so both knobs
-#     are set -- and they have to agree on the matrix type.
+#     are set -- and they have to agree on the matrix type. This variant needs a FerriteOperators
+#     newer than 0.4.0: `KernelAbstractionsDevice` and the assembly strategy it plugs into are part
+#     of the unreleased GPU surface, not the registered one.
 #     ```
 #     using CUDA, FerriteOperators
 #
@@ -213,7 +215,10 @@ problem = OperatorSplittingProblem(odeform, u₀, tspan);
 #       inner_solver=KrylovJL_CG(atol=1.0f-6, rtol=1.0f-5),
 #     )
 #     ```
-#     Three things are worth knowing about this one.
+#     Three things are worth knowing about this one, on top of the host-side items from the box
+#     above -- the initial-condition ordering and the `Array(u)` copy in the output loop -- which
+#     apply here too: nothing about assembling on the device changes how the initial condition is
+#     built or how the solution is read back out for output.
 #
 #     * The matrix type is **CSC**, not the CSR of the mirrored variant above. Ferrite ships a device
 #       assembler for CSC device matrices only, and the operator now writes its entries itself

@@ -17,6 +17,20 @@ ip, ip_geo)`.
 Read off the RULE rather than the collection so `src/` keeps loading against
 FerriteOperators versions whose collections are `Float64` only.
 """
+# TODO(FO floor >= 0.5): once the FerriteOperators floor carries `element_value_type`
+# unconditionally, collapse this whole precision-plumbing seam:
+#   (1) delete `element_precision`/`element_matrix_buffer`/`element_vector_buffer` (collections.jl:8-39);
+#   (2) delete the nine `allocate_element_matrix`/`allocate_element_unknown_vector`/
+#       `allocate_element_residual_vector` overrides (mass.jl:85-90, diffusion.jl:87-92,
+#       analytical_coefficient.jl:67-72) — FO's own defaults already read `element_value_type`;
+#   (3) add three `FerriteOperators.element_value_type` methods instead (`BilinearMassElementCache`
+#       and `BilinearDiffusionElementCache` via `.cellvalues`, `AnalyticalCoefficientElementCache`
+#       via `.cv`);
+#   (4) `element_precision` → `element_value_type` at mass.jl:100, diffusion.jl:100,
+#       electrophysiology.jl:281;
+#   (5) bump the FerriteOperators compat bound in Project.toml.
+# FO's `allocate_element_*` defaults also pad what they return for a `global_dofs` declaration; any
+# override kept past this collapse has to carry that same padding responsibility itself.
 element_precision(qr::QuadratureRule) = eltype(Ferrite.getweights(qr))
 element_precision(cv::Ferrite.AbstractValues) = eltype(Ferrite.shape_value_type(cv))
 
