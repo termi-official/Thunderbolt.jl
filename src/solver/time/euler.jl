@@ -152,10 +152,9 @@ function _implicit_euler_heat_solver_update_system_matrix!(A, M, K, Δt)
     @inbounds @.. Anz = Mnz - Δt * Knz
 end
 
-# Same-device sources add in place through `Ferrite.add!`. A device-resident `b` with a
-# host-assembled source is the vector-side counterpart of the matrix mirror: the CUDA
-# extension uploads the source vector per update. A caller-typed source vector allocated
-# by FerriteOperators would remove that copy (recorded upstream ask).
+# Generic (same-device) path: adds in place through `Ferrite.add!`. `ext/CuThunderboltExt.jl`
+# overrides this for a device-resident `b` -- direct for a device-assembled source, through a
+# persistent mirrored buffer for a host-assembled one.
 _add_source_term!(b::AbstractVector, source) = add!(b, source)
 
 function implicit_euler_heat_update_source_term!(cache::BackwardEulerAffineODEStage, t)

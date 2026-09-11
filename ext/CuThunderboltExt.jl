@@ -17,11 +17,13 @@ import Thunderbolt:
     AbstractPointwiseFunction,
     AbstractPointwiseSolverCache,
     AbstractBilinearIntegrator,
+    AbstractLinearIntegrator,
     AbstractCPUDevice,
     AssemblyStrategy,
     FullAssembly,
     SequentialScheduling,
     MirroredBilinearOperator,
+    MirroredLinearOperator,
     num_states,
     solution_size
 
@@ -115,19 +117,33 @@ function Thunderbolt.setup_assembled_operator(
     )
 end
 
+# The vector-side counterpart, for a host-assembled source feeding a device-resident right hand
+# side: mirror its load vector into a persistent device buffer instead of uploading fresh every
+# `update_operator!`.
+function Thunderbolt.setup_assembled_operator(
+    strategy::AssemblyStrategy{<:FullAssembly, SequentialScheduling, <:AbstractCPUDevice},
+    integrator::AbstractLinearIntegrator,
+    solution_vector_type::Type{<:CuVector},
+    dh::AbstractDofHandler,
+)
+    return MirroredLinearOperator(
+        Thunderbolt.setup_operator(strategy, integrator, dh),
+        Thunderbolt.create_system_vector(solution_vector_type, dh),
+    )
+end
+
 ##########################
 ## Cross device vectors
 ##########################
 
 Thunderbolt.adapt_vector_type(::Type{<:CuVector}, v::VT) where {VT <: Vector} = CuVector(v)
 
-# The vector-side counterpart of the matrix mirror: a host-assembled source operator adding
-# into a device-resident right-hand side uploads its vector per update. Null sources stay a
-# no-op. A source vector allocated in a caller-named type by FerriteOperators would remove
-# the per-step copy.
+# Adds a source operator's device-resident payload into `b`: direct for a device-assembled
+# source, and via its `MirroredLinearOperator` wrapper's refreshed buffer for a host-assembled
+# one. `LinearNullOperator` stays a no-op.
 Thunderbolt._add_source_term!(b::CuVector, source::FerriteOperators.LinearNullOperator) = b
 function Thunderbolt._add_source_term!(b::CuVector, source::FerriteOperators.AbstractLinearOperator)
-    b .+= CuVector{eltype(b)}(FerriteOperators.operator_payload(source))
+    b .+= FerriteOperators.operator_payload(source)
     return b
 end
 

@@ -53,7 +53,22 @@ function setup_operator(
     solver::AbstractSolver,
     dh::AbstractDofHandler,
 )
-    return setup_operator(strategy, integrator, dh)
+    return setup_assembled_operator(strategy, integrator, solver.solution_vector_type, dh)
+end
+
+"""
+    setup_assembled_operator(strategy, integrator::AbstractLinearIntegrator, solution_vector_type, dh)
+
+Vector-side counterpart of the bilinear `setup_assembled_operator`: the default assembles on the host
+and returns that operator unchanged; a device-crossing override mirrors its load vector instead.
+"""
+function setup_assembled_operator(
+    strategy,
+    integrator::AbstractLinearIntegrator,
+    solution_vector_type::Type,
+    dh::AbstractDofHandler,
+)
+    setup_operator(strategy, integrator, dh)
 end
 
 # Bilinear
@@ -215,6 +230,42 @@ mul!(out::AbstractVector, op::MirroredBilinearOperator, in::AbstractVector, α, 
 # `MethodError` instead of answering for the mirrored matrix `A`, which is what everything
 # downstream (`mul!`, the stage assembly) actually reads.
 FerriteOperators.operator_payload(op::MirroredBilinearOperator) = op.A
+
+"""
+    MirroredLinearOperator(host_operator, b)
+
+Vector-side counterpart of [`MirroredBilinearOperator`](@ref): a source operator assembled by
+`host_operator` on the host, whose load vector is mirrored into the device buffer `b`.
+
+`update_operator!` runs the host assembly and refreshes `b`; `_add_source_term!` then adds only from
+`b` (via `operator_payload`, which for `AbstractLinearOperator` reads the `b` field directly), so a
+step where the source does not change costs no upload.
+"""
+struct MirroredLinearOperator{OperatorType, VectorType, BufferType} <: AbstractLinearOperator
+    host_operator::OperatorType
+    b::VectorType
+    # Host staging buffer in the mirror's value type -- same cross-device eltype mismatch
+    # `MirroredBilinearOperator.nzbuffer` stages for, here for the load vector.
+    buffer::BufferType
+end
+
+function MirroredLinearOperator(host_operator, b)
+    n_host = length(FerriteOperators.operator_payload(host_operator))
+    n_host == length(b) || error(
+        "Cannot mirror a $(n_host) entry vector into a $(length(b)) entry one. Both are allocated " *
+        "from the same dof handler, so the two allocators disagree about the vector length.",
+    )
+    return MirroredLinearOperator(host_operator, b, Vector{eltype(b)}(undef, length(b)))
+end
+
+function update_operator!(op::MirroredLinearOperator, p, ctx = nothing)
+    update_operator!(op.host_operator, p, ctx)
+    op.buffer .= FerriteOperators.operator_payload(op.host_operator)
+    copyto!(op.b, op.buffer)
+    return nothing
+end
+
+needs_update(op::MirroredLinearOperator, t) = needs_update(op.host_operator, t)
 
 # Nonlinear
 """

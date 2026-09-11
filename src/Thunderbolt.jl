@@ -81,6 +81,7 @@ import FerriteInterfaceElements:
 
 import FerriteOperators:
     AbstractBilinearOperator,
+    AbstractLinearOperator,
     BilinearFerriteOperator,
     LinearFerriteOperator,
     LinearNullOperator,
