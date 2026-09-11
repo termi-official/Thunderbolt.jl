@@ -174,6 +174,9 @@ problem = OperatorSplittingProblem(odeform, u₀, tspan);
 #         reaction_threshold=0.1f0,
 #     )
 #     ...
+#     dt₀   = 1.0f0
+#     dtvis = 25.0f0
+#     tspan = (0.0f0, 1000.0f0)
 #     problem = OperatorSplittingProblem(odeform, u₀gpu, tspan)
 #     ```
 #     Four things are worth knowing about that variant.
@@ -182,7 +185,11 @@ problem = OperatorSplittingProblem(odeform, u₀, tspan);
 #       the initial condition is built first and transferred afterwards -- in that order.
 #     * The cell model is evaluated inside the reaction kernel, and `Thunderbolt.FHNModel` is
 #       `ParametrizedFHNModel{Float64}`, so it would run the hot loop in double precision against
-#       single precision storage. Naming the precision fixes that.
+#       single precision storage. Naming the precision fixes that -- and so does naming it on the
+#       time domain: `dt₀`, `dtvis` and `tspan` above are `Float64` literals in the host variant, and
+#       `(t, Δt)` flow from them straight into the reaction kernel, where a `Float64` multiply-add
+#       against `Float32` storage costs 1.81x per reaction step (2.62 ms against 1.45 ms, measured;
+#       the states agree to 1e-4). Spell all three in the solution vector's precision.
 #     * `reaction_threshold` carries the precision of the solution vector, hence `0.1f0`.
 #     * The output loop below reads the solution through Ferrite, which indexes it elementwise, so it
 #       needs a host copy: `Thunderbolt.store_timestep_field!(file, t, Array(u), φₘ)`.
@@ -196,7 +203,9 @@ problem = OperatorSplittingProblem(odeform, u₀, tspan);
 #     Which device assembles is a property of the discretization, not of the solver, so both knobs
 #     are set -- and they have to agree on the matrix type. This variant needs a FerriteOperators
 #     newer than 0.4.0: `KernelAbstractionsDevice` and the assembly strategy it plugs into are part
-#     of the unreleased GPU surface, not the registered one.
+#     of the unreleased GPU surface, not the registered one, and so is the precision-carrying
+#     `QuadratureRuleCollection(Float32, 2)` below -- on the registered version that call is a
+#     `MethodError`, the collections being `Float64` only.
 #     ```
 #     using CUDA, FerriteOperators
 #

@@ -50,7 +50,12 @@ Returns the maximal reaction magnitude using the [`PointwiseODEFunction`](@ref) 
 It is assumed that the problem containing the reaction tangent is a [`PointwiseODEFunction`](@ref).
 """
 @inline function get_reaction_tangent(integrator::OS.AnySplitIntegrator)
-    R, _ = _get_reaction_tangent(integrator.child_subintegrators)
+    R, n_reaction_tangents = _get_reaction_tangent(integrator.child_subintegrators)
+    # Asserted on the WHOLE tree, here, rather than inside the recursion: the count
+    # is threaded down the levels, so a level that has not yet reached the single
+    # pointwise function -- a nested topology whose tangent sits in a LATER sibling,
+    # `((heat,), ionic)` -- would fail a per-level assert on a well-formed problem.
+    @assert n_reaction_tangents == 1 "No or multiple integrators using PointwiseODEFunction found"
     return R
 end
 
@@ -76,7 +81,6 @@ end
             end
         end
     end
-    @assert n_reaction_tangents == 1 "No or multiple integrators using PointwiseODEFunction found"
     return (R, n_reaction_tangents)
 end
 

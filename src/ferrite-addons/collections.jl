@@ -29,8 +29,10 @@ FerriteOperators versions whose collections are `Float64` only.
 #   (4) `element_precision` → `element_value_type` at mass.jl:100, diffusion.jl:100,
 #       electrophysiology.jl:281;
 #   (5) bump the FerriteOperators compat bound in Project.toml.
-# FO's `allocate_element_*` defaults also pad what they return for a `global_dofs` declaration; any
-# override kept past this collapse has to carry that same padding responsibility itself.
+# Padding is NOT part of that collapse. FO's `allocate_element_*` contract (element_interface.jl:56-57)
+# is that a declaration states the FIELD-space size and the ENGINE pads it at the call sites where a
+# `global_dofs` declaration asks for the augmented system -- so the overrides above are already
+# correct as written, and an override that padded itself would be padded twice.
 element_precision(qr::QuadratureRule) = eltype(Ferrite.getweights(qr))
 element_precision(cv::Ferrite.AbstractValues) = eltype(Ferrite.shape_value_type(cv))
 

@@ -125,7 +125,10 @@ function _device_assembly_strategy(
     strategy::AssemblyStrategy{<:FullAssembly, <:Any, <:AbstractGPUDevice},
     system_matrix_type::Type,
 )
-    spec = strategy.form.operator_specification
+    # Read through FerriteOperators' own accessor rather than off the field: the accessor is the
+    # supported spelling and answers for every form, while the field exists only on the ones that
+    # carry global storage.
+    spec = FerriteOperators.operator_specification(strategy.form)
     # Anything but the standard specification is rejected for a device by FerriteOperators, with a
     # message naming the limitation. Hand it over untouched rather than rebuilding it into one.
     spec isa StandardOperatorSpecification || return strategy
@@ -164,6 +167,14 @@ A bilinear operator assembled by `host_operator` on the host, whose matrix is mi
 `mul!`, and the `nonzeros` the affine backward Euler stage combines -- sees only `A`. That
 correspondence is entrywise, so `A` has to be allocated by the same [`create_system_matrix`](@ref)
 call as the stage matrix it is combined into; nothing here can check that beyond the entry count.
+
+The real precondition is stronger than the entry count, and the constructor cannot see the
+difference: the mirror copies `nonzeros` positionally, so the two matrices must ALSO agree on the
+ORDER their nonzeros are stored in. A host CSR and a device CSC of the same pattern have the same
+`nnz` and pass the check; they carry the same order only because `ThreadedSparseMatrixCSR` is the CSR
+of the TRANSPOSE and therefore shares the CSC ordering of the original, and because the forms
+mirrored this way are symmetric, so that transpose is the same matrix. An ASYMMETRIC form mirrored
+across that pairing would be silently transposed. Mirror a CSR host matrix only where both hold.
 """
 struct MirroredBilinearOperator{OperatorType, MatrixType, BufferType} <: AbstractBilinearOperator
     host_operator::OperatorType
