@@ -90,18 +90,22 @@ import Thunderbolt: to_mesh
         apply_analytical!(source_u, source_dh, :v, x->-norm(x))
         apply_analytical!(source_u, source_dh, :z, x -> norm(x))
 
+        # "remaining" is registered first on purpose, so that the transferred-to subdomain is
+        # `SubDofHandler` 2 and `subdomains_to` therefore differs from the source index set
+        # `1:length(source_dh.subdofhandlers)`. Registering "hole" first makes the two index sets
+        # coincide, and a construction that confuses them passes anyway.
         target_dh = DofHandler(target_mesh_nonmatching)
-        target_sdh_hole = SubDofHandler(target_dh, getcellset(target_mesh_nonmatching, "hole"))
-        add!(target_sdh_hole, :v, Lagrange{RefTriangle, 2}())
-        add!(target_sdh_hole, :w, Lagrange{RefTriangle, 1}())
         target_sdh_remaining =
             SubDofHandler(target_dh, getcellset(target_mesh_nonmatching, "remaining"))
         add!(target_sdh_remaining, :v, Lagrange{RefTriangle, 2}())
         add!(target_sdh_remaining, :w, Lagrange{RefTriangle, 1}())
+        target_sdh_hole = SubDofHandler(target_dh, getcellset(target_mesh_nonmatching, "hole"))
+        add!(target_sdh_hole, :v, Lagrange{RefTriangle, 2}())
+        add!(target_sdh_hole, :w, Lagrange{RefTriangle, 1}())
         close!(target_dh)
 
-        v_range = dof_range(target_dh.subdofhandlers[1], :v)
-        w_range = dof_range(target_dh.subdofhandlers[1], :w)
+        v_range = dof_range(target_sdh_hole, :v)
+        w_range = dof_range(target_sdh_hole, :w)
 
         target_sdhids = Thunderbolt.get_subdofhandler_indices_on_subdomains(target_dh, ["hole"])
 
@@ -115,7 +119,7 @@ import Thunderbolt: to_mesh
         target_u = [NaN for i = 1:ndofs(target_dh)]
         Thunderbolt.transfer!(target_u, op, source_u)
         cvv = CellValues(QuadratureRule{RefTriangle}(1), Lagrange{RefTriangle, 2}())
-        for cc in CellIterator(target_dh.subdofhandlers[1])
+        for cc in CellIterator(target_sdh_hole)
             Ferrite.reinit!(cvv, cc)
             dofs_v = @view celldofs(cc)[v_range]
             dofs_w = @view celldofs(cc)[w_range]
@@ -140,7 +144,7 @@ import Thunderbolt: to_mesh
         target_u = [NaN for i = 1:ndofs(target_dh)]
         Thunderbolt.transfer!(target_u, op, source_u)
         cvw = CellValues(QuadratureRule{RefTriangle}(1), Lagrange{RefTriangle, 1}())
-        for cc in CellIterator(target_dh.subdofhandlers[1])
+        for cc in CellIterator(target_sdh_hole)
             Ferrite.reinit!(cvw, cc)
             dofs_v = @view celldofs(cc)[v_range]
             dofs_w = @view celldofs(cc)[w_range]

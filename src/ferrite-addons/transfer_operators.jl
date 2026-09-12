@@ -92,7 +92,9 @@ struct NodalIntergridInterpolation{
         grid_to   = Ferrite.get_grid(dh_to)
         grid_from = Ferrite.get_grid(dh_from)
         nodes     = Vector{Ferrite.get_coordinate_type(grid_to)}(undef, length(dofset))
-        for sdh in dh_to.subdofhandlers[subdomains_from]
+        # Same index set as the `dofset` loop above, because this loop writes `nodes` through
+        # `dof_to_node_map`: a subdofhandler visited here but not there has no entry in the map.
+        for sdh in dh_to.subdofhandlers[subdomains_to]
             # Skip subdofhandler if field is not present
             field_name_to ∈ Ferrite.getfieldnames(sdh) || continue
             # Grab the reference coordinates of the field to interpolate
