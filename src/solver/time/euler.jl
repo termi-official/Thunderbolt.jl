@@ -124,7 +124,7 @@ function perform_backward_euler_step!(
     # Update source term
     @timeit_debug "update source term" begin
         implicit_euler_heat_update_source_term!(stage, t + Δt)
-        add!(linear_solver.b, stage.source_term)
+        _add_source_term!(linear_solver.b, stage.source_term)
     end
 
     # Solve linear problem, where sol.u === uₙ
@@ -151,6 +151,11 @@ function _implicit_euler_heat_solver_update_system_matrix!(A, M, K, Δt)
     Mnz = nonzeros(M.A)
     @inbounds @.. Anz = Mnz - Δt * Knz
 end
+
+# Generic (same-device) path: adds in place through `Ferrite.add!`. `ext/CuThunderboltExt.jl`
+# overrides this for a device-resident `b` -- direct for a device-assembled source, through a
+# persistent mirrored buffer for a host-assembled one.
+_add_source_term!(b::AbstractVector, source) = add!(b, source)
 
 function implicit_euler_heat_update_source_term!(cache::BackwardEulerAffineODEStage, t)
     needs_update(cache.source_term, t) &&

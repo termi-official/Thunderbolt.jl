@@ -26,6 +26,7 @@ import FerriteOperators:
     AssemblyStrategy,
     default_strategy,
     FullAssembly,
+    StandardOperatorSpecification,
     SequentialScheduling,
     ColoredScheduling,
     AbstractGPUDevice,
@@ -79,6 +80,8 @@ import FerriteInterfaceElements:
     InterfaceCellInterpolation, InterfaceCellValues, InterfaceCell, getdetJdV_average
 
 import FerriteOperators:
+    AbstractBilinearOperator,
+    AbstractLinearOperator,
     BilinearFerriteOperator,
     LinearFerriteOperator,
     LinearNullOperator,

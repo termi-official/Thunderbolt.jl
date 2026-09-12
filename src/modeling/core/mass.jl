@@ -82,6 +82,13 @@ function FerriteOperators.assemble_cell!(
     end
 end
 
+FerriteOperators.allocate_element_matrix(c::BilinearMassElementCache, sdh) =
+    element_matrix_buffer(c.cellvalues, sdh)
+FerriteOperators.allocate_element_unknown_vector(c::BilinearMassElementCache, sdh) =
+    element_vector_buffer(c.cellvalues, sdh)
+FerriteOperators.allocate_element_residual_vector(c::BilinearMassElementCache, sdh) =
+    element_vector_buffer(c.cellvalues, sdh)
+
 function setup_element_cache(element_model::BilinearMassIntegrator, sdh)
     @assert length(sdh.dh.field_names) == 1 "Support for multiple fields not yet implemented."
     qr = getquadraturerule(element_model.qrc, sdh)
@@ -90,6 +97,6 @@ function setup_element_cache(element_model::BilinearMassIntegrator, sdh)
     ip_geo = geometric_subdomain_interpolation(sdh)
     return BilinearMassElementCache(
         setup_coefficient_cache(element_model.ρ, qr, sdh),
-        CellValues(qr, ip, ip_geo),
+        CellValues(element_precision(qr), qr, ip, ip_geo),
     )
 end

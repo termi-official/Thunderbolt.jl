@@ -43,12 +43,14 @@ WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192"
 AlgebraicMultigrid = "2169fc97-5a83-5252-b627-83903c6c433c"
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 FerriteMultigrid = "69a0a054-a29c-4d77-8818-cd7ec12cfcdc"
+KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
 ModelingToolkit = "961ee093-0014-501f-94e3-6117800e7a78"
 SciCompDSL = "91a8cdf1-4ca6-467b-a780-87fda3fff15e"
 
 [extensions]
 CuThunderboltExt = "CUDA"
 ThunderboltFerriteMultigridExt = ["AlgebraicMultigrid", "FerriteMultigrid"]
+ThunderboltKernelAbstractionsExt = "KernelAbstractions"
 ThunderboltMTKExt = "ModelingToolkit"
 ThunderboltMTKModelsExt = ["ModelingToolkit", "SciCompDSL"]
 
@@ -67,7 +69,8 @@ FerriteMultigrid = "0.2"
 FerriteOperators = "0.4"
 ForwardDiff = "1"
 JET = "0.9, 0.11"
-LinearSolve = "3"
+KernelAbstractions = "0.9"
+LinearSolve = "3, 4, 5"
 Logging = "1.10"
 MatrixDepot = "1.0.13"
 ModelingToolkit = "11"
@@ -100,6 +103,7 @@ DelimitedFiles = "8bb1440f-4735-579b-a4ab-409b98df4dab"
 FerriteGmsh = "4f95f4f8-b27c-4ae5-9a39-ea55e634e36b"
 FerriteMultigrid = "69a0a054-a29c-4d77-8818-cd7ec12cfcdc"
 JET = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"
+KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
 MatrixDepot = "b51810bb-c9f3-55da-ae3c-350fc1fbce05"
 ModelingToolkit = "961ee093-0014-501f-94e3-6117800e7a78"
 OrdinaryDiffEqLowOrderRK = "1344f307-1e59-4825-a18e-ace9aa3fa4c6"
@@ -115,4 +119,4 @@ Tensors = "48a634ad-e948-5137-8d70-aa71f2a747f4"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["AlgebraicMultigrid", "Aqua", "DelimitedFiles", "FerriteGmsh", "FerriteMultigrid", "JET", "ModelingToolkit", "OrdinaryDiffEqLowOrderRK", "OrdinaryDiffEqNonlinearSolve", "OrdinaryDiffEqTsit5", "ParallelTestRunner", "Pkg", "SHA", "SciCompDSL", "StaticArrays", "SymbolicUtils", "Tensors", "Test", "MatrixDepot"]
+test = ["AlgebraicMultigrid", "Aqua", "DelimitedFiles", "FerriteGmsh", "FerriteMultigrid", "JET", "KernelAbstractions", "ModelingToolkit", "OrdinaryDiffEqLowOrderRK", "OrdinaryDiffEqNonlinearSolve", "OrdinaryDiffEqTsit5", "ParallelTestRunner", "Pkg", "SHA", "SciCompDSL", "StaticArrays", "SymbolicUtils", "Tensors", "Test", "MatrixDepot"]
