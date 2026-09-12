@@ -31,6 +31,24 @@ function _monodomain_form(;
     )
 end
 
+# A parent->child sync is a self-copy whenever the child addresses a contiguous stretch of the parent
+# state. `OrdinaryDiffEqOperatorSplitting.need_sync` decides that on the backing storage -- base
+# pointer and length -- rather than on wrapper identity, which is what makes it hold on a device:
+# CUDA returns a contiguous view as a fresh dense `CuArray`, not a `SubArray`, so identity alone
+# cannot tell a self-copy from a real one and every device sync copied a buffer onto itself.
+@testset "Device sync elision" begin
+    need_sync = OrdinaryDiffEqOperatorSplitting.need_sync
+
+    v = CuVector{Float32}(undef, 64)
+    w = @view v[1:64]
+    @test w isa CuVector{Float32}          # not a `SubArray`
+    @test pointer(w) == pointer(v)
+    @test !need_sync(w, v)                 # same storage -> elided
+    @test !need_sync(v, v)
+    @test need_sync(similar(v), v)         # distinct storage -> copied
+    @test need_sync(@view(v[1:32]), v)     # shared base pointer, shorter extent -> copied
+end
+
 @testset "Reaction diffusion split, host versus device" begin
     odeform = _monodomain_form()
 
@@ -84,6 +102,17 @@ end
         @test stage.M isa Thunderbolt.BilinearFerriteOperator
         @test stage.M.A isa CuCSC
         @test stage.K.A isa CuCSC
+    end
+
+    # The heat child owns a contiguous stretch, so its state *is* the parent's storage and the
+    # forward sync of every step below is elided rather than copied. See the standalone testset at
+    # the top of this file for the rule that decides it.
+    let need_sync = OrdinaryDiffEqOperatorSplitting.need_sync,
+        child = gpu.child_subintegrators[1]
+
+        @test !need_sync(child.u, @view gpu.u[gpu.child_solution_indices[1]])
+        @info "Device sync elision: $(length(child.u) * sizeof(Float32)) B of device-to-device " *
+            "copy avoided per forward sync"
     end
 
     φₘ = solution_variable(odeform, :φₘ)
