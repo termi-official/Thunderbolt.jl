@@ -27,6 +27,6 @@ import FerriteOperators
         # must run — and a gate naming a seam it did not check would fail the load
         # outright, before this file gets to assert anything.
         @test isdefined(ext, :_grid_backed_handler) ==
-            isdefined(FerriteOperators, :device_worker_view)
+              isdefined(FerriteOperators, :device_worker_view)
     end
 end
