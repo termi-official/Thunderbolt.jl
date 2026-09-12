@@ -155,9 +155,15 @@ problem = OperatorSplittingProblem(odeform, u₀, tspan);
 
 # !!! tip
 #     If we want to solve the problem on the GPU, or if we want to use special matrix and vector formats, we just need to adjust the vector and matrix types.
-#     For example, if we want to problem to be solved on a CUDA GPU with 32 bit precision, then we need to adjust the types as follows.
+#     For example, if we want the problem to be solved on a CUDA GPU with 32 bit precision, then we need to adjust the types as follows.
 #     ```
+#     cell_model = Thunderbolt.ParametrizedFHNModel{Float32}()
+#     ...
+#     u₀ = create_initial_condition(odeform, Float32)
+#     setvariable!(u₀, odeform, :φₘ) do x ... end
+#     setvariable!(u₀, odeform, :s) do x ... end
 #     u₀gpu = CuVector(u₀)
+#
 #     heat_timestepper = BackwardEulerSolver(
 #       solution_vector_type=CuVector{Float32},
 #       system_matrix_type=CUDA.CUSPARSE.CuSparseMatrixCSR{Float32, Int32},
@@ -168,8 +174,74 @@ problem = OperatorSplittingProblem(odeform, u₀, tspan);
 #         reaction_threshold=0.1f0,
 #     )
 #     ...
+#     dt₀   = 1.0f0
+#     dtvis = 25.0f0
+#     tspan = (0.0f0, 1000.0f0)
 #     problem = OperatorSplittingProblem(odeform, u₀gpu, tspan)
 #     ```
+#     Four things are worth knowing about that variant.
+#
+#     * `create_initial_condition` and `setvariable!` write into a host vector by construction, so
+#       the initial condition is built first and transferred afterwards -- in that order.
+#     * The cell model is evaluated inside the reaction kernel, and `Thunderbolt.FHNModel` is
+#       `ParametrizedFHNModel{Float64}`, so it would run the hot loop in double precision against
+#       single precision storage. Naming the precision fixes that -- and so does naming it on the
+#       time domain: `dt₀`, `dtvis` and `tspan` above are `Float64` literals in the host variant, and
+#       `(t, Δt)` flow from them straight into the reaction kernel, where a `Float64` multiply-add
+#       against `Float32` storage costs 1.81x per reaction step (2.62 ms against 1.45 ms, measured;
+#       the states agree to 1e-4). Spell all three in the solution vector's precision.
+#     * `reaction_threshold` carries the precision of the solution vector, hence `0.1f0`.
+#     * The output loop below reads the solution through Ferrite, which indexes it elementwise, so it
+#       needs a host copy: `Thunderbolt.store_timestep_field!(file, t, Array(u), φₘ)`.
+#
+#     In this variant the system matrix moves to the device but the assembly does not: the operators
+#     are assembled on the host with the model's assembly strategy and mirrored into the device
+#     matrix. What runs on the GPU is the linear solve, the reaction step and the splitting itself.
+#
+# !!! tip
+#     The assembly moves to the device separately, through the model side's `assembly_strategy`.
+#     Which device assembles is a property of the discretization, not of the solver, so both knobs
+#     are set -- and they have to agree on the matrix type. This variant needs a FerriteOperators
+#     newer than 0.4.0: `KernelAbstractionsDevice` and the assembly strategy it plugs into are part
+#     of the unreleased GPU surface, not the registered one, and so is the precision-carrying
+#     `QuadratureRuleCollection(Float32, 2)` below -- on the registered version that call is a
+#     `MethodError`, the collections being `Float64` only.
+#     ```
+#     using CUDA, FerriteOperators
+#
+#     spatial_discretization_method = FiniteElementDiscretization(
+#         Dict(:φₘ => LagrangeCollection{1}()),
+#         qrcs = Dict(:φₘ => QuadratureRuleCollection(Float32, 2)),
+#         assembly_strategy = AssemblyStrategy(
+#             KernelAbstractionsDevice(CUDABackend(); value_type=Float32, index_type=Int32);
+#             scheduling = ColoredScheduling(),
+#         ),
+#     )
+#
+#     heat_timestepper = BackwardEulerSolver(
+#       solution_vector_type=CuVector{Float32},
+#       system_matrix_type=CUDA.CUSPARSE.CuSparseMatrixCSC{Float32, Int32},
+#       inner_solver=KrylovJL_CG(atol=1.0f-6, rtol=1.0f-5),
+#     )
+#     ```
+#     Three things are worth knowing about this one, on top of the host-side items from the box
+#     above -- the initial-condition ordering and the `Array(u)` copy in the output loop -- which
+#     apply here too: nothing about assembling on the device changes how the initial condition is
+#     built or how the solution is read back out for output.
+#
+#     * The matrix type is **CSC**, not the CSR of the mirrored variant above. Ferrite ships a device
+#       assembler for CSC device matrices only, and the operator now writes its entries itself
+#       instead of receiving a copy of a host matrix. Asking for CSR here is an error naming that.
+#     * `ColoredScheduling` is not a tuning choice: the device matrix assembler accumulates without
+#       atomics, so a colored partition is what makes the scatter race free. It also fixes the
+#       accumulation order per entry, which is what makes a device assembled operator reproducible.
+#     * The two precisions are separate knobs. `value_type` is the GLOBAL system's, and the
+#       precision the element caches evaluate in is the integrator's, elected through its quadrature
+#       collection -- which is what `qrcs` above names, and what makes the quadrature rules and
+#       `CellValues` behind the mass and diffusion forms `Float32`. Leaving `qrcs` out assembles
+#       `Float64` elements into the `Float32` system, which is legal and just slower. The
+#       coefficients keep whatever precision the model gave them -- `κ` above is a `Float64` tensor,
+#       and a `Float32` one is worth naming for a device run.
 
 # Now we initialize our time integrator as usual.
 integrator = init(problem, timestepper, dt=dt₀);
