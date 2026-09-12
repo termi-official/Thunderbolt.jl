@@ -12,7 +12,7 @@ function _ep_testbed(dims = (24, 24))
 end
 
 @testset "Bilinear operators, host versus device assembly" begin
-    dh  = _ep_testbed()
+    dh = _ep_testbed()
     # The device's `value_type` is the global system's; the element precision is the integrator's,
     # elected here on its quadrature collection.
     qrc = QuadratureRuleCollection(Float32, 2)

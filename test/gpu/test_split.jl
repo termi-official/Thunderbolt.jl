@@ -22,11 +22,7 @@ function _monodomain_form(;
     )
     return semidiscretize(
         ReactionDiffusionSplit(ep_model),
-        FiniteElementDiscretization(
-            Dict(:φₘ => LagrangeCollection{1}());
-            qrcs,
-            assembly_strategy,
-        ),
+        FiniteElementDiscretization(Dict(:φₘ => LagrangeCollection{1}()); qrcs, assembly_strategy),
         mesh,
     )
 end
@@ -44,7 +40,7 @@ const ELIDES_DEVICE_SYNC = isdefined(OrdinaryDiffEqOperatorSplitting, :_same_mem
 
 if !ELIDES_DEVICE_SYNC
     @info "Skipping device sync elision: needs OrdinaryDiffEqOperatorSplitting >= 0.4.3, got " *
-        "$(pkgversion(OrdinaryDiffEqOperatorSplitting))."
+          "$(pkgversion(OrdinaryDiffEqOperatorSplitting))."
 else
     @testset "Device sync elision" begin
         need_sync = OrdinaryDiffEqOperatorSplitting.need_sync
@@ -124,7 +120,7 @@ end
 
             @test !need_sync(child.u, @view gpu.u[gpu.child_solution_indices[1]])
             @info "Device sync elision: $(length(child.u) * sizeof(Float32)) B of " *
-                "device-to-device copy avoided per forward sync"
+                  "device-to-device copy avoided per forward sync"
         end
     end
 

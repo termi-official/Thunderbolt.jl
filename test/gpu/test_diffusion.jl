@@ -126,8 +126,8 @@ end
         mesh,
     )
 
-    tspan  = (0.0f0, 1.0f0)
-    Δt     = 0.1f0
+    tspan = (0.0f0, 1.0f0)
+    Δt = 0.1f0
     nsteps = 10
     step_times = Δt .* (1:nsteps)
     active = 0.3f0 .<= step_times .<= 0.6f0
