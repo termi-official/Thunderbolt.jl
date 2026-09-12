@@ -36,17 +36,28 @@ end
 # pointer and length -- rather than on wrapper identity, which is what makes it hold on a device:
 # CUDA returns a contiguous view as a fresh dense `CuArray`, not a `SubArray`, so identity alone
 # cannot tell a self-copy from a real one and every device sync copied a buffer onto itself.
-@testset "Device sync elision" begin
-    need_sync = OrdinaryDiffEqOperatorSplitting.need_sync
+#
+# `_same_memory` is the storage rule, and it carries the floor: OrdinaryDiffEqOperatorSplitting
+# 0.4.3. Below it `need_sync` is the identity rule and elides nothing, so these assertions are
+# skipped rather than failed.
+const ELIDES_DEVICE_SYNC = isdefined(OrdinaryDiffEqOperatorSplitting, :_same_memory)
 
-    v = CuVector{Float32}(undef, 64)
-    w = @view v[1:64]
-    @test w isa CuVector{Float32}          # not a `SubArray`
-    @test pointer(w) == pointer(v)
-    @test !need_sync(w, v)                 # same storage -> elided
-    @test !need_sync(v, v)
-    @test need_sync(similar(v), v)         # distinct storage -> copied
-    @test need_sync(@view(v[1:32]), v)     # shared base pointer, shorter extent -> copied
+if !ELIDES_DEVICE_SYNC
+    @info "Skipping device sync elision: needs OrdinaryDiffEqOperatorSplitting >= 0.4.3, got " *
+        "$(pkgversion(OrdinaryDiffEqOperatorSplitting))."
+else
+    @testset "Device sync elision" begin
+        need_sync = OrdinaryDiffEqOperatorSplitting.need_sync
+
+        v = CuVector{Float32}(undef, 64)
+        w = @view v[1:64]
+        @test w isa CuVector{Float32}          # not a `SubArray`
+        @test pointer(w) == pointer(v)
+        @test !need_sync(w, v)                 # same storage -> elided
+        @test !need_sync(v, v)
+        @test need_sync(similar(v), v)         # distinct storage -> copied
+        @test need_sync(@view(v[1:32]), v)     # shared base pointer, shorter extent -> copied
+    end
 end
 
 @testset "Reaction diffusion split, host versus device" begin
@@ -105,14 +116,16 @@ end
     end
 
     # The heat child owns a contiguous stretch, so its state *is* the parent's storage and the
-    # forward sync of every step below is elided rather than copied. See the standalone testset at
-    # the top of this file for the rule that decides it.
-    let need_sync = OrdinaryDiffEqOperatorSplitting.need_sync,
-        child = gpu.child_subintegrators[1]
+    # forward sync of every step below is elided rather than copied. Same floor as the standalone
+    # testset at the top of this file, which carries the rule that decides it.
+    if ELIDES_DEVICE_SYNC
+        let need_sync = OrdinaryDiffEqOperatorSplitting.need_sync,
+            child = gpu.child_subintegrators[1]
 
-        @test !need_sync(child.u, @view gpu.u[gpu.child_solution_indices[1]])
-        @info "Device sync elision: $(length(child.u) * sizeof(Float32)) B of device-to-device " *
-            "copy avoided per forward sync"
+            @test !need_sync(child.u, @view gpu.u[gpu.child_solution_indices[1]])
+            @info "Device sync elision: $(length(child.u) * sizeof(Float32)) B of " *
+                "device-to-device copy avoided per forward sync"
+        end
     end
 
     φₘ = solution_variable(odeform, :φₘ)
